@@ -1,29 +1,31 @@
 # Fusion Bridge
 
+[![Node.js](https://img.shields.io/badge/Node.js_18+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/) [![Next.js 15](https://img.shields.io/badge/Next.js_15-000000?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org/) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/) [![shadcn/ui](https://img.shields.io/badge/shadcn%2Fui-000000?style=flat-square&logo=shadcnui)](https://ui.shadcn.com/) [![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+
 A local-first security integration platform that connects to various security devices and services.
 
 ## Features
 
-- Next.js 15 with App Router and TypeScript
-- Local SQLite database through Drizzle ORM and better-sqlite3
-- Support for YoLink and Piko security devices
-- Dynamic UI forms for different device types
-- Event-driven Automation Engine: Configure rules to trigger actions
-- Modern UI with Tailwind CSS and `shadcn/ui`
+- **Modern Stack**: Next.js 15 with App Router and TypeScript
+- **Local Database**: SQLite through Drizzle ORM and better-sqlite3
+- **Device Support**: YoLink and Piko security devices
+- **Dynamic Forms**: UI forms adapting to different device types
+- **Automation Engine**: Event-driven rules to trigger actions
+- **Sleek UI**: Powered by Tailwind CSS and `shadcn/ui`
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+ 
-- pnpm (recommended)
+- [Node.js](https://nextjs.org) 18+
+- [pnpm](https://pnpm.io) (recommended)
 
 ### Setup
 
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/yourusername/fusion-bridge.git
+git clone https://github.com/austin-smith/fusion-bridge.git
 cd fusion-bridge
 ```
 
@@ -81,7 +83,7 @@ The core application code resides within the `src/` directory, organized as foll
 Next.js can run server-side code in two different environments:
 
 -   **Node.js Runtime (Default):** The standard Node.js environment, providing access to all Node.js APIs and the full npm ecosystem. Services requiring direct OS interaction (like file system access via `fs` or raw TCP sockets) must run here. Our MQTT service and its dependencies run in this runtime.
--   **Edge Runtime:** A lightweight JavaScript runtime based on Web APIs, designed for speed and to run close to the user (often in CDN edge locations). It has limitations, notably lacking access to native Node.js modules like `fs`, `net`, or `child_process`. While primarily used for Middleware or specific API routes in production, the **Next.js development server (`pnpm dev`) attempts to compile instrumentation code for *both* runtimes**. This is why the `fs` module error occurred specifically during development – the Edge compilation path encountered a Node.js-only dependency.
+-   **Edge Runtime:** A lightweight JavaScript runtime based on Web APIs, designed for speed and to run close to the user (often in CDN edge locations). It has limitations, notably lacking access to native Node.js modules like `fs`, `net`, or `child_process`. While primarily used for Middleware or specific API routes in production, the **Next.js development server (`pnpm dev`) attempts to compile instrumentation code for *both* runtimes**.
 
 The split instrumentation setup (`instrumentation.ts` and `instrumentation.node.ts`) uses a runtime check (`process.env.NEXT_RUNTIME`) to ensure that code relying on Node.js APIs (like the MQTT client which uses `bindings` and indirectly `fs`) is *only* imported and executed when the application is definitively running in the Node.js runtime. This prevents the Edge compilation pass during development from trying to resolve Node-specific modules it cannot handle.
 
@@ -93,9 +95,5 @@ The application uses a local SQLite database stored at `~/.fusion-bridge/fusion.
 -   `events` table for storing raw incoming events (e.g., from YoLink).
 -   `devices` table for storing discovered devices from connectors.
 -   `pikoServers` table for Piko-specific server info.
--   `cameraAssociations` (previously `deviceAssociations`) for linking devices (e.g., YoLink sensor to Piko camera).
+-   `cameraAssociations` for linking devices (e.g., YoLink sensor to Piko camera).
 -   `automations` table for storing user-defined automation rules, linking source/target nodes and configuration.
-
-## License
-
-MIT
