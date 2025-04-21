@@ -4,10 +4,17 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from "@/components/ui/input";
 import { toast } from 'sonner';
-import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, ComputerIcon, X, EyeIcon, Loader2 } from 'lucide-react';
+import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, ComputerIcon, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react';
 import { DeviceWithConnector } from '@/types'; // Import from shared types
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { formatConnectorCategory } from "@/lib/utils"; // Re-add formatConnectorCategory import
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Table,
   TableBody,
@@ -41,6 +48,8 @@ import {
   ColumnFiltersState,
   SortingState,
   useReactTable,
+  PaginationState,
+  getPaginationRowModel,
 } from '@tanstack/react-table';
 import { DeviceDetailDialogContent } from "@/components/features/devices/device-detail-dialog-content"; // Import new component
 import { getReadableYoLinkDeviceName } from '@/services/drivers/yolink'; // Import the function
@@ -114,6 +123,11 @@ export default function DevicesPage() {
   const [associatedDevices, setAssociatedDevices] = useState<{id: string, name: string}[]>([]);
   const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
   const [loadingAssociatedDevices, setLoadingAssociatedDevices] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 50,
+  });
   
   // Function to fetch devices *from the database* using GET
   const loadDevicesFromDb = useCallback(async () => {
@@ -144,7 +158,7 @@ export default function DevicesPage() {
 
   // Function to SYNC devices (POST request)
   const syncDevices = useCallback(async () => {
-    setIsLoading(true);
+    setIsSyncing(true);
     setError(null);
     // Maybe don't clear devices here either, update in place?
     // setDevices([]); 
@@ -185,7 +199,7 @@ export default function DevicesPage() {
       toast.dismiss(loadingToastId);
       toast.error(`Failed to sync devices: ${errorMessage}`);
     } finally {
-      setIsLoading(false);
+      setIsSyncing(false);
     }
   }, []); // Dependencies? Maybe not if it always refetches all state? 
 
@@ -333,12 +347,12 @@ export default function DevicesPage() {
                            device.connectorCategory === 'piko'; // Show for all Piko devices
           const count = device.associationCount;
           
-          if (!showCount || count === null || count === undefined) {
-            return <span className="text-muted-foreground">—</span>;
+          if (!showCount || count === null || count === undefined || count === 0) {
+            return null;
           }
           
           return (
-            <div className="flex justify-center">
+            <div>
               <Popover onOpenChange={(open) => {
                 if (open) {
                   // Always fetch when opening, regardless of count
@@ -430,12 +444,15 @@ export default function DevicesPage() {
     state: {
       sorting,
       columnFilters,
+      pagination,
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
     enableMultiSort: true, // Enable multi-column sorting
   });
 
@@ -488,9 +505,9 @@ export default function DevicesPage() {
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button onClick={syncDevices} disabled={isLoading} size="sm">
-                <RefreshCwIcon className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-                {isLoading ? 'Syncing...' : 'Sync'}
+              <Button onClick={syncDevices} disabled={isLoading || isSyncing} size="sm">
+                <RefreshCwIcon className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                {isSyncing ? 'Syncing...' : 'Sync'}
               </Button>
             </TooltipTrigger>
             <TooltipContent>
@@ -581,6 +598,77 @@ export default function DevicesPage() {
                 )}
               </TableBody>
             </Table>
+            {/* Pagination Controls */} 
+            <div className="flex items-center justify-between p-2 border-t">
+              <div className="flex-1 text-sm text-muted-foreground">
+                {/* Display total rows or other relevant info if needed */}
+                Total Rows: {table.getFilteredRowModel().rows.length}
+              </div>
+              <div className="flex items-center space-x-6 lg:space-x-8">
+                <div className="flex items-center space-x-2">
+                  <p className="text-sm font-medium">Rows per page</p>
+                  <Select
+                    value={`${table.getState().pagination.pageSize}`}
+                    onValueChange={(value) => {
+                      table.setPageSize(Number(value))
+                    }}
+                  >
+                    <SelectTrigger className="h-8 w-[70px]">
+                      <SelectValue placeholder={table.getState().pagination.pageSize} />
+                    </SelectTrigger>
+                    <SelectContent side="top">
+                      {[10, 25, 50, 100].map((pageSize) => (
+                        <SelectItem key={pageSize} value={`${pageSize}`}>
+                          {pageSize}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex w-[100px] items-center justify-center text-sm font-medium">
+                  Page {table.getState().pagination.pageIndex + 1} of{" "}
+                  {table.getPageCount()}
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    className="hidden h-8 w-8 p-0 lg:flex"
+                    onClick={() => table.setPageIndex(0)}
+                    disabled={!table.getCanPreviousPage()}
+                  >
+                    <span className="sr-only">Go to first page</span>
+                    <ChevronsLeftIcon className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-8 w-8 p-0"
+                    onClick={() => table.previousPage()}
+                    disabled={!table.getCanPreviousPage()}
+                  >
+                    <span className="sr-only">Go to previous page</span>
+                    <ChevronLeftIcon className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-8 w-8 p-0"
+                    onClick={() => table.nextPage()}
+                    disabled={!table.getCanNextPage()}
+                  >
+                    <span className="sr-only">Go to next page</span>
+                    <ChevronRightIcon className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="hidden h-8 w-8 p-0 lg:flex"
+                    onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+                    disabled={!table.getCanNextPage()}
+                  >
+                    <span className="sr-only">Go to last page</span>
+                    <ChevronsRightIcon className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
