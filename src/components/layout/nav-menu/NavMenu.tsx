@@ -11,8 +11,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip" // Import Tooltip components
 import { cn } from '@/lib/utils'; // Import cn utility
-import { FiChevronsLeft, FiChevronsRight, FiActivity, FiTerminal, FiZap } from 'react-icons/fi'; // Example icons, removed Sun and Moon
-import { PlugZapIcon, ComputerIcon } from 'lucide-react'; // Import new icons
+import { FiChevronsLeft, FiChevronsRight, FiActivity } from 'react-icons/fi'; // Example icons, removed Sun and Moon
+import { Plug, ComputerIcon, Terminal, Workflow } from 'lucide-react'; // Import new icons
 
 // Define props interface
 interface NavMenuProps {
@@ -25,11 +25,11 @@ export const collapsedNavWidth = 'w-[70px]'; // Slightly narrower collapsed widt
 export const expandedNavWidth = 'w-[240px]'; // Slightly narrower expanded width
 
 const navItems = [
-  { href: '/connectors', label: 'Connectors', icon: PlugZapIcon },
+  { href: '/connectors', label: 'Connectors', icon: Plug },
   { href: '/devices', label: 'Devices', icon: ComputerIcon },
   { href: '/events', label: 'Events', icon: FiActivity },
-  { href: '/automations', label: 'Automations', icon: FiZap },
-  { href: '/system-logs', label: 'Console', icon: FiTerminal },
+  { href: '/automations', label: 'Automations', icon: Workflow },
+  { href: '/system-logs', label: 'Console', icon: Terminal },
 ];
 
 // Update component signature to accept props

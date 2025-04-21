@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Eraser } from "lucide-react";
+import { Eraser, Terminal } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -82,7 +82,15 @@ export default function SystemLogsPage() {
       <Card className="h-[calc(100vh-12rem)] flex flex-col">
         <CardHeader className="flex-none pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle>System Logs</CardTitle>
+            <div className="flex items-center gap-4">
+              <Terminal className="h-6 w-6 text-muted-foreground" />
+              <div>
+                <CardTitle>System Logs</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  View real-time system messages and events.
+                </p>
+              </div>
+            </div>
             <div className="flex items-center gap-4">
               <TooltipProvider>
                 <Tooltip>

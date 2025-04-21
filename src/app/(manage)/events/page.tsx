@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, Copy, Check, RefreshCw } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, Copy, Check, RefreshCw, EyeIcon } from 'lucide-react';
 import {
   flexRender,
   getCoreRowModel,
@@ -249,9 +249,22 @@ export default function EventsPage() {
       enableColumnFilter: true,
       cell: ({ row }) => {
         const state = row.getValue<string>('state');
-        return state ? (
-          <Badge variant="outline">{state}</Badge>
-        ) : '';
+        if (!state) return null;
+
+        return (
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="max-w-32 whitespace-nowrap overflow-hidden text-ellipsis">
+                  <Badge variant="outline">{state}</Badge>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{state}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
       },
     },
     {
@@ -282,8 +295,8 @@ export default function EventsPage() {
       sortingFn: 'datetime',
     },
     {
-      id: 'data',
-      header: "Data",
+      id: 'actions',
+      header: "Actions",
       enableSorting: false,
       enableColumnFilter: false,
       cell: ({ row }) => {
@@ -311,8 +324,8 @@ export default function EventsPage() {
         return (
           <Dialog>
             <DialogTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 px-2">
-                View
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <EyeIcon className="h-4 w-4" />
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-xl">
@@ -457,7 +470,7 @@ export default function EventsPage() {
               Events
             </h1>
             <p className="text-sm text-muted-foreground">
-              View incoming events from your connected devices.
+              View incoming events from connected devices.
             </p>
           </div>
         </div>
@@ -494,8 +507,8 @@ export default function EventsPage() {
           No events have been received yet. Live events will appear here automatically.
         </p>
       ) : (
-        <div className="border rounded-md">
-          <div className="max-h-[calc(100vh-220px)] overflow-auto">
+        <div className="border rounded-md overflow-x-auto">
+          <div className="max-h-[calc(100vh-220px)] overflow-y-auto">
             <Table>
               <TableHeader className="sticky top-0 bg-background z-10">
                 {table.getHeaderGroups().map((headerGroup) => (
@@ -564,7 +577,7 @@ export default function EventsPage() {
                     ) : (
                       <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
                         {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id} className="px-2 py-2">
+                          <TableCell key={cell.id} className="px-2 py-1">
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                           </TableCell>
                         ))}

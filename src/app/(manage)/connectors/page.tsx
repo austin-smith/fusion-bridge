@@ -6,7 +6,7 @@ import { Button, buttonVariants } from '@/components/ui/button'; // Import butto
 import { AddConnectorModal } from '@/components/features/connectors/add-connector-modal'; // Import the modal
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Pencil, Trash2, Home, Plus } from "lucide-react";
+import { Loader2, Pencil, Trash2, Plus, Plug } from "lucide-react";
 // Using console for messaging instead of toast
 import { NodeWithConfig } from '@/types'; // Import NodeWithConfig
 import {
@@ -325,7 +325,17 @@ export default function ConnectorsPage() {
   return (
     <div className="container py-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold">Connectors</h1>
+        <div className="flex items-center gap-4">
+          <Plug className="h-6 w-6 text-muted-foreground" />
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground">
+              Connectors
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Manage integration connectors.
+            </p>
+          </div>
+        </div>
         <Button onClick={handleAddConnectorClick} size="sm">
           <Plus className="h-4 w-4" />
           Add Connector
