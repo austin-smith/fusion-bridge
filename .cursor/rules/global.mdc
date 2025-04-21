@@ -1,0 +1,10 @@
+---
+description: lobal stack decisions
+glob:
+alwaysApply: true
+---
+
+- Framework: **Next.js 15** (App Router, TypeScript strict).
+- UI primitives: **shadcn/ui**; styling via Tailwind only.
+- State: **Zustand** (`src/stores/`; typed generics).
+- Data grids: **TanStack Table v8** wrapped by `@/lib/DataTable.tsx`.

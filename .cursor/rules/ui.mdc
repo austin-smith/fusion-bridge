@@ -1,0 +1,8 @@
+---
+description: UI conventions (Tailwind + shadcn)
+glob:
+alwaysApply: false
+---
+
+- Use shadcn/ui components whenever a matching primitive exists.  
+- Wrap complex tabular views with the shared `DataTable` wrapper (TanStack v8).  

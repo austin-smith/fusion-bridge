@@ -1,0 +1,23 @@
+---
+description: Naming Conventions
+glob:
+alwaysApply: false
+---
+
+To maintain consistency across the codebase, please adhere to the following naming conventions:
+
+1.  **Component Files (`.tsx`, `.jsx`):** Use `PascalCase`.
+    -   *Example:* `src/components/common/UserProfileAvatar.tsx`
+    -   *Example:* `src/app/(manage)/connectors/page.tsx` (Next.js page files are components)
+
+2.  **Directories:** Use `kebab-case`.
+    -   *Example:* `src/components/features/device-settings/`
+    -   *Example:* `src/app/(manage)/`
+    -   *Example:* `src/lib/`
+    -   *Example:* `src/services/`
+
+3.  **Non-Component Code Files (`.ts`, `.js`, `.mjs`, `.css`, etc.):** Use `kebab-case`.
+    -   *Example:* `src/lib/utils.ts`
+    -   *Example:* `src/services/mqtt-service.ts`
+    -   *Example:* `src/styles/globals.css`
+    -   *Example:* `drizzle.config.ts` (root config files often follow their tool's convention)

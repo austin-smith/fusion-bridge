@@ -1,0 +1,18 @@
+---
+description: Guidelines for database access and usage
+globs: 
+alwaysApply: false
+---
+
+### Database Usage Guidelines
+
+This project uses **Drizzle ORM** with the **`better-sqlite3`** driver for local SQLite database interaction.
+
+-   **Location:** Database setup, schema (`schema.ts`), migrations, and the exported `db` instance are located in `src/data/db/`.
+-   **Server-Only Access:** The database instance (`db`) relies on Node.js APIs (`fs`, native modules) and is strictly **server-only**. The `src/data/db/index.ts` file is marked with `import 'server-only';` to enforce this.
+-   **NEVER** import the `db` instance directly into client components (`"use client"` files) or other client-side code.
+-   **Data Fetching for Clients:** Client components must fetch data through:
+    -   **API Routes:** Defined in `src/app/api/...`. Create dedicated API routes for data operations needed by the client.
+    -   **Server Components:** Fetch data directly within Server Components and pass it down as props to Client Components.
+    -   **Server Actions:** Use Server Actions for mutations initiated from the client.
+-   **Repositories:** Data fetching/mutation logic should ideally be encapsulated within repository files located in `src/data/repositories/`.
