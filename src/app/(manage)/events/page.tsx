@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, Copy, Check, RefreshCw } from 'lucide-react';
 import {
   flexRender,
   getCoreRowModel,
@@ -46,14 +46,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-
-// Add Tabs imports
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { useMqttSse } from '@/hooks/use-mqtt-sse';
 
 // Define the event interface
 interface YolinkEvent {
@@ -127,7 +126,6 @@ export default function EventsPage() {
   const [events, setEvents] = useState<YolinkEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [serviceInitialized, setServiceInitialized] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'time', desc: true }
   ]);
@@ -136,38 +134,11 @@ export default function EventsPage() {
   const [isGrouped, setIsGrouped] = useState(false);
   const [expanded, setExpanded] = useState<ExpandedState>({});
 
-  // Function to initialize the MQTT service
-  const initializeService = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/events', {
-        method: 'POST',
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to initialize event service');
-      }
-      
-      setServiceInitialized(true);
-      toast.success('Event service initialized successfully');
-      
-      // Fetch initial events
-      await fetchEvents();
-    } catch (error) {
-      console.error('Error initializing event service:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to initialize event service');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Function to fetch events
-  const fetchEvents = async () => {
+  // Function to fetch initial/manual refresh events
+  const fetchEvents = useCallback(async () => {
     try {
       setRefreshing(true);
-      const response = await fetch('/api/events');
+      const response = await fetch('/api/events'); 
       
       if (!response.ok) {
         const data = await response.json();
@@ -175,24 +146,56 @@ export default function EventsPage() {
       }
       
       const data = await response.json();
-      setEvents(data.data || []);
+      
+      // Use functional update to get latest events state for duplicate check
+      setEvents(prevEvents => {
+        const existingMsgIds = new Set(prevEvents.map(e => e.msgid));
+        const newEvents = (data.data || []).filter((e: YolinkEvent) => !existingMsgIds.has(e.msgid));
+        return [...newEvents, ...prevEvents]; // Prepend new historical if any
+      });
+      
+      toast.success('Fetched recent events.');
     } catch (error) {
       console.error('Error fetching events:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to fetch events');
     } finally {
       setRefreshing(false);
+      setLoading(false); // Ensure loading is false after initial fetch
     }
-  };
+  }, []); 
 
-  // Initialize the service on first load
+  // Stable callbacks for the SSE hook
+  const handleSseMessage = useCallback((newEvent: YolinkEvent) => {
+    // console.log('[EventsPage] Received new event via SSE:', newEvent);
+    // Prepend the new event to the list for real-time feel
+    setEvents(prevEvents => {
+      // Optional: Prevent duplicate msgid if somehow received again
+      if (prevEvents.some(e => e.msgid === newEvent.msgid)) {
+        return prevEvents;
+      }
+      return [newEvent, ...prevEvents];
+    });
+  }, []); // Empty dependency array - this function doesn't depend on component state
+
+  const handleSseError = useCallback((error: Event) => {
+    console.error('[EventsPage] SSE connection error:', error);
+    toast.error('Real-time update connection lost. Attempting to reconnect...');
+    // The hook handles reconnection logic
+  }, []); // Empty dependency array
+
+  // Use the SSE hook for real-time updates
+  useMqttSse({
+    onMessage: handleSseMessage,
+    onError: handleSseError
+  });
+
+  // Fetch initial events on first load
   useEffect(() => {
-    initializeService();
-    
-    // Set up a refresh interval
-    const interval = setInterval(fetchEvents, 30000); // Refresh every 30 seconds
-    
-    return () => clearInterval(interval);
-  }, []);
+    setLoading(true);
+    fetchEvents();
+    // No interval needed anymore
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchEvents]); // fetchEvents is memoized with useCallback
 
   // Define columns for TanStack Table
   const columns = useMemo<ColumnDef<YolinkEvent>[]>(() => [
@@ -201,7 +204,7 @@ export default function EventsPage() {
       header: "Connector",
       enableSorting: true,
       enableColumnFilter: true,
-      cell: (info) => info.getValue() || 'Unknown',
+      cell: (info) => info.getValue() || 'System',
     },
     {
       accessorKey: 'deviceName',
@@ -210,7 +213,7 @@ export default function EventsPage() {
       enableColumnFilter: true,
       cell: ({ row }) => (
         <div className="font-medium">
-          {row.getValue('deviceName') || 'Unknown Device'}
+          {row.original.deviceName || row.original.deviceId || 'Unknown Device'}
         </div>
       ),
     },
@@ -220,8 +223,8 @@ export default function EventsPage() {
       enableSorting: true,
       enableColumnFilter: true,
       cell: (info) => {
-        const type = info.getValue<string>() || 'Unknown';
-        return getReadableYoLinkDeviceName(type);
+        const type = info.getValue<string>();
+        return type ? getReadableYoLinkDeviceName(type) : 'Unknown';
       },
     },
     {
@@ -257,7 +260,11 @@ export default function EventsPage() {
       enableSorting: true,
       enableColumnFilter: true,
       cell: ({ row }: { row: Row<YolinkEvent> }) => {
-        const eventTime = new Date(row.getValue<number>('time'));
+        const timeValue = row.getValue<number>('time');
+        if (isNaN(timeValue) || timeValue <= 0) {
+          return <span className="text-muted-foreground">Invalid time</span>;
+        }
+        const eventTime = new Date(timeValue);
         const absoluteTime = format(eventTime, 'PPpp');
         const relativeTime = formatDistanceToNow(eventTime, { addSuffix: true });
 
@@ -287,14 +294,19 @@ export default function EventsPage() {
             await navigator.clipboard.writeText(text);
             setIsCopied(true);
             toast.success("Copied JSON to clipboard!");
-            setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
+            setTimeout(() => setIsCopied(false), 2000);
           } catch (err) {
             console.error('Failed to copy text: ', err);
             toast.error("Failed to copy JSON.");
           }
         };
-
-        const jsonString = JSON.stringify(row.original.payload || row.original.data, null, 2);
+        
+        const eventData = row.original.payload || row.original.data || {};
+        const jsonString = JSON.stringify(eventData, null, 2);
+        
+        const deviceName = row.original.deviceName || row.original.deviceId || 'Unknown Device';
+        const deviceType = row.original.deviceType ? getReadableYoLinkDeviceName(row.original.deviceType) : 'Unknown Type';
+        const connectorName = row.original.connectorName || 'System';
 
         return (
           <Dialog>
@@ -317,61 +329,45 @@ export default function EventsPage() {
                   <div className="max-h-96 overflow-y-auto rounded-md border p-4 text-sm">
                     {
                       (() => {                    
-                        // Prepare device info first
                         const deviceInfoEntries = [
-                          { key: 'Device Name', value: row.original.deviceName },
-                          { key: 'Device Type', value: row.original.deviceType ? getReadableYoLinkDeviceName(row.original.deviceType) : undefined },
-                          { key: 'Connector', value: row.original.connectorName },
-                        ].filter(entry => entry.value !== undefined && entry.value !== null);
-
-                        // Extract payload/data details
-                        const eventData = row.original.payload || row.original.data;
+                          { key: 'Device Name', value: deviceName },
+                          { key: 'Device Type', value: deviceType },
+                          { key: 'Connector', value: connectorName },
+                        ];
+                        
                         let payloadEntries: { key: string, value: unknown }[] = [];
-
                         if (eventData && typeof eventData === 'object') {
                           payloadEntries = Object.entries(eventData)
                             .filter(([, value]) => typeof value !== 'object' && value !== null && value !== undefined)
                             .map(([key, value]) => ({ key, value }));
                         }
 
-                        // Combine and render
                         const allEntries = [...deviceInfoEntries, ...payloadEntries];
-
                         if (allEntries.length === 0) {
                           return <p className="text-muted-foreground">No details available.</p>;
                         }
 
-                        // Use flex column for overall structure
                         return (
                           <div className="flex flex-col gap-4">
-                            {/* Device Information Section */} 
-                            {deviceInfoEntries.length > 0 && (
-                              <div>
-                                <h4 className="mb-2 text-sm font-semibold text-foreground">
-                                  Device Information
-                                </h4>
-                                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-                                  {deviceInfoEntries.map(({ key, value }) => (
-                                    <React.Fragment key={key}>
-                                      <dt className="font-medium text-muted-foreground">{key}</dt>
-                                      <dd className="text-foreground">{String(value)}</dd>
-                                    </React.Fragment>
-                                  ))}
-                                </dl>
-                              </div>
-                            )}
+                            {/* Device Info */}
+                            <div>
+                              <h4 className="mb-2 text-sm font-semibold text-foreground">Device Information</h4>
+                              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+                                {deviceInfoEntries.map(({ key, value }) => (
+                                  <React.Fragment key={key}>
+                                    <dt className="font-medium text-muted-foreground">{key}</dt>
+                                    <dd className="text-foreground">{String(value)}</dd>
+                                  </React.Fragment>
+                                ))}
+                              </dl>
+                            </div>
 
-                            {/* Separator (only if both sections exist) */} 
-                            {deviceInfoEntries.length > 0 && payloadEntries.length > 0 && (
-                              <div className="border-b border-border"></div>
-                            )}
+                            {payloadEntries.length > 0 && <div className="border-b border-border"></div>}
 
-                            {/* Event Data Section */} 
+                            {/* Event Data */}
                             {payloadEntries.length > 0 && (
                               <div>
-                                <h4 className="mb-2 text-sm font-semibold text-foreground">
-                                  Event Data
-                                </h4>
+                                <h4 className="mb-2 text-sm font-semibold text-foreground">Event Data</h4>
                                 <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
                                   {payloadEntries.map(({ key, value }) => (
                                     <React.Fragment key={key}>
@@ -382,21 +378,15 @@ export default function EventsPage() {
                                 </dl>
                               </div>
                             )}
-
-                            {/* Fallback if only device info exists but no payload data */} 
-                            {deviceInfoEntries.length > 0 && payloadEntries.length === 0 && (
-                              <p className="text-sm text-muted-foreground mt-2">No additional event data found.</p>
-                            )}
                           </div>
                         );
                       })()
                     }
                   </div>
                 </TabsContent>
-
+                
                 <TabsContent value="raw" className="mt-4">
                   <div className="relative">
-                    {/* Position copy button top-right */} 
                     <Button 
                       size="icon"
                       variant="ghost"
@@ -453,7 +443,8 @@ export default function EventsPage() {
     getFilteredRowModel: getFilteredRowModel(),
     getGroupedRowModel: getGroupedRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
-    enableMultiSort: true, // Enable multi-column sorting
+    enableMultiSort: true,
+    getRowId: (originalRow) => originalRow.msgid, 
   });
 
   return (
@@ -482,6 +473,7 @@ export default function EventsPage() {
                     setIsGrouped(nextIsGrouped);
                     setGrouping(nextIsGrouped ? ['deviceName'] : []);
                   }}
+                  className="h-8 w-8"
                 >
                   {isGrouped ? <List className="h-4 w-4" /> : <Layers className="h-4 w-4" />}
                   <span className="sr-only">{isGrouped ? 'View Details' : 'Group by Device'}</span>
@@ -491,31 +483,15 @@ export default function EventsPage() {
                 <p>{isGrouped ? 'View Details' : 'Group by Device'}</p>
               </TooltipContent>
             </Tooltip>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={fetchEvents} 
-              disabled={refreshing || loading}
-            >
-              {refreshing ? 'Refreshing...' : 'Refresh Events'}
-            </Button>
-            {!serviceInitialized && (
-              <Button
-                onClick={initializeService}
-                disabled={loading}
-              >
-                {loading ? 'Initializing...' : 'Initialize Event Service'}
-              </Button>
-            )}
           </div>
         </TooltipProvider>
       </div>
 
       {loading && events.length === 0 ? (
-        <p className="text-muted-foreground">Loading events...</p>
+        <p className="text-muted-foreground">Loading initial events...</p>
       ) : !loading && events.length === 0 ? (
         <p className="text-muted-foreground">
-          No events have been received yet. Events will appear here as devices report status or trigger alerts.
+          No events have been received yet. Live events will appear here automatically.
         </p>
       ) : (
         <div className="border rounded-md">
@@ -562,23 +538,19 @@ export default function EventsPage() {
               <TableBody>
                 {table.getRowModel().rows?.length ? (
                   table.getRowModel().rows.map((row) => (
-                    // Render group header or data row
                     row.getIsGrouped() ? (
                       <TableRow key={row.id + '-group'} className="bg-muted/50 hover:bg-muted/60">
-                        {/* Make cell clickable to toggle expansion */} 
                         <TableCell 
                           colSpan={columns.length} 
                           className="p-2 font-medium text-sm capitalize cursor-pointer"
                           onClick={row.getToggleExpandedHandler()}
                         >
                           <div className="flex items-center gap-2">
-                            {/* Add Chevron icon */} 
                             {row.getIsExpanded() ? (
                               <ChevronDown className="h-4 w-4" />
                             ) : (
                               <ChevronRight className="h-4 w-4" />
                             )}
-                            {/* Display grouping column ID and value */} 
                             {row.groupingColumnId}:
                             <span className="font-normal">
                               {row.groupingValue as React.ReactNode}
@@ -590,7 +562,6 @@ export default function EventsPage() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      // Render the regular data row
                       <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
                         {row.getVisibleCells().map((cell) => (
                           <TableCell key={cell.id} className="px-2 py-2">
@@ -603,7 +574,7 @@ export default function EventsPage() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={columns.length} className="h-24 text-center">
-                      No results match your filters.
+                      No results match your filters or no events received yet.
                     </TableCell>
                   </TableRow>
                 )}

@@ -1,6 +1,7 @@
 import 'server-only'; // Mark this module as server-only
 
 import * as mqtt from 'mqtt';
+import { EventEmitter } from 'events';
 import { getAccessToken } from '@/services/drivers/yolink';
 import { YoLinkConfig } from '@/services/drivers/yolink';
 import { db } from '@/data/db';
@@ -20,6 +21,9 @@ export interface YolinkEvent {
   };
   deviceId: string;
 }
+
+// Shared emitter for service events
+export const mqttServiceEmitter = new EventEmitter();
 
 // Status listeners for real-time updates
 type StatusListener = (status: MqttClientState, homeId: string) => void;
@@ -310,6 +314,8 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
             console.error(`[Automation Service][${homeId}] Error processing event ${event.msgid}:`, err);
         });
         
+        mqttServiceEmitter.emit('newMessage', event);
+
         // Update last event data
         const count = await getEventCount();
         if (connections.has(homeId)) {
