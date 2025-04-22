@@ -10,6 +10,7 @@ import {
   DialogTrigger,
   DialogFooter,
   DialogClose,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Tabs,
@@ -22,7 +23,7 @@ import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { toast } from 'sonner';
 import { getDeviceTypeIcon } from '@/lib/device-mapping';
 import { TypedDeviceInfo } from '@/types/device-mapping'; // Assuming Event type includes this
-import { cn } from "@/lib/utils";
+import { cn, formatConnectorCategory } from "@/lib/utils";
 
 // Interface matching the event data structure passed from the events page
 interface EventData {
@@ -35,11 +36,25 @@ interface EventData {
   deviceName?: string;
   connectorName?: string;
   deviceTypeInfo: TypedDeviceInfo;
+  connectorCategory: string;
 }
 
 interface EventDetailDialogContentProps {
   event: EventData;
 }
+
+// Define DetailRow component locally for now
+const DetailRow = ({label, value, monospace = false, breakAll = false}: {label: string, value: React.ReactNode, monospace?: boolean, breakAll?: boolean}) => (
+  <div className="flex flex-row py-1.5 border-b border-muted/40 last:border-0">
+    <div className="w-1/3 font-medium text-muted-foreground pl-2">{label}</div>
+    <div className={cn("w-2/3 pr-2",
+      monospace && "font-mono text-xs",
+      breakAll && "break-all"
+    )}>
+      {value}
+    </div>
+  </div>
+);
 
 export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> = ({ event }) => {
   const [isCopied, setIsCopied] = useState(false);
@@ -63,7 +78,6 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
   const deviceName = event.deviceName || event.deviceId || 'Unknown Device';
   const typeInfo = event.deviceTypeInfo;
   const DeviceIcon = getDeviceTypeIcon(typeInfo.type);
-  const connectorName = event.connectorName || 'System';
 
   return (
     <Dialog>
@@ -74,10 +88,18 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Event Data</DialogTitle>
-          {/* Maybe add event type here? */}
-          {/* <DialogDescription>{event.event}</DialogDescription> */}
+        <DialogHeader className="pb-4 border-b">
+          <div className="flex items-center gap-2">
+            <DeviceIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+            <DialogTitle>{event.event}</DialogTitle>
+          </div>
+          <DialogDescription className="pt-1 text-sm flex items-center gap-1.5">
+             <span>
+               {typeInfo.type}
+             </span>
+             <span className="text-muted-foreground">·</span>
+             <span>{formatConnectorCategory(event.connectorCategory)}</span>
+          </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="details" className="mt-2">
           <TabsList className="grid w-full grid-cols-2">
@@ -86,13 +108,17 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
           </TabsList>
 
           <TabsContent value="details" className="mt-4">
-            <div className="max-h-96 overflow-y-auto rounded-md border p-4 text-sm">
+            <div className="max-h-96 overflow-y-auto rounded-md border p-0 text-sm">
               {
                 (() => {
-                  // Prepare entries for the Key Details dl list
-                  const detailEntries: { key: string, value: React.ReactNode }[] = [
+                  const deviceName = event.deviceName || event.deviceId || 'Unknown Device';
+                  const typeInfo = event.deviceTypeInfo;
+                  const DeviceIcon = getDeviceTypeIcon(typeInfo.type);
+                  const eventData = event.payload || event.data || {};
+
+                  // Prepare entries for the Device Information section
+                  const deviceInfoEntries: { key: string, value: React.ReactNode }[] = [
                     { key: 'Device Name', value: deviceName },
-                    // Updated Device Type display with icon and optional subtype
                     {
                       key: 'Device Type',
                       value: (
@@ -100,17 +126,13 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                           <DeviceIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                           <span>
                             {typeInfo.type}
-                            {typeInfo.subtype && (
-                               <span className="text-muted-foreground"> / {typeInfo.subtype}</span>
-                            )}
                           </span>
                         </div>
                       )
                     },
-                    { key: 'Connector', value: connectorName },
                   ];
 
-                  // Extract non-object payload entries
+                  // Extract non-object payload entries for Event Data section
                   let payloadEntries: { key: string, value: unknown }[] = [];
                   if (eventData && typeof eventData === 'object') {
                     payloadEntries = Object.entries(eventData)
@@ -118,42 +140,46 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                       .map(([key, value]) => ({ key, value }));
                   }
 
-                  if (detailEntries.length === 0 && payloadEntries.length === 0) {
-                    return <p className="text-muted-foreground">No details available.</p>;
+                  // Check if there's nothing to display
+                  if (deviceInfoEntries.length === 0 && payloadEntries.length === 0) {
+                    return <p className="p-4 text-muted-foreground">No details available.</p>; // Add padding back if empty
                   }
 
+                  // Render using DetailRow
                   return (
-                    <div className="flex flex-col gap-4">
-                      {/* Device Info */}
-                      {detailEntries.length > 0 && (
-                        <div>
-                          <h4 className="mb-2 text-sm font-semibold text-foreground">Device Information</h4>
-                          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-                            {detailEntries.map(({ key, value }) => (
-                              <React.Fragment key={key}>
-                                <dt className="font-medium text-muted-foreground">{key}</dt>
-                                <dd className="text-foreground">{typeof value === 'string' ? value : value}</dd>
-                              </React.Fragment>
-                            ))}
-                          </dl>
-                        </div>
+                    <div className="flex flex-col"> {/* Main container */}
+                      {/* Device Info Section */}
+                      {deviceInfoEntries.length > 0 && (
+                        <>
+                          <div className="py-2"> {/* Section header */} 
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xs font-medium text-muted-foreground pl-2">DEVICE INFORMATION</span>
+                              <div className="h-px grow bg-border"></div>
+                            </div>
+                          </div>
+                          {deviceInfoEntries.map(({ key, value }) => (
+                            <DetailRow key={key} label={key} value={value} />
+                          ))}
+                        </>
                       )}
 
-                      {detailEntries.length > 0 && payloadEntries.length > 0 && <div className="border-b border-border"></div>}
-
-                      {/* Event Data */}
+                      {/* Event Data Section */}
                       {payloadEntries.length > 0 && (
-                        <div>
-                          <h4 className="mb-2 text-sm font-semibold text-foreground">Event Data</h4>
-                          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-                            {payloadEntries.map(({ key, value }) => (
-                              <React.Fragment key={key}>
-                                <dt className="font-medium text-muted-foreground capitalize truncate">{key}</dt>
-                                <dd className="text-foreground">{String(value)}</dd>
-                              </React.Fragment>
-                            ))}
-                          </dl>
-                        </div>
+                        <>
+                          <div className="py-2"> {/* Section header */} 
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xs font-medium text-muted-foreground pl-2">EVENT DATA</span>
+                              <div className="h-px grow bg-border"></div>
+                            </div>
+                          </div>
+                          {payloadEntries.map(({ key, value }) => (
+                            <DetailRow 
+                              key={key} 
+                              label={key.charAt(0).toUpperCase() + key.slice(1)} // Capitalize key
+                              value={String(value)} 
+                            />
+                          ))}
+                        </>
                       )}
                     </div>
                   );

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from "@/components/ui/input";
 import { toast } from 'sonner';
-import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react';
+import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network } from 'lucide-react';
 import { DeviceWithConnector } from '@/types'; // Import from shared types
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { formatConnectorCategory } from "@/lib/utils"; // Re-add formatConnectorCategory import
@@ -53,7 +53,8 @@ import {
   getPaginationRowModel,
 } from '@tanstack/react-table';
 import { DeviceDetailDialogContent } from "@/components/features/devices/device-detail-dialog-content"; // Import new component
-import { getReadableYoLinkDeviceName } from '@/services/drivers/yolink'; // Import the function
+import { DeviceMappingDialogContent } from "@/components/features/devices/device-mapping-dialog-content"; // Import new component
+import { ConnectorIcon } from "@/components/features/connectors/connector-icon"; // Import ConnectorIcon
 
 // A simple component for sort indicators
 function SortIcon({ isSorted }: { isSorted: false | 'asc' | 'desc' }) {
@@ -115,7 +116,6 @@ export default function DevicesPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sorting, setSorting] = useState<SortingState>([
-    { id: 'connectorCategory', desc: false },
     { id: 'connectorName', desc: false },
     { id: 'name', desc: false }
   ]);
@@ -209,27 +209,15 @@ export default function DevicesPage() {
     loadDevicesFromDb();
   }, [loadDevicesFromDb]);
 
-  // Update columnFilters when categoryFilter changes
-  useEffect(() => {
-    const currentCategoryFilter = columnFilters.find(f => f.id === 'connectorCategory');
-    const newCategoryFilterValue = categoryFilter === 'all' ? undefined : categoryFilter;
-
-    // Avoid setting state if the value hasn't actually changed
-    if (currentCategoryFilter?.value === newCategoryFilterValue) {
-      return;
+  // Filter devices based on the category toggle *before* passing to the table
+  const filteredDevices = useMemo(() => {
+    if (categoryFilter === 'all') {
+      return devices;
     }
-
-    setColumnFilters(prev => {
-      // Remove existing category filter
-      const otherFilters = prev.filter(f => f.id !== 'connectorCategory');
-      // Add new filter only if a category is selected
-      if (newCategoryFilterValue) {
-        return [...otherFilters, { id: 'connectorCategory', value: newCategoryFilterValue }];
-      } else {
-        return otherFilters;
-      }
-    });
-  }, [categoryFilter, columnFilters]); // Depend on columnFilters to prevent potential loops
+    return devices.filter(device => 
+      device.connectorCategory?.toLowerCase() === categoryFilter
+    );
+  }, [devices, categoryFilter]);
 
   // Function to fetch associated devices when popover opens
   const fetchAssociatedDevices = useCallback(async (deviceId: string, category: string) => {
@@ -286,27 +274,27 @@ export default function DevicesPage() {
   }, [devices]);
 
   // Define columns for TanStack Table
-  const columns = useMemo<ColumnDef<DeviceWithConnector>[]>(
-    () => [
-      {
-        accessorKey: 'connectorCategory',
-        header: "Connector Type",
-        enableSorting: true,
-        enableColumnFilter: true,
-        filterFn: (row, columnId, value) => {
-          return row.getValue(columnId) === value;
-        },
-        cell: ({ row }) => (
-          <div className="capitalize">
-            {formatConnectorCategory(row.getValue('connectorCategory'))}
-          </div>
-        ),
-      },
+  const columns = useMemo<ColumnDef<DeviceWithConnector>[]>(() => [
       {
         accessorKey: 'connectorName',
         header: "Connector",
         enableSorting: true,
         enableColumnFilter: true,
+        // Filter function now only handles text input
+        filterFn: (row, columnId, value) => {
+          const name = row.getValue(columnId) as string;
+          return name.toLowerCase().includes(String(value).toLowerCase());
+        },
+        cell: ({ row }) => {
+          const connectorName = row.original.connectorName;
+          const connectorCategory = row.original.connectorCategory;
+          return (
+            <div className="flex items-center gap-1.5">
+                <ConnectorIcon connectorCategory={connectorCategory} size={14} />
+                <span>{connectorName}</span>
+            </div>
+          );
+        },
       },
       {
         accessorKey: 'name',
@@ -442,37 +430,35 @@ export default function DevicesPage() {
     []
   );
 
-  // Initialize the table with TanStack
+  // Initialize the table with TanStack - pass filteredDevices
   const table = useReactTable({
-    data: devices,
+    data: filteredDevices, // Use pre-filtered data
     columns,
     state: {
       sorting,
-      columnFilters,
+      columnFilters, // Only text filters managed here
       pagination,
     },
     onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
+    onColumnFiltersChange: setColumnFilters, // Manages text filters
     onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    enableMultiSort: true, // Enable multi-column sorting
+    enableMultiSort: true, 
   });
 
   // Effect to control Server column visibility based on category filter
   useEffect(() => {
     const serverColumn = table.getColumn('serverName');
     if (serverColumn) {
-      // Hide if YoLink is selected, show otherwise
       serverColumn.toggleVisibility(categoryFilter !== 'yolink');
     }
-    // Re-run when filter changes or table instance updates column info
-  }, [categoryFilter, table]); 
+  }, [categoryFilter, table]);
 
   return (
-    <>
+    <TooltipProvider>
       <div className="flex justify-between items-center mb-6 gap-4">
         <div className="flex items-center gap-4">
           <Cpu className="h-6 w-6 text-muted-foreground" />
@@ -486,40 +472,82 @@ export default function DevicesPage() {
           </div>
         </div>
         <div className="flex-grow"></div>
-        <ToggleGroup
-          type="single"
-          defaultValue="all"
-          variant="outline"
-          onValueChange={(value) => {
-            if (value) {
-              setCategoryFilter(value);
-            }
-          }}
-          aria-label="Filter by connector type"
-        >
-          <ToggleGroupItem value="all" aria-label="All types">
-            All
-          </ToggleGroupItem>
-          <ToggleGroupItem value="yolink" aria-label="YoLink type">
-            YoLink
-          </ToggleGroupItem>
-          <ToggleGroupItem value="piko" aria-label="Piko type">
-            Piko
-          </ToggleGroupItem>
-        </ToggleGroup>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button onClick={syncDevices} disabled={isLoading || isSyncing} size="sm">
-                <RefreshCwIcon className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                {isSyncing ? 'Syncing...' : 'Sync'}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Sync devices</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <div className="flex items-center gap-2">
+          <ToggleGroup
+            type="single"
+            defaultValue="all"
+            variant="outline"
+            size="sm"
+            onValueChange={(value) => {
+              if (value) {
+                setCategoryFilter(value);
+              }
+            }}
+            aria-label="Filter by connector type"
+          >
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="all" aria-label="All types">
+                    All
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>All Connectors</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="yolink" aria-label="YoLink type" className="p-1.5 data-[state=on]:bg-accent">
+                    <ConnectorIcon connectorCategory="yolink" size={16} />
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>YoLink</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="piko" aria-label="Piko type" className="p-1.5 data-[state=on]:bg-accent">
+                    <ConnectorIcon connectorCategory="piko" size={16} />
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>Piko</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </ToggleGroup>
+
+          <Dialog>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Network className="h-4 w-4" />
+                      <span className="sr-only">View Mappings</span>
+                    </Button>
+                  </DialogTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>View Device Mappings</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <DialogContent className="sm:max-w-[700px]">
+              <DeviceMappingDialogContent />
+            </DialogContent>
+          </Dialog>
+
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button onClick={syncDevices} disabled={isLoading || isSyncing} size="sm">
+                  <RefreshCwIcon className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                  {isSyncing ? 'Syncing...' : 'Sync'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Sync devices</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       </div>
 
       {error && (
@@ -528,16 +556,21 @@ export default function DevicesPage() {
         </div>
       )}
 
-      {isLoading && devices.length === 0 && (
+      {isLoading && filteredDevices.length === 0 && (
         <p className="text-muted-foreground">Loading devices...</p>
       )}
-      {!isLoading && devices.length === 0 && !error && (
+      {filteredDevices.length === 0 && !isLoading && !error && categoryFilter === 'all' && (
         <p className="text-muted-foreground">
           No devices found. Try syncing or check your connector configurations.
         </p>
       )}
+      {filteredDevices.length === 0 && (isLoading || error || categoryFilter !== 'all' || columnFilters.length > 0) && !isLoading && (
+        <p className="text-muted-foreground">
+          No devices match the current filters.
+        </p>
+      )}
 
-      {devices.length > 0 && (
+      {filteredDevices.length > 0 && (
         <div className="border rounded-md">
           <div className="max-h-[calc(100vh-220px)] overflow-auto">
             <Table>
@@ -567,15 +600,11 @@ export default function DevicesPage() {
                         </div>
                         <div className="mt-1 h-8">
                           {header.column.getCanFilter() ? (
-                            header.column.id === 'connectorCategory' ? (
-                              null
-                            ) : (
                               <DebouncedInput
                                 value={(header.column.getFilterValue() ?? '') as string}
                                 onChange={value => header.column.setFilterValue(value)}
                                 placeholder=""
                               />
-                            )
                           ) : null}
                         </div>
                       </TableHead>
@@ -603,10 +632,8 @@ export default function DevicesPage() {
                 )}
               </TableBody>
             </Table>
-            {/* Pagination Controls */} 
             <div className="flex items-center justify-between p-2 border-t">
               <div className="flex-1 text-sm text-muted-foreground">
-                {/* Display total rows or other relevant info if needed */}
                 Total Rows: {table.getFilteredRowModel().rows.length}
               </div>
               <div className="flex items-center space-x-6 lg:space-x-8">
@@ -677,6 +704,6 @@ export default function DevicesPage() {
           </div>
         </div>
       )}
-    </>
+    </TooltipProvider>
   );
 } 

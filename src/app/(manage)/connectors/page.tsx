@@ -29,6 +29,9 @@ import {
 } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 import { SiMqtt } from "react-icons/si";
+import { ConnectorIcon } from "@/components/features/connectors/connector-icon"; // Import ConnectorIcon
+import { TooltipProvider } from "@/components/ui/tooltip"; // Import TooltipProvider
+import { formatConnectorCategory } from "@/lib/utils"; // Import formatConnectorCategory
 
 // Define structure for fetched MQTT status
 interface FetchedMqttState {
@@ -332,140 +335,143 @@ export default function ConnectorsPage() {
   };
 
   return (
-    <div className="container py-6">
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-4">
-          <Plug className="h-6 w-6 text-muted-foreground" />
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">
-              Connectors
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Manage integration connectors.
-            </p>
-          </div>
-        </div>
-        <Button onClick={handleAddConnectorClick} size="sm">
-          <Plus className="h-4 w-4" />
-          Add Connector
-        </Button>
-      </div>
-
-      {isLoading ? (
-        <div className="flex justify-center items-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : nodes.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-10 text-center">
-            <div className="rounded-full p-3 bg-muted mb-4">
-              <Plus className="h-6 w-6 text-muted-foreground" />
+    <TooltipProvider> {/* Wrap page content */}
+      <div className="container py-6">
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center gap-4">
+            <Plug className="h-6 w-6 text-muted-foreground" />
+            <div>
+              <h1 className="text-2xl font-semibold text-foreground">
+                Connectors
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Manage integration connectors.
+              </p>
             </div>
-            <CardTitle className="text-lg mb-2">No connectors found</CardTitle>
-            <CardDescription className="max-w-xs mb-4">
-              Add your first connector to get started with external integrations
-            </CardDescription>
-            <Button onClick={handleAddConnectorClick} size="sm">
-              <Plus className="h-4 w-4" />
-              Add Connector
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[25%]">Name</TableHead>
-                <TableHead className="w-[15%]">Type</TableHead>
-                <TableHead className="w-[20%]">Events</TableHead>
-                <TableHead className="w-[20%]">Status</TableHead>
-                <TableHead className="text-right w-[20%]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {nodes.map((node: NodeWithConfig) => (
-                <TableRow key={node.id}>
-                  <TableCell className="font-medium">{node.name}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className="capitalize">
-                      {node.category}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {node.category === 'yolink' ? (
-                      <div className="flex items-center">
-                        <Switch 
-                          checked={node.eventsEnabled === true}
-                          onCheckedChange={() => handleMqttToggle(node, node.eventsEnabled === true)}
-                          disabled={togglingNodeId === node.id}
-                        />
+          </div>
+          <Button onClick={handleAddConnectorClick} size="sm">
+            <Plus className="h-4 w-4" />
+            Add Connector
+          </Button>
+        </div>
+
+        {isLoading ? (
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : nodes.length === 0 ? (
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+              <div className="rounded-full p-3 bg-muted mb-4">
+                <Plus className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <CardTitle className="text-lg mb-2">No connectors found</CardTitle>
+              <CardDescription className="max-w-xs mb-4">
+                Add your first connector to get started with external integrations
+              </CardDescription>
+              <Button onClick={handleAddConnectorClick} size="sm">
+                <Plus className="h-4 w-4" />
+                Add Connector
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-[25%]">Name</TableHead>
+                  <TableHead className="w-[15%]">Type</TableHead>
+                  <TableHead className="w-[20%]">Events</TableHead>
+                  <TableHead className="w-[20%]">Status</TableHead>
+                  <TableHead className="text-right w-[20%]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {nodes.map((node: NodeWithConfig) => (
+                  <TableRow key={node.id}>
+                    <TableCell className="font-medium">{node.name}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <ConnectorIcon connectorCategory={node.category} size={14} />
+                        <span>{formatConnectorCategory(node.category)}</span>
                       </div>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {node.category === 'yolink' ? (
-                      togglingNodeId === node.id ? (
-                        <div className="flex items-center justify-start px-2.5 py-1">
-                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    </TableCell>
+                    <TableCell>
+                      {node.category === 'yolink' ? (
+                        <div className="flex items-center">
+                          <Switch 
+                            checked={node.eventsEnabled === true}
+                            onCheckedChange={() => handleMqttToggle(node, node.eventsEnabled === true)}
+                            disabled={togglingNodeId === node.id}
+                          />
                         </div>
                       ) : (
-                      <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(node.id)}`}>
-                        <SiMqtt className="h-3.5 w-3.5" />
-                        <span>{getMqttStatusText(node.id)}</span>
-                        {getMqttState(node.id).status === 'reconnecting' && (
-                          <Loader2 className="h-3 w-3 animate-spin ml-1" />
-                        )}
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {node.category === 'yolink' ? (
+                        togglingNodeId === node.id ? (
+                          <div className="flex items-center justify-start px-2.5 py-1">
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          </div>
+                        ) : (
+                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(node.id)}`}>
+                          <SiMqtt className="h-3.5 w-3.5" />
+                          <span>{getMqttStatusText(node.id)}</span>
+                          {getMqttState(node.id).status === 'reconnecting' && (
+                            <Loader2 className="h-3 w-3 animate-spin ml-1" />
+                          )}
+                        </div>
+                        )
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end space-x-2">
+                        <Button variant="ghost" size="icon" onClick={() => handleEditClick(node)} className="h-8 w-8" aria-label="Edit connector">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(node.id)} className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" aria-label="Delete connector">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
-                      )
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end space-x-2">
-                      <Button variant="ghost" size="icon" onClick={() => handleEditClick(node)} className="h-8 w-8" aria-label="Edit connector">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(node.id)} className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" aria-label="Delete connector">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
-      
-      {/* Add/Edit Connector Modal */}
-      <AddConnectorModal />
-      
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!nodeIdToDelete} onOpenChange={(open: boolean) => !open && setNodeIdToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the connector.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmDelete} 
-              disabled={isDeleting} 
-              className={buttonVariants({ variant: "destructive" })}
-            >
-              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
+        
+        {/* Add/Edit Connector Modal */}
+        <AddConnectorModal />
+        
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={!!nodeIdToDelete} onOpenChange={(open: boolean) => !open && setNodeIdToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the connector.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={confirmDelete} 
+                disabled={isDeleting} 
+                className={buttonVariants({ variant: "destructive" })}
+              >
+                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </TooltipProvider>
   );
 }

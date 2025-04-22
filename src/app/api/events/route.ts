@@ -21,6 +21,7 @@ interface EnrichedEvent extends RawRepoEvent {
   deviceName: string;
   connectorName: string;
   deviceTypeInfo: TypedDeviceInfo;
+  connectorCategory: string;
 }
 
 // GET handler to fetch events
@@ -81,6 +82,7 @@ export async function GET({ url }: Request) {
         ...event, // Spread the raw event properties
         deviceName,
         connectorName,
+        connectorCategory, // Add the fetched connector category
         deviceTypeInfo, // Add the mapped type info object
       };
     }));

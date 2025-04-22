@@ -352,6 +352,13 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
             </AccordionTrigger>
             <AccordionContent>
               <div className="space-y-0.5 rounded-md border">
+                <div className="py-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-medium text-muted-foreground pl-2">GENERAL</span>
+                    <div className="h-px grow bg-border"></div>
+                  </div>
+                </div>
+                
                 <DetailRow label="Name" value={device.name} />
                 {/* Combined Type / Subtype with Icon */}
                 <DetailRow 
@@ -372,11 +379,19 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                 {device.connectorCategory === 'piko' && device.vendor && (
                   <DetailRow label="Vendor" value={device.vendor} />
                 )}
+                
+                <div className="py-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-medium text-muted-foreground pl-2">EXTERNAL IDENTIFIERS</span>
+                    <div className="h-px grow bg-border"></div>
+                  </div>
+                </div>
+
                 {/* Raw Identifier */}
-                <DetailRow label="Identifier" value={device.type} monospace />
+                <DetailRow label="Device Type ID" value={device.type} monospace />
                 {/* External ID with Copy Button */}
                 <DetailRow 
-                  label="External ID" 
+                  label="Device ID" 
                   monospace breakAll 
                   value={( 
                     <div className="flex items-center justify-between gap-2 w-full"> 

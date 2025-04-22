@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { NodeWithConfig } from '@/types';
 import { AddConnectorModal } from '@/components/features/connectors/add-connector-modal';
+import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { formatConnectorCategory } from "@/lib/utils";
 
 export default function Home() {
   const { nodes, isLoading, error, setNodes, deleteNode, setAddConnectorOpen, setLoading, setError } = useFusionStore();
@@ -56,77 +59,80 @@ export default function Home() {
   };
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Dashboard</h1>
-      <p className="text-muted-foreground">
-        Manage your security devices and integrations in one place
-      </p>
-      
-      <div className="border rounded-lg p-6 bg-card">
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold">Connectors</h2>
-            <Button 
-              onClick={() => setAddConnectorOpen(true)}
-              className="flex items-center gap-2"
-            >
-              <PlusCircle className="h-4 w-4" />
-              Add Connector
-            </Button>
-          </div>
-
-          {isLoading ? (
-             <div className="flex items-center justify-center p-8">Loading...</div>
-          ) : error ? (
-             <div className="text-destructive p-4">{error}</div>
-          ) : nodes.length === 0 ? (
-            <div className="text-center p-8 border rounded-md bg-muted/40">
-              <p className="text-muted-foreground">No connectors found</p>
+    <TooltipProvider>
+      <div className="space-y-6">
+        <h1 className="text-3xl font-bold">Dashboard</h1>
+        <p className="text-muted-foreground">
+          Manage your security devices and integrations in one place
+        </p>
+        
+        <div className="border rounded-lg p-6 bg-card">
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold">Connectors</h2>
               <Button 
-                variant="link" 
                 onClick={() => setAddConnectorOpen(true)}
-                className="mt-2"
+                className="flex items-center gap-2"
               >
-                Add your first connector
+                <PlusCircle className="h-4 w-4" />
+                Add Connector
               </Button>
             </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {nodes.map((node: NodeWithConfig) => (
-                <div 
-                  key={node.id} 
-                  className="p-4 border rounded-lg hover:shadow-md transition-shadow"
+
+            {isLoading ? (
+               <div className="flex items-center justify-center p-8">Loading...</div>
+            ) : error ? (
+               <div className="text-destructive p-4">{error}</div>
+            ) : nodes.length === 0 ? (
+              <div className="text-center p-8 border rounded-md bg-muted/40">
+                <p className="text-muted-foreground">No connectors found</p>
+                <Button 
+                  variant="link" 
+                  onClick={() => setAddConnectorOpen(true)}
+                  className="mt-2"
                 >
-                  <div className="flex justify-between items-start">
+                  Add your first connector
+                </Button>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {nodes.map((node: NodeWithConfig) => (
+                  <div 
+                    key={node.id} 
+                    className="p-4 border rounded-lg hover:shadow-md transition-shadow flex flex-col justify-between"
+                  >
                     <div>
-                      <h3 className="font-medium">{node.name}</h3>
-                      <div className="flex space-x-2 mt-1">
-                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
-                          {node.category}
-                        </span>
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h3 className="font-medium mb-1">{node.name}</h3>
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                             <ConnectorIcon connectorCategory={node.category} size={14} />
+                             <span>{formatConnectorCategory(node.category)}</span>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => handleDelete(node.id)}
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 flex-shrink-0"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Delete</span>
+                        </Button>
                       </div>
                     </div>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => handleDelete(node.id)}
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span className="sr-only">Delete</span>
-                    </Button>
+                    <div className="mt-auto pt-2 text-xs text-muted-foreground">
+                        Created: {new Date(node.createdAt).toLocaleString()}
+                    </div>
                   </div>
-                  <div className="mt-4 text-xs text-muted-foreground">
-                    Created: {new Date(node.createdAt).toLocaleString()}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+        
+        <AddConnectorModal />
       </div>
-      
-      <AddConnectorModal />
-    </div>
+    </TooltipProvider>
   );
 } 

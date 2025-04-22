@@ -49,6 +49,8 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { EventDetailDialogContent } from '@/components/features/events/event-detail-dialog-content';
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 
 // Update the event interface to use deviceTypeInfo
 interface EnrichedEvent {
@@ -61,6 +63,7 @@ interface EnrichedEvent {
   deviceName?: string;
   connectorName?: string;
   deviceTypeInfo: TypedDeviceInfo;
+  connectorCategory: string;
 }
 
 // A simple component for sort indicators
@@ -133,6 +136,7 @@ export default function EventsPage() {
     pageIndex: 0,
     pageSize: 50,
   });
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
   // Function to fetch events
   const fetchEvents = useCallback(async (isInitialLoad = false) => {
@@ -176,11 +180,24 @@ export default function EventsPage() {
   // Define columns for TanStack Table
   const columns = useMemo<ColumnDef<EnrichedEvent>[]>(() => [
     {
-      accessorKey: 'connectorName',
+      accessorKey: 'connectorCategory',
       header: "Connector",
       enableSorting: true,
       enableColumnFilter: true,
-      cell: (info) => info.getValue() || 'System',
+      filterFn: (row, columnId, value) => {
+        if (value === 'all') return true;
+        return row.original.connectorCategory?.toLowerCase() === value;
+      },
+      cell: ({ row }) => {
+        const connectorName = row.original.connectorName;
+        const connectorCategory = row.original.connectorCategory;
+        return (
+          <div className="flex items-center gap-1.5">
+            <ConnectorIcon connectorCategory={connectorCategory} size={14} />
+            <span>{connectorName || 'System'}</span>
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'deviceName',
@@ -285,7 +302,12 @@ export default function EventsPage() {
       enableSorting: false,
       enableColumnFilter: false,
       cell: ({ row }) => {
-        return <EventDetailDialogContent event={row.original} />;
+        // Ensure connectorCategory exists, defaulting if necessary
+        const eventData = {
+          ...row.original,
+          connectorCategory: row.original.connectorCategory || 'system', // Default if undefined/null
+        };
+        return <EventDetailDialogContent event={eventData} />;
       },
     },
   ], []);
@@ -316,8 +338,27 @@ export default function EventsPage() {
     getRowId: (originalRow) => originalRow.msgid, 
   });
 
+  // Effect to update column filters based on category filter
+  useEffect(() => {
+    const currentCategoryFilter = columnFilters.find(f => f.id === 'connectorCategory');
+    const newCategoryFilterValue = categoryFilter === 'all' ? undefined : categoryFilter;
+
+    if (currentCategoryFilter?.value === newCategoryFilterValue) {
+      return;
+    }
+
+    setColumnFilters(prev => {
+      const otherFilters = prev.filter(f => f.id !== 'connectorCategory');
+      if (newCategoryFilterValue) {
+        return [...otherFilters, { id: 'connectorCategory', value: newCategoryFilterValue }];
+      } else {
+        return otherFilters;
+      }
+    });
+  }, [categoryFilter, columnFilters]);
+
   return (
-    <>
+    <TooltipProvider>
       <div className="flex items-center justify-between mb-6 gap-4">
         <div className="flex items-center gap-4">
           <Activity className="h-6 w-6 text-muted-foreground" />
@@ -330,8 +371,41 @@ export default function EventsPage() {
             </p>
           </div>
         </div>
-        <TooltipProvider delayDuration={100}>
-          <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <ToggleGroup
+            type="single"
+            defaultValue="all"
+            variant="outline"
+            size="sm"
+            onValueChange={(value) => { if (value) setCategoryFilter(value); }}
+            aria-label="Filter by connector type"
+          >
+            <TooltipProvider> 
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="all" aria-label="All types">All</ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>All Connectors</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="yolink" aria-label="YoLink type" className="p-1.5 data-[state=on]:bg-accent">
+                    <ConnectorIcon connectorCategory="yolink" size={16} />
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>YoLink</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="piko" aria-label="Piko type" className="p-1.5 data-[state=on]:bg-accent">
+                    <ConnectorIcon connectorCategory="piko" size={16} />
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>Piko</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </ToggleGroup>
+          <TooltipProvider delayDuration={100}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -352,8 +426,8 @@ export default function EventsPage() {
                 <p>{isGrouped ? 'View Details' : 'Group by Device'}</p>
               </TooltipContent>
             </Tooltip>
-          </div>
-        </TooltipProvider>
+          </TooltipProvider>
+        </div>
       </div>
 
       {loading && events.length === 0 ? (
@@ -520,6 +594,6 @@ export default function EventsPage() {
           </div>
         </div>
       )}
-    </>
+    </TooltipProvider>
   );
 }

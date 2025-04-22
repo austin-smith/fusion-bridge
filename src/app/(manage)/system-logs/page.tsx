@@ -104,7 +104,7 @@ export default function SystemLogsPage() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Clear Logs</p>
+                    Clear Logs
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
