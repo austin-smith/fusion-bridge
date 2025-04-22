@@ -69,7 +69,7 @@ export const deviceIdentifierMap: Record<string, Record<string, TypedDeviceInfo>
   },
   piko: {
     'Camera': { type: DeviceType.Camera },
-    'Encoder': { type: DeviceType.Encoder, subtype: DeviceSubtype.Encoder },
+    'Encoder': { type: DeviceType.Encoder },
     'IOModule': { type: DeviceType.IOModule },
     'HornSpeaker': { type: DeviceType.Alarm, subtype: DeviceSubtype.Siren },
     'MultisensorCamera': { type: DeviceType.Camera },

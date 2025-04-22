@@ -37,8 +37,6 @@ export enum DeviceSubtype {
   Dimmer = 'Dimmer',
   Finger = 'Finger',
   Toggle = 'Toggle',
-  // Encoder
-  Encoder = 'Encoder',
 }
 
 // --- Mapped Type Approach ---
@@ -48,7 +46,7 @@ type SubtypeMap = {
   [DeviceType.Alarm]: DeviceSubtype.Siren;
   [DeviceType.Camera]: never;
   [DeviceType.GarageDoor]: never;
-  [DeviceType.Encoder]: DeviceSubtype.Encoder;
+  [DeviceType.Encoder]: never;
   [DeviceType.Hub]: DeviceSubtype.Cellular | DeviceSubtype.Generic | DeviceSubtype.Speaker;
   [DeviceType.IOModule]: never;
   [DeviceType.Lock]: never;

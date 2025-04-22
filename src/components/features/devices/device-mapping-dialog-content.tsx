@@ -32,7 +32,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip"; // Import Tooltip components
-import { ConnectorIcon } from "@/components/features/connectors/connector-icon"; // Import the new component
+import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 
 // Helper type for flattened data
 type FlattenedMapping = {
@@ -45,6 +45,15 @@ type FlattenedMapping = {
 type GroupedMappings = { 
   [type in DeviceType]?: FlattenedMapping[] 
 };
+
+// Define header configuration
+const tableHeaders = [
+  { key: 'connector', label: 'Connector', className: 'w-[50px] text-center' },
+  { key: 'identifier', label: 'Raw Identifier' },
+  { key: 'mappedType', label: 'Mapped Type' },
+  { key: 'subtype', label: 'Subtype' },
+  { key: 'icon', label: 'Icon', className: 'w-[50px] text-center' },
+];
 
 export function DeviceMappingDialogContent() {
   const [isGrouped, setIsGrouped] = useState(false);
@@ -83,12 +92,13 @@ export function DeviceMappingDialogContent() {
 
     const finalFiltered = [...textFiltered];
 
-    // Sort the final filtered list (Connector -> Identifier)
+    // Sort the final filtered list (Identifier -> Connector)
     finalFiltered.sort((a, b) => {
-        if (a.connector !== b.connector) {
-            return a.connector.localeCompare(b.connector);
+        if (a.identifier !== b.identifier) {
+            return a.identifier.localeCompare(b.identifier);
         }
-        return a.identifier.localeCompare(b.identifier);
+        // Secondary sort by connector if identifiers are the same
+        return a.connector.localeCompare(b.connector); 
     });
 
     // Group the final filtered data by type
@@ -129,7 +139,7 @@ export function DeviceMappingDialogContent() {
           {/* Text Filter Input */}
           <div className="flex-grow">
             <Input 
-              placeholder="Filter mappings (e.g., YoLink, Camera, COSmokeSensor)..." 
+              placeholder="Filter mappings..." 
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               className="h-8 text-sm"
@@ -173,20 +183,19 @@ export function DeviceMappingDialogContent() {
         <Table className="text-sm">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[50px] text-center"> 
-                Connector
-              </TableHead>
-              <TableHead>Raw Identifier</TableHead>
-              <TableHead>Mapped Type</TableHead>
-              <TableHead>Subtype</TableHead>
-              <TableHead className="w-[50px] text-center">Icon</TableHead> 
+              {/* Render all headers directly */}
+              {tableHeaders.map(header => (
+                <TableHead key={header.key} className={header.className}> 
+                  {header.label}
+                </TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {/* No Results Message */} 
+            {/* No Results Message - Use tableHeaders.length for colSpan */} 
             {flatMappings.length === 0 && (filterText || categoryFilter !== 'all') && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-4">
+                <TableCell colSpan={tableHeaders.length} className="text-center text-muted-foreground py-4">
                   No mappings found matching the current filters.
                 </TableCell>
               </TableRow>
@@ -198,24 +207,25 @@ export function DeviceMappingDialogContent() {
                   return (
                     <React.Fragment key={type}>
                       <TableRow className="bg-muted/50 hover:bg-muted/50">
-                        <TableCell colSpan={4} className="font-semibold">
+                        {/* Adjust colSpan for all columns */}
+                        <TableCell colSpan={tableHeaders.length - 1} className="font-semibold">
                           {type} ({items?.length} item{items?.length !== 1 ? 's' : ''})
                         </TableCell>
                         <TableCell className="text-center">
-                          <GroupIconComponent className="h-4 w-4 inline-block" />
+                          <GroupIconComponent className="h-4 w-4 inline-block text-muted-foreground" />
                         </TableCell>
                       </TableRow>
                       {items?.map(({ connector, identifier, mapping }) => {
                         return (
                           <TableRow key={`${connector}-${identifier}`}>
                             <TableCell className="pl-6 text-center">
-                              {/* Use ConnectorIcon component */}
                               <ConnectorIcon connectorCategory={connector} size={16} />
                             </TableCell>
                             <TableCell className="font-mono text-xs">{identifier}</TableCell>
+                            {/* Add Mapped Type cell back */}
                             <TableCell>{mapping.type}</TableCell>
                             <TableCell>{mapping.subtype || ''}</TableCell>
-                            <TableCell></TableCell> 
+                            <TableCell></TableCell> {/* Empty cell for icon alignment */}
                           </TableRow>
                         );
                       })}
@@ -227,14 +237,13 @@ export function DeviceMappingDialogContent() {
                   return (
                     <TableRow key={`${connector}-${identifier}`}>
                       <TableCell className="text-center">
-                        {/* Use ConnectorIcon component */}
                         <ConnectorIcon connectorCategory={connector} size={16} />
                       </TableCell>
                       <TableCell className="font-mono text-xs">{identifier}</TableCell>
                       <TableCell>{mapping.type}</TableCell>
                       <TableCell>{mapping.subtype || ''}</TableCell>
                       <TableCell className="text-center">
-                        <IconComponent className="h-4 w-4 inline-block" />
+                        <IconComponent className="h-4 w-4 inline-block text-muted-foreground" />
                       </TableCell>
                     </TableRow>
                   );
