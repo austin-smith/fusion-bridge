@@ -4,7 +4,7 @@ import AutomationForm from "@/components/automations/AutomationForm";
 import { db } from "@/data/db"; // Import database instance
 import { nodes } from "@/data/db/schema"; // Import nodes schema
 import type { AutomationFormData } from "@/app/settings/automations/[id]/page"; // Reuse type
-import { YOLINK_DEVICE_NAME_MAP } from "@/services/drivers/yolink"; // Import device map
+import { deviceIdentifierMap } from "@/lib/device-mapping";
 import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
 
 // Fetch data server-side
@@ -16,8 +16,11 @@ async function getFormData() {
     }).from(nodes);
     
   // Prepare options for the Source Device Types multi-select combobox
-  const sourceDeviceTypeOptions: MultiSelectOption[] = Object.entries(YOLINK_DEVICE_NAME_MAP)
-    .map(([value, label]) => ({ value, label }))
+  const sourceDeviceTypeOptions: MultiSelectOption[] = Object.entries(deviceIdentifierMap.yolink)
+    .map(([value, info]) => ({ 
+        value, 
+        label: value 
+    }))
     .sort((a, b) => a.label.localeCompare(b.label)); // Sort alphabetically by label
     
   // Prepare initial data structure for a new automation
