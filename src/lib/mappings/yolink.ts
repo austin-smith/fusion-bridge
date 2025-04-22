@@ -76,41 +76,22 @@ export function translateYoLinkState(
   deviceInfo: TypedDeviceInfo,
   payloadData: Record<string, any> | null | undefined // Changed from rawState
 ): IntermediateState | undefined {
-  // --- START DEBUG LOGGING ---
-  console.log(`[translateYoLinkState] Input - DeviceInfo: ${JSON.stringify(deviceInfo)}, PayloadData: ${JSON.stringify(payloadData)}`);
-  // --- END DEBUG LOGGING ---
-
   // Extract the raw state string from the payload data
   const rawState = payloadData?.state as string | undefined;
 
   // Basic validation on extracted state
   if (rawState === undefined || rawState === null) {
-    // --- START DEBUG LOGGING ---
-    console.log(`[translateYoLinkState] Exit - RawState extracted from payload is null/undefined/missing.`);
-    // --- END DEBUG LOGGING ---
     return undefined;
   }
-  // --- START DEBUG LOGGING ---
-  console.log(`[translateYoLinkState] Extracted RawState (type ${typeof rawState}): ${JSON.stringify(rawState)}`);
-  // --- END DEBUG LOGGING ---
 
   const typeMap = yoLinkStateMap[deviceInfo.type];
-  // --- START DEBUG LOGGING ---
-  console.log(`[translateYoLinkState] Looked up typeMap for type "${deviceInfo.type}": ${typeMap ? 'Found' : 'NOT Found'}`);
-  // --- END DEBUG LOGGING ---
   if (!typeMap) {
     return undefined;
   }
 
   const subtypeKey = deviceInfo.subtype ?? 'null';
-  // --- START DEBUG LOGGING ---
-  console.log(`[translateYoLinkState] Determined subtypeKey: "${subtypeKey}"`);
-  // --- END DEBUG LOGGING ---
 
   const stateMap = typeMap[subtypeKey];
-  // --- START DEBUG LOGGING ---
-  console.log(`[translateYoLinkState] Looked up stateMap for subtypeKey "${subtypeKey}": ${stateMap ? 'Found' : 'NOT Found'}`);
-  // --- END DEBUG LOGGING ---
   if (!stateMap) {
     return undefined;
   }
@@ -119,9 +100,6 @@ export function translateYoLinkState(
   const stateAsString = String(rawState);
   const lowerCaseState = stateAsString.toLowerCase();
   const intermediateState = stateMap[lowerCaseState];
-  // --- START DEBUG LOGGING ---
-  console.log(`[translateYoLinkState] Looked up intermediateState for lowerCaseState "${lowerCaseState}": ${intermediateState ? 'Found (' + intermediateState + ')' : 'NOT Found'}`);
-  // --- END DEBUG LOGGING ---
 
   return intermediateState;
 } 

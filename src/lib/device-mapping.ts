@@ -1,6 +1,8 @@
 import { DeviceType, DeviceSubtype, TypedDeviceInfo, IntermediateState, SensorAlertState, DisplayState, 
 // Import the unified canonical mapping table
-CANONICAL_STATE_MAP
+CANONICAL_STATE_MAP,
+// Import state constants for icon mapping
+LOCKED, UNLOCKED, ON, OFF, OPEN, CLOSED, LEAK_DETECTED, DRY, MOTION_DETECTED, NO_MOTION, VIBRATION_DETECTED, NO_VIBRATION
 } from '@/types/device-mapping';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -11,12 +13,19 @@ import {
   Router,
   Cable,
   Lock,
+  Unlock, // Added for state
   Power,
-  Radar,
+  PowerOff, // Added for state
+  Radio,
   Droplets,
   ToggleLeft,
   Thermometer,
   HelpCircle,
+  DoorOpen, // Added for state
+  DoorClosed, // Added for state
+  AlertTriangle, // Added for state
+  ShieldCheck, // Added for state
+  Activity // Added for fallback state
 } from 'lucide-react';
 
 // Re-export DeviceType
@@ -32,7 +41,7 @@ export const deviceTypeIcons: Record<DeviceType, LucideIcon> = {
   [DeviceType.IOModule]: Cable,
   [DeviceType.Lock]: Lock,
   [DeviceType.Outlet]: Power,
-  [DeviceType.Sensor]: Radar,
+  [DeviceType.Sensor]: Radio,
   [DeviceType.Sprinkler]: Droplets,
   [DeviceType.Switch]: ToggleLeft,
   [DeviceType.Thermostat]: Thermometer,
@@ -117,6 +126,36 @@ export function getDeviceTypeInfo(connectorCategory: string | null | undefined, 
 // --- Helper function to get icon component ---
 export function getDeviceTypeIcon(deviceType: DeviceType): LucideIcon {
     return deviceTypeIcons[deviceType] || HelpCircle; // Fallback to Unknown icon
+}
+
+// --- Display State to Icon Mapping ---
+
+const displayStateIconMap: Partial<Record<DisplayState, LucideIcon>> = {
+  [LOCKED]: Lock,
+  [UNLOCKED]: Unlock,
+  [ON]: Power,
+  [OFF]: PowerOff,
+  [OPEN]: DoorOpen,
+  [CLOSED]: DoorClosed,
+  [LEAK_DETECTED]: AlertTriangle,
+  [DRY]: ShieldCheck,
+  [MOTION_DETECTED]: AlertTriangle,
+  [NO_MOTION]: ShieldCheck,
+  [VIBRATION_DETECTED]: AlertTriangle,
+  [NO_VIBRATION]: ShieldCheck,
+  // Add more specific states as needed
+};
+
+/**
+ * Gets a Lucide icon component based on the display state string.
+ * @param state The DisplayState string (e.g., LOCKED, ON, OPEN).
+ * @returns A LucideIcon component.
+ */
+export function getDisplayStateIcon(state: DisplayState | undefined): LucideIcon {
+  if (!state) {
+    return HelpCircle; // Icon for undefined/null state
+  }
+  return displayStateIconMap[state] || Activity; // Return mapped icon or Activity as fallback
 }
 
 // --- State Presentation (Intermediate State -> Display String) ---

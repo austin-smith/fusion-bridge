@@ -21,8 +21,8 @@ import {
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { toast } from 'sonner';
-import { getDeviceTypeIcon } from '@/lib/device-mapping';
-import { TypedDeviceInfo } from '@/types/device-mapping'; // Assuming Event type includes this
+import { getDeviceTypeIcon, getDisplayStateIcon } from '@/lib/device-mapping';
+import { TypedDeviceInfo, DisplayState } from '@/types/device-mapping';
 import { cn, formatConnectorCategory } from "@/lib/utils";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 
@@ -38,7 +38,7 @@ interface EventData {
   connectorName?: string;
   deviceTypeInfo: TypedDeviceInfo;
   connectorCategory: string;
-  displayState?: string;
+  displayState?: DisplayState;
 }
 
 interface EventDetailDialogContentProps {
@@ -76,10 +76,11 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
   const eventData = event.payload || event.data || {};
   const jsonString = JSON.stringify(eventData, null, 2);
 
-  // Get mapped type info for the modal
+  // Get mapped type info & state icon for the modal header
   const deviceName = event.deviceName || event.deviceId || 'Unknown Device';
   const typeInfo = event.deviceTypeInfo;
   const DeviceIcon = getDeviceTypeIcon(typeInfo.type);
+  const StateIcon = event.displayState ? getDisplayStateIcon(event.displayState) : null;
 
   return (
     <Dialog>
@@ -95,7 +96,12 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
             <DeviceIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
             <DialogTitle>{event.event}</DialogTitle>
           </div>
-          <DialogDescription className="pt-1 text-sm flex items-center gap-1.5">
+          <DialogDescription asChild>
+           <div className="pt-2 text-sm text-muted-foreground flex items-center justify-start gap-1.5">
+             <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+               <ConnectorIcon connectorCategory={event.connectorCategory} size={12} />
+               <span className="text-xs">{event.connectorName || formatConnectorCategory(event.connectorCategory)}</span>
+             </Badge>
              <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
                <DeviceIcon className="h-3 w-3 text-muted-foreground" /> 
                <span className="text-xs">
@@ -105,10 +111,13 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                  )}
                </span>
              </Badge>
-             <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-               <ConnectorIcon connectorCategory={event.connectorCategory} size={12} />
-               <span className="text-xs">{formatConnectorCategory(event.connectorCategory)}</span>
-             </Badge>
+             {event.displayState && StateIcon && (
+               <Badge variant="secondary" className="inline-flex items-center gap-1.5 py-0.5 px-2 font-normal">
+                  {React.createElement(StateIcon, { className: "h-3 w-3" })}
+                  <span>{event.displayState}</span>
+               </Badge>
+             )}
+            </div>
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="details" className="mt-2">
@@ -177,7 +186,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                       )}
 
                       {/* State Section */}
-                      {event.displayState && (
+                      {event.displayState && StateIcon && (
                         <>
                           <div className="py-2"> 
                             <div className="flex items-center space-x-2">
@@ -188,7 +197,8 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                           <DetailRow 
                             label="State" 
                             value={
-                              <Badge variant="outline" className="inline-flex items-center py-0.5 px-2 font-normal">
+                              <Badge variant="outline" className="inline-flex items-center gap-1.5 py-0.5 px-2 font-normal">
+                                {React.createElement(StateIcon, { className: "h-3 w-3 flex-shrink-0" })}
                                 {event.displayState}
                               </Badge>
                             } 

@@ -4,7 +4,6 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from "@/components/ui/input";
-import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
   Table,
@@ -14,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, RefreshCw, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, RefreshCw, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Play } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -39,20 +38,31 @@ import {
   PaginationState,
   getPaginationRowModel,
 } from '@tanstack/react-table';
-import { getDeviceTypeIcon } from '@/lib/device-mapping';
-import { TypedDeviceInfo } from '@/types/device-mapping';
+import { getDeviceTypeIcon, DeviceType, getDisplayStateIcon } from '@/lib/device-mapping';
+import { TypedDeviceInfo, DisplayState } from '@/types/device-mapping';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
 import { EventDetailDialogContent } from '@/components/features/events/event-detail-dialog-content';
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { cn, formatConnectorCategory } from "@/lib/utils";
+import { toast } from 'sonner';
 
-// Update the event interface to use deviceTypeInfo
+// Update the event interface - back to simple placeholders
 interface EnrichedEvent {
   event: string;
   time: number;
@@ -64,8 +74,27 @@ interface EnrichedEvent {
   connectorName?: string;
   deviceTypeInfo: TypedDeviceInfo;
   connectorCategory: string;
-  displayState?: string | undefined;
+  displayState?: DisplayState | undefined;
+  thumbnailUrl?: string; // For single video placeholder
+  videoUrl?: string; // For single video placeholder
+  // associatedPikoCameras?: PikoCameraInfo[]; // Removed array
 }
+
+// Define a cleaner tag component for the dialog
+const EventTag = ({ 
+  icon, 
+  label,
+  variant = "outline" 
+}: { 
+  icon: React.ReactNode, 
+  label: React.ReactNode,
+  variant?: "outline" | "secondary" | "default" 
+}) => (
+  <Badge variant={variant} className="inline-flex items-center gap-1.5 px-2 py-1 font-normal text-xs">
+    {icon}
+    <span>{label}</span>
+  </Badge>
+);
 
 // A simple component for sort indicators
 function SortIcon({ isSorted }: { isSorted: false | 'asc' | 'desc' }) {
@@ -255,16 +284,23 @@ export default function EventsPage() {
       cell: ({ row }) => {
         const displayState = row.original.displayState;
 
-        if (displayState === undefined || displayState === null || displayState === '') {
+        if (displayState === undefined || displayState === null) {
           return null;
         }
+
+        const StateIcon = getDisplayStateIcon(displayState); // Get the dynamic icon
 
         return (
           <TooltipProvider delayDuration={100}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="max-w-32 whitespace-nowrap overflow-hidden text-ellipsis">
-                  <Badge variant="outline">{displayState}</Badge>
+                {/* Using div for tooltip trigger still, but badge inside has icon */}
+                <div className="max-w-32 whitespace-nowrap overflow-hidden text-ellipsis cursor-default">
+                  <Badge variant="outline" className="inline-flex items-center gap-1 px-2 py-0.5">
+                     {/* Render the dynamic icon */}
+                    {React.createElement(StateIcon, { className: "h-3 w-3 flex-shrink-0" })}
+                    <span>{displayState}</span>
+                  </Badge>
                 </div>
               </TooltipTrigger>
               <TooltipContent>
@@ -332,12 +368,119 @@ export default function EventsPage() {
       enableSorting: false,
       enableColumnFilter: false,
       cell: ({ row }) => {
-        // Ensure connectorCategory exists, defaulting if necessary
+        // Simple setup: Prepare event data and add placeholders
         const eventData = {
           ...row.original,
-          connectorCategory: row.original.connectorCategory || 'system', // Default if undefined/null
-        };
-        return <EventDetailDialogContent event={eventData} />;
+          connectorCategory: row.original.connectorCategory || 'system',
+        } as EnrichedEvent; 
+
+        // Always add placeholder URLs for testing
+        eventData.thumbnailUrl = '/placeholder-thumbnail.jpg';
+        eventData.videoUrl = '/placeholder-video.mp4';
+
+        return (
+          <div className="flex items-center gap-1">
+            {/* --- Single Unconditional Video Dialog --- */}
+            <Dialog>
+              <TooltipProvider delayDuration={100}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="icon" className="h-6 w-6 flex-shrink-0">
+                        {/* Using Play icon */}
+                        <Play className="h-4 w-4" />
+                      </Button>
+                    </DialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                     <p>Play Video</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <DialogContent className="max-w-[700px]">
+                <DialogHeader className="pb-0">
+                  <DialogTitle className="flex items-center gap-2 text-lg">
+                    <Play className="h-4 w-4" />
+                    Video Playback
+                  </DialogTitle>
+                </DialogHeader>
+                
+                {/* Video Player - Now First for Visual Priority */}
+                <div className="aspect-video bg-muted rounded-md flex items-center justify-center mb-2 mt-4">
+                  <p className="text-muted-foreground">Video Player for {eventData.videoUrl} goes here</p>
+                </div>
+                
+                {/* Camera Selector */}
+                <div className="mb-2">
+                  <Select disabled>
+                    <SelectTrigger className="w-full bg-muted/40">
+                      <SelectValue placeholder="Select Camera..." />
+                    </SelectTrigger>
+                  </Select>
+                </div>
+                
+                {/* Context Area: Device/Tags on Left, Time on Right */}
+                <div className="grid grid-cols-[1fr_auto] gap-x-4 items-start mb-4"> {/* Parent grid */}
+                  {/* Left Column: Device Name + Tags */}
+                   {/* Event Context: Tags + Device Name Row */}
+                  <div className="flex flex-wrap gap-1.5"> {/* Removed mb-2 */}
+                    {/* Device Name - Most prominent */}
+                    <div className="w-full px-0.5 mb-0.5">
+                      <span className="text-md font-medium">{eventData.deviceName || eventData.deviceId}</span>
+                    </div>
+                    
+                    {/* Tags Row */}
+                    <EventTag 
+                      icon={<ConnectorIcon connectorCategory={eventData.connectorCategory} size={12} />}
+                      label={eventData.connectorName || formatConnectorCategory(eventData.connectorCategory)}
+                    />
+                    
+                    <EventTag 
+                      icon={React.createElement(getDeviceTypeIcon(eventData.deviceTypeInfo.type), { className: "h-3 w-3" })}
+                      label={
+                        <>
+                          {eventData.deviceTypeInfo.type}
+                          {eventData.deviceTypeInfo.subtype && (
+                            <span className="opacity-70 ml-1">/ {eventData.deviceTypeInfo.subtype}</span>
+                          )}
+                        </>
+                      }
+                      variant="secondary"
+                    />
+                    
+                    {eventData.displayState && (
+                      <EventTag 
+                        icon={React.createElement(getDisplayStateIcon(eventData.displayState), { className: "h-3 w-3" })}
+                        label={eventData.displayState}
+                      />
+                    )}
+                  </div>
+                  {/* End Left Column */}
+
+                  {/* Right Column: Event Time */}
+                   {/* Event Time - Moved here */}
+                  <div className="text-xs text-muted-foreground text-right"> {/* Removed mb, added text-right */}
+                    Event occurred {formatDistanceToNow(new Date(eventData.time), { addSuffix: true })}
+                    <span className="block mt-0.5 opacity-80">
+                      {format(new Date(eventData.time), 'PPpp')}
+                    </span>
+                  </div>
+                  {/* End Right Column */}
+                </div> {/* End Parent grid */}
+
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button type="button" variant="secondary">Close</Button>
+                  </DialogClose>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+            {/* --- End Single Unconditional Video Dialog --- */}
+
+            {/* Existing Details Button */}
+            <EventDetailDialogContent event={eventData} />
+          </div>
+        );
       },
     },
   ], []);
@@ -387,6 +530,7 @@ export default function EventsPage() {
     });
   }, [categoryFilter, columnFilters]);
 
+  // Restore the main return structure
   return (
     <TooltipProvider>
       <div className="flex items-center justify-between mb-6 gap-4">

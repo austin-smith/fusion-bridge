@@ -341,6 +341,12 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         </div>
         <DialogDescription className="pt-1">
           <div className="flex items-center gap-2">
+            {/* 1. Connector Badge */}
+            <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+              <ConnectorIcon connectorCategory={device.connectorCategory} size={12} />
+              <span className="text-xs">{device.connectorName}</span>
+            </Badge>
+            {/* 2. Device Type/Subtype Badge */}
             <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
               <DeviceIcon className="h-3 w-3 text-muted-foreground" /> 
               <span className="text-xs">
@@ -349,10 +355,6 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                   <span className="text-muted-foreground ml-1">/ {device.deviceTypeInfo.subtype}</span>
                 )}
               </span>
-            </Badge>
-            <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-              <ConnectorIcon connectorCategory={device.connectorCategory} size={12} />
-              <span className="text-xs">{formatConnectorCategory(device.connectorCategory)}</span>
             </Badge>
           </div>
         </DialogDescription>
