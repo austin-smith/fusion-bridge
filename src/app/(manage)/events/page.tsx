@@ -64,6 +64,7 @@ interface EnrichedEvent {
   connectorName?: string;
   deviceTypeInfo: TypedDeviceInfo;
   connectorCategory: string;
+  displayState?: string | undefined;
 }
 
 // A simple component for sort indicators
@@ -192,10 +193,10 @@ export default function EventsPage() {
         const connectorName = row.original.connectorName;
         const connectorCategory = row.original.connectorCategory;
         return (
-          <div className="flex items-center gap-1.5">
-            <ConnectorIcon connectorCategory={connectorCategory} size={14} />
-            <span>{connectorName || 'System'}</span>
-          </div>
+          <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+            <ConnectorIcon connectorCategory={connectorCategory} size={12} />
+            <span className="text-xs">{connectorName || 'System'}</span>
+          </Badge>
         );
       },
     },
@@ -219,10 +220,20 @@ export default function EventsPage() {
         const typeInfo = row.original.deviceTypeInfo;
         const IconComponent = getDeviceTypeIcon(typeInfo.type);
         return (
-          <div className="flex items-center gap-2">
-            <IconComponent className="h-4 w-4 text-muted-foreground" />
-            <span>{typeInfo.type}</span>
-          </div>
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                  <IconComponent className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs">{typeInfo.type}</span>
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Type: {typeInfo.type}</p>
+                {typeInfo.subtype && <p>Subtype: {typeInfo.subtype}</p>}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         );
       },
       filterFn: (row, id, value) => {
@@ -241,28 +252,27 @@ export default function EventsPage() {
       ),
     },
     {
-      accessorFn: (row) => {
-        const stateValue = (row.data as Record<string, unknown>).state;
-        return stateValue !== undefined ? String(stateValue) : '';
-      },
       id: 'state',
       header: "State",
       enableSorting: true,
       enableColumnFilter: true,
       cell: ({ row }) => {
-        const state = row.getValue<string>('state');
-        if (!state) return null;
+        const displayState = row.original.displayState;
+
+        if (displayState === undefined || displayState === null || displayState === '') {
+          return null;
+        }
 
         return (
           <TooltipProvider delayDuration={100}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="max-w-32 whitespace-nowrap overflow-hidden text-ellipsis">
-                  <Badge variant="outline">{state}</Badge>
+                  <Badge variant="outline">{displayState}</Badge>
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                <p>{state}</p>
+                <p>{displayState}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -280,18 +290,42 @@ export default function EventsPage() {
           return <span className="text-muted-foreground">Invalid time</span>;
         }
         const eventTime = new Date(timeValue);
-        const absoluteTime = format(eventTime, 'PPpp');
-        const relativeTime = formatDistanceToNow(eventTime, { addSuffix: true });
-
+        const now = new Date();
+        const isToday = eventTime.getDate() === now.getDate() && 
+                        eventTime.getMonth() === now.getMonth() && 
+                        eventTime.getFullYear() === now.getFullYear();
+        
+        const isThisWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) < eventTime;
+        
+        let displayTime;
+        let tooltipTime = format(eventTime, 'PPpp'); // Full date and time for tooltip
+        
+        if (isToday) {
+          displayTime = format(eventTime, 'h:mm a'); // Just time for today
+        } else if (isThisWeek) {
+          displayTime = format(eventTime, 'EEE h:mm a'); // Day and time for this week
+        } else {
+          displayTime = format(eventTime, 'MMM d, yyyy'); // Date for older events
+        }
+        
         return (
-          <div className="flex flex-col">
-            <span className="whitespace-nowrap text-sm text-foreground">
-              {absoluteTime}
-            </span>
-            <span className="whitespace-nowrap text-xs text-muted-foreground">
-              {relativeTime}
-            </span>
-          </div>
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger className="flex w-full">
+                <div className="flex flex-col items-start text-left">
+                  <span className="whitespace-nowrap text-sm">
+                    {displayTime}
+                  </span>
+                  <span className="whitespace-nowrap text-xs text-muted-foreground">
+                    {formatDistanceToNow(eventTime, { addSuffix: true })}
+                  </span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{tooltipTime}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         );
       },
       sortingFn: 'datetime',

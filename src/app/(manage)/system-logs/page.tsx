@@ -96,7 +96,7 @@ export default function SystemLogsPage() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button 
-                      variant="outline" 
+                      variant="ghost" 
                       size="sm"
                       onClick={clearLogs}
                     >

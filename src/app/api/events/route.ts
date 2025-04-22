@@ -5,6 +5,7 @@ import { eq, sql } from 'drizzle-orm';
 import * as eventsRepository from '@/data/repositories/events';
 import { getDeviceTypeInfo } from '@/lib/device-mapping';
 import { TypedDeviceInfo } from '@/types/device-mapping';
+import { translateDeviceState } from '@/lib/device-state-translation';
 
 // Interface for the raw event structure returned by the repository's map
 interface RawRepoEvent {
@@ -22,6 +23,7 @@ interface EnrichedEvent extends RawRepoEvent {
   connectorName: string;
   deviceTypeInfo: TypedDeviceInfo;
   connectorCategory: string;
+  displayState: string | undefined;
 }
 
 // GET handler to fetch events
@@ -77,6 +79,14 @@ export async function GET({ url }: Request) {
       // Get mapped type info
       const deviceTypeInfo = getDeviceTypeInfo(connectorCategory, rawDeviceType);
 
+      // Perform state translation by passing the relevant payload part
+      // translateDeviceState will delegate based on connectorCategory
+      const displayState = translateDeviceState(
+        connectorCategory,
+        rawDeviceType, // Pass the TYPE string (e.g., 'DoorSensor') for mapping lookup
+        event.payload?.data // Pass the data part of the payload for translation
+      );
+
       // Return enriched event conforming to the interface
       return {
         ...event, // Spread the raw event properties
@@ -84,6 +94,7 @@ export async function GET({ url }: Request) {
         connectorName,
         connectorCategory, // Add the fetched connector category
         deviceTypeInfo, // Add the mapped type info object
+        displayState, // Add the translated display state
       };
     }));
     

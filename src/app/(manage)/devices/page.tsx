@@ -55,6 +55,7 @@ import {
 import { DeviceDetailDialogContent } from "@/components/features/devices/device-detail-dialog-content"; // Import new component
 import { DeviceMappingDialogContent } from "@/components/features/devices/device-mapping-dialog-content"; // Import new component
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon"; // Import ConnectorIcon
+import { Badge } from "@/components/ui/badge";
 
 // A simple component for sort indicators
 function SortIcon({ isSorted }: { isSorted: false | 'asc' | 'desc' }) {
@@ -289,10 +290,10 @@ export default function DevicesPage() {
           const connectorName = row.original.connectorName;
           const connectorCategory = row.original.connectorCategory;
           return (
-            <div className="flex items-center gap-1.5">
-                <ConnectorIcon connectorCategory={connectorCategory} size={14} />
-                <span>{connectorName}</span>
-            </div>
+            <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                <ConnectorIcon connectorCategory={connectorCategory} size={12} /> 
+                <span className="text-xs">{connectorName}</span>
+            </Badge>
           );
         },
       },
@@ -320,13 +321,23 @@ export default function DevicesPage() {
         enableSorting: true,
         enableColumnFilter: true,
         cell: ({ row }) => {
-          const deviceType = row.original.deviceTypeInfo.type;
-          const IconComponent = getDeviceTypeIcon(deviceType);
+          const typeInfo = row.original.deviceTypeInfo;
+          const IconComponent = getDeviceTypeIcon(typeInfo.type);
           return (
-            <div className="flex items-center gap-2">
-              <IconComponent className="h-4 w-4 text-muted-foreground" />
-              <span>{deviceType}</span>
-            </div>
+            <TooltipProvider delayDuration={100}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                    <IconComponent className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-xs">{typeInfo.type}</span>
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Type: {typeInfo.type}</p>
+                  {typeInfo.subtype && <p>Subtype: {typeInfo.subtype}</p>}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           );
         },
       },
@@ -587,24 +598,17 @@ export default function DevicesPage() {
                           onClick={header.column.getToggleSortingHandler()}
                         >
                           <div className="flex items-center">
-                            {header.isPlaceholder
-                              ? null
-                              : flexRender(
-                                  header.column.columnDef.header,
-                                  header.getContext()
-                                )}
-                            {header.column.getCanSort() && (
-                              <SortIcon isSorted={header.column.getIsSorted()} />
-                            )}
+                            {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                            {header.column.getCanSort() ? <SortIcon isSorted={header.column.getIsSorted()} /> : null}
                           </div>
                         </div>
                         <div className="mt-1 h-8">
                           {header.column.getCanFilter() ? (
-                              <DebouncedInput
-                                value={(header.column.getFilterValue() ?? '') as string}
-                                onChange={value => header.column.setFilterValue(value)}
-                                placeholder=""
-                              />
+                            <DebouncedInput
+                              value={(header.column.getFilterValue() ?? '') as string}
+                              onChange={value => header.column.setFilterValue(value)}
+                              placeholder=""
+                            />
                           ) : null}
                         </div>
                       </TableHead>
@@ -613,17 +617,15 @@ export default function DevicesPage() {
                 ))}
               </TableHeader>
               <TableBody>
-                {table.getRowModel().rows?.length ? (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id} className="px-2 py-1">
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                ) : (
+                {table.getRowModel().rows?.length ? table.getRowModel().rows.map((row) => (
+                  <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className="px-2 py-1">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                )) : (
                   <TableRow>
                     <TableCell colSpan={columns.length} className="h-24 text-center">
                       No results.

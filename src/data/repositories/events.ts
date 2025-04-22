@@ -1,5 +1,5 @@
 import { db } from '@/data/db';
-import { events } from '@/data/db/schema';
+import { events, devices, nodes } from '@/data/db/schema';
 import { desc, asc, count, eq, sql } from 'drizzle-orm';
 
 // Maximum number of events to keep
@@ -37,9 +37,23 @@ export async function storeEvent(eventData: {
 */
 export async function getRecentEvents(limit = 100) {
   try {
-    const recentEvents = await db.select().from(events).orderBy(desc(events.timestamp)).limit(limit);
+    const recentEvents = await db
+      .select({
+        id: events.id,
+        deviceId: events.deviceId,
+        eventType: events.eventType,
+        timestamp: events.timestamp,
+        payload: events.payload,
+        connectorCategory: nodes.category,
+      })
+      .from(events)
+      .innerJoin(devices, eq(devices.deviceId, events.deviceId))
+      .innerJoin(nodes, eq(nodes.id, devices.connectorId))
+      .orderBy(desc(events.timestamp))
+      .limit(limit);
 
-    return recentEvents.map(event => {
+    // Process events one by one
+    const processedEvents = await Promise.all(recentEvents.map(async event => {
       // Payload is now stored as JSONB, should already be an object/null
       let payload: Record<string, any> | null = null;
       if (typeof event.payload === 'string') {
@@ -52,16 +66,28 @@ export async function getRecentEvents(limit = 100) {
       // Fallback to an empty object if payload is null/invalid
       const safePayload = payload || {};
 
+      // Return the event data including the connectorCategory from the join
+      // Type assertion needed because Drizzle's select doesn't perfectly infer payload type
       return {
         event: event.eventType,
         time: event.timestamp.getTime(),
-        msgid: `event-${event.id}`, 
-        // Use safePayload, which is guaranteed to be an object
+        msgid: `event-${event.id}`,
         data: safePayload.data || {}, 
-        payload: safePayload, 
+        payload: safePayload,
         deviceId: event.deviceId,
+        connectorCategory: event.connectorCategory || 'unknown', // Provide default if join failed somehow
+      } as {
+        event: string;
+        time: number;
+        msgid: string;
+        data: Record<string, any>;
+        payload: Record<string, any>;
+        deviceId: string;
+        connectorCategory: string;
       };
-    });
+    }));
+
+    return processedEvents;
   } catch (err) {
     console.error('Failed to get recent events:', err);
     return [];

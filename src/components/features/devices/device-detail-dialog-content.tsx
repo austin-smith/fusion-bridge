@@ -35,6 +35,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 
 // Helper function requires entity type for context
 // Returns EITHER a valid variant name OR a specific Tailwind class string
@@ -339,7 +340,21 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
           )}
         </div>
         <DialogDescription className="pt-1">
-          {device.deviceTypeInfo.type}{device.deviceTypeInfo.subtype ? ` (${device.deviceTypeInfo.subtype})` : ''} · {formatConnectorCategory(device.connectorCategory)}
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+              <DeviceIcon className="h-3 w-3 text-muted-foreground" /> 
+              <span className="text-xs">
+                {device.deviceTypeInfo.type}
+                {device.deviceTypeInfo.subtype && (
+                  <span className="text-muted-foreground ml-1">/ {device.deviceTypeInfo.subtype}</span>
+                )}
+              </span>
+            </Badge>
+            <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+              <ConnectorIcon connectorCategory={device.connectorCategory} size={12} />
+              <span className="text-xs">{formatConnectorCategory(device.connectorCategory)}</span>
+            </Badge>
+          </div>
         </DialogDescription>
       </DialogHeader>
       
@@ -364,15 +379,15 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                 <DetailRow 
                     label="Type" 
                     value={( 
-                      <div className="flex items-center gap-2"> 
-                        <DeviceIcon className="h-4 w-4 text-muted-foreground" /> 
-                        <span>
+                      <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                        <DeviceIcon className="h-3 w-3 text-muted-foreground" /> 
+                        <span className="text-xs">
                           {device.deviceTypeInfo.type}
                           {device.deviceTypeInfo.subtype && (
-                            <span className="text-muted-foreground"> / {device.deviceTypeInfo.subtype}</span>
+                            <span className="text-muted-foreground ml-1">/ {device.deviceTypeInfo.subtype}</span>
                           )}
                         </span>
-                      </div> 
+                      </Badge>
                     )} 
                 />
                 <DetailRow label="Model" value={device.model || "—"} />

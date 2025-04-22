@@ -256,7 +256,7 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
 
         // Pass homeId to processEvent
         processEvent(event, homeId).catch(err => {
-            console.error(`[Automation Service][${homeId}] Error processing event ${event.msgid}:`, err);
+          console.error(`[Automation Service][${homeId}] Error processing event ${event.msgid}:`, err);
         });
 
         // Update last event data
@@ -499,12 +499,12 @@ export async function disconnectAllMqtt(): Promise<void> {
 // Store an event in the database
 async function storeEvent(event: YolinkEvent, rawPayload: string) {
   try {
-    // Store every event we receive
+    // Store event with original payload - no translation needed here
     await eventsRepository.storeEvent({
       deviceId: event.deviceId,
       eventType: event.event,
       timestamp: new Date(event.time),
-      payload: rawPayload, // Store the complete payload
+      payload: rawPayload, // Store the original payload without modification
     });
   } catch (err) {
     console.error('Failed to store event:', err);

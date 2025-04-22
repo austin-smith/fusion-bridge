@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 import { getDeviceTypeIcon } from '@/lib/device-mapping';
 import { TypedDeviceInfo } from '@/types/device-mapping'; // Assuming Event type includes this
 import { cn, formatConnectorCategory } from "@/lib/utils";
+import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 
 // Interface matching the event data structure passed from the events page
 interface EventData {
@@ -37,6 +38,7 @@ interface EventData {
   connectorName?: string;
   deviceTypeInfo: TypedDeviceInfo;
   connectorCategory: string;
+  displayState?: string;
 }
 
 interface EventDetailDialogContentProps {
@@ -94,11 +96,19 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
             <DialogTitle>{event.event}</DialogTitle>
           </div>
           <DialogDescription className="pt-1 text-sm flex items-center gap-1.5">
-             <span>
-               {typeInfo.type}
-             </span>
-             <span className="text-muted-foreground">·</span>
-             <span>{formatConnectorCategory(event.connectorCategory)}</span>
+             <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+               <DeviceIcon className="h-3 w-3 text-muted-foreground" /> 
+               <span className="text-xs">
+                 {typeInfo.type}
+                 {typeInfo.subtype && (
+                   <span className="text-muted-foreground ml-1">/ {typeInfo.subtype}</span>
+                 )}
+               </span>
+             </Badge>
+             <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+               <ConnectorIcon connectorCategory={event.connectorCategory} size={12} />
+               <span className="text-xs">{formatConnectorCategory(event.connectorCategory)}</span>
+             </Badge>
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="details" className="mt-2">
@@ -122,12 +132,15 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                     {
                       key: 'Device Type',
                       value: (
-                        <div className="flex items-center gap-1.5">
-                          <DeviceIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                          <span>
+                        <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                          <DeviceIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                          <span className="text-xs">
                             {typeInfo.type}
+                            {typeInfo.subtype && (
+                              <span className="text-muted-foreground ml-1">/ {typeInfo.subtype}</span>
+                            )}
                           </span>
-                        </div>
+                        </Badge>
                       )
                     },
                   ];
@@ -140,8 +153,19 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                       .map(([key, value]) => ({ key, value }));
                   }
 
+                  // Create a custom entries section that includes displayState
+                  let customEntries: { key: string, value: unknown }[] = [];
+                  
+                  // Add displayState if available
+                  if (event.displayState) {
+                    customEntries.push({ 
+                      key: 'State', 
+                      value: event.displayState 
+                    });
+                  }
+
                   // Check if there's nothing to display
-                  if (deviceInfoEntries.length === 0 && payloadEntries.length === 0) {
+                  if (deviceInfoEntries.length === 0 && customEntries.length === 0 && payloadEntries.length === 0) {
                     return <p className="p-4 text-muted-foreground">No details available.</p>; // Add padding back if empty
                   }
 
@@ -163,12 +187,35 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                         </>
                       )}
 
+                      {/* Custom Event Data Section (for displayState) */}
+                      {customEntries.length > 0 && (
+                        <>
+                          <div className="py-2"> 
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xs font-medium text-muted-foreground pl-2">EVENT STATE</span>
+                              <div className="h-px grow bg-border"></div>
+                            </div>
+                          </div>
+                          {customEntries.map(({ key, value }) => (
+                            <DetailRow 
+                              key={key} 
+                              label={key} 
+                              value={
+                                <Badge variant="outline" className="inline-flex items-center py-0.5 px-2 font-normal">
+                                  {String(value)}
+                                </Badge>
+                              } 
+                            />
+                          ))}
+                        </>
+                      )}
+
                       {/* Event Data Section */}
                       {payloadEntries.length > 0 && (
                         <>
                           <div className="py-2"> {/* Section header */} 
                             <div className="flex items-center space-x-2">
-                              <span className="text-xs font-medium text-muted-foreground pl-2">EVENT DATA</span>
+                              <span className="text-xs font-medium text-muted-foreground pl-2">RAW EVENT DATA</span>
                               <div className="h-px grow bg-border"></div>
                             </div>
                           </div>
