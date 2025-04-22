@@ -29,12 +29,9 @@ import {
 } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 import { SiMqtt } from "react-icons/si";
-import { useMqttSse } from '@/hooks/use-mqtt-sse'; // <-- Import the new hook
 
-// Define the structure for the status event data received via SSE
-// This might need adjustment based on the actual structure sent by the hook/API
-interface SseMqttStatusEvent {
-  homeId: string | null;
+// Define structure for fetched MQTT status
+interface FetchedMqttState {
   connected: boolean;
   lastEvent: { time: number; count: number } | null;
   error: string | null;
@@ -44,16 +41,18 @@ interface SseMqttStatusEvent {
 
 type MqttStatus = 'connected' | 'disconnected' | 'unknown' | 'reconnecting' | 'error';
 
-// Helper function moved outside the component for stability
+// Helper function to translate fetched state to store status
 const translateStatus = (
   eventsEnabled: boolean,
-  state: SseMqttStatusEvent 
+  state: FetchedMqttState // Use the new FetchedMqttState interface
 ): MqttStatus => {
+  // If the node itself has events disabled, status is unknown regardless of connection
   if (!eventsEnabled) {
     return 'unknown';
   }
+  // If the backend service reports it as disabled, treat as unknown (user hasn't enabled)
   if (state.disabled) {
-    return 'unknown'; // Explicitly disabled in backend service
+    return 'unknown';
   }
   if (state.connected) {
     return 'connected';
@@ -64,6 +63,7 @@ const translateStatus = (
   if (state.error) {
     return 'error';
   }
+  // If not connected, not reconnecting, no error, and not disabled -> disconnected
   return 'disconnected';
 };
 
@@ -91,50 +91,24 @@ export default function ConnectorsPage() {
   const [nodeIdToDelete, setNodeIdToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [yolinkHomeInfo, setYolinkHomeInfo] = useState<{id: string, nodeName: string} | null>(null);
+  const [togglingNodeId, setTogglingNodeId] = useState<string | null>(null);
 
-  // Stable callback for handling SSE status events
-  const handleSseStatus = useCallback((statusEvent: SseMqttStatusEvent) => {
-    const { homeId } = statusEvent;
-    if (!homeId) return;
-    const currentNodes = useFusionStore.getState().nodes;
-    const node = currentNodes.find((n) => n.yolinkHomeId === homeId);
-    if (!node) {
-      return;
-    }
-    const storeStatus: MqttStatus = translateStatus(node.eventsEnabled === true, statusEvent);
-    // Use the stable setMqttState reference
-    setMqttState(node.id, {
-      status: storeStatus,
-      error: statusEvent.error,
-      lastEventTime: statusEvent.lastEvent?.time ?? null,
-      eventCount: statusEvent.lastEvent?.count ?? null,
-    });
-  }, [setMqttState]); // Dependency only on stable action
-
-  // Stable callback for handling SSE errors
-  const handleSseError = useCallback((error: Event) => {
-    console.error('[ConnectorsPage] SSE connection error:', error);
-  }, []);
-
-  // Use the SSE hook for real-time status updates
-  useMqttSse({
-    onStatus: handleSseStatus,
-    onError: handleSseError
-  });
-
-  // --- Initial Data Fetch --- 
-  // Define fetchInitialData using useCallback, but outside the main useEffect 
-  // to ensure stability if dependencies change
-  const fetchInitialData = useCallback(async () => {
-    try {
+  // --- Data Fetching and Polling ---
+  const refreshConnectorsData = useCallback(async (isInitialLoad = false) => {
+    if (isInitialLoad) {
       setLoading(true);
+    }
+    try {
+      // Fetch nodes first
       const nodesResponse = await fetch('/api/nodes');
       const nodesData = await nodesResponse.json();
+      let fetchedNodes: NodeWithConfig[] = [];
       
       if (nodesData.success) {
-        const fetchedNodes = nodesData.data;
-        setNodes(fetchedNodes);
+        fetchedNodes = nodesData.data;
+        setNodes(fetchedNodes); // Update nodes in the store
         
+        // Update YoLink info if found
         const yolinkNode = fetchedNodes.find((node: NodeWithConfig) => 
           node.category === 'yolink' && node.yolinkHomeId
         );
@@ -143,45 +117,70 @@ export default function ConnectorsPage() {
             id: yolinkNode.yolinkHomeId,
             nodeName: yolinkNode.name
           });
-        }
-        
-        // Fetch initial MQTT status
-        const statusResponse = await fetch('/api/mqtt-status');
-        const statusData = await statusResponse.json();
-        if (statusData.success && statusData.statuses && Array.isArray(statusData.statuses)) {
-          for (const nodeStatus of statusData.statuses) {
-            if (nodeStatus.nodeId && nodeStatus.mqttState) {
-              const node = fetchedNodes.find((n: NodeWithConfig) => n.id === nodeStatus.nodeId);
-              if (node) {
-                const storeStatus: MqttStatus = translateStatus(node.eventsEnabled === true, nodeStatus.mqttState);
-                setMqttState(nodeStatus.nodeId, {
-                  status: storeStatus,
-                  error: nodeStatus.mqttState.error,
-                  lastEventTime: nodeStatus.mqttState.lastEvent?.time,
-                  eventCount: nodeStatus.mqttState.lastEvent?.count
-                });
-              }
-            }
-          }
         } else {
-          console.error('[ConnectorsPage] Failed to fetch initial MQTT status:', statusData.error || 'Invalid format');
+          setYolinkHomeInfo(null); // Clear if no YoLink node found
         }
       } else {
         setError(nodesData.error || 'Failed to load connectors');
+        // If nodes fail to load, maybe skip status fetching?
+        if (isInitialLoad) setLoading(false);
+        return; // Stop if nodes failed
+        }
+        
+      // Fetch MQTT status only if nodes were loaded successfully
+        const statusResponse = await fetch('/api/mqtt-status');
+        const statusData = await statusResponse.json();
+        if (statusData.success && statusData.statuses && Array.isArray(statusData.statuses)) {
+        // Create a map for efficient lookup
+        const nodeMap = new Map(fetchedNodes.map(n => [n.id, n]));
+        
+          for (const nodeStatus of statusData.statuses) {
+            if (nodeStatus.nodeId && nodeStatus.mqttState) {
+            const node = nodeMap.get(nodeStatus.nodeId);
+              if (node) {
+              // Use the FetchedMqttState type here
+              const mqttState: FetchedMqttState = nodeStatus.mqttState;
+              const storeStatus: MqttStatus = translateStatus(node.eventsEnabled === true, mqttState);
+                setMqttState(nodeStatus.nodeId, {
+                  status: storeStatus,
+                error: mqttState.error,
+                lastEventTime: mqttState.lastEvent?.time,
+                eventCount: mqttState.lastEvent?.count
+                });
+              }
+            }
+        }
+      } else {
+        console.error('[ConnectorsPage] Failed to fetch MQTT status:', statusData.error || 'Invalid format');
+        // Don't set global error for status fetch failure, maybe log or show specific indicator
       }
+
     } catch (error) {
-      console.error('[ConnectorsPage] Error fetching initial data:', error);
+      console.error('[ConnectorsPage] Error fetching data:', error);
+      // Set global error only on initial load failure?
+      if (isInitialLoad) {
       setError('Failed to load page data');
+      }
     } finally {
+      if (isInitialLoad) {
       setLoading(false);
+      }
     }
-    // Stable setters from store are used, no unstable dependencies needed
   }, [setLoading, setNodes, setError, setMqttState]);
 
-  // Fetch connectors and initial MQTT status ONLY on mount
+  // Fetch initial data and set up polling
   useEffect(() => {
-     fetchInitialData();
-  }, [fetchInitialData]); // Depends only on the stable fetchInitialData callback
+     refreshConnectorsData(true); // Initial fetch
+
+     const intervalId = setInterval(() => {
+       refreshConnectorsData(); // Poll periodically
+     }, 5000); // Poll every 5 seconds
+
+     // Cleanup interval on component unmount
+     return () => {
+       clearInterval(intervalId);
+     };
+  }, [refreshConnectorsData]);
   
   // --- Event Handlers using stable actions ---
   const handleAddConnectorClick = useCallback(() => {
@@ -221,19 +220,27 @@ export default function ConnectorsPage() {
   // Function to handle toggle change 
   const handleMqttToggle = useCallback(async (node: NodeWithConfig, currentCheckedState: boolean) => {
     const newValue = !currentCheckedState;
+    const originalNodeState = { ...node }; // Store original for revert
+    // const originalMqttState = { ...getMqttState(node.id) }; // No longer needed for revert here
     
-    // --- Optimistic UI Update ---
-    const originalNodes = useFusionStore.getState().nodes; // Get current state
-    const updatedNodesOptimistic = originalNodes.map((n: NodeWithConfig) => 
+    setTogglingNodeId(node.id); // <-- Set spinner state
+
+    // --- Optimistic UI Update (Switch ONLY) ---
+    // 1. Update node itself for the switch visual
+    const updatedNodesOptimistic = nodes.map((n: NodeWithConfig) => 
       n.id === node.id ? {...n, eventsEnabled: newValue} : n
     );
-    setNodes(updatedNodesOptimistic); // Pass the new array directly
+    setNodes(updatedNodesOptimistic); 
+
+    // 2. REMOVED optimistic MQTT status update - spinner will show instead
+    /*
+    const optimisticStatus: MqttStatus = newValue ? 'disconnected' : 'unknown';
+    setMqttState(node.id, { ... });
+    */
     
-    // Revert function in case of error
-    const revertNodes = () => {
-      setNodes(originalNodes.map((n: NodeWithConfig) => 
-         n.id === node.id ? {...n, eventsEnabled: currentCheckedState} : n
-      ));
+    // Revert function in case of error (only reverts switch state now)
+    const revertSwitch = () => {
+      setNodes(nodes.map((n: NodeWithConfig) => n.id === node.id ? originalNodeState : n));
     };
 
     try {
@@ -246,18 +253,14 @@ export default function ConnectorsPage() {
 
       if (!response.ok || !data.success) {
         setError(data.error || 'Failed to update MQTT setting.');
-        revertNodes(); // Revert optimistic update
-        return;
+        revertSwitch(); // Revert switch state
+        return; // Stop processing
       }
       
-      // Optional: Preemptively update MQTT state based on response
-      // Relying on SSE update is generally cleaner
+      // 3. Update with state returned from API (if available) for better accuracy
       if (data.mqttState) {
-        const state = data.mqttState;
+        const state: FetchedMqttState = data.mqttState;
         const nodeId = data.nodeId || node.id;
-        // Ensure we read the *potentially updated* node list from store state again 
-        // if the toggle was successful and we want to derive status from it.
-        // However, translateStatus should ideally use the `newValue` we intended.
         const storeStatus: MqttStatus = translateStatus(newValue, state);
         setMqttState(nodeId, {
           status: storeStatus,
@@ -266,11 +269,17 @@ export default function ConnectorsPage() {
           eventCount: state.lastEvent?.count
         });
       }
+
+      // 4. Trigger immediate refresh for potentially faster final state update
+      refreshConnectorsData(); 
+
     } catch (error) {
       setError('Network error updating MQTT setting.');
-      revertNodes(); // Revert optimistic update
+      revertSwitch(); // Revert switch state
+    } finally {
+      setTogglingNodeId(null); // <-- Clear spinner state regardless of success/error
     }
-  }, [setNodes, setError, setMqttState]); // Stable dependencies
+  }, [nodes, setNodes, setError, setMqttState, refreshConnectorsData]); // Removed getMqttState from deps
   
   // --- Rendering Logic (using destructured state and stable handlers) ---
   // getStatusColorClass and getMqttStatusText can remain inside or be moved outside 
@@ -389,6 +398,7 @@ export default function ConnectorsPage() {
                         <Switch 
                           checked={node.eventsEnabled === true}
                           onCheckedChange={() => handleMqttToggle(node, node.eventsEnabled === true)}
+                          disabled={togglingNodeId === node.id}
                         />
                       </div>
                     ) : (
@@ -397,6 +407,11 @@ export default function ConnectorsPage() {
                   </TableCell>
                   <TableCell>
                     {node.category === 'yolink' ? (
+                      togglingNodeId === node.id ? (
+                        <div className="flex items-center justify-start px-2.5 py-1">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : (
                       <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(node.id)}`}>
                         <SiMqtt className="h-3.5 w-3.5" />
                         <span>{getMqttStatusText(node.id)}</span>
@@ -404,6 +419,7 @@ export default function ConnectorsPage() {
                           <Loader2 className="h-3 w-3 animate-spin ml-1" />
                         )}
                       </div>
+                      )
                     ) : (
                       <span className="text-muted-foreground">-</span>
                     )}

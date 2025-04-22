@@ -61,7 +61,6 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { useMqttSse } from '@/hooks/use-mqtt-sse';
 
 // Define the event interface
 interface YolinkEvent {
@@ -147,68 +146,49 @@ export default function EventsPage() {
     pageSize: 50,
   });
 
-  // Function to fetch initial/manual refresh events
-  const fetchEvents = useCallback(async () => {
+  // Function to fetch events
+  const fetchEvents = useCallback(async (isInitialLoad = false) => {
+    if (!isInitialLoad) {
+      // Optionally, you might want to show a subtle loading indicator during polling
+      // setRefreshing(true);
+    }
     try {
-      setRefreshing(true);
-      const response = await fetch('/api/events'); 
-      
+      const response = await fetch('/api/events');
+
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || 'Failed to fetch events');
       }
-      
+
       const data = await response.json();
-      
-      // Use functional update to get latest events state for duplicate check
-      setEvents(prevEvents => {
-        const existingMsgIds = new Set(prevEvents.map(e => e.msgid));
-        const newEvents = (data.data || []).filter((e: YolinkEvent) => !existingMsgIds.has(e.msgid));
-        return [...newEvents, ...prevEvents]; // Prepend new historical if any
-      });
-      
-      toast.success('Fetched recent events.');
+
+      // Replace events entirely with the latest fetched data
+      setEvents(data.data || []);
+
     } catch (error) {
       console.error('Error fetching events:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to fetch events');
+      // Avoid toasting on every poll error, maybe log or use a different indicator
+      // toast.error(error instanceof Error ? error.message : 'Failed to fetch events');
     } finally {
-      setRefreshing(false);
-      setLoading(false); // Ensure loading is false after initial fetch
+      // setRefreshing(false);
+      setLoading(false); // Ensure loading is false after initial fetch/first poll
     }
-  }, []); 
+  }, []); // No dependencies needed here if it doesn't use component state
 
-  // Stable callbacks for the SSE hook
-  const handleSseMessage = useCallback((newEvent: YolinkEvent) => {
-    // console.log('[EventsPage] Received new event via SSE:', newEvent);
-    // Prepend the new event to the list for real-time feel
-    setEvents(prevEvents => {
-      // Optional: Prevent duplicate msgid if somehow received again
-      if (prevEvents.some(e => e.msgid === newEvent.msgid)) {
-        return prevEvents;
-      }
-      return [newEvent, ...prevEvents];
-    });
-  }, []); // Empty dependency array - this function doesn't depend on component state
-
-  const handleSseError = useCallback((error: Event) => {
-    console.error('[EventsPage] SSE connection error:', error);
-    toast.error('Real-time update connection lost. Attempting to reconnect...');
-    // The hook handles reconnection logic
-  }, []); // Empty dependency array
-
-  // Use the SSE hook for real-time updates
-  useMqttSse({
-    onMessage: handleSseMessage,
-    onError: handleSseError
-  });
-
-  // Fetch initial events on first load
+  // Fetch initial events and set up polling
   useEffect(() => {
     setLoading(true);
-    fetchEvents();
-    // No interval needed anymore
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchEvents]); // fetchEvents is memoized with useCallback
+    fetchEvents(true); // Fetch initial data immediately
+
+    const intervalId = setInterval(() => {
+      fetchEvents(); // Fetch data periodically
+    }, 5000); // Poll every 5 seconds
+
+    // Cleanup interval on component unmount
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [fetchEvents]); // Depend on the stable fetchEvents callback
 
   // Define columns for TanStack Table
   const columns = useMemo<ColumnDef<YolinkEvent>[]>(() => [
@@ -520,96 +500,94 @@ export default function EventsPage() {
         <p className="text-muted-foreground">Loading initial events...</p>
       ) : !loading && events.length === 0 ? (
         <p className="text-muted-foreground">
-          No events have been received yet. Live events will appear here automatically.
+          No events have been received yet. This page will update periodically.
         </p>
       ) : (
         <div className="border rounded-md overflow-x-auto">
-          <div className="max-h-[calc(100vh-220px)] overflow-y-auto">
-            <Table>
-              <TableHeader className="sticky top-0 bg-background z-10">
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead 
-                        key={header.id}
-                        className="px-2 py-1"
+          <Table>
+            <TableHeader className="sticky top-0 bg-background z-10">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead 
+                      key={header.id}
+                      className="px-2 py-1"
+                    >
+                      <div 
+                        className={header.column.getCanSort() ? "cursor-pointer select-none" : undefined}
+                        onClick={header.column.getToggleSortingHandler()}
                       >
-                        <div 
-                          className={header.column.getCanSort() ? "cursor-pointer select-none" : undefined}
-                          onClick={header.column.getToggleSortingHandler()}
-                        >
-                          <div className="flex items-center">
-                            {header.isPlaceholder
-                              ? null
-                              : flexRender(
-                                  header.column.columnDef.header,
-                                  header.getContext()
-                                )}
-                            {header.column.getCanSort() && (
-                              <SortIcon isSorted={header.column.getIsSorted()} />
-                            )}
-                          </div>
-                        </div>
-                        <div className="mt-1 h-8">
-                          {header.column.getCanFilter() && (
-                            <DebouncedInput
-                              value={(header.column.getFilterValue() ?? '') as string}
-                              onChange={value => header.column.setFilterValue(value)}
-                              placeholder=""
-                            />
+                        <div className="flex items-center">
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                          {header.column.getCanSort() && (
+                            <SortIcon isSorted={header.column.getIsSorted()} />
                           )}
                         </div>
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel().rows?.length ? (
-                  table.getRowModel().rows.map((row) => (
-                    row.getIsGrouped() ? (
-                      <TableRow key={row.id + '-group'} className="bg-muted/50 hover:bg-muted/60">
-                        <TableCell 
-                          colSpan={columns.length} 
-                          className="p-2 font-medium text-sm capitalize cursor-pointer"
-                          onClick={row.getToggleExpandedHandler()}
-                        >
-                          <div className="flex items-center gap-2">
-                            {row.getIsExpanded() ? (
-                              <ChevronDown className="h-4 w-4" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4" />
-                            )}
-                            {row.groupingColumnId}:
-                            <span className="font-normal">
-                              {row.groupingValue as React.ReactNode}
-                            </span>
-                            <span className="ml-1 text-xs text-muted-foreground font-normal">
-                              ({row.subRows.length} items)
-                            </span>
-                          </div>
+                      </div>
+                      <div className="mt-1 h-8">
+                        {header.column.getCanFilter() && (
+                          <DebouncedInput
+                            value={(header.column.getFilterValue() ?? '') as string}
+                            onChange={value => header.column.setFilterValue(value)}
+                            placeholder=""
+                          />
+                        )}
+                      </div>
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows?.length ? (
+                table.getRowModel().rows.map((row) => (
+                  row.getIsGrouped() ? (
+                    <TableRow key={row.id + '-group'} className="bg-muted/50 hover:bg-muted/60">
+                      <TableCell 
+                        colSpan={columns.length} 
+                        className="p-2 font-medium text-sm capitalize cursor-pointer"
+                        onClick={row.getToggleExpandedHandler()}
+                      >
+                        <div className="flex items-center gap-2">
+                          {row.getIsExpanded() ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                          {row.groupingColumnId}:
+                          <span className="font-normal">
+                            {row.groupingValue as React.ReactNode}
+                          </span>
+                          <span className="ml-1 text-xs text-muted-foreground font-normal">
+                            ({row.subRows.length} items)
+                          </span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className="px-2 py-1">
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </TableCell>
-                      </TableRow>
-                    ) : (
-                      <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
-                        {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id} className="px-2 py-1">
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    )
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={columns.length} className="h-24 text-center">
-                      No results match your filters or no events received yet.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                      ))}
+                    </TableRow>
+                  )
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="h-24 text-center">
+                    No results match your filters or no events received yet.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
           {/* Pagination Controls */} 
           <div className="flex items-center justify-between p-2 border-t">
             <div className="flex-1 text-sm text-muted-foreground">

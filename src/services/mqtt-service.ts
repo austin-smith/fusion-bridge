@@ -1,7 +1,8 @@
 import 'server-only'; // Mark this module as server-only
 
+// Remove module init log: console.log(`[${new Date().toISOString()}] --- MQTT Service Module Initializing ---`);
+
 import * as mqtt from 'mqtt';
-import { EventEmitter } from 'events';
 import { getAccessToken } from '@/services/drivers/yolink';
 import { YoLinkConfig } from '@/services/drivers/yolink';
 import { db } from '@/data/db';
@@ -22,13 +23,6 @@ export interface YolinkEvent {
   deviceId: string;
 }
 
-// Shared emitter for service events
-export const mqttServiceEmitter = new EventEmitter();
-
-// Status listeners for real-time updates
-type StatusListener = (status: MqttClientState, homeId: string) => void;
-const statusListeners: StatusListener[] = [];
-
 // Type to represent an MQTT connection
 interface MqttConnection {
   client: mqtt.MqttClient | null;
@@ -38,10 +32,17 @@ interface MqttConnection {
   connectionError: string | null;
   reconnectAttempts: number;
   disabled: boolean;
+  isConnected: boolean;
 }
 
-// Map of homeId to MQTT connection
-const connections: Map<string, MqttConnection> = new Map();
+// Ensure connections map is a singleton using globalThis
+declare global {
+  var __mqttConnections: Map<string, MqttConnection> | undefined;
+}
+
+const connections: Map<string, MqttConnection> = globalThis.__mqttConnections || (globalThis.__mqttConnections = new Map());
+
+// Remove map init log: console.log(`[${new Date().toISOString()}] --- MQTT Connections Map Initialized (size: ${connections.size}) ---`);
 
 export interface MqttClientState {
   connected: boolean;
@@ -56,49 +57,32 @@ export interface MqttClientState {
  * Get the current state of a specific MQTT client
  */
 export function getMqttClientState(homeId?: string): MqttClientState {
-  // If homeId is provided, get state for that specific connection
+  // Remove debug logic and restore previous correct logic
   if (homeId && connections.has(homeId)) {
-    const connection = connections.get(homeId)!;
+    const connection = connections.get(homeId);
+    if (!connection) {
+        console.error(`[getMqttClientState][${homeId}] Internal state error: connection object not found despite map.has being true.`);
+        return { connected: false, lastEvent: null, homeId: homeId, error: 'Internal state error', reconnecting: false, disabled: true }; 
+    }
+    // Remove logging: console.log(`[getMqttClientState][${homeId}] Reporting Flags: ...`);
+    const isConnected = connection.isConnected && !connection.disabled;
+    const isReconnecting = !isConnected && connection.reconnectAttempts > 0 && !connection.disabled;
     return {
-      connected: !!connection.client && connection.client.connected && !connection.disabled,
+      connected: isConnected,
       lastEvent: connection.lastEventData ? {
         time: connection.lastEventData.time.getTime(),
         count: connection.lastEventData.count
       } : null,
       homeId: connection.homeId,
-      error: connection.connectionError,
-      reconnecting: connection.reconnectAttempts > 0 && !connection.disabled,
+      error: !isConnected && !isReconnecting ? connection.connectionError : null, 
+      reconnecting: isReconnecting,
       disabled: connection.disabled
     };
   }
   
-  // If no homeId provided or not found, return a combined state or default state
-  // First check if we have any active connections
-  for (const [id, connection] of connections.entries()) {
-    if (connection.client && connection.client.connected && !connection.disabled) {
-      return {
-        connected: true,
-        lastEvent: connection.lastEventData ? {
-          time: connection.lastEventData.time.getTime(),
-          count: connection.lastEventData.count
-        } : null,
-        homeId: id,
-        error: null,
-        reconnecting: false,
-        disabled: false
-      };
-    }
-  }
-  
-  // No active connections found, return a default state
-  return {
-    connected: false,
-    lastEvent: null,
-    homeId: null,
-    error: null,
-    reconnecting: false,
-    disabled: false
-  };
+  // Default state if no homeId or connection not found in map
+  // Remove log: console.log(`[getMqttClientState][${homeId ?? 'undefined'}] No connection found in map...`);
+  return { connected: false, lastEvent: null, homeId: null, error: 'No connection state found', reconnecting: false, disabled: true };
 }
 
 /**
@@ -123,44 +107,20 @@ export function getAllMqttClientStates(): Map<string, MqttClientState> {
   return states;
 }
 
-/**
- * Subscribe to MQTT client state updates
- * @param listener Function to call when the state changes
- * @returns Function to unsubscribe
- */
-export function subscribeToMqttState(listener: StatusListener): () => void {
-  statusListeners.push(listener);
-  
-  // Send initial states for all connections
-  for (const [homeId] of connections.entries()) {
-    listener(getMqttClientState(homeId), homeId);
-  }
-  
-  // Return unsubscribe function
-  return () => {
-    const index = statusListeners.indexOf(listener);
-    if (index !== -1) {
-      statusListeners.splice(index, 1);
-    }
-  };
-}
-
-// Notify all listeners of state change for a specific connection
-function notifyStateChange(homeId: string) {
-  const state = getMqttClientState(homeId);
-  statusListeners.forEach(listener => listener(state, homeId));
-}
-
 // Load the events enabled state from the YoLink node
 async function loadDisabledState(homeId: string): Promise<boolean> {
   try {
-    const yolinkNode = await db.select().from(nodes)
+    // Remove log: console.log(`[loadDisabledState][${homeId}] Querying DB for eventsEnabled status...`);
+    const yolinkNode = await db.select({ eventsEnabled: nodes.eventsEnabled }).from(nodes)
       .where(and(eq(nodes.category, 'yolink'), eq(nodes.yolinkHomeId, homeId)))
       .limit(1);
       
-    return yolinkNode.length > 0 ? !yolinkNode[0].eventsEnabled : true;
+    const isDisabled = yolinkNode.length > 0 ? !yolinkNode[0].eventsEnabled : true;
+    // Remove log: console.log(`[loadDisabledState][${homeId}] DB Result: ${JSON.stringify(yolinkNode)}. Returning isDisabled: ${isDisabled}`);
+    return isDisabled;
   } catch (err) {
-    console.error(`Failed to load events enabled state for ${homeId}:`, err);
+    console.error(`[loadDisabledState][${homeId}] Failed to load events enabled state:`, err); // Keep error log
+    // Remove log: console.log(`[loadDisabledState][${homeId}] Defaulting to isDisabled: true due to error.`);
     return true; // Default to disabled on error
   }
 }
@@ -185,50 +145,41 @@ async function saveDisabledState(homeId: string, isDisabled: boolean): Promise<v
 
 // Initialize the MQTT service for a specific home
 export async function initMqttService(config: YoLinkConfig, homeId: string) {
-  // Check if the connection already exists and is connected
-  if (connections.has(homeId)) {
-    const connection = connections.get(homeId)!;
-    if (connection.client && connection.client.connected && !connection.disabled) {
-      console.log(`MQTT service already initialized and connected for home ${homeId}`);
-      return;
-    }
-  }
-  
   // Check if events are enabled for this home
   const isDisabled = await loadDisabledState(homeId);
-  if (isDisabled) {
-    console.log(`MQTT events are disabled for ${homeId}, skipping connection`);
     
-    // Create or update the connection with disabled state
-    connections.set(homeId, {
+  let connection: MqttConnection = connections.get(homeId) ?? {
       client: null,
-      config,
+    config: config,
       homeId,
       lastEventData: null,
       connectionError: null,
       reconnectAttempts: 0,
-      disabled: true
-    });
-    
-    // Notify listeners of the disabled state
-    notifyStateChange(homeId);
+    disabled: true, // Assume disabled initially
+    isConnected: false
+  };
+  connections.set(homeId, connection);
+  // Remove log: console.log(`[initMqttService][${homeId}] Ensured entry exists...`);
+
+  if (isDisabled) {
+    // Remove log: console.log(`[initMqttService][${homeId}] MQTT events are disabled...`);
+    connection.disabled = true;
+    connection.isConnected = false;
+    connection.connectionError = null;
+    connection.reconnectAttempts = 0;
+    connections.set(homeId, connection);
     return;
   }
   
-  // Create a new connection or update the existing one
-  const connection: MqttConnection = connections.has(homeId) 
-    ? { ...connections.get(homeId)!, config } 
-    : {
-        client: null,
-        config,
-        homeId,
-        lastEventData: null,
-        connectionError: null,
-        reconnectAttempts: 0,
-        disabled: false
-      };
+  // Remove log: console.log(`[initMqttService][${homeId}] Events enabled per DB state...`);
+  connection.disabled = false;
+  connection.isConnected = false;
+  connection.connectionError = null;
+  connection.reconnectAttempts = 0;
+  connection.config = config;
+  connections.set(homeId, connection);
   
-  // Disconnect existing client if any
+  // Disconnect existing client if any (keep this logic)
   if (connection.client) {
     try {
       connection.client.end(true);
@@ -238,12 +189,8 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
     connection.client = null;
   }
   
-  // Reset state
-  connection.connectionError = null;
-  connection.reconnectAttempts = 0;
-  connection.disabled = false;
-  
   try {
+    // Keep normal logs like "Initializing...", "Attempting...", "Connected..."
     console.log(`Initializing MQTT service for YoLink home: ${homeId}`);
     
     // Get access token
@@ -267,11 +214,13 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
     connection.client.on('connect', () => {
       console.log(`[${homeId}] Connected to YoLink MQTT broker`);
       
-      // Reset error state
+      // Reset error state and set our connected flag
       if (connections.has(homeId)) {
         const updatedConnection = connections.get(homeId)!;
         updatedConnection.connectionError = null;
         updatedConnection.reconnectAttempts = 0;
+        updatedConnection.isConnected = true;
+        updatedConnection.disabled = false;
         connections.set(homeId, updatedConnection);
       }
       
@@ -290,15 +239,11 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
             const updatedConnection = connections.get(homeId)!;
             updatedConnection.connectionError = `Failed to subscribe: ${err.message}`;
             connections.set(homeId, updatedConnection);
-            notifyStateChange(homeId);
           }
         } else {
           console.log(`[${homeId}] Subscribed to ${topic}`);
         }
       });
-      
-      // Notify state change
-      notifyStateChange(homeId);
     });
     
     connection.client.on('message', async (topic, payload) => {
@@ -313,8 +258,6 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
         processEvent(event, homeId).catch(err => {
             console.error(`[Automation Service][${homeId}] Error processing event ${event.msgid}:`, err);
         });
-        
-        mqttServiceEmitter.emit('newMessage', event);
 
         // Update last event data
         const count = await getEventCount();
@@ -325,9 +268,6 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
             count
           };
           connections.set(homeId, updatedConnection);
-          
-          // Notify state change
-          notifyStateChange(homeId);
         }
       } catch (err) {
         console.error(`[${homeId}] Failed to process YoLink event message:`, err);
@@ -335,22 +275,31 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
     });
     
     connection.client.on('error', (err) => {
-      console.error(`[${homeId}] MQTT error:`, err);
+      // Remove log: console.error(`[MQTT Event][${homeId}] MQTT client error:`, err);
+       console.error(`[${homeId}] MQTT client error:`, err); // Keep simplified error log
       if (connections.has(homeId)) {
         const updatedConnection = connections.get(homeId)!;
         updatedConnection.connectionError = `Connection error: ${err.message}`;
+        // Don't assume disconnection here, let 'close' handle it or reconnect logic
         connections.set(homeId, updatedConnection);
-        notifyStateChange(homeId);
+        // Potentially trigger reconnect or wait for 'close'
+         if (!updatedConnection.disabled) {
+            // Remove log: console.log(`[MQTT Event][${homeId}] Scheduling reconnect due to error.`);
+            scheduleReconnect(homeId); // Schedule reconnect on error if not disabled
+         }
       }
     });
     
     connection.client.on('close', () => {
-      console.log(`[${homeId}] MQTT connection closed`);
-      notifyStateChange(homeId);
-      
-      // Auto-reconnect if not explicitly disabled
+      // Remove log: console.log(`[MQTT Event][${homeId}] MQTT client connection closed.`);
+      console.log(`[${homeId}] MQTT client connection closed.`); // Keep simplified log
+      // Set our flag to false
       if (connections.has(homeId)) {
         const updatedConnection = connections.get(homeId)!;
+        updatedConnection.isConnected = false;
+        connections.set(homeId, updatedConnection);
+
+        // Auto-reconnect if not explicitly disabled
         if (!updatedConnection.disabled) {
           scheduleReconnect(homeId);
         }
@@ -358,12 +307,18 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
     });
     
     connection.client.on('offline', () => {
-      console.log(`[${homeId}] MQTT client is offline`);
+      // Remove log: console.log(`[MQTT Event][${homeId}] MQTT client is offline.`);
+      console.log(`[${homeId}] MQTT client is offline.`); // Keep simplified log
       if (connections.has(homeId)) {
         const updatedConnection = connections.get(homeId)!;
         updatedConnection.connectionError = 'Connection offline';
+        updatedConnection.isConnected = false; // Set our flag to false
         connections.set(homeId, updatedConnection);
-        notifyStateChange(homeId);
+        // Consider if reconnect should be triggered here too, or rely on 'close'
+         if (!updatedConnection.disabled) {
+            // Remove log: console.log(`[MQTT Event][${homeId}] Scheduling reconnect due to offline event.`);
+            scheduleReconnect(homeId); 
+         }
       }
     });
     
@@ -385,16 +340,12 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
     } catch (err) {
       console.error(`[${homeId}] Failed to get initial event data:`, err);
     }
-    
-    // Notify initial state
-    notifyStateChange(homeId);
   } catch (err) {
     console.error(`[${homeId}] Failed to initialize MQTT service:`, err);
     if (connections.has(homeId)) {
       const updatedConnection = connections.get(homeId)!;
       updatedConnection.connectionError = err instanceof Error ? err.message : 'Unknown connection error';
       connections.set(homeId, updatedConnection);
-      notifyStateChange(homeId);
       
       // Schedule reconnection
       scheduleReconnect(homeId);
@@ -405,60 +356,103 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
 
 // Schedule a reconnection attempt for a specific home
 function scheduleReconnect(homeId: string) {
-  if (!connections.has(homeId)) return;
-  
+  // Remove log: console.log(`[scheduleReconnect][${homeId}] Called.`);
+  if (!connections.has(homeId)) {
+      // Remove log: console.log(`[scheduleReconnect][${homeId}] Aborted: No connection found...`);
+      return;
+  }
   const connection = connections.get(homeId)!;
+  if (connection.reconnectAttempts > 0) {
+      // Remove log: console.log(`[scheduleReconnect][${homeId}] Aborted: Reconnect already in progress...`);
+      return;
+  }
+   if (connection.disabled) {
+      // Remove log: console.log(`[scheduleReconnect][${homeId}] Aborted: Connection is explicitly disabled.`);
+      return;
+  }
   
-  // Check if events are enabled before attempting reconnection
+  // Remove log: console.log(`[scheduleReconnect][${homeId}] Checking DB state...`);
   loadDisabledState(homeId)
     .then(isDisabled => {
+      // Remove log: console.log(`[scheduleReconnect][${homeId}] loadDisabledState returned: ${isDisabled}`);
       if (isDisabled) {
-        console.log(`[${homeId}] MQTT events are disabled, skipping reconnection`);
-        // Update the connection state
+        // Remove log: console.log(`[scheduleReconnect][${homeId}] Aborted: MQTT events are disabled...`);
         if (connections.has(homeId)) {
           const updatedConnection = connections.get(homeId)!;
           updatedConnection.reconnectAttempts = 0;
           updatedConnection.connectionError = null;
           updatedConnection.disabled = true;
+          updatedConnection.isConnected = false;
           connections.set(homeId, updatedConnection);
-          notifyStateChange(homeId);
+          // Remove log: console.log(`[scheduleReconnect][${homeId}] Updated connection state...`);
         }
         return;
       }
       
-      // Don't schedule if already attempting to reconnect
-      if (connection.reconnectAttempts > 0) return;
+      // Don't schedule if already attempting to reconnect - check again after async loadDisabledState
+      if (connection.reconnectAttempts > 0) {
+          // Remove log: console.log(`[scheduleReconnect][${homeId}] Aborted post-DB check...`);
+          return;
+      }
       
-      // Increment reconnect attempts
+      // Increment reconnect attempts *before* setting timeout
       connection.reconnectAttempts++;
-      connections.set(homeId, connection);
+      connections.set(homeId, connection); // Save increased attempt count
       
       // Exponential backoff (5s, 10s, 20s, 40s, max 60s)
       const delay = Math.min(5000 * Math.pow(2, connection.reconnectAttempts - 1), 60000);
       
+      // Keep this informative log
       console.log(`[${homeId}] Scheduling reconnection attempt ${connection.reconnectAttempts} in ${delay}ms`);
       connection.connectionError = `Connection lost. Reconnecting (attempt ${connection.reconnectAttempts})...`;
-      connections.set(homeId, connection);
-      notifyStateChange(homeId);
+      connections.set(homeId, connection); // Save error message
       
       setTimeout(() => {
-        // Check if the connection still exists and is still disconnected
+        // Remove log: console.log(`[scheduleReconnect][${homeId}] Timeout fired...`);
+        // Check if the connection still exists and is still disconnected/not disabled
         if (connections.has(homeId)) {
           const currentConnection = connections.get(homeId)!;
-          const isConnected = currentConnection.client && currentConnection.client.connected;
           
-          if (!isConnected && !currentConnection.disabled) {
-            console.log(`[${homeId}] Attempting to reconnect to MQTT (attempt ${currentConnection.reconnectAttempts})`);
+           if (currentConnection.disabled) {
+              // Remove log: console.log(`[scheduleReconnect][${homeId}] Reconnect cancelled: disabled.`);
+              currentConnection.reconnectAttempts = 0; // Reset attempts if disabled
+              connections.set(homeId, currentConnection);
+              return;
+           }
+
+          // If still disconnected after delay, attempt reconnect by calling initMqttService
+          if (!currentConnection.isConnected) {
+            // Remove log: console.log(`[scheduleReconnect][${homeId}] Attempting initMqttService...`);
             initMqttService(currentConnection.config, homeId).catch(err => {
-              console.error(`[${homeId}] Reconnection attempt failed:`, err);
-              // Another reconnection will be scheduled by the error handler in initMqttService
+              console.error(`[${homeId}] Reconnection attempt via initMqttService failed:`, err); // Keep error
+              // IMPORTANT: Reset reconnectAttempts here so the next 'close' or 'error' event can trigger a new scheduleReconnect cycle
+               if (connections.has(homeId)) {
+                 const conn = connections.get(homeId)!;
+                 conn.reconnectAttempts = 0; 
+                 connections.set(homeId, conn);
+               }
             });
+          } else {
+             // Remove log: console.log(`[scheduleReconnect][${homeId}] Reconnect attempt skipped: connected.`);
+             // If connection succeeded elsewhere, reset attempts
+             currentConnection.reconnectAttempts = 0;
+             connections.set(homeId, currentConnection);
           }
+        } else {
+           // Remove log: console.log(`[scheduleReconnect][${homeId}] Reconnect cancelled: no longer in map.`);
         }
       }, delay);
     })
     .catch(err => {
-      console.error(`[${homeId}] Failed to check events enabled state for reconnection:`, err);
+      // Remove log: console.error(`[scheduleReconnect][${homeId}] CRITICAL: Failed to check DB state...`);
+      console.error(`[${homeId}] CRITICAL: Failed to check DB state for reconnection:`, err); // Keep simplified error
+       // Don't disable here, maybe try reconnect anyway or log critical error?
+       // Reset attempts so future triggers might work
+       if (connections.has(homeId)) {
+          const conn = connections.get(homeId)!;
+          conn.reconnectAttempts = 0; 
+          connections.set(homeId, conn);
+       }
     });
 }
 
@@ -486,7 +480,6 @@ export async function disconnectMqtt(homeId: string): Promise<void> {
         const updatedConnection = connections.get(homeId)!;
         updatedConnection.client = null;
         connections.set(homeId, updatedConnection);
-        notifyStateChange(homeId);
       }
       console.log(`[${homeId}] Disconnected from MQTT broker`);
       resolve();
@@ -585,7 +578,6 @@ export async function disableMqttConnection(homeId: string): Promise<void> {
       updatedConnection.connectionError = null;
       updatedConnection.reconnectAttempts = 0;
       connections.set(homeId, updatedConnection);
-      notifyStateChange(homeId);
     }
   }
 }
@@ -593,20 +585,14 @@ export async function disableMqttConnection(homeId: string): Promise<void> {
 // Enable the MQTT connection for a specific home
 export async function enableMqttConnection(homeId: string): Promise<boolean> {
   if (!connections.has(homeId)) {
-    console.log(`[${homeId}][Enable Attempt] No connection record found.`);
-    
-    // Try to find the node configuration and initialize
     try {
       const yolinkNode = await db.select().from(nodes)
         .where(and(eq(nodes.category, 'yolink'), eq(nodes.yolinkHomeId, homeId)))
         .limit(1);
-      
       if (yolinkNode.length > 0) {
         const node = yolinkNode[0];
         const config = JSON.parse(node.cfg_enc);
-        
         if (config && config.uaid && config.clientSecret) {
-          // Create the connection record
           connections.set(homeId, {
             client: null,
             config: {
@@ -617,64 +603,39 @@ export async function enableMqttConnection(homeId: string): Promise<boolean> {
             lastEventData: null,
             connectionError: null,
             reconnectAttempts: 0,
-            disabled: false
+            disabled: false, // Explicitly false
+            isConnected: false 
           });
-          
-          // Update database state
           await db
             .update(nodes)
             .set({ eventsEnabled: true })
             .where(eq(nodes.id, node.id));
-          
-          // Initialize the service
           await initMqttService({
             uaid: config.uaid,
             clientSecret: config.clientSecret
           }, homeId);
-          
           return true;
         }
       }
-      
-      console.error(`[${homeId}][Enable Attempt] No YoLink connector found with this homeId.`);
       return false;
     } catch (err) {
-      console.error(`[${homeId}][Enable Attempt] Error finding node:`, err);
       return false;
     }
   }
   
   const connection = connections.get(homeId)!;
-  console.log(`[${homeId}][Enable Attempt] Starting. Current state: disabled=${connection.disabled}`);
-  
   if (connection.disabled) {
-    // Update the connection state
     connection.disabled = false;
     connections.set(homeId, connection);
-    
-    // Save to database
-    console.log(`[${homeId}][Enable Attempt] Setting disabled=false. Saving state...`);
     await saveDisabledState(homeId, false);
-    console.log(`[${homeId}][Enable Attempt] State saved. Notifying change...`);
-    notifyStateChange(homeId);
-    
-    // Try to reconnect
-    console.log(`[${homeId}][Enable Attempt] Calling reconnectMqtt()...`);
     const reconnectSuccess = await reconnectMqtt(homeId);
-    console.log(`[${homeId}][Enable Attempt] reconnectMqtt() returned:`, reconnectSuccess);
     return reconnectSuccess;
   }
   
-  // If it wasn't disabled, it means we are already in an enabled state
-  console.log(`[${homeId}][Enable Attempt] Already enabled. Checking connection...`);
-  
-  if (connection.client && connection.client.connected) {
-    console.log(`[${homeId}][Enable Attempt] Client already connected.`);
+  if (connection.isConnected) {
     return true;
   }
   
-  // If not connected, try to reconnect
-  console.log(`[${homeId}][Enable Attempt] Client not connected. Attempting to reconnect...`);
   return reconnectMqtt(homeId);
 }
 
@@ -693,7 +654,6 @@ export async function truncateEvents() {
     for (const [homeId, connection] of connections.entries()) {
       connection.lastEventData = null;
       connections.set(homeId, connection);
-      notifyStateChange(homeId);
     }
   }
   
@@ -702,34 +662,68 @@ export async function truncateEvents() {
 
 // Scan DB and automatically connect to any YoLink nodes that have events enabled.
 export async function initializeEnabledConnections(): Promise<void> {
+  // Remove log: console.log('[initializeEnabledConnections] Starting scan...');
   try {
     const yolinkNodes = await db
       .select()
       .from(nodes)
       .where(eq(nodes.category, 'yolink'));
 
+    // Remove log: console.log(`[initializeEnabledConnections] Found ${yolinkNodes.length} total YoLink nodes.`);
+
     for (const node of yolinkNodes) {
       if (node.eventsEnabled && node.yolinkHomeId) {
+        // Remove log: console.log(`[initializeEnabledConnections] Node ${node.id} (${node.name}) has eventsEnabled=true. Initializing...`);
         try {
           const config = JSON.parse(node.cfg_enc);
           if (config && config.uaid && config.clientSecret) {
-            // Initialise each connection but do not await – run in parallel
-            initMqttService(
+            // AWAIT the initialization attempt
+            await initMqttService(
               {
                 uaid: config.uaid,
                 clientSecret: config.clientSecret,
               },
               node.yolinkHomeId,
-            ).catch((err) => {
-              console.error(`Failed to initialize MQTT for ${node.yolinkHomeId}:`, err);
+            ).catch((err) => { // Catch errors from initMqttService itself
+              console.error(`[initializeEnabledConnections] Error during initMqttService for ${node.yolinkHomeId}:`, err);
             });
+            // Remove log: console.log(`[initializeEnabledConnections] Initialization attempt finished for ${node.yolinkHomeId}.`);
+          } else {
+             // Keep warning: console.warn(`[initializeEnabledConnections] Node ${node.id} (${node.name}) is enabled but missing valid config.`);
           }
         } catch (err) {
-          console.error(`Failed to parse config for node ${node.id}:`, err);
+          console.error(`[initializeEnabledConnections] Failed to parse config for node ${node.id}:`, err);
+        }
+      } else if (node.yolinkHomeId) {
+        // Node exists but eventsEnabled=false in DB. Ensure service state matches.
+        // Remove log: console.log(`[initializeEnabledConnections] Node ${node.id} (${node.name}) has eventsEnabled=false.`);
+        if (connections.has(node.yolinkHomeId)) {
+           const connection = connections.get(node.yolinkHomeId)!;
+           if (!connection.disabled || connection.isConnected) {
+              // Remove log: console.log(`[initializeEnabledConnections] Correcting service state for ${node.yolinkHomeId}: Setting disabled=true, isConnected=false to match DB.`);
+              connection.disabled = true;
+              connection.isConnected = false;
+              // Attempt to gracefully disconnect if client exists and thinks it's connected
+              if (connection.client && connection.client.connected) {
+                 // Remove log: console.log(`[initializeEnabledConnections] Disconnecting stray client for ${node.yolinkHomeId}.`);
+                 try {
+                   connection.client.end(true); // End gracefully
+                 } catch (e) { 
+                   console.error(`[initializeEnabledConnections] Error ending client for ${node.yolinkHomeId}:`, e); 
+                 }
+                 connection.client = null; // Clear client reference
+              }
+              connections.set(node.yolinkHomeId, connection);
+           }
+        } else {
+            // Optionally: Create a default disabled entry if needed?
+            // console.log(`[initializeEnabledConnections] No existing service state for disabled node ${node.yolinkHomeId}. Creating default disabled entry.`);
+            // connections.set(node.yolinkHomeId, { client: null, config: {}, homeId: node.yolinkHomeId, lastEventData: null, connectionError: null, reconnectAttempts: 0, disabled: true, isConnected: false });
         }
       }
     }
+    // Remove log: console.log('[initializeEnabledConnections] Scan finished.');
   } catch (err) {
-    console.error('Failed to initialize MQTT connections:', err);
+    console.error('[initializeEnabledConnections] Error during scan:', err);
   }
 } 

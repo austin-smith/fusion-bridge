@@ -1,4 +1,5 @@
 import React from 'react';
+import { LuMerge } from 'react-icons/lu';
 
 interface FusionBridgeIconProps {
   size?: number;
@@ -18,21 +19,11 @@ export const FusionBridgeIcon: React.FC<FusionBridgeIconProps> = ({
       xmlns="http://www.w3.org/2000/svg"
     >
       <rect width="64" height="64" rx="12" fill={color} />
-      <path
-        d="M16 20H48M16 32H48M16 44H48"
-        stroke="white"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M32 16L32 48"
-        stroke="white"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="32" cy="32" r="6" fill="white" />
+      <foreignObject width="64" height="64">
+        <div className="flex items-center justify-center w-full h-full">
+          <LuMerge color="white" size={size * 0.6} />
+        </div>
+      </foreignObject>
     </svg>
   );
 }; 
