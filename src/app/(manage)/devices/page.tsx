@@ -4,10 +4,11 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from "@/components/ui/input";
 import { toast } from 'sonner';
-import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, ComputerIcon, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react';
+import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react';
 import { DeviceWithConnector } from '@/types'; // Import from shared types
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { formatConnectorCategory } from "@/lib/utils"; // Re-add formatConnectorCategory import
+import { getDeviceTypeIcon } from "@/lib/device-mapping"; // Import icon getter
 import {
   Select,
   SelectContent,
@@ -331,10 +332,14 @@ export default function DevicesPage() {
         enableSorting: true,
         enableColumnFilter: true,
         cell: ({ row }) => {
-          const type = row.getValue<string>('type');
-          const category = row.original.connectorCategory;
-          // Translate only if it's a YoLink device
-          return category === 'yolink' ? getReadableYoLinkDeviceName(type) : type;
+          const deviceType = row.original.deviceTypeInfo.type;
+          const IconComponent = getDeviceTypeIcon(deviceType);
+          return (
+            <div className="flex items-center gap-2">
+              <IconComponent className="h-4 w-4 text-muted-foreground" />
+              <span>{deviceType}</span>
+            </div>
+          );
         },
       },
       {
@@ -470,7 +475,7 @@ export default function DevicesPage() {
     <>
       <div className="flex justify-between items-center mb-6 gap-4">
         <div className="flex items-center gap-4">
-          <ComputerIcon className="h-6 w-6 text-muted-foreground" />
+          <Cpu className="h-6 w-6 text-muted-foreground" />
           <div>
             <h1 className="text-2xl font-semibold text-foreground">
               Devices

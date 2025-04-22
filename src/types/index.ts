@@ -1,4 +1,5 @@
 // Common interfaces used throughout the application
+import { DeviceType, DeviceSubtype, TypedDeviceInfo } from './device-mapping';
 
 // Node type for the database entities
 export interface Node {
@@ -52,6 +53,7 @@ export interface DeviceWithConnector {
   url?: string;
   pikoServerDetails?: PikoServer;
   associationCount?: number | null;
+  deviceTypeInfo: TypedDeviceInfo;
 }
 
 // Interface for Piko Server details (based on DB schema)

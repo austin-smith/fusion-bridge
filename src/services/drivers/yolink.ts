@@ -7,46 +7,6 @@ export interface YoLinkConfig {
   clientSecret: string;
 }
 
-// Add the device name mapping here
-export const YOLINK_DEVICE_NAME_MAP: Record<string, string> = {
-  COSmokeSensor: 'Carbon Monoxide & Smoke Sensor',
-  CSDevice: 'CS Device',
-  CellularHub: 'Cellular Hub',
-  Dimmer: 'Dimmer Switch',
-  DoorSensor: 'Door Sensor',
-  Finger: 'Fingerprint',
-  GarageDoor: 'Garage Door',
-  Hub: 'Hub',
-  IPCamera: 'IP Camera',
-  InfraredRemoter: 'Infrared Remote',
-  LeakSensor: 'Leak Sensor',
-  Lock: 'Lock',
-  Manipulator: 'Manipulator Device',
-  MotionSensor: 'Motion Sensor',
-  MultiOutlet: 'Multi-Outlet',
-  Outlet: 'Outlet',
-  PowerFailureAlarm: 'Power Failure Alarm',
-  Siren: 'Siren',
-  SmartRemoter: 'Smart Remote',
-  SpeakerHub: 'Speaker Hub',
-  Sprinkler: 'Sprinkler System',
-  Switch: 'Switch',
-  THSensor: 'Temperature & Humidity Sensor',
-  Thermostat: 'Thermostat',
-  VibrationSensor: 'Vibration Sensor',
-  WaterDepthSensor: 'Water Depth Sensor',
-  WaterMeterController: 'Water Meter Controller',
-};
-
-/**
- * Translates a YoLink device identifier into a more readable name.
- * @param identifier The internal YoLink device identifier (e.g., 'COSmokeSensor').
- * @returns The user-friendly name or the original identifier if not found.
- */
-export function getReadableYoLinkDeviceName(identifier: string): string {
-  return YOLINK_DEVICE_NAME_MAP[identifier] || identifier;
-}
-
 const YOLINK_API_URL = 'https://api.yosmart.com/open/yolink/v2/api';
 const YOLINK_TOKEN_URL = 'https://api.yosmart.com/open/yolink/token';
 

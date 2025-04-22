@@ -3,7 +3,7 @@ import { DeviceWithConnector, PikoServer } from '@/types';
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronsUpDown, Loader2, InfoIcon } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy } from "lucide-react";
 import {
   DialogHeader,
   DialogTitle,
@@ -12,6 +12,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { formatConnectorCategory, cn } from "@/lib/utils";
+import { getDeviceTypeIcon } from "@/lib/device-mapping";
 import { type VariantProps } from "class-variance-authority";
 import { badgeVariants } from "@/components/ui/badge";
 import { toast } from 'sonner';
@@ -138,7 +139,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         if (device.connectorCategory === 'yolink') {
           // Get Piko cameras when viewing a YoLink device
           const pikoCameras = allDevices
-            .filter((d: DeviceWithConnector) => d.connectorCategory === 'piko' && d.type === 'Camera')
+            .filter((d: DeviceWithConnector) => d.connectorCategory === 'piko' && d.deviceTypeInfo.type === 'Camera') // Use mapped type for check
             .map((d: DeviceWithConnector): DeviceOption => ({ value: d.deviceId, label: d.name }))
             .sort((a: DeviceOption, b: DeviceOption) => a.label.localeCompare(b.label));
           setAvailablePikoCameras(pikoCameras);
@@ -184,7 +185,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
 
     fetchData();
 
-  }, [device.deviceId, device.connectorCategory, device.type]); // Re-run if the device ID changes
+  }, [device.deviceId, device.connectorCategory, device.type, device.deviceTypeInfo.type]); // Added deviceTypeInfo.type dependency
 
   // --- Handle Saving Associations ---
   const handleSaveAssociations = async () => {
@@ -212,32 +213,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         const currentlySelectedYoLinkIds = Array.from(selectedYoLinkDeviceIds);
         console.log(`UI: Currently selected YoLink devices: [${currentlySelectedYoLinkIds.join(', ')}]`);
         
-        // --- Logic to determine updates when saving from Piko side --- 
-        // This part needs careful review. The current logic assumes the PUT endpoint
-        // operates on a *YoLink* device ID. Now the PUT endpoint expects a generic 'deviceId'.
-        // We might need a different API endpoint or a modified PUT handler to manage
-        // associations *from* the perspective of a Piko camera.
-        
-        // Option 1: Modify PUT handler (Complex)
-        //   - Detect if the input deviceId is Piko or YoLink and adjust logic.
-        
-        // Option 2: Use existing PUT (Simpler, but requires multiple calls)
-        //   - For each selected YoLink device, fetch its current associations.
-        //   - Add this Piko camera to the list.
-        //   - Send a separate PUT request for *each* YoLink device.
-        
-        // Option 3: New Batch Update Endpoint (Preferred)
-        //   - A dedicated endpoint `/api/device-associations/batch` that takes a list of updates.
-        //   - The frontend already tries to use this! Let's assume it exists and needs updating.
-        //   - We need to construct the correct payload for the batch endpoint.
-        
-        // Assuming Option 3 (Batch endpoint /api/device-associations/batch needs update)
-        
-        // We need the INITIAL state to determine removals.
-        // Fetching initial state here is redundant if useEffect already did it.
-        // Let's assume useEffect populates `selectedYoLinkDeviceIds` with the *initial* state.
-        // For now, let's re-fetch initial state to be safe, though this is inefficient.
-        // NOTE: This fetch uses pikoCameraId, which is correct for GET.
+        // Fetch initial state to determine diffs
         const initialAssocResponse = await fetch(`/api/device-associations?pikoCameraId=${pikoDeviceId}`);
         if (!initialAssocResponse.ok) throw new Error('Failed to fetch initial associations for Piko camera');
         const initialAssocData = await initialAssocResponse.json();
@@ -248,7 +224,6 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         // Devices to ADD this Piko camera association to:
         for (const yolinkId of currentlySelectedYoLinkIds) {
           if (!initialYoLinkDeviceIds.has(yolinkId)) {
-            // Fetch current piko IDs for this yolink device to append
             const currentPikoAssocRes = await fetch(`/api/device-associations?deviceId=${yolinkId}`);
             const currentPikoAssocData = currentPikoAssocRes.ok ? await currentPikoAssocRes.json() : { data: [] };
             const currentPikoIds = new Set<string>(currentPikoAssocData.data || []);
@@ -260,8 +235,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         // Devices to REMOVE this Piko camera association from:
         for (const yolinkId of initialYoLinkDeviceIds) {
           if (!selectedYoLinkDeviceIds.has(yolinkId)) {
-            // Fetch current piko IDs for this yolink device to remove from
-             const currentPikoAssocRes = await fetch(`/api/device-associations?deviceId=${yolinkId}`);
+            const currentPikoAssocRes = await fetch(`/api/device-associations?deviceId=${yolinkId}`);
             const currentPikoAssocData = currentPikoAssocRes.ok ? await currentPikoAssocRes.json() : { data: [] };
             const currentPikoIds = new Set<string>(currentPikoAssocData.data || []);
             currentPikoIds.delete(pikoDeviceId);
@@ -269,31 +243,26 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
           }
         }
         
-        // Use the batch endpoint
         if (updates.length > 0) {
-          console.log('UI: Attempting batch update... Adjusting payload for new schema:', updates);
-          response = await fetch('/api/device-associations/batch', { // Assuming batch endpoint exists
+          console.log('UI: Attempting batch update:', updates);
+          response = await fetch('/api/device-associations/batch', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            // The batch endpoint needs to handle this structure { updates: [{ deviceId: string, pikoCameraIds: string[] }] }
             body: JSON.stringify({ updates }),
           });
 
-          // No need for fallback logic here assuming batch endpoint is updated
           if (!response.ok) {
               const errorData = await response.json().catch(() => ({}));
               throw new Error(errorData.error || `Batch update failed with status ${response.status}`);
           }
         } else {
            console.log('UI: No association updates required.');
-           // Create a fake successful response if no updates needed
            response = new Response(JSON.stringify({ success: true }), { status: 200 });
         }
       } else {
         throw new Error('Invalid device type for association');
       }
       
-      // Check final response (either from single PUT, batch PUT, or fake success)
       const data = await response.json();
       if (!response.ok || !data.success) {
         const errorMsg = data.error || 'Failed to save associations (check server logs)';
@@ -311,19 +280,32 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
       setIsSavingAssociations(false);
     }
   };
-  // --- End Save Handler ---
+
+  // --- Copy State & Handler ---
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopy = async (text: string) => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setIsCopied(true);
+      toast.success("Copied ID to clipboard!");
+      setTimeout(() => setIsCopied(false), 2000); // Reset icon after 2 seconds
+    } catch (err) {
+      console.error('Failed to copy ID: ', err);
+      toast.error("Failed to copy ID.");
+    }
+  };
 
   // Function to render a status badge conditionally
   const renderStatusBadge = (status: string | null | undefined, entityType: 'device' | 'server') => {
     if (!status) return 'N/A';
-    
     const styleValue = getStatusBadgeStyle(status, entityType);
     const isKnownVariant = knownBadgeVariants.includes(styleValue as string);
-    
     return (
       <Badge 
         variant={isKnownVariant ? styleValue as VariantProps<typeof badgeVariants>["variant"] : 'outline'} 
-        className={cn(!isKnownVariant ? styleValue : undefined)} // Apply custom style string if not a known variant
+        className={cn(!isKnownVariant ? styleValue : undefined)}
       >
         {status}
       </Badge>
@@ -343,17 +325,21 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     </div>
   );
 
+  // Get the icon component for the current device type
+  const DeviceIcon = getDeviceTypeIcon(device.deviceTypeInfo.type);
+
   return (
     <>
       <DialogHeader className="pb-4 border-b">
         <div className="flex items-center gap-2">
+          <DeviceIcon className="h-5 w-5 text-muted-foreground" /> 
           <DialogTitle>{device.name}</DialogTitle>
           {device.status && (
             <div>{renderStatusBadge(device.status, 'device')}</div>
           )}
         </div>
-        <DialogDescription>
-          {device.type} · {formatConnectorCategory(device.connectorCategory)}
+        <DialogDescription className="pt-1">
+          {device.deviceTypeInfo.type}{device.deviceTypeInfo.subtype ? ` (${device.deviceTypeInfo.subtype})` : ''} · {formatConnectorCategory(device.connectorCategory)}
         </DialogDescription>
       </DialogHeader>
       
@@ -367,12 +353,47 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
             <AccordionContent>
               <div className="space-y-0.5 rounded-md border">
                 <DetailRow label="Name" value={device.name} />
-                <DetailRow label="Type" value={device.type} />
+                {/* Combined Type / Subtype with Icon */}
+                <DetailRow 
+                    label="Type" 
+                    value={( 
+                      <div className="flex items-center gap-2"> 
+                        <DeviceIcon className="h-4 w-4 text-muted-foreground" /> 
+                        <span>
+                          {device.deviceTypeInfo.type}
+                          {device.deviceTypeInfo.subtype && (
+                            <span className="text-muted-foreground"> / {device.deviceTypeInfo.subtype}</span>
+                          )}
+                        </span>
+                      </div> 
+                    )} 
+                />
                 <DetailRow label="Model" value={device.model || "—"} />
                 {device.connectorCategory === 'piko' && device.vendor && (
                   <DetailRow label="Vendor" value={device.vendor} />
                 )}
-                <DetailRow label="Device ID" value={device.deviceId} monospace breakAll />
+                {/* Raw Identifier */}
+                <DetailRow label="Identifier" value={device.type} monospace />
+                {/* External ID with Copy Button */}
+                <DetailRow 
+                  label="External ID" 
+                  monospace breakAll 
+                  value={( 
+                    <div className="flex items-center justify-between gap-2 w-full"> 
+                      <span className="flex-grow break-all">{device.deviceId}</span> 
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-6 w-6 shrink-0" 
+                        onClick={() => handleCopy(device.deviceId)} 
+                        disabled={isCopied} 
+                      > 
+                        {isCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />} 
+                        <span className="sr-only">{isCopied ? 'Copied' : 'Copy ID'}</span> 
+                      </Button> 
+                    </div> 
+                  )} 
+                />
               </div>
             </AccordionContent>
           </AccordionItem>

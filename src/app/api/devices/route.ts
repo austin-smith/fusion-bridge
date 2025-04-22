@@ -4,6 +4,8 @@ import { devices, nodes, pikoServers, cameraAssociations } from '@/data/db/schem
 import { eq, count } from 'drizzle-orm';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import * as pikoDriver from '@/services/drivers/piko';
+import { getDeviceTypeInfo } from '@/lib/device-mapping';
+import type { DeviceWithConnector, PikoServer } from '@/types';
 
 // Helper function to get association count
 async function getAssociationCount(
@@ -24,7 +26,7 @@ async function getAssociationCount(
       .where(eq(cameraAssociations.deviceId, internalDeviceId));
   }
   
-  return result[0].value;
+  return result?.[0]?.value ?? null;
 }
 
 // GET /api/devices – returns devices with connector information and association count
@@ -39,7 +41,7 @@ export async function GET() {
         let connectorName = 'Unknown';
         let connectorCategory = 'Unknown';
         let serverName: string | undefined = undefined;
-        let pikoServerDetails: import('@/types').PikoServer | undefined = undefined;
+        let pikoServerDetails: PikoServer | undefined = undefined;
 
         // Fetch connector info
         try {
@@ -63,7 +65,7 @@ export async function GET() {
               .where(eq(pikoServers.serverId, deviceRow.serverId))
               .limit(1);
             if (serverResult.length > 0) {
-              pikoServerDetails = serverResult[0] as import('@/types').PikoServer;
+              pikoServerDetails = serverResult[0] as PikoServer;
               serverName = pikoServerDetails.name; 
             }
           } catch { /* ignore server lookup errors */ }
@@ -75,6 +77,12 @@ export async function GET() {
           connectorCategory
         );
 
+        // Map device type/subtype
+        const deviceTypeInfo = getDeviceTypeInfo(
+          connectorCategory,
+          deviceRow.type
+        );
+
         return {
           // original device fields
           deviceId: deviceRow.deviceId,
@@ -83,13 +91,17 @@ export async function GET() {
           type: deviceRow.type,
           status: deviceRow.status,
           model: deviceRow.model ?? undefined, // Convert null to undefined for type compatibility
+          vendor: deviceRow.vendor ?? undefined, // Ensure vendor is included
+          url: deviceRow.url ?? undefined,       // Ensure url is included
           // enriched
           connectorName,
           connectorCategory,
           serverName, 
           pikoServerDetails, 
           associationCount, // Include association count
-        } satisfies import('@/types').DeviceWithConnector;
+          // Mapped type info object
+          deviceTypeInfo, // Add the mapped info object
+        } satisfies DeviceWithConnector;
       })
     );
 
@@ -174,7 +186,7 @@ export async function POST() {
         let connectorName = 'Unknown';
         let connectorCategory = 'Unknown';
         let serverName: string | undefined = undefined;
-        let pikoServerDetails: import('@/types').PikoServer | undefined = undefined;
+        let pikoServerDetails: PikoServer | undefined = undefined;
 
         // Fetch connector info
         try {
@@ -198,7 +210,7 @@ export async function POST() {
               .where(eq(pikoServers.serverId, deviceRow.serverId))
               .limit(1);
             if (serverResult.length > 0) {
-              pikoServerDetails = serverResult[0] as import('@/types').PikoServer;
+              pikoServerDetails = serverResult[0] as PikoServer;
               serverName = pikoServerDetails.name; 
             }
           } catch { /* ignore server lookup errors */ }
@@ -210,6 +222,12 @@ export async function POST() {
           connectorCategory
         );
 
+        // Map device type/subtype
+        const deviceTypeInfo = getDeviceTypeInfo(
+          connectorCategory,
+          deviceRow.type
+        );
+
         return {
           // original device fields
           deviceId: deviceRow.deviceId,
@@ -218,13 +236,17 @@ export async function POST() {
           type: deviceRow.type,
           status: deviceRow.status,
           model: deviceRow.model ?? undefined, // Convert null to undefined for type compatibility
+          vendor: deviceRow.vendor ?? undefined, // Ensure vendor is included
+          url: deviceRow.url ?? undefined,       // Ensure url is included
           // enriched
           connectorName,
           connectorCategory,
           serverName, 
           pikoServerDetails, 
           associationCount, // Include association count
-        } satisfies import('@/types').DeviceWithConnector;
+          // Mapped type info object
+          deviceTypeInfo, // Add the mapped info object
+        } satisfies DeviceWithConnector;
       })
     );
     

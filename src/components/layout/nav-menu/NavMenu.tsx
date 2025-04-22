@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/tooltip" // Import Tooltip components
 import { cn } from '@/lib/utils'; // Import cn utility
 import { FiChevronsLeft, FiChevronsRight, FiActivity } from 'react-icons/fi'; // Example icons, removed Sun and Moon
-import { Plug, ComputerIcon, Terminal, Workflow } from 'lucide-react'; // Import new icons
+import { Plug, Cpu, Terminal, Workflow } from 'lucide-react'; // Import new icons
 
 // Define props interface
 interface NavMenuProps {
@@ -26,7 +26,7 @@ export const expandedNavWidth = 'w-[240px]'; // Slightly narrower expanded width
 
 const navItems = [
   { href: '/connectors', label: 'Connectors', icon: Plug },
-  { href: '/devices', label: 'Devices', icon: ComputerIcon },
+  { href: '/devices', label: 'Devices', icon: Cpu },
   { href: '/events', label: 'Events', icon: FiActivity },
   { href: '/automations', label: 'Automations', icon: Workflow },
   { href: '/system-logs', label: 'Console', icon: Terminal },

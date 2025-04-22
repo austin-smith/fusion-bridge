@@ -14,16 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, Copy, Check, RefreshCw, EyeIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, RefreshCw, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -48,22 +39,19 @@ import {
   PaginationState,
   getPaginationRowModel,
 } from '@tanstack/react-table';
-import { getReadableYoLinkDeviceName } from '@/services/drivers/yolink';
+import { getDeviceTypeIcon } from '@/lib/device-mapping';
+import { TypedDeviceInfo } from '@/types/device-mapping';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+import { EventDetailDialogContent } from '@/components/features/events/event-detail-dialog-content';
 
-// Define the event interface
-interface YolinkEvent {
+// Update the event interface to use deviceTypeInfo
+interface EnrichedEvent {
   event: string;
   time: number;
   msgid: string;
@@ -71,8 +59,8 @@ interface YolinkEvent {
   payload?: Record<string, unknown>;
   deviceId: string;
   deviceName?: string;
-  deviceType?: string;
   connectorName?: string;
+  deviceTypeInfo: TypedDeviceInfo;
 }
 
 // A simple component for sort indicators
@@ -131,7 +119,7 @@ function DebouncedInput({
 }
 
 export default function EventsPage() {
-  const [events, setEvents] = useState<YolinkEvent[]>([]);
+  const [events, setEvents] = useState<EnrichedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([
@@ -149,7 +137,6 @@ export default function EventsPage() {
   // Function to fetch events
   const fetchEvents = useCallback(async (isInitialLoad = false) => {
     if (!isInitialLoad) {
-      // Optionally, you might want to show a subtle loading indicator during polling
       // setRefreshing(true);
     }
     try {
@@ -162,36 +149,32 @@ export default function EventsPage() {
 
       const data = await response.json();
 
-      // Replace events entirely with the latest fetched data
       setEvents(data.data || []);
 
     } catch (error) {
       console.error('Error fetching events:', error);
-      // Avoid toasting on every poll error, maybe log or use a different indicator
       // toast.error(error instanceof Error ? error.message : 'Failed to fetch events');
     } finally {
       // setRefreshing(false);
-      setLoading(false); // Ensure loading is false after initial fetch/first poll
+      setLoading(false);
     }
-  }, []); // No dependencies needed here if it doesn't use component state
+  }, []);
 
-  // Fetch initial events and set up polling
   useEffect(() => {
     setLoading(true);
-    fetchEvents(true); // Fetch initial data immediately
+    fetchEvents(true);
 
     const intervalId = setInterval(() => {
-      fetchEvents(); // Fetch data periodically
-    }, 5000); // Poll every 5 seconds
+      fetchEvents();
+    }, 5000);
 
-    // Cleanup interval on component unmount
     return () => {
       clearInterval(intervalId);
     };
-  }, [fetchEvents]); // Depend on the stable fetchEvents callback
+  }, [fetchEvents]);
 
   // Define columns for TanStack Table
-  const columns = useMemo<ColumnDef<YolinkEvent>[]>(() => [
+  const columns = useMemo<ColumnDef<EnrichedEvent>[]>(() => [
     {
       accessorKey: 'connectorName',
       header: "Connector",
@@ -211,13 +194,22 @@ export default function EventsPage() {
       ),
     },
     {
-      accessorKey: 'deviceType',
+      accessorKey: 'deviceTypeInfo.type',
       header: "Device Type",
       enableSorting: true,
       enableColumnFilter: true,
-      cell: (info) => {
-        const type = info.getValue<string>();
-        return type ? getReadableYoLinkDeviceName(type) : 'Unknown';
+      cell: ({ row }) => {
+        const typeInfo = row.original.deviceTypeInfo;
+        const IconComponent = getDeviceTypeIcon(typeInfo.type);
+        return (
+          <div className="flex items-center gap-2">
+            <IconComponent className="h-4 w-4 text-muted-foreground" />
+            <span>{typeInfo.type}</span>
+          </div>
+        );
+      },
+      filterFn: (row, id, value) => {
+        return String(row.original.deviceTypeInfo.type).toLowerCase().includes(String(value).toLowerCase());
       },
     },
     {
@@ -265,7 +257,7 @@ export default function EventsPage() {
       header: "Time",
       enableSorting: true,
       enableColumnFilter: true,
-      cell: ({ row }: { row: Row<YolinkEvent> }) => {
+      cell: ({ row }: { row: Row<EnrichedEvent> }) => {
         const timeValue = row.getValue<number>('time');
         if (isNaN(timeValue) || timeValue <= 0) {
           return <span className="text-muted-foreground">Invalid time</span>;
@@ -293,139 +285,7 @@ export default function EventsPage() {
       enableSorting: false,
       enableColumnFilter: false,
       cell: ({ row }) => {
-        const [isCopied, setIsCopied] = useState(false);
-
-        const handleCopy = async (text: string) => {
-          try {
-            await navigator.clipboard.writeText(text);
-            setIsCopied(true);
-            toast.success("Copied JSON to clipboard!");
-            setTimeout(() => setIsCopied(false), 2000);
-          } catch (err) {
-            console.error('Failed to copy text: ', err);
-            toast.error("Failed to copy JSON.");
-          }
-        };
-        
-        const eventData = row.original.payload || row.original.data || {};
-        const jsonString = JSON.stringify(eventData, null, 2);
-        
-        const deviceName = row.original.deviceName || row.original.deviceId || 'Unknown Device';
-        const deviceType = row.original.deviceType ? getReadableYoLinkDeviceName(row.original.deviceType) : 'Unknown Type';
-        const connectorName = row.original.connectorName || 'System';
-
-        return (
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <EyeIcon className="h-4 w-4" />
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-xl">
-              <DialogHeader>
-                <DialogTitle>Event Data</DialogTitle>
-              </DialogHeader>
-              <Tabs defaultValue="details" className="mt-2">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="details">Key Details</TabsTrigger>
-                  <TabsTrigger value="raw">Raw JSON</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="details" className="mt-4">
-                  <div className="max-h-96 overflow-y-auto rounded-md border p-4 text-sm">
-                    {
-                      (() => {                    
-                        const deviceInfoEntries = [
-                          { key: 'Device Name', value: deviceName },
-                          { key: 'Device Type', value: deviceType },
-                          { key: 'Connector', value: connectorName },
-                        ];
-                        
-                        let payloadEntries: { key: string, value: unknown }[] = [];
-                        if (eventData && typeof eventData === 'object') {
-                          payloadEntries = Object.entries(eventData)
-                            .filter(([, value]) => typeof value !== 'object' && value !== null && value !== undefined)
-                            .map(([key, value]) => ({ key, value }));
-                        }
-
-                        const allEntries = [...deviceInfoEntries, ...payloadEntries];
-                        if (allEntries.length === 0) {
-                          return <p className="text-muted-foreground">No details available.</p>;
-                        }
-
-                        return (
-                          <div className="flex flex-col gap-4">
-                            {/* Device Info */}
-                            <div>
-                              <h4 className="mb-2 text-sm font-semibold text-foreground">Device Information</h4>
-                              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-                                {deviceInfoEntries.map(({ key, value }) => (
-                                  <React.Fragment key={key}>
-                                    <dt className="font-medium text-muted-foreground">{key}</dt>
-                                    <dd className="text-foreground">{String(value)}</dd>
-                                  </React.Fragment>
-                                ))}
-                              </dl>
-                            </div>
-
-                            {payloadEntries.length > 0 && <div className="border-b border-border"></div>}
-
-                            {/* Event Data */}
-                            {payloadEntries.length > 0 && (
-                              <div>
-                                <h4 className="mb-2 text-sm font-semibold text-foreground">Event Data</h4>
-                                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-                                  {payloadEntries.map(({ key, value }) => (
-                                    <React.Fragment key={key}>
-                                      <dt className="font-medium text-muted-foreground capitalize truncate">{key}</dt>
-                                      <dd className="text-foreground">{String(value)}</dd>
-                                    </React.Fragment>
-                                  ))}
-                                </dl>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()
-                    }
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="raw" className="mt-4">
-                  <div className="relative">
-                    <Button 
-                      size="icon"
-                      variant="ghost"
-                      className="absolute top-2 right-2 h-7 w-7 z-50"
-                      onClick={() => handleCopy(jsonString)}
-                      disabled={isCopied}
-                    >
-                      {isCopied ? 
-                        <Check className="h-4 w-4 text-green-500" /> : 
-                        <Copy className="h-4 w-4 text-neutral-400" />
-                      }
-                      <span className="sr-only">{isCopied ? 'Copied' : 'Copy JSON'}</span>
-                    </Button>
-                    <SyntaxHighlighter 
-                      language="json" 
-                      style={atomDark}
-                      customStyle={{
-                        maxHeight: '24rem',
-                        overflowY: 'auto',
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-all'
-                      }}
-                    >
-                      {jsonString}
-                    </SyntaxHighlighter>
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </DialogContent>
-          </Dialog>
-        );
+        return <EventDetailDialogContent event={row.original} />;
       },
     },
   ], []);
@@ -588,10 +448,9 @@ export default function EventsPage() {
               )}
             </TableBody>
           </Table>
-          {/* Pagination Controls */} 
+          {/* Pagination Controls */}
           <div className="flex items-center justify-between p-2 border-t">
             <div className="flex-1 text-sm text-muted-foreground">
-              {/* Display total rows or other relevant info if needed */}
               Total Rows: {table.getFilteredRowModel().rows.length}
             </div>
             <div className="flex items-center space-x-6 lg:space-x-8">
@@ -663,4 +522,4 @@ export default function EventsPage() {
       )}
     </>
   );
-} 
+}
