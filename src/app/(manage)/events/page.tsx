@@ -205,11 +205,7 @@ export default function EventsPage() {
       header: "Device Name",
       enableSorting: true,
       enableColumnFilter: true,
-      cell: ({ row }) => (
-        <div className="font-medium">
-          {row.original.deviceName || row.original.deviceId || 'Unknown Device'}
-        </div>
-      ),
+      cell: ({ row }) => row.original.deviceName || row.original.deviceId || 'Unknown Device',
     },
     {
       accessorKey: 'deviceTypeInfo.type',

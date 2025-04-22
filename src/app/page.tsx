@@ -9,6 +9,7 @@ import { AddConnectorModal } from '@/components/features/connectors/add-connecto
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { formatConnectorCategory } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 export default function Home() {
   const { nodes, isLoading, error, setNodes, deleteNode, setAddConnectorOpen, setLoading, setError } = useFusionStore();
@@ -105,10 +106,10 @@ export default function Home() {
                       <div className="flex justify-between items-start mb-2">
                         <div>
                           <h3 className="font-medium mb-1">{node.name}</h3>
-                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                             <ConnectorIcon connectorCategory={node.category} size={14} />
-                             <span>{formatConnectorCategory(node.category)}</span>
-                          </div>
+                          <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                            <ConnectorIcon connectorCategory={node.category} size={12} />
+                            <span className="text-xs">{formatConnectorCategory(node.category)}</span>
+                          </Badge>
                         </div>
                         <Button 
                           variant="ghost" 

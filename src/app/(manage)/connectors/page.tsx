@@ -392,10 +392,10 @@ export default function ConnectorsPage() {
                   <TableRow key={node.id}>
                     <TableCell className="font-medium">{node.name}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <ConnectorIcon connectorCategory={node.category} size={14} />
-                        <span>{formatConnectorCategory(node.category)}</span>
-                      </div>
+                      <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                        <ConnectorIcon connectorCategory={node.category} size={12} />
+                        <span className="text-xs">{formatConnectorCategory(node.category)}</span>
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       {node.category === 'yolink' ? (
@@ -431,11 +431,18 @@ export default function ConnectorsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end space-x-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleEditClick(node)} className="h-8 w-8" aria-label="Edit connector">
-                          <Pencil className="h-3.5 w-3.5" />
+                        <Button variant="ghost" size="icon" onClick={() => handleEditClick(node)}>
+                          <Pencil className="h-4 w-4" />
+                          <span className="sr-only">Edit connector</span>
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(node.id)} className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" aria-label="Delete connector">
-                          <Trash2 className="h-3.5 w-3.5" />
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => handleDeleteClick(node.id)}
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Delete connector</span>
                         </Button>
                       </div>
                     </TableCell>

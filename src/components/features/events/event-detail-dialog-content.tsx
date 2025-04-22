@@ -153,19 +153,8 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                       .map(([key, value]) => ({ key, value }));
                   }
 
-                  // Create a custom entries section that includes displayState
-                  let customEntries: { key: string, value: unknown }[] = [];
-                  
-                  // Add displayState if available
-                  if (event.displayState) {
-                    customEntries.push({ 
-                      key: 'State', 
-                      value: event.displayState 
-                    });
-                  }
-
                   // Check if there's nothing to display
-                  if (deviceInfoEntries.length === 0 && customEntries.length === 0 && payloadEntries.length === 0) {
+                  if (deviceInfoEntries.length === 0 && !event.displayState && payloadEntries.length === 0) {
                     return <p className="p-4 text-muted-foreground">No details available.</p>; // Add padding back if empty
                   }
 
@@ -187,8 +176,8 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                         </>
                       )}
 
-                      {/* Custom Event Data Section (for displayState) */}
-                      {customEntries.length > 0 && (
+                      {/* State Section */}
+                      {event.displayState && (
                         <>
                           <div className="py-2"> 
                             <div className="flex items-center space-x-2">
@@ -196,17 +185,14 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                               <div className="h-px grow bg-border"></div>
                             </div>
                           </div>
-                          {customEntries.map(({ key, value }) => (
-                            <DetailRow 
-                              key={key} 
-                              label={key} 
-                              value={
-                                <Badge variant="outline" className="inline-flex items-center py-0.5 px-2 font-normal">
-                                  {String(value)}
-                                </Badge>
-                              } 
-                            />
-                          ))}
+                          <DetailRow 
+                            label="State" 
+                            value={
+                              <Badge variant="outline" className="inline-flex items-center py-0.5 px-2 font-normal">
+                                {event.displayState}
+                              </Badge>
+                            } 
+                          />
                         </>
                       )}
 
