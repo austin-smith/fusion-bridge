@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Code2, List } from 'lucide-react';
+import { Code2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {

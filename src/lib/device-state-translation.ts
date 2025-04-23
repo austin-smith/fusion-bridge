@@ -2,7 +2,7 @@
  * Device state translation utilities.
  * Handles translation from raw connector-specific states to standardized display states.
  */
-import { DeviceType, DeviceSubtype, TypedDeviceInfo, IntermediateState, DisplayState } from '@/types/device-mapping';
+import { DeviceType, IntermediateState, DisplayState } from '@/types/device-mapping';
 import { getDeviceTypeInfo } from '@/lib/device-mapping';
 import { intermediateStateToDisplayString, TypedDeviceInfo as IDeviceInfo } from '@/lib/device-mapping';
 import { translateYoLinkState } from '@/lib/mappings/yolink';
@@ -12,7 +12,7 @@ import { translateYoLinkState } from '@/lib/mappings/yolink';
 
 // Type for a map of connector categories to their state translator functions
 type ConnectorTranslators = {
-  [connectorCategory: string]: (deviceInfo: IDeviceInfo, payloadData: Record<string, any> | null | undefined) => IntermediateState | undefined;
+  [connectorCategory: string]: (deviceInfo: IDeviceInfo, payloadData: Record<string, unknown> | null | undefined) => IntermediateState | undefined;
 };
 
 // Map of connector categories to their respective translation functions
@@ -33,7 +33,7 @@ const connectorTranslators: ConnectorTranslators = {
 export function translateDeviceState(
   connectorCategory: string | null | undefined,
   deviceIdentifier: string | null | undefined,
-  payloadData: Record<string, any> | null | undefined
+  payloadData: Record<string, unknown> | null | undefined
 ): DisplayState | undefined {
   // 1. Return undefined for missing inputs (deviceIdentifier is needed for type lookup)
   if (!connectorCategory || !deviceIdentifier) {
@@ -89,6 +89,3 @@ export interface DeviceStateEvent {
   displayState?: DisplayState;
   timestamp: Date;
 }
-
-// NOTE: processDeviceStateEvent is likely no longer needed if translation happens in the API route
-// export function processDeviceStateEvent(event: DeviceStateEvent): DeviceStateEvent { ... } 

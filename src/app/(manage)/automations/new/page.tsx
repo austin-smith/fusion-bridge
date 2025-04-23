@@ -6,6 +6,12 @@ import { nodes } from "@/data/db/schema"; // Import nodes schema
 import type { AutomationFormData } from "@/app/settings/automations/[id]/page"; // Reuse type
 import { deviceIdentifierMap } from "@/lib/device-mapping";
 import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
+import type { Metadata } from 'next';
+
+// Set page title metadata
+export const metadata: Metadata = {
+  title: 'Add Automation // Fusion Bridge',
+};
 
 // Fetch data server-side
 async function getFormData() {
@@ -17,7 +23,7 @@ async function getFormData() {
     
   // Prepare options for the Source Device Types multi-select combobox
   const sourceDeviceTypeOptions: MultiSelectOption[] = Object.entries(deviceIdentifierMap.yolink)
-    .map(([value, info]) => ({ 
+    .map(([value]) => ({ 
         value, 
         label: value 
     }))
@@ -29,7 +35,6 @@ async function getFormData() {
       name: '',
       enabled: true,
       sourceNodeId: null,
-      targetNodeId: null,
       configJson: { // Default empty config
           sourceEntityTypes: [],
           eventTypeFilter: '',

@@ -37,6 +37,7 @@ interface MqttConnection {
 
 // Ensure connections map is a singleton using globalThis
 declare global {
+  // eslint-disable-next-line no-var
   var __mqttConnections: Map<string, MqttConnection> | undefined;
 }
 
@@ -148,7 +149,7 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
   // Check if events are enabled for this home
   const isDisabled = await loadDisabledState(homeId);
     
-  let connection: MqttConnection = connections.get(homeId) ?? {
+  const connection: MqttConnection = connections.get(homeId) ?? {
       client: null,
     config: config,
       homeId,
@@ -618,7 +619,7 @@ export async function enableMqttConnection(homeId: string): Promise<boolean> {
         }
       }
       return false;
-    } catch (err) {
+    } catch {
       return false;
     }
   }

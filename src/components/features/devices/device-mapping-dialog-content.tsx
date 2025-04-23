@@ -70,7 +70,7 @@ export function DeviceMappingDialogContent() {
 
   // Flatten, filter, and process the data (only for identifier view)
   const { flatMappings, groupedMappings } = useMemo(() => {
-    let flattened: FlattenedMapping[] = [];
+    const flattened: FlattenedMapping[] = [];
     Object.entries(deviceIdentifierMap).forEach(([connector, identifiers]) => {
       Object.entries(identifiers).forEach(([identifier, mapping]) => {
         flattened.push({ 

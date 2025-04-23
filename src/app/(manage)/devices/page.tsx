@@ -442,7 +442,7 @@ export default function DevicesPage() {
         },
       },
     ],
-    []
+    [fetchAssociatedDevices, loadingAssociatedDevices, associatedDevices, activeDeviceId]
   );
 
   // Initialize the table with TanStack - pass filteredDevices

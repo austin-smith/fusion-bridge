@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { DeviceWithConnector, PikoServer } from '@/types'; 
+import React, { useState, useEffect } from 'react';
+import { DeviceWithConnector } from '@/types'; 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle } from "lucide-react";
@@ -76,12 +76,6 @@ const knownBadgeVariants = ['default', 'secondary', 'destructive', 'outline'];
 interface DeviceOption {
   value: string; // deviceId
   label: string; // name
-}
-
-interface AssociationResponse {
-  success: boolean;
-  error?: string;
-  data?: string[];
 }
 
 export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps> = ({ device }) => {
@@ -175,10 +169,11 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
           setSelectedYoLinkDeviceIds(new Set(yolinkDeviceIds));
         }
 
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Error fetching association data:", err);
-        setAssociationError(err.message || 'Failed to load association data.');
-        toast.error(err.message || 'Failed to load association data.');
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load association data.';
+        setAssociationError(errorMessage);
+        toast.error(errorMessage);
       } finally {
         setIsLoadingAssociations(false);
       }
@@ -273,10 +268,11 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
       toast.success('Device associations saved successfully!');
       setPikoCameraPopoverOpen(false);
       setYolinkDevicePopoverOpen(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error saving associations:", err);
-      setAssociationError(err.message || 'Failed to save associations.');
-      toast.error(err.message || 'Failed to save associations.');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save associations.';
+      setAssociationError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsSavingAssociations(false);
     }

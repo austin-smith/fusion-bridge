@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -131,7 +131,7 @@ export function AddConnectorModal() {
   const currentSetOpenState = isEditMode ? setEditConnectorOpen : setAddConnectorOpen;
 
   // Reset form to initial state
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     form.reset({
       name: '',
       category: '',
@@ -146,7 +146,7 @@ export function AddConnectorModal() {
     setTestResult(null);
     setPikoWizardStep('credentials');
     setPikoSystems([]);
-  };
+  }, [form]);
 
   useEffect(() => {
     if (isEditMode && editingNode) {
@@ -177,7 +177,7 @@ export function AddConnectorModal() {
     } else {
       resetForm();
     }
-  }, [editingNode, isEditMode, form]);
+  }, [editingNode, isEditMode, form, resetForm]);
 
   useEffect(() => {
     if (!currentOpenState) {
@@ -186,7 +186,7 @@ export function AddConnectorModal() {
       }
       resetForm();
     }
-  }, [currentOpenState, isEditMode, setEditingNode]);
+  }, [currentOpenState, isEditMode, setEditingNode, resetForm]);
 
   const selectedCategory = form.watch('category');
   const isPiko = selectedCategory === 'piko';

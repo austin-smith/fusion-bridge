@@ -12,8 +12,8 @@ interface RawRepoEvent {
   event: string;
   time: number;
   msgid: string;
-  data: Record<string, any>;
-  payload: Record<string, any>;
+  data: Record<string, unknown>;
+  payload: Record<string, unknown>;
   deviceId: string;
 }
 
@@ -81,10 +81,14 @@ export async function GET({ url }: Request) {
 
       // Perform state translation by passing the relevant payload part
       // translateDeviceState will delegate based on connectorCategory
+      const payloadData = event.payload?.data;
       const displayState = translateDeviceState(
         connectorCategory,
         rawDeviceType, // Pass the TYPE string (e.g., 'DoorSensor') for mapping lookup
-        event.payload?.data // Pass the data part of the payload for translation
+        // Ensure payloadData is an object before passing
+        typeof payloadData === 'object' && payloadData !== null 
+          ? payloadData as Record<string, unknown>
+          : undefined
       );
 
       // Return enriched event conforming to the interface

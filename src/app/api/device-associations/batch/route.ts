@@ -47,7 +47,7 @@ export async function PUT(request: Request) {
     // We'll perform operations sequentially and rely on error handling. 
     // For critical applications, consider database-level transactions or a more robust ORM feature.
 
-    let errors: { deviceId: string, error: string }[] = [];
+    const errors: { deviceId: string, error: string }[] = [];
     let successCount = 0;
 
     for (const update of updates) {
@@ -102,9 +102,11 @@ export async function PUT(request: Request) {
         successCount++;
         console.log(`API BATCH PUT: Successfully processed update for ${deviceId}`);
 
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error(`API BATCH PUT Error processing update for ${deviceId}:`, error);
-        errors.push({ deviceId: deviceId, error: error.message || 'Unknown processing error' });
+        // Type check before accessing message
+        const errorMessage = error instanceof Error ? error.message : 'Unknown processing error';
+        errors.push({ deviceId: deviceId, error: errorMessage });
         // Continue processing other updates even if one fails
       }
     } // End loop through updates
@@ -126,11 +128,13 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: true, message: `Successfully processed all ${successCount} updates.` });
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Catch potential errors like JSON parsing issues before the loop
     console.error('API BATCH PUT Top-Level Error:', error);
+    // Type check before accessing message (optional here, as we don't use it, but good practice)
+    const errorMessage = error instanceof Error ? error.message : 'Failed to process batch update request';
     return NextResponse.json(
-      { success: false, error: 'Failed to process batch update request' },
+      { success: false, error: 'Failed to process batch update request' }, // Use generic message
       { status: 500 }
     );
   }

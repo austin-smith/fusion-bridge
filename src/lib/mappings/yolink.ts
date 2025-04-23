@@ -74,10 +74,13 @@ const yoLinkStateMap: YoLinkStateMap = {
  */
 export function translateYoLinkState(
   deviceInfo: TypedDeviceInfo,
-  payloadData: Record<string, any> | null | undefined // Changed from rawState
+  payloadData: Record<string, unknown> | null | undefined // Changed any to unknown
 ): IntermediateState | undefined {
   // Extract the raw state string from the payload data
-  const rawState = payloadData?.state as string | undefined;
+  // Accessing a property on 'unknown' requires type checking or assertion
+  const rawState = typeof payloadData === 'object' && payloadData !== null && 'state' in payloadData 
+                  ? payloadData.state as string | undefined 
+                  : undefined;
 
   // Basic validation on extracted state
   if (rawState === undefined || rawState === null) {

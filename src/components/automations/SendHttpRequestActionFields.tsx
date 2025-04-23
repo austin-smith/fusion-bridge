@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useFormContext, useFieldArray, Controller } from 'react-hook-form';
+import { useFormContext, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
@@ -19,7 +18,6 @@ import { toast } from 'sonner';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 
 interface SendHttpRequestActionFieldsProps {
     actionIndex: number;
@@ -29,17 +27,17 @@ interface SendHttpRequestActionFieldsProps {
 // Define the specific fields for SendHttpRequest params excluding headers array itself
 type HttpRequestFieldName = Exclude<keyof z.infer<typeof SendHttpRequestActionParamsSchema>, 'headers'>;
 
-// Helper function to get color classes for HTTP methods
-const getMethodColorClasses = (method: string): string => {
+// Helper function to get color classes for HTTP methods (Only text color needed now)
+const getMethodTextColor = (method: string): string => {
     switch (method.toUpperCase()) {
-        case 'GET': return 'text-blue-600 bg-blue-100 border-blue-200 hover:bg-blue-100/80';
-        case 'POST': return 'text-green-600 bg-green-100 border-green-200 hover:bg-green-100/80';
-        case 'PUT': return 'text-orange-600 bg-orange-100 border-orange-200 hover:bg-orange-100/80';
-        case 'DELETE': return 'text-red-600 bg-red-100 border-red-200 hover:bg-red-100/80';
-        case 'PATCH': return 'text-purple-600 bg-purple-100 border-purple-200 hover:bg-purple-100/80';
-        case 'OPTIONS': return 'text-gray-600 bg-gray-100 border-gray-200 hover:bg-gray-100/80';
-        case 'HEAD': return 'text-gray-600 bg-gray-100 border-gray-200 hover:bg-gray-100/80';
-        default: return 'text-gray-700 bg-gray-100 border-gray-200 hover:bg-gray-100/80'; // Default style
+        case 'GET': return 'text-blue-600';
+        case 'POST': return 'text-green-600';
+        case 'PUT': return 'text-orange-600';
+        case 'DELETE': return 'text-red-600';
+        case 'PATCH': return 'text-purple-600';
+        case 'OPTIONS': return 'text-gray-600';
+        case 'HEAD': return 'text-gray-600';
+        default: return 'text-gray-700'; // Default text color
     }
 };
 
@@ -88,7 +86,7 @@ export function SendHttpRequestActionFields({ actionIndex, handleInsertToken }: 
             });
             
             toast.success("JSON formatted successfully");
-        } catch (error) {
+        } catch {
             toast.error("Invalid JSON. Please check your syntax.");
         }
     };
@@ -103,7 +101,7 @@ export function SendHttpRequestActionFields({ actionIndex, handleInsertToken }: 
         try {
             JSON.parse(bodyTemplate);
             return true;
-        } catch (e) {
+        } catch {
             return false;
         }
     }, [bodyTemplate, currentContentType]);
@@ -124,14 +122,14 @@ export function SendHttpRequestActionFields({ actionIndex, handleInsertToken }: 
                 {/* Method Field */}
                 <FormField control={control} name={paramFieldName('method')} render={({ field }) => (
                     <FormItem>
-                        {/* Standard Label */} 
+                        {/* Standard Label */}
                         <FormLabel className="block mb-1.5 text-sm">Method</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isLoading}>
                             <FormControl>
-                                <SelectTrigger> 
-                                    {/* Display selected method with color */}
+                                <SelectTrigger>
+                                    {/* Display selected method with color TEXT, no badge */}
                                     {field.value ? (
-                                        <Badge variant="outline" className={cn("px-2 py-0.5 font-semibold", getMethodColorClasses(field.value))}>{field.value}</Badge>
+                                        <span className={cn("font-semibold", getMethodTextColor(field.value))}>{field.value}</span>
                                     ) : (
                                         <SelectValue placeholder="Method" />
                                     )}
@@ -140,8 +138,8 @@ export function SendHttpRequestActionFields({ actionIndex, handleInsertToken }: 
                             <SelectContent>
                                 {(HttpMethodSchema.options).map(method => (
                                     <SelectItem key={method} value={method}>
-                                        {/* Method name with color badge */}
-                                        <Badge variant="outline" className={cn("px-2 py-0.5 font-semibold", getMethodColorClasses(method))}>{method}</Badge>
+                                        {/* Method name with color TEXT, no badge */}
+                                        <span className={cn("font-semibold", getMethodTextColor(method))}>{method}</span>
                                     </SelectItem>
                                 ))}
                             </SelectContent>
@@ -150,10 +148,10 @@ export function SendHttpRequestActionFields({ actionIndex, handleInsertToken }: 
                     </FormItem>
                 )} />
                 
-                {/* URL Field */} 
+                {/* URL Field */}
                 <FormField control={control} name={paramFieldName('urlTemplate')} render={({ field }) => (
                     <FormItem>
-                        {/* Standard Label */} 
+                        {/* Standard Label */}
                         <FormLabel className="block mb-1.5 text-sm">URL</FormLabel>
                         <FormControl>
                             {/* Input and TokenInserter side-by-side */}

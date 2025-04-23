@@ -135,12 +135,12 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                                 const targetConfig = JSON.parse(targetNode.cfg_enc);
                                 // --- End Fetch Target Node --- 
 
-                                if (sourceNode.category === 'piko') {
+                                if (targetNode.category === 'piko') {
                                     // Use the fetched targetConfig for Piko details
                                     const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
                                     if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target node ${targetNode.id}`); }
                                     
-                                    let pikoTokenResponse: piko.PikoSystemScopedTokenResponse;
+                                    let pikoTokenResponse: piko.PikoTokenResponse;
                                     try {
                                         pikoTokenResponse = await piko.getSystemScopedAccessToken(username, password, selectedSystem);
                                     } catch (tokenError) {
@@ -218,7 +218,7 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                                 const targetConfig = JSON.parse(targetNode.cfg_enc);
                                 // --- End Fetch Target Node --- 
 
-                                if (sourceNode.category === 'piko') {
+                                if (targetNode.category === 'piko') {
                                     // Use the fetched targetConfig for Piko details
                                     const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
                                     if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target node ${targetNode.id}`); }
@@ -284,7 +284,7 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                                     }
 
                                     // Get Token (inside runAction to benefit from retry)
-                                    let pikoTokenResponse: piko.PikoSystemScopedTokenResponse;
+                                    let pikoTokenResponse: piko.PikoTokenResponse;
                                     try {
                                         pikoTokenResponse = await piko.getSystemScopedAccessToken(username, password, selectedSystem);
                                     } catch (tokenError) {
@@ -322,27 +322,37 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                                 // Type assertion for parameters
                                 const httpParams = resolvedParams as z.infer<typeof SendHttpRequestActionParamsSchema>; 
 
-                                // Parse Headers Template
+                                // Parse Headers array
                                 const headers = new Headers();
                                 headers.set('User-Agent', 'FusionBridge Automation/1.0'); // Default User-Agent
-                                if (httpParams.headersTemplate) {
-                                    try {
-                                        const lines = httpParams.headersTemplate.split('\n');
-                                        for (const line of lines) {
-                                            const separatorIndex = line.indexOf(':');
-                                            if (separatorIndex > 0) {
-                                                const key = line.substring(0, separatorIndex).trim();
-                                                const value = line.substring(separatorIndex + 1).trim();
-                                                if (key && value) {
+                                
+                                // Check if httpParams.headers exists and is an array before iterating
+                                if (Array.isArray(httpParams.headers)) {
+                                    for (const header of httpParams.headers) {
+                                        // Check if keyTemplate and valueTemplate exist and are valid
+                                        if (header.keyTemplate && typeof header.keyTemplate === 'string' && 
+                                            typeof header.valueTemplate === 'string') { // Allow empty value
+                                            
+                                            const key = header.keyTemplate.trim();
+                                            const value = header.valueTemplate; // Don't trim value, might be intentional
+                                            
+                                            if (key) { // Ensure key is not empty after trimming
+                                                try {
                                                     headers.set(key, value);
+                                                } catch (e) {
+                                                    // Header names must be valid HTTP token characters
+                                                    console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Invalid header name: "${key}". Skipping.`, e);
                                                 }
-                                            } else if (line.trim()) { // Handle lines without separator if needed, or log warning
-                                                console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Malformed header line: ${line}. Skipping.`);
+                                            } else {
+                                                 console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Empty header key detected. Skipping.`);
                                             }
+                                        } else {
+                                            console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Invalid header object found:`, header, `. Skipping.`);
                                         }
-                                    } catch (headerParseError) {
-                                        throw new Error(`Failed to parse headers template: ${headerParseError instanceof Error ? headerParseError.message : headerParseError}`);
                                     }
+                                } else if (httpParams.headers) {
+                                    // Log a warning if httpParams.headers exists but is not an array
+                                    console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Invalid format for headers parameter: Expected an array, got`, typeof httpParams.headers);
                                 }
 
                                 // Prepare Fetch options
@@ -375,7 +385,7 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                                             // Try to read response body for more context on failure
                                             responseBody = await response.text();
                                             console.error(`[Rule ${rule.id}][Action sendHttpRequest] Response body (error): ${responseBody.substring(0, 500)}...`); // Log first 500 chars
-                                        } catch (bodyReadError) {
+                                        } catch /* Removed unused 'bodyReadError' */ {
                                              console.error(`[Rule ${rule.id}][Action sendHttpRequest] Could not read response body on error.`);
                                         }
                                         // Throw an error to trigger retry or final failure
@@ -397,6 +407,8 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                             default:
                                 // Use type assertion for exhaustiveness check
                                 const _exhaustiveCheck: never = action;
+                                // Keeping 'as any' for runtime logging of unhandled cases
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                 console.warn(`[Rule ${rule.id}] Unknown or unhandled action type: ${(_exhaustiveCheck as any)?.type}`);
                         }
                     }; // End runAction definition
@@ -430,7 +442,16 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
 /**
  * Resolves tokens in action parameter templates.
  */
-function resolveTokens(params: any, event: YolinkEvent, device: any): any {
+function resolveTokens(
+    params: Record<string, unknown> | null | undefined, // Changed any to Record<string, unknown> | null | undefined
+    event: YolinkEvent, 
+    device: Record<string, unknown> | null | undefined // Changed any to Record<string, unknown> | null | undefined
+): Record<string, unknown> | null | undefined { // Changed return any to Record<string, unknown> | null | undefined
+    
+    if (params === null || params === undefined) {
+        return params;
+    }
+    
     const resolved = { ...params };
     const tokenContext = {
         event: {
@@ -445,11 +466,12 @@ function resolveTokens(params: any, event: YolinkEvent, device: any): any {
         if (typeof template !== 'string') return template; // Handle non-string inputs
         return template.replace(/\{\{\s*([^}]+)\s*\}\}/g, (match, path) => {
             const keys = path.trim().split('.');
-            let value: any = tokenContext;
+            let value: unknown = tokenContext; // Changed any to unknown
             try {
                 for (const key of keys) {
+                    // Check if value is an object and key exists before accessing
                     if (value && typeof value === 'object' && key in value) {
-                        value = value[key];
+                        value = (value as Record<string, unknown>)[key]; // Assertion needed after check
                     } else {
                         return match; // Keep original token if path invalid
                     }
@@ -463,8 +485,9 @@ function resolveTokens(params: any, event: YolinkEvent, device: any): any {
     };
 
     for (const key in resolved) {
-        if (typeof resolved[key] === 'string') {
-            resolved[key] = replaceToken(resolved[key]);
+        // Ensure the property exists and is a string before replacing
+        if (Object.prototype.hasOwnProperty.call(resolved, key) && typeof resolved[key] === 'string') {
+            resolved[key] = replaceToken(resolved[key] as string);
         }
     }
     return resolved;

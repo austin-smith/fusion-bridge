@@ -7,7 +7,7 @@ import { automations } from "@/data/db/schema"; // Import automations schema
 import { eq } from "drizzle-orm";
 import { deviceIdentifierMap } from "@/lib/device-mapping"; 
 import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
-import { notFound } from 'next/navigation'; // For handling non-existent IDs
+import { redirect } from 'next/navigation'; // For handling non-existent IDs
 import { type AutomationConfig, type AutomationAction } from "@/lib/automation-schemas"; // Import necessary types 
 
 // Define AutomationFormData based on its usage for the form
@@ -16,7 +16,6 @@ interface AutomationFormData {
   name: string;
   enabled: boolean;
   sourceNodeId: string;
-  targetNodeId: string;
   configJson: AutomationConfig; // Use the imported AutomationConfig type
   createdAt: Date;
   updatedAt: Date;
@@ -43,7 +42,7 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
 
   // If automation not found, trigger a 404
   if (!automation) {
-    notFound();
+    redirect('/');
   }
 
   // Fetch all nodes for the dropdowns
@@ -55,7 +54,7 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
     
   // Prepare options for the Source Device Types multi-select combobox
   const sourceDeviceTypeOptions: MultiSelectOption[] = Object.entries(deviceIdentifierMap.yolink)
-    .map(([value, info]) => ({ // info is unused here, but kept for consistency
+    .map(([value /* Removed unused 'info' */]) => ({ // info is unused here, but kept for consistency
         value, 
         label: value // Use the device type string (value) as the label
     }))
@@ -71,28 +70,47 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
   // Check if configJson exists and is not null/undefined before trying to parse
   if (automation.configJson) {
     try {
-      let parsedConfig: any;
-      if (typeof automation.configJson === 'object') {
-        // If it's already an object, use it directly
-        parsedConfig = automation.configJson;
+      // Define a potential structure for the parsed config
+      // This helps avoid 'any' and provides better type checking
+      type PotentialConfig = {
+          sourceEntityTypes?: unknown[]; // Allow unknown initially
+          eventTypeFilter?: unknown;
+          actions?: unknown[]; // Allow unknown initially
+      };
+      
+      let parsedConfig: PotentialConfig | null = null; // Start with null
+      
+      if (typeof automation.configJson === 'object' && automation.configJson !== null) {
+        // If it's already an object (and not null), assume it fits the potential structure
+        // We still need runtime checks below
+        parsedConfig = automation.configJson as PotentialConfig; 
       } else if (typeof automation.configJson === 'string') {
         // If it's a string, try to parse it
-        parsedConfig = JSON.parse(automation.configJson);
+        const parsed = JSON.parse(automation.configJson);
+        // Basic check if the parsed result is an object
+        if (typeof parsed === 'object' && parsed !== null) {
+            parsedConfig = parsed as PotentialConfig;
+        } else {
+             console.warn(`Parsed configJson string was not a valid object for automation ${automation.id}.`);
+        }
       }
 
       // IMPORTANT: Check if parsedConfig is a valid object and has the required arrays
+      // Now checks against the PotentialConfig type and validates array types
       if (parsedConfig && 
-          typeof parsedConfig === 'object' && 
           Array.isArray(parsedConfig.sourceEntityTypes) && 
           Array.isArray(parsedConfig.actions)) 
       {
          configJsonData = {
-            sourceEntityTypes: parsedConfig.sourceEntityTypes,
-            eventTypeFilter: parsedConfig.eventTypeFilter || '', // Provide default if missing
-            actions: parsedConfig.actions as AutomationAction[], // Assuming actions are correctly structured
+            // Ensure sourceEntityTypes contains only strings if possible, or handle mixed types if needed
+            sourceEntityTypes: parsedConfig.sourceEntityTypes.filter(item => typeof item === 'string') as string[], 
+            // Safely access eventTypeFilter, default to empty string if not a string or missing
+            eventTypeFilter: typeof parsedConfig.eventTypeFilter === 'string' ? parsedConfig.eventTypeFilter : '', 
+            // Assume actions are correctly structured - potential area for more specific validation/typing
+            actions: parsedConfig.actions as AutomationAction[], 
          };
-      } else {
-          console.warn(`Parsed configJson for automation ${automation.id} is invalid or missing required fields. Using default empty config.`);
+      } else if (parsedConfig) { // Only warn if parsedConfig was created but failed validation
+          console.warn(`Parsed configJson for automation ${automation.id} is invalid or missing required fields (sourceEntityTypes/actions arrays). Using default empty config.`);
       }
 
     } catch (e) {
@@ -108,7 +126,6 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
       name: automation.name,
       enabled: automation.enabled,
       sourceNodeId: automation.sourceNodeId,
-      targetNodeId: automation.targetNodeId,
       configJson: configJsonData,
       createdAt: automation.createdAt, 
       updatedAt: automation.updatedAt,

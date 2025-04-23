@@ -1,5 +1,5 @@
 // Common interfaces used throughout the application
-import { DeviceType, DeviceSubtype, TypedDeviceInfo } from './device-mapping';
+import { TypedDeviceInfo } from './device-mapping';
 
 // Node type for the database entities
 export interface Node {

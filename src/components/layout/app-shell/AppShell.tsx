@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"; // Import DropdownMenu
 import { FiSun, FiMoon } from "react-icons/fi"; // Import icons
-import { LuMerge } from "react-icons/lu"; // Import LuMerge icon
 import FusionIcon from '@/components/icons/FusionIcon'; // Import the new icon
 
 // Theme Toggle Button Component (Simplified for Header)

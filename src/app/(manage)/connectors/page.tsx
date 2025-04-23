@@ -93,7 +93,6 @@ export default function ConnectorsPage() {
   // State for modals and delete confirmation
   const [nodeIdToDelete, setNodeIdToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [yolinkHomeInfo, setYolinkHomeInfo] = useState<{id: string, nodeName: string} | null>(null);
   const [togglingNodeId, setTogglingNodeId] = useState<string | null>(null);
 
   // Set page title
@@ -120,6 +119,7 @@ export default function ConnectorsPage() {
         const yolinkNode = fetchedNodes.find((node: NodeWithConfig) => 
           node.category === 'yolink' && node.yolinkHomeId
         );
+        /* // Removed - Related to unused yolinkHomeInfo state
         if (yolinkNode && yolinkNode.yolinkHomeId) {
           setYolinkHomeInfo({
             id: yolinkNode.yolinkHomeId,
@@ -128,6 +128,7 @@ export default function ConnectorsPage() {
         } else {
           setYolinkHomeInfo(null); // Clear if no YoLink node found
         }
+        */
       } else {
         setError(nodesData.error || 'Failed to load connectors');
         // If nodes fail to load, maybe skip status fetching?
@@ -294,6 +295,9 @@ export default function ConnectorsPage() {
   // if they don't rely on component state other than nodeId and getMqttState.
   // Keep them inside for now for simplicity, as they run on render anyway.
   
+  // Find the node being deleted to display its name in the dialog
+  const nodeToDelete = nodes.find(node => node.id === nodeIdToDelete);
+
   // Get status color class based on MQTT status
   const getStatusColorClass = (nodeId: string) => {
     const mqttState = getMqttState(nodeId);
@@ -467,7 +471,8 @@ export default function ConnectorsPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>Are you sure?</AlertDialogTitle>
               <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the connector.
+                This action cannot be undone. This will permanently delete the connector{' '}
+                {nodeToDelete && <strong className="font-medium">{nodeToDelete.name}</strong>}.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

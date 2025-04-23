@@ -1,8 +1,6 @@
 import React from 'react';
 
-interface FusionIconProps extends React.SVGProps<SVGSVGElement> {}
-
-export const FusionIcon: React.FC<FusionIconProps> = (props) => {
+export const FusionIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => { // Used React.SVGProps directly
   return (
     <svg
       viewBox="0 0 128 128" // Use the original viewBox

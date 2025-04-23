@@ -14,9 +14,9 @@ function timestamp(): string {
   return new Date().toISOString();
 }
 
-function addToBuffer(type: string, ...args: any[]) {
+function addToBuffer(type: string, ...args: unknown[]) {
   const log = `${timestamp()} [${type}] ${args.map(arg => 
-    typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+    typeof arg === 'object' && arg !== null ? JSON.stringify(arg) : String(arg)
   ).join(' ')}`;
   
   consoleBuffer.push(log);

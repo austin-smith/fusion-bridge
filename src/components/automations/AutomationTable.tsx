@@ -16,7 +16,6 @@ import {
 import { Badge } from '@/components/ui/badge'; // For enabled status
 import { toast } from 'sonner'; // For feedback
 import Link from 'next/link'; // Import Link
-import { useRouter } from 'next/navigation'; // Import router for refresh
 
 // Import Alert Dialog components
 import {
@@ -57,7 +56,100 @@ interface AutomationApiResponse {
   sourceNodeName: string | null;
 }
 
-// Define columns for the DataTable using the API response type
+// --- START: New Row Actions Component ---
+interface AutomationRowActionsProps {
+  automation: AutomationApiResponse;
+  refreshData: () => void;
+}
+
+function AutomationRowActions({ automation, refreshData }: AutomationRowActionsProps) {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/automations/${automation.id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        // Attempt to parse error details
+        let errorDetails = `API Error: ${response.status}`;
+        try { const errorJson = await response.json(); errorDetails = errorJson.message || errorDetails; } catch {} 
+        throw new Error(errorDetails);
+      }
+      toast.success(`Automation \"${automation.name}\" deleted.`);
+      setShowDeleteDialog(false); // Close dialog on success
+      refreshData(); // Call the refresh function passed via props
+    } catch (error) {
+      console.error('Delete failed:', error);
+      toast.error(`Failed to delete automation. ${error instanceof Error ? error.message : ''}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" className="h-8 w-8 p-0">
+            <span className="sr-only">Open menu</span>
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+          <DropdownMenuItem
+            onClick={() => navigator.clipboard.writeText(automation.id)}
+          >
+            Copy ID
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            {/* Link to the manage page */}
+            <Link href={`/automations/${automation.id}`}>Edit</Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem 
+            className="text-red-600 focus:text-red-700 focus:bg-red-50"
+            onSelect={(e) => {
+                e.preventDefault(); // Prevent menu closing immediately
+                setShowDeleteDialog(true);
+              }}
+            disabled={isDeleting}
+          >
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Alert Dialog for Delete Confirmation */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the
+              automation rule <span className="font-semibold">{automation.name}</span>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDelete} 
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+// --- END: New Row Actions Component ---
+
 export const columns = (
   // Pass refresh function as argument to the columns definition
   refreshData: () => void 
@@ -110,90 +202,8 @@ export const columns = (
   {
     id: 'actions',
     cell: ({ row }) => {
-      const automation = row.original; 
-      const [isDeleting, setIsDeleting] = useState(false);
-      const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-      
-      const handleDelete = async () => {
-        setIsDeleting(true);
-        try {
-          const response = await fetch(`/api/automations/${automation.id}`, {
-            method: 'DELETE',
-          });
-          if (!response.ok) {
-             // Attempt to parse error details
-             let errorDetails = `API Error: ${response.status}`;
-             try { const errorJson = await response.json(); errorDetails = errorJson.message || errorDetails; } catch {} 
-             throw new Error(errorDetails);
-          }
-          toast.success(`Automation "${automation.name}" deleted.`);
-          setShowDeleteDialog(false); // Close dialog on success
-          refreshData(); // Call the refresh function passed via props
-        } catch (error) {
-          console.error('Delete failed:', error);
-          toast.error(`Failed to delete automation. ${error instanceof Error ? error.message : ''}`);
-        } finally {
-          setIsDeleting(false);
-        }
-      };
-      
-      return (
-        <>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
-                <span className="sr-only">Open menu</span>
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem
-                onClick={() => navigator.clipboard.writeText(automation.id)}
-              >
-                Copy ID
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href={`/automations/${automation.id}`}>Edit</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem 
-                className="text-red-600 focus:text-red-700 focus:bg-red-50"
-                onSelect={(e) => {
-                    e.preventDefault(); // Prevent menu closing immediately
-                    setShowDeleteDialog(true);
-                 }}
-                disabled={isDeleting}
-              >
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Alert Dialog for Delete Confirmation */}
-          <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This action cannot be undone. This will permanently delete the
-                  automation rule "<span className="font-semibold">{automation.name}</span>".
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-                <AlertDialogAction 
-                  onClick={handleDelete} 
-                  disabled={isDeleting}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  {isDeleting ? 'Deleting...' : 'Delete'}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </>
-      );
+      // Render the new component, passing necessary props
+      return <AutomationRowActions automation={row.original} refreshData={refreshData} />;
     },
   },
 ];
@@ -237,7 +247,6 @@ export function AutomationTable() {
   const [automations, setAutomations] = useState<AutomationApiResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter(); // Use router here as well if needed, or rely on refreshData
 
   // Define fetchAutomations using useCallback to keep reference stable
   const fetchAutomations = useCallback(async () => {

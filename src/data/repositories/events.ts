@@ -16,7 +16,7 @@ export async function storeEvent(eventData: {
 }) {
   try {
     // Store event
-    const insertedEvent = await db.insert(events).values({
+    await db.insert(events).values({
       deviceId: eventData.deviceId,
       eventType: eventData.eventType,
       timestamp: eventData.timestamp,
@@ -55,12 +55,12 @@ export async function getRecentEvents(limit = 100) {
     // Process events one by one
     const processedEvents = await Promise.all(recentEvents.map(async event => {
       // Payload is now stored as JSONB, should already be an object/null
-      let payload: Record<string, any> | null = null;
+      let payload: Record<string, unknown> | null = null;
       if (typeof event.payload === 'string') {
         // If it's still a string (e.g., old data or error during storage), try parsing
         try { payload = JSON.parse(event.payload); } catch { /* ignore parse error */ }
       } else if (typeof event.payload === 'object' && event.payload !== null) {
-        payload = event.payload as Record<string, any>;
+        payload = event.payload as Record<string, unknown>;
       }
       
       // Fallback to an empty object if payload is null/invalid
@@ -72,7 +72,7 @@ export async function getRecentEvents(limit = 100) {
         event: event.eventType,
         time: event.timestamp.getTime(),
         msgid: `event-${event.id}`,
-        data: safePayload.data || {}, 
+        data: safePayload?.data || {},
         payload: safePayload,
         deviceId: event.deviceId,
         connectorCategory: event.connectorCategory || 'unknown', // Provide default if join failed somehow
@@ -80,8 +80,8 @@ export async function getRecentEvents(limit = 100) {
         event: string;
         time: number;
         msgid: string;
-        data: Record<string, any>;
-        payload: Record<string, any>;
+        data: Record<string, unknown>;
+        payload: Record<string, unknown>;
         deviceId: string;
         connectorCategory: string;
       };
@@ -141,7 +141,7 @@ export async function cleanupOldEvents() {
 
           // Delete events that are older than the threshold timestamp,
           // OR have the same timestamp but a smaller or equal ID
-          const deletedResult = await db.delete(events)
+          await db.delete(events)
             .where(sql`${events.timestamp} < ${thresholdTimestamp} OR (${events.timestamp} = ${thresholdTimestamp} AND ${events.id} <= ${thresholdId})`);
 
           // Drizzle's .run() might be needed for row counts in some drivers, adapt if necessary

@@ -5,7 +5,7 @@ export const CreateEventActionParamsSchema = z.object({
   sourceTemplate: z.string().min(1, { message: "Source is required" }),
   captionTemplate: z.string().min(1, { message: "Caption is required" }),
   descriptionTemplate: z.string().min(1, { message: "Description is required" }),
-  targetNodeId: z.string().uuid("Invalid Target Connector ID").optional(),
+  targetNodeId: z.string().uuid("Target Connector is required and must be a valid UUID"),
   // Future enhancement: Add target entity selection (e.g., Piko camera GUIDs)
   // targetCameraRefs: z.array(z.string()).optional(), 
 });
@@ -18,7 +18,7 @@ export const CreateBookmarkParamsSchema = z.object({
     durationMsTemplate: z.string().min(1, "Duration is required"), 
     // Tags provided as a comma-separated string template initially
     tagsTemplate: z.string().optional(), 
-    targetNodeId: z.string().uuid("Invalid Target Connector ID").optional(),
+    targetNodeId: z.string().uuid("Target Connector is required and must be a valid UUID"),
 });
 
 // --- START: Add Schema for Send HTTP Request action ---
@@ -58,7 +58,7 @@ export const SendHttpRequestActionParamsSchema = z.object({
         try {
             JSON.parse(data.bodyTemplate);
             return true;
-        } catch (e) {
+        } catch {
             return false; // Invalid JSON
         }
     }
@@ -114,7 +114,6 @@ export interface AutomationRecord {
   triggerEvent: string;
   triggerDeviceId?: string | null; // Optional in DB
   actionType: string;
-  targetNodeId: string;
   config: AutomationConfig; // Embeds the config schema
   enabled: boolean;
   createdAt: Date; // Added from DB schema

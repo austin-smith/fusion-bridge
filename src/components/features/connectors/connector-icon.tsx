@@ -3,7 +3,6 @@ import Image from 'next/image';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { formatConnectorCategory } from '@/lib/utils'; // For fallback text

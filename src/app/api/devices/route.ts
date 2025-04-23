@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: devicesWithConnector });
     }
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error fetching devices:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch devices' },
@@ -163,7 +163,7 @@ export async function POST() {
           let yolinkConfig;
           try {
             yolinkConfig = JSON.parse(connector.cfg_enc);
-          } catch (parseError: any) {
+          } catch (parseError: unknown) {
             console.error(`Error parsing config for connector ${connector.name}:`, parseError);
             errors.push({
               connectorName: connector.name,
@@ -199,7 +199,7 @@ export async function POST() {
             error: `Unsupported connector type: ${connector.category}`
           });
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error(`Error syncing devices for connector ${connector.name}:`, err);
         errors.push({
           connectorName: connector.name,
@@ -287,7 +287,7 @@ export async function POST() {
       syncedCount,
       errors: errors.length > 0 ? errors : undefined
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error syncing devices:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to sync devices' },
@@ -302,7 +302,7 @@ export async function POST() {
  * @param config The YoLink configuration
  * @returns Count of synced devices
  */
-async function syncYoLinkDevices(connectorId: string, config: any): Promise<number> {
+async function syncYoLinkDevices(connectorId: string, config: yolinkDriver.YoLinkConfig): Promise<number> {
   let processedCount = 0;
   try {
     console.log(`Syncing YoLink devices for connector ${connectorId} using Upsert Strategy`);
@@ -333,12 +333,22 @@ async function syncYoLinkDevices(connectorId: string, config: any): Promise<numb
         continue;
       }
 
+      // Extract string status from potential state object
+      let deviceStatusString: string | null = null;
+      if (typeof device.state === 'object' && device.state !== null) {
+        if (typeof device.state.state === 'string') {
+            deviceStatusString = device.state.state;
+        } else if (typeof device.state.power === 'string') {
+            deviceStatusString = device.state.power;
+        }
+      }
+
       const deviceData = {
         deviceId: device.deviceId,
         connectorId: connectorId,
         name: device.name,
         type: device.type,
-        status: device.state || null, // Use state if available
+        status: deviceStatusString, // Assign extracted string status
         model: device.modelName, // Map modelName to model
         // Piko specific fields will be null for YoLink
         serverId: null,
@@ -357,7 +367,7 @@ async function syncYoLinkDevices(connectorId: string, config: any): Promise<numb
             set: { // Update specific fields
               name: deviceData.name,
               type: deviceData.type,
-              status: deviceData.status,
+              status: deviceData.status, // Use the prepared string status
               model: deviceData.model, // Ensure model is updated too
               // Reset Piko fields to null in case it was previously mis-categorized
               serverId: null,
@@ -368,7 +378,7 @@ async function syncYoLinkDevices(connectorId: string, config: any): Promise<numb
           });
         processedCount++;
         // console.log(`  [Success] Upsert successful for ${deviceData.deviceId}`); // Removed verbose log
-      } catch (upsertError: any) {
+      } catch (upsertError: unknown) {
         // Keep error log for failed upserts
         console.error(`  [Error] Failed upsert for deviceId ${deviceData.deviceId}:`, upsertError);
       }
@@ -390,7 +400,7 @@ async function syncYoLinkDevices(connectorId: string, config: any): Promise<numb
 
     console.log(`Sync finished for ${connectorId}. Total devices processed: ${processedCount}`);
     return processedCount;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`Error syncing YoLink devices for connector ${connectorId}:`, error);
     throw error; // Re-throw error to indicate sync failure for this connector
   }
@@ -466,7 +476,7 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
       }
       // Optional: Delete servers associated with connectorId not in pikoServersFromApi
 
-    } catch (serverSyncError: any) {
+    } catch (serverSyncError: unknown) {
       console.error(`Error during Piko server sync for connector ${connectorId}:`, serverSyncError);
       // Decide if server sync error should stop device sync. For now, log and continue.
       // errors.push(...) could be used if we pass the errors array down.
@@ -515,7 +525,7 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
               }
             });
           processedDeviceCount++;
-        } catch (upsertError: any) {
+        } catch (upsertError: unknown) {
           console.error(`  [Error] Failed Piko device upsert for deviceId ${deviceData.deviceId}:`, upsertError);
         }
       }
@@ -525,8 +535,10 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
     console.log(`Piko device sync finished for ${connectorId}. Total devices processed: ${processedDeviceCount}`);
     return processedDeviceCount; // Return count of devices processed
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`Error syncing Piko data for connector ${connectorId}:`, error);
-    throw new Error(`Piko sync failed: ${error.message || 'Unknown error'}`); 
+    // Type check before accessing message
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`Piko sync failed: ${errorMessage}`); 
   }
 } 

@@ -77,7 +77,6 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
   const jsonString = JSON.stringify(eventData, null, 2);
 
   // Get mapped type info & state icon for the modal header
-  const deviceName = event.deviceName || event.deviceId || 'Unknown Device';
   const typeInfo = event.deviceTypeInfo;
   const DeviceIcon = getDeviceTypeIcon(typeInfo.type);
   const StateIcon = event.displayState ? getDisplayStateIcon(event.displayState) : null;

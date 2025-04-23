@@ -35,9 +35,6 @@ export interface PikoTokenResponse {
   scope: string;
 }
 
-// Interface for system-scoped token response
-export interface PikoSystemScopedTokenResponse extends PikoTokenResponse {}
-
 // Interface for raw server data from API
 interface PikoServerRaw {
   id: string;
@@ -49,7 +46,7 @@ interface PikoServerRaw {
     timeZoneInformation?: { timeZoneId?: string; timeZoneOffsetMs?: string };
   };
   status?: string;
-  storages?: any[]; // Keeping storages as any for simplicity for now
+  storages?: unknown[]; // Changed any[] to unknown[]
   url?: string;
   version?: string;
 }
@@ -210,7 +207,7 @@ export async function getSystemScopedAccessToken(
   username: string, 
   password: string, 
   systemId: string
-): Promise<PikoSystemScopedTokenResponse> {
+): Promise<PikoTokenResponse> {
   // Call the helper with the system-specific scope
   const scope = `cloudSystemId=${systemId}`;
   return _fetchPikoToken(username, password, scope);
@@ -233,8 +230,8 @@ async function fetchPikoRelayData(
   path: string,
   queryParams?: Record<string, string>,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
-  body?: Record<string, any>
-): Promise<any> {
+  body?: object | null | undefined
+): Promise<unknown> {
   if (!systemId || !systemScopedToken) {
     throw new Error('System ID and system-scoped token are required');
   }
@@ -359,7 +356,7 @@ async function _fetchPikoToken(
     throw new Error('Username and password are required');
   }
 
-  const requestBody: any = {
+  const requestBody: Record<string, string | undefined> = {
     grant_type: 'password',
     response_type: 'token',
     client_id: '3rdParty',
@@ -435,7 +432,7 @@ export interface PikoCreateEventPayload {
   timestamp: string; // ISO 8601 format: "YYYY-MM-DDTHH:mm:ss"
   metadata?: {
     cameraRefs?: string[]; // Array of camera GUIDs (usually just one)
-    [key: string]: any; // Allow other metadata fields
+    [key: string]: unknown; // Changed any to unknown
   };
 }
 

@@ -72,6 +72,43 @@ function getYoLinkErrorMessage(errorData: unknown, responseStatus: number): stri
   }
 }
 
+// --- BEGIN Add YoLinkDeviceRaw Interface ---
+// Represents the raw device structure returned by the YoLink API
+interface YoLinkDeviceRaw {
+  deviceId: string;
+  name: string;
+  type: string;
+  modelName?: string;
+  token?: string; // Unique device token
+  parentDeviceId?: string; // For multi-outlet devices, etc.
+  profile?: { 
+    devType: string; // e.g., "MultiOutlet", "SpeakerHub"
+  };
+  online?: boolean;
+  settings?: { 
+    name?: string; // Sometimes name is here
+    firmwareVersion?: string;
+    // Other settings might exist
+    [key: string]: unknown; 
+  };
+  state?: { 
+    // State structure varies greatly, allow any known/common fields
+    state?: string; // e.g., "open", "closed", "normal", "alert"
+    power?: string; // e.g., "on", "off"
+    brightness?: number;
+    colorTemp?: number;
+    online?: boolean; // Sometimes online status is here
+    battery?: number;
+    humidity?: number;
+    temperature?: number;
+    // Other states might exist
+    [key: string]: unknown;
+  };
+  // Allow other top-level fields
+  [key: string]: unknown;
+}
+// --- END Add YoLinkDeviceRaw Interface ---
+
 /**
  * Generic function to call the YoLink API with proper error handling
  * @param accessToken YoLink access token
@@ -83,7 +120,7 @@ function getYoLinkErrorMessage(errorData: unknown, responseStatus: number): stri
 async function callYoLinkApi<T>(
   accessToken: string, 
   method: string, 
-  params: Record<string, any> = {}, 
+  params: Record<string, unknown> = {},
   operationName: string
 ): Promise<T> {
   console.log(`YoLink ${operationName} called with token present:`, !!accessToken);
@@ -226,9 +263,9 @@ export async function getHomeInfo(accessToken: string): Promise<string> {
  * @returns Array of YoLink devices
  * @throws Error with a user-friendly message if fetching fails
  */
-export async function getDeviceList(accessToken: string): Promise<any[]> {
+export async function getDeviceList(accessToken: string): Promise<YoLinkDeviceRaw[]> {
   try {
-    const data = await callYoLinkApi<{ devices: any[] }>(
+    const data = await callYoLinkApi<{ devices: YoLinkDeviceRaw[] }>(
       accessToken,
       "Home.getDeviceList",
       {},

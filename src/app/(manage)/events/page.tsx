@@ -38,7 +38,7 @@ import {
   PaginationState,
   getPaginationRowModel,
 } from '@tanstack/react-table';
-import { getDeviceTypeIcon, DeviceType, getDisplayStateIcon } from '@/lib/device-mapping';
+import { getDeviceTypeIcon, getDisplayStateIcon } from '@/lib/device-mapping';
 import { TypedDeviceInfo, DisplayState } from '@/types/device-mapping';
 import {
   Tooltip,
@@ -59,7 +59,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { cn, formatConnectorCategory } from "@/lib/utils";
+import { formatConnectorCategory } from "@/lib/utils";
 import { toast } from 'sonner';
 import { DeviceDetailDialogContent } from '@/components/features/devices/device-detail-dialog-content';
 import { DeviceWithConnector } from '@/types';
@@ -156,7 +156,6 @@ function DebouncedInput({
 export default function EventsPage() {
   const [events, setEvents] = useState<EnrichedEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'time', desc: true }
   ]);
@@ -182,9 +181,6 @@ export default function EventsPage() {
 
   // Function to fetch events
   const fetchEvents = useCallback(async (isInitialLoad = false) => {
-    if (!isInitialLoad) {
-      // setRefreshing(true);
-    }
     try {
       const response = await fetch('/api/events');
 
@@ -201,7 +197,6 @@ export default function EventsPage() {
       console.error('Error fetching events:', error);
       // toast.error(error instanceof Error ? error.message : 'Failed to fetch events');
     } finally {
-      // setRefreshing(false);
       setLoading(false);
     }
   }, []);
@@ -232,9 +227,11 @@ export default function EventsPage() {
         throw new Error(`Device data not found for ID ${deviceId}.`);
       }
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching device details:', error);
-      toast.error(error.message || 'Could not load device details.');
+      // Type check before accessing message property
+      const errorMessage = error instanceof Error ? error.message : 'Could not load device details.';
+      toast.error(errorMessage);
       setIsDetailDialogOpen(false); // Close dialog on error
     } finally {
       setIsLoadingDeviceDetail(false);
@@ -400,7 +397,7 @@ export default function EventsPage() {
         const isThisWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) < eventTime;
         
         let displayTime;
-        let tooltipTime = format(eventTime, 'PPpp'); // Full date and time for tooltip
+        const tooltipTime = format(eventTime, 'PPpp'); // Changed let to const
         
         if (isToday) {
           displayTime = format(eventTime, 'h:mm a'); // Just time for today
@@ -555,7 +552,7 @@ export default function EventsPage() {
         );
       },
     },
-  ], []);
+  ], [fetchDeviceDetails]);
 
   // Initialize the table with TanStack
   const table = useReactTable({

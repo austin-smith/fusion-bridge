@@ -91,8 +91,9 @@ export async function GET(request: Request) {
       const associatedDeviceIds = associations.map(a => a.associatedDeviceId);
       return NextResponse.json({ success: true, data: associatedDeviceIds });
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`Error fetching associations (query: ${searchParams.toString()}):`, error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch device associations';
     return NextResponse.json(
       { success: false, error: 'Failed to fetch device associations' },
       { status: 500 }
@@ -189,8 +190,9 @@ export async function PUT(request: Request) {
     console.log(`API PUT: Successfully updated associations.`);
     return NextResponse.json({ success: true, message: `Associations updated for ${deviceId}` });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('API PUT Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to update device associations';
     return NextResponse.json(
       { success: false, error: 'Failed to update device associations' },
       { status: 500 }

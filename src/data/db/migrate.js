@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-/* eslint-disable @typescript-eslint/no-var-requires */
 // Node migration script runs in Node.js context; CommonJS require is acceptable.
 const { join } = require('path');
 const { mkdirSync } = require('fs');

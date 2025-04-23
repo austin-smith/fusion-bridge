@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/data/db';
 import { automations, nodes } from '@/data/db/schema';
 import { AutomationConfigSchema } from '@/lib/automation-schemas';
@@ -11,7 +11,6 @@ import { alias } from 'drizzle-orm/sqlite-core';
 const PutBodySchema = z.object({
     name: z.string().min(1, { message: "Name is required" }),
     sourceNodeId: z.string().uuid({ message: "Invalid source node ID" }),
-    targetNodeId: z.string().uuid({ message: "Invalid target node ID" }),
     enabled: z.boolean().optional(), // Make optional for PUT
     config: AutomationConfigSchema, // Validate the nested config object
 });
@@ -20,13 +19,16 @@ const PutBodySchema = z.object({
  * GET /api/automations/{id}
  * Fetches a specific automation configuration by ID.
  */
-export async function GET(request: Request, { params }: { params: { id: string } }) {
-  const id = params.id;
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
   try {
+    const { id } = await params;
+
     // Fetch automation and join with nodes to get names directly
     // Use aliases for joining the same table twice
     const sourceNodeAlias = alias(nodes, "sourceNode");
-    const targetNodeAlias = alias(nodes, "targetNode");
 
     const result = await db
       .select({
@@ -34,17 +36,14 @@ export async function GET(request: Request, { params }: { params: { id: string }
         name: automations.name,
         enabled: automations.enabled,
         sourceNodeId: automations.sourceNodeId,
-        targetNodeId: automations.targetNodeId,
         configJson: automations.configJson,
         createdAt: automations.createdAt,
         updatedAt: automations.updatedAt,
         sourceNodeName: sourceNodeAlias.name,
-        targetNodeName: targetNodeAlias.name,
       })
       .from(automations)
       .where(eq(automations.id, id))
       .leftJoin(sourceNodeAlias, eq(automations.sourceNodeId, sourceNodeAlias.id))
-      .leftJoin(targetNodeAlias, eq(automations.targetNodeId, targetNodeAlias.id))
       .limit(1);
 
     if (result.length === 0) {
@@ -54,7 +53,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     return NextResponse.json(result[0]);
 
   } catch (error) {
-    console.error(`Failed to fetch automation ${id}:`, error);
+    console.error(`Failed to fetch automation:`, error);
     return NextResponse.json({ message: "Failed to fetch automation" }, { status: 500 });
   }
 }
@@ -63,9 +62,12 @@ export async function GET(request: Request, { params }: { params: { id: string }
  * PUT /api/automations/{id}
  * Updates a specific automation configuration.
  */
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  const id = params.id;
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
   try {
+    const { id } = await params;
     const body = await request.json();
 
     // Validate request body
@@ -74,9 +76,9 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       return NextResponse.json({ message: "Invalid request body", errors: validationResult.error.flatten().fieldErrors }, { status: 400 });
     }
 
-    const { name, sourceNodeId, targetNodeId, enabled, config } = validationResult.data;
+    const { name, sourceNodeId, enabled, config } = validationResult.data;
 
-    // TODO: Optional - Validate that sourceNodeId and targetNodeId exist?
+    // TODO: Optional - Validate that sourceNodeId exists?
 
     // Update the record
     const updatedAutomation = await db
@@ -84,7 +86,6 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       .set({
         name: name,
         sourceNodeId: sourceNodeId,
-        targetNodeId: targetNodeId,
         enabled: enabled, // Use validated value (could be undefined if optional allows)
         configJson: config,
         updatedAt: sql`(unixepoch('now', 'subsec') * 1000)`, // Manually update timestamp
@@ -99,7 +100,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     return NextResponse.json(updatedAutomation[0]);
 
   } catch (error) {
-    console.error(`Failed to update automation ${id}:`, error);
+    console.error(`Failed to update automation:`, error);
     if (error instanceof z.ZodError) {
        return NextResponse.json({ message: "Invalid configuration data", errors: error.flatten().fieldErrors }, { status: 400 });
     }
@@ -111,9 +112,12 @@ export async function PUT(request: Request, { params }: { params: { id: string }
  * DELETE /api/automations/{id}
  * Deletes a specific automation configuration.
  */
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
-  const id = params.id;
+export async function DELETE(
+  request: Request, // Assuming request might be needed later, keep it
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
   try {
+    const { id } = await params;
     const deleted = await db
         .delete(automations)
         .where(eq(automations.id, id))
@@ -127,7 +131,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     return new NextResponse(null, { status: 204 });
 
   } catch (error) {
-    console.error(`Failed to delete automation ${id}:`, error);
+    console.error(`Failed to delete automation:`, error);
     // Handle potential foreign key constraints if they exist and cause errors
     return NextResponse.json({ message: "Failed to delete automation" }, { status: 500 });
   }

@@ -7,7 +7,7 @@ import { notFound } from 'next/navigation';
 import AutomationForm from '@/components/automations/AutomationForm';
 import type { AutomationConfig } from '@/lib/automation-schemas';
 import type { Node } from '@/lib/types'; // Import Node type from central types file
-import { YOLINK_DEVICE_NAME_MAP } from '@/services/drivers/yolink'; // Import the map
+import { deviceIdentifierMap } from '@/lib/device-mapping'; // Import from device-mapping instead
 import type { MultiSelectOption } from '@/components/ui/multi-select-combobox'; // Import type
 
 // Define the shape of the data expected by the form
@@ -17,12 +17,10 @@ export type AutomationFormData = {
   name: string | null;
   enabled: boolean | null;
   sourceNodeId: string | null;
-  targetNodeId: string | null;
   configJson: AutomationConfig | null; // Allow null for 'new' case
   createdAt: Date | null; // Drizzle returns Date objects for timestamp_ms
   updatedAt: Date | null;
   sourceNodeName?: string | null;
-  targetNodeName?: string | null;
 };
 
 // Fetch all available nodes for dropdowns
@@ -37,10 +35,10 @@ async function getAvailableNodes(): Promise<Pick<Node, 'id' | 'name' | 'category
 
 // Get YoLink device types for multi-select
 function getYoLinkDeviceTypeOptions(): MultiSelectOption[] {
-    // Ensure label is treated as string
-    return Object.entries(YOLINK_DEVICE_NAME_MAP).map(([value, label]) => ({
+    // Use deviceIdentifierMap from the device-mapping.ts
+    return Object.entries(deviceIdentifierMap.yolink).map(([value, typeInfo]) => ({
         value: value,
-        label: String(label), // Explicitly cast or ensure it's string
+        label: typeInfo.subtype ? `${typeInfo.type} (${typeInfo.subtype})` : String(typeInfo.type),
     }));
 }
 
@@ -53,7 +51,6 @@ async function getAutomationData(id: string): Promise<AutomationFormData | null>
             name: null,
             enabled: true,
             sourceNodeId: null,
-            targetNodeId: null,
             configJson: null,
             createdAt: null,
             updatedAt: null,
@@ -62,7 +59,6 @@ async function getAutomationData(id: string): Promise<AutomationFormData | null>
 
     try {
         const sourceNodeAlias = alias(nodes, "sourceNode");
-        const targetNodeAlias = alias(nodes, "targetNode");
 
         const result = await db
             .select({
@@ -70,17 +66,14 @@ async function getAutomationData(id: string): Promise<AutomationFormData | null>
                 name: automations.name,
                 enabled: automations.enabled,
                 sourceNodeId: automations.sourceNodeId,
-                targetNodeId: automations.targetNodeId,
                 configJson: automations.configJson,
                 createdAt: automations.createdAt,
                 updatedAt: automations.updatedAt,
                 sourceNodeName: sourceNodeAlias.name,
-                targetNodeName: targetNodeAlias.name,
             })
             .from(automations)
             .where(eq(automations.id, id))
             .leftJoin(sourceNodeAlias, eq(automations.sourceNodeId, sourceNodeAlias.id))
-            .leftJoin(targetNodeAlias, eq(automations.targetNodeId, targetNodeAlias.id))
             .limit(1);
 
         if (result.length === 0) {
@@ -104,8 +97,8 @@ async function getAutomationData(id: string): Promise<AutomationFormData | null>
     }
 }
 
-export default async function AutomationSettingsPage({ params }: { params: { id: string } }) {
-  const automationId = params.id;
+export default async function AutomationSettingsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: automationId } = await params; // Await params and destructure id
   const yoLinkDeviceTypes = getYoLinkDeviceTypeOptions(); // Get device types
 
   // Fetch initial data and available nodes in parallel
