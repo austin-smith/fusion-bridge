@@ -5,7 +5,7 @@ import { db } from "@/data/db";
 import { nodes } from "@/data/db/schema"; 
 import { automations } from "@/data/db/schema"; // Import automations schema
 import { eq } from "drizzle-orm";
-import { YOLINK_DEVICE_NAME_MAP } from "@/services/drivers/yolink"; 
+import { deviceIdentifierMap } from "@/lib/device-mapping"; 
 import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
 import { notFound } from 'next/navigation'; // For handling non-existent IDs
 import { type AutomationConfig, type AutomationAction } from "@/lib/automation-schemas"; // Import necessary types 
@@ -54,9 +54,12 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
     }).from(nodes);
     
   // Prepare options for the Source Device Types multi-select combobox
-  const sourceDeviceTypeOptions: MultiSelectOption[] = Object.entries(YOLINK_DEVICE_NAME_MAP)
-    .map(([value, label]) => ({ value, label }))
-    .sort((a, b) => a.label.localeCompare(b.label)); 
+  const sourceDeviceTypeOptions: MultiSelectOption[] = Object.entries(deviceIdentifierMap.yolink)
+    .map(([value, info]) => ({ // info is unused here, but kept for consistency
+        value, 
+        label: value // Use the device type string (value) as the label
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label)); // Sort alphabetically by label
     
   // Prepare initial data structure from the fetched automation
   let configJsonData: AutomationConfig = { 
@@ -64,24 +67,40 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
     eventTypeFilter: '', 
     actions: [] 
   };
-  try {
-    let parsedConfig: any;
-    if (automation.configJson && typeof automation.configJson === 'object') {
-      parsedConfig = automation.configJson;
-    } else if (typeof automation.configJson === 'string') {
-      parsedConfig = JSON.parse(automation.configJson);
-    }
+  
+  // Check if configJson exists and is not null/undefined before trying to parse
+  if (automation.configJson) {
+    try {
+      let parsedConfig: any;
+      if (typeof automation.configJson === 'object') {
+        // If it's already an object, use it directly
+        parsedConfig = automation.configJson;
+      } else if (typeof automation.configJson === 'string') {
+        // If it's a string, try to parse it
+        parsedConfig = JSON.parse(automation.configJson);
+      }
 
-    if (parsedConfig && Array.isArray(parsedConfig.sourceEntityTypes) && Array.isArray(parsedConfig.actions)) {
-       configJsonData = {
-          sourceEntityTypes: parsedConfig.sourceEntityTypes,
-          eventTypeFilter: parsedConfig.eventTypeFilter || '',
-          actions: parsedConfig.actions as AutomationAction[],
-       };
-    }
+      // IMPORTANT: Check if parsedConfig is a valid object and has the required arrays
+      if (parsedConfig && 
+          typeof parsedConfig === 'object' && 
+          Array.isArray(parsedConfig.sourceEntityTypes) && 
+          Array.isArray(parsedConfig.actions)) 
+      {
+         configJsonData = {
+            sourceEntityTypes: parsedConfig.sourceEntityTypes,
+            eventTypeFilter: parsedConfig.eventTypeFilter || '', // Provide default if missing
+            actions: parsedConfig.actions as AutomationAction[], // Assuming actions are correctly structured
+         };
+      } else {
+          console.warn(`Parsed configJson for automation ${automation.id} is invalid or missing required fields. Using default empty config.`);
+      }
 
-  } catch (e) {
-     console.error("Failed to parse automation config JSON:", e);
+    } catch (e) {
+       console.error(`Failed to parse configJson for automation ${automation.id}:`, e);
+       // Keep the default empty configJsonData on error
+    }
+  } else {
+      console.warn(`configJson is null or empty for automation ${automation.id}. Using default empty config.`);
   }
   
   const initialData: AutomationFormData = {

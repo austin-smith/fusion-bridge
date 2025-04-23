@@ -7,7 +7,6 @@ import { toast } from 'sonner';
 import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network } from 'lucide-react';
 import { DeviceWithConnector } from '@/types'; // Import from shared types
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { formatConnectorCategory } from "@/lib/utils"; // Re-add formatConnectorCategory import
 import { getDeviceTypeIcon } from "@/lib/device-mapping"; // Import icon getter
 import {
   Select,

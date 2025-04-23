@@ -32,14 +32,15 @@ import { toast } from 'sonner';
 // Import Token Inserter and tokens
 import { TokenInserter } from '@/components/automations/TokenInserter';
 import { AVAILABLE_AUTOMATION_TOKENS } from '@/lib/automation-tokens';
+import type { AutomationAction } from '@/lib/automation-schemas'; // Import the action type
 
 // Define the form schema by combining parts we need
 const FormSchema = z.object({
     id: z.string(),
     name: z.string().min(1, "Name is required"),
     enabled: z.boolean(),
-    sourceNodeId: z.string().uuid("Source node must be selected"),
-    targetNodeId: z.string().uuid("Target node must be selected"),
+    sourceNodeId: z.string().uuid("Source connector must be selected"),
+    targetNodeId: z.string().uuid("Target connector must be selected"),
     config: AutomationConfigSchema
 });
 
@@ -89,10 +90,16 @@ export default function AutomationForm({
     });
 
     // --- Token Insertion Handler ---
-    const handleInsertToken = (fieldName: keyof AutomationFormValues["config"]["actions"][number]["params"], index: number, token: string) => {
-        const currentFieldName = `config.actions.${index}.params.${fieldName}` as const; // Ensure correct type for getValues/setValue
-        const currentValue = form.getValues(currentFieldName) || ""; // Get current value or default to empty string
-        form.setValue(currentFieldName, currentValue + token, { 
+    const handleInsertToken = (
+        // Ensure this type covers all possible parameter fields across action types
+        fieldName: keyof AutomationAction['params'], 
+        index: number, 
+        token: string
+    ) => {
+        // Construct the field name string dynamically
+        const currentFieldName = `config.actions.${index}.params.${fieldName}` as const; 
+        const currentValue = form.getValues(currentFieldName as any) || ""; // Get current value or default to empty string (use any temporarily if types mismatch)
+        form.setValue(currentFieldName as any, currentValue + token, { // Use any temporarily
             shouldValidate: true, // Re-validate after insertion
             shouldDirty: true // Mark field as dirty
         });
@@ -202,11 +209,11 @@ export default function AutomationForm({
                                 name="sourceNodeId"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Source System (Trigger)</FormLabel>
+                                        <FormLabel>Source Connector (Trigger)</FormLabel>
                                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                                             <FormControl>
                                                 <SelectTrigger>
-                                                    <SelectValue placeholder="Select Source Node" />
+                                                    <SelectValue placeholder="Select Source Connector" />
                                                 </SelectTrigger>
                                             </FormControl>
                                             <SelectContent>
@@ -227,11 +234,11 @@ export default function AutomationForm({
                                 name="targetNodeId"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Target System (Action)</FormLabel>
+                                        <FormLabel>Target Connector (Action)</FormLabel>
                                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                                             <FormControl>
                                                 <SelectTrigger>
-                                                    <SelectValue placeholder="Select Target Node" />
+                                                    <SelectValue placeholder="Select Target Connector" />
                                                 </SelectTrigger>
                                             </FormControl>
                                             <SelectContent>
@@ -302,6 +309,8 @@ export default function AutomationForm({
                         {actionsFields.map((fieldItem, index) => {
                             // Watch the type of the current action
                             const actionType = form.watch(`config.actions.${index}.type`);
+                            // Helper to get a specific param field name string
+                            const paramFieldName = (field: keyof AutomationAction['params']) => `config.actions.${index}.params.${field}` as const;
 
                             return (
                                 <Card key={fieldItem.id} className="relative border border-dashed pt-8">
@@ -324,9 +333,35 @@ export default function AutomationForm({
                                                     <FormLabel>Action #{index + 1} Type</FormLabel>
                                                     <Select 
                                                         onValueChange={(value) => {
-                                                            // When type changes, reset parameters (optional but good practice)
-                                                            // form.setValue(`config.actions.${index}.params`, {}); 
-                                                            field.onChange(value);
+                                                            const newType = value as AutomationAction['type'];
+                                                            
+                                                            if (newType === 'createEvent') {
+                                                                const newAction: AutomationAction = { // Explicitly type here
+                                                                    type: 'createEvent',
+                                                                    params: { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '' }
+                                                                };
+                                                                // Call setValue within the block with the correctly typed object
+                                                                form.setValue(`config.actions.${index}`, newAction, { shouldValidate: true });
+                                                            } else if (newType === 'createBookmark') {
+                                                                const newAction: AutomationAction = { // Explicitly type here
+                                                                    type: 'createBookmark',
+                                                                    params: { nameTemplate: '', descriptionTemplate: '', durationMsTemplate: '5000', tagsTemplate: '' } 
+                                                                };
+                                                                 // Call setValue within the block with the correctly typed object
+                                                                 form.setValue(`config.actions.${index}`, newAction, { shouldValidate: true });
+                                                            } else {
+                                                                // Fallback logic
+                                                                console.warn(`Unexpected action type selected: ${value}. Defaulting to createEvent.`);
+                                                                const defaultAction: AutomationAction = { // Explicitly type here
+                                                                    type: 'createEvent',
+                                                                    params: { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '' }
+                                                                };
+                                                                 // Call setValue within the block with the correctly typed object
+                                                                form.setValue(`config.actions.${index}`, defaultAction, { shouldValidate: true });
+                                                            }
+
+                                                            // Pass the correctly typed value to RHF's internal state tracking
+                                                            field.onChange(newType); 
                                                         }} 
                                                         defaultValue={field.value}
                                                     >
@@ -337,8 +372,8 @@ export default function AutomationForm({
                                                         </FormControl>
                                                         <SelectContent>
                                                             <SelectItem value="createEvent">Create Piko Event</SelectItem>
+                                                            <SelectItem value="createBookmark">Create Piko Bookmark</SelectItem>
                                                             {/* Add other action types here later */}
-                                                            {/* <SelectItem value="sendNotification">Send Notification</SelectItem> */}
                                                         </SelectContent>
                                                     </Select>
                                                     <FormMessage />
@@ -349,22 +384,34 @@ export default function AutomationForm({
                                         {/* --- Dynamic Parameter Fields --- */}
                                         <div className="space-y-2 border-l-2 pl-4 ml-1 border-muted">
                                             <h3 className="text-sm font-medium text-muted-foreground mb-2">
-                                                Parameters for: {actionType === 'createEvent' ? 'Create Piko Event' : 'Selected Action'}
+                                                Parameters for: {
+                                                    actionType === 'createEvent' ? 'Create Piko Event' : 
+                                                    actionType === 'createBookmark' ? 'Create Piko Bookmark' : 
+                                                    'Selected Action'
+                                                }
                                             </h3>
+                                             {/* Description for Create Bookmark */}
+                                              <p className="text-xs text-muted-foreground">
+                                                 {actionType === 'createBookmark' && "This action will attempt to create a bookmark on any Piko cameras associated with the triggering device."}
+                                             </p>
+                                             {/* Description for Create Event */}
+                                             <p className="text-xs text-muted-foreground">
+                                                 {actionType === 'createEvent' && "This action creates a generic event in the target Piko system. If the triggering device has Piko camera associations, the event will be explicitly associated to those cameras."}
+                                             </p>
                                             
                                             {/* Render fields based on actionType */}
                                             {actionType === 'createEvent' && (
                                                 <>
                                                     <FormField
                                                         control={form.control}
-                                                        name={`config.actions.${index}.params.sourceTemplate`}
+                                                        name={paramFieldName('sourceTemplate' as any)} 
                                                         render={({ field }) => (
                                                             <FormItem>
                                                                 <div className="flex items-center justify-between">
-                                                                    <FormLabel>Source Template</FormLabel>
+                                                                    <FormLabel>Source</FormLabel>
                                                                     <TokenInserter 
                                                                         tokens={AVAILABLE_AUTOMATION_TOKENS} 
-                                                                        onInsert={(token) => handleInsertToken('sourceTemplate', index, token)}
+                                                                        onInsert={(token) => handleInsertToken('sourceTemplate' as any, index, token)}
                                                                         className="ml-2"
                                                                     />
                                                                 </div>
@@ -381,14 +428,14 @@ export default function AutomationForm({
                                                     />
                                                     <FormField
                                                         control={form.control}
-                                                        name={`config.actions.${index}.params.captionTemplate`}
+                                                        name={paramFieldName('captionTemplate' as any)}
                                                         render={({ field }) => (
                                                             <FormItem>
                                                                 <div className="flex items-center justify-between">
-                                                                    <FormLabel>Caption Template</FormLabel>
+                                                                    <FormLabel>Caption</FormLabel>
                                                                     <TokenInserter 
                                                                         tokens={AVAILABLE_AUTOMATION_TOKENS} 
-                                                                        onInsert={(token) => handleInsertToken('captionTemplate', index, token)}
+                                                                        onInsert={(token) => handleInsertToken('captionTemplate' as any, index, token)}
                                                                         className="ml-2"
                                                                     />
                                                                 </div>
@@ -405,14 +452,14 @@ export default function AutomationForm({
                                                     />
                                                     <FormField
                                                         control={form.control}
-                                                        name={`config.actions.${index}.params.descriptionTemplate`}
+                                                        name={paramFieldName('descriptionTemplate' as any)}
                                                         render={({ field }) => (
                                                             <FormItem>
                                                                 <div className="flex items-center justify-between">
-                                                                    <FormLabel>Description Template</FormLabel>
+                                                                    <FormLabel>Description</FormLabel>
                                                                     <TokenInserter 
                                                                         tokens={AVAILABLE_AUTOMATION_TOKENS} 
-                                                                        onInsert={(token) => handleInsertToken('descriptionTemplate', index, token)}
+                                                                        onInsert={(token) => handleInsertToken('descriptionTemplate' as any, index, token)}
                                                                         className="ml-2"
                                                                     />
                                                                 </div>
@@ -430,8 +477,97 @@ export default function AutomationForm({
                                                 </>
                                             )}
 
-                                            {/* Add other action type fields here later using else if or similar logic */}
-                                            {/* e.g., actionType === 'sendNotification' && (...) */}
+                                            {actionType === 'createBookmark' && (
+                                                <>
+                                                    <FormField
+                                                        control={form.control}
+                                                        name={paramFieldName('nameTemplate' as any)} 
+                                                        render={({ field }) => (
+                                                            <FormItem>
+                                                                <div className="flex items-center justify-between">
+                                                                    <FormLabel>Name</FormLabel>
+                                                                    <TokenInserter 
+                                                                        tokens={AVAILABLE_AUTOMATION_TOKENS} 
+                                                                        onInsert={(token) => handleInsertToken('nameTemplate' as any, index, token)}
+                                                                        className="ml-2"
+                                                                    />
+                                                                </div>
+                                                                <FormControl>
+                                                                    <Input placeholder="e.g., Alert: {{device.name}}" {...field} disabled={isLoading} />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                     <FormField
+                                                        control={form.control}
+                                                        name={paramFieldName('descriptionTemplate' as any)} 
+                                                        render={({ field }) => (
+                                                            <FormItem>
+                                                                <div className="flex items-center justify-between">
+                                                                    <FormLabel>Description</FormLabel>
+                                                                    <TokenInserter 
+                                                                        tokens={AVAILABLE_AUTOMATION_TOKENS} 
+                                                                        onInsert={(token) => handleInsertToken('descriptionTemplate' as any, index, token)}
+                                                                        className="ml-2"
+                                                                    />
+                                                                </div>
+                                                                <FormControl>
+                                                                    <Textarea placeholder="e.g., Device: {{device.name}} triggered event {{event.event}}" {...field} disabled={isLoading} />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name={paramFieldName('durationMsTemplate' as any)} 
+                                                        render={({ field }) => (
+                                                            <FormItem>
+                                                                <div className="flex items-center justify-between">
+                                                                    <FormLabel>Duration (ms)</FormLabel>
+                                                                    <TokenInserter 
+                                                                        tokens={AVAILABLE_AUTOMATION_TOKENS} 
+                                                                        onInsert={(token) => handleInsertToken('durationMsTemplate' as any, index, token)}
+                                                                        className="ml-2"
+                                                                    />
+                                                                </div>
+                                                                <FormControl>
+                                                                    {/* Using Input type="text" as it's a template */}
+                                                                    <Input placeholder="e.g., 5000" {...field} disabled={isLoading} />
+                                                                </FormControl>
+                                                                 <FormDescription>
+                                                                    Bookmark duration in milliseconds. Use tokens or enter a number.
+                                                                </FormDescription>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                     <FormField
+                                                        control={form.control}
+                                                        name={paramFieldName('tagsTemplate' as any)} 
+                                                        render={({ field }) => (
+                                                            <FormItem>
+                                                                <div className="flex items-center justify-between">
+                                                                    <FormLabel>Tags</FormLabel>
+                                                                    <TokenInserter 
+                                                                        tokens={AVAILABLE_AUTOMATION_TOKENS} 
+                                                                        onInsert={(token) => handleInsertToken('tagsTemplate' as any, index, token)}
+                                                                        className="ml-2"
+                                                                    />
+                                                                </div>
+                                                                <FormControl>
+                                                                    <Input placeholder="e.g., Alert,{{device.type}},Automation" {...field} disabled={isLoading} />
+                                                                </FormControl>
+                                                                <FormDescription>
+                                                                    Comma-separated list of tags. Use tokens or enter text.
+                                                                </FormDescription>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                </>
+                                            )}
                                             
                                             {/* Placeholder if no type or unknown type selected */}
                                             {!actionType && (
@@ -449,7 +585,10 @@ export default function AutomationForm({
                         variant="outline"
                         size="sm"
                         className="mt-4"
-                        onClick={() => appendAction({ type: 'createEvent', params: { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '' } })}
+                        onClick={() => appendAction({ 
+                            type: 'createEvent', 
+                            params: { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '' } 
+                        })}
                         disabled={isLoading}
                     >
                         <Plus className="h-4 w-4" /> Add Action

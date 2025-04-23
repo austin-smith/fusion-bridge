@@ -43,20 +43,10 @@ const TabsContent = React.forwardRef<
     ref={ref}
     className={cn(
       "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-      "transition-all duration-300 ease-in-out",
-      "data-[state=inactive]:opacity-0",
-      "data-[state=active]:opacity-100",
-      "display-grid",
-      "data-[state=inactive]:grid-rows-[0fr]",
-      "data-[state=active]:grid-rows-[1fr]",
       className
     )}
     {...props}
-  >
-    <div className="overflow-hidden">
-      {props.children}
-    </div>
-  </TabsPrimitive.Content>
+  />
 ))
 TabsContent.displayName = TabsPrimitive.Content.displayName
 

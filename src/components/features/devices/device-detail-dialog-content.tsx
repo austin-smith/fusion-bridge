@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { DeviceWithConnector, PikoServer } from '@/types'; 
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   DialogHeader,
   DialogTitle,
@@ -11,7 +11,6 @@ import {
   DialogClose,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { formatConnectorCategory, cn } from "@/lib/utils";
 import { getDeviceTypeIcon } from "@/lib/device-mapping";
 import { type VariantProps } from "class-variance-authority";
 import { badgeVariants } from "@/components/ui/badge";
@@ -86,6 +85,7 @@ interface AssociationResponse {
 }
 
 export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps> = ({ device }) => {
+  // console.log('Device prop received by DeviceDetailDialogContent:', device); // Remove log
 
   // --- State for Associations ---
   // For YoLink -> Piko associations
@@ -140,7 +140,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         if (device.connectorCategory === 'yolink') {
           // Get Piko cameras when viewing a YoLink device
           const pikoCameras = allDevices
-            .filter((d: DeviceWithConnector) => d.connectorCategory === 'piko' && d.deviceTypeInfo.type === 'Camera') // Use mapped type for check
+            .filter((d: DeviceWithConnector) => d.connectorCategory === 'piko' && d.deviceTypeInfo?.type === 'Camera') 
             .map((d: DeviceWithConnector): DeviceOption => ({ value: d.deviceId, label: d.name }))
             .sort((a: DeviceOption, b: DeviceOption) => a.label.localeCompare(b.label));
           setAvailablePikoCameras(pikoCameras);
@@ -186,7 +186,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
 
     fetchData();
 
-  }, [device.deviceId, device.connectorCategory, device.type, device.deviceTypeInfo.type]); // Added deviceTypeInfo.type dependency
+  }, [device.deviceId, device.connectorCategory, device.type, device.deviceTypeInfo?.type]); // Add optional chaining to dependency
 
   // --- Handle Saving Associations ---
   const handleSaveAssociations = async () => {
@@ -326,8 +326,10 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     </div>
   );
 
-  // Get the icon component for the current device type
-  const DeviceIcon = getDeviceTypeIcon(device.deviceTypeInfo.type);
+  // Get the icon component for the current device type, with fallback
+  const DeviceIcon = device.deviceTypeInfo?.type 
+    ? getDeviceTypeIcon(device.deviceTypeInfo.type) 
+    : HelpCircle; // Use HelpCircle if type is missing
 
   return (
     <>
@@ -339,111 +341,100 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
             <div>{renderStatusBadge(device.status, 'device')}</div>
           )}
         </div>
-        <DialogDescription className="pt-1">
-          <div className="flex items-center gap-2">
-            {/* 1. Connector Badge */}
-            <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-              <ConnectorIcon connectorCategory={device.connectorCategory} size={12} />
-              <span className="text-xs">{device.connectorName}</span>
-            </Badge>
-            {/* 2. Device Type/Subtype Badge */}
-            <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-              <DeviceIcon className="h-3 w-3 text-muted-foreground" /> 
-              <span className="text-xs">
-                {device.deviceTypeInfo.type}
-                {device.deviceTypeInfo.subtype && (
-                  <span className="text-muted-foreground ml-1">/ {device.deviceTypeInfo.subtype}</span>
-                )}
-              </span>
-            </Badge>
+        <DialogDescription className="pt-1" asChild>
+          <div>
+            <div className="flex items-center gap-2">
+              {/* 1. Connector Badge */}
+              <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                <ConnectorIcon connectorCategory={device.connectorCategory} size={12} />
+                <span className="text-xs">{device.connectorName}</span>
+              </Badge>
+              {/* 2. Device Type/Subtype Badge - Conditional rendering */}
+              {device.deviceTypeInfo?.type && (
+                <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                  <DeviceIcon className="h-3 w-3 text-muted-foreground" /> 
+                  <span className="text-xs">
+                    {device.deviceTypeInfo.type}
+                    {device.deviceTypeInfo.subtype && (
+                      <span className="text-muted-foreground ml-1">/ {device.deviceTypeInfo.subtype}</span>
+                    )}
+                  </span>
+                </Badge>
+              )}
+            </div>
           </div>
         </DialogDescription>
       </DialogHeader>
       
-      <div className="py-6 space-y-6 max-h-[70vh] overflow-y-auto">
-        <Accordion type="single" collapsible defaultValue="device-info" className="w-full">
-          {/* Device Information Section */}
-          <AccordionItem value="device-info">
-            <AccordionTrigger className="text-sm font-medium">
-              Device Information
-            </AccordionTrigger>
-            <AccordionContent>
-              <div className="space-y-0.5 rounded-md border">
-                <div className="py-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs font-medium text-muted-foreground pl-2">GENERAL</span>
-                    <div className="h-px grow bg-border"></div>
-                  </div>
-                </div>
-                
-                <DetailRow label="Name" value={device.name} />
-                {/* Combined Type / Subtype with Icon */}
-                <DetailRow 
-                    label="Type" 
-                    value={( 
-                      <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                        <DeviceIcon className="h-3 w-3 text-muted-foreground" /> 
-                        <span className="text-xs">
-                          {device.deviceTypeInfo.type}
-                          {device.deviceTypeInfo.subtype && (
-                            <span className="text-muted-foreground ml-1">/ {device.deviceTypeInfo.subtype}</span>
-                          )}
-                        </span>
-                      </Badge>
-                    )} 
-                />
-                <DetailRow label="Model" value={device.model || "—"} />
-                {device.connectorCategory === 'piko' && device.vendor && (
-                  <DetailRow label="Vendor" value={device.vendor} />
+      <div className="py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+        {/* Device Information Section - Always Visible */}
+        <div>
+          <h3 className="mb-2 text-sm font-medium text-muted-foreground">Device Information</h3>
+          <div className="rounded-md border text-sm">
+            <div className="py-2">
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-medium text-muted-foreground pl-2">GENERAL</span>
+                <div className="h-px grow bg-border"></div>
+              </div>
+            </div>
+            
+            <DetailRow label="Name" value={device.name} />
+            {/* Combined Type / Subtype with Icon - Conditional Rendering */}
+            <DetailRow 
+                label="Type" 
+                value={device.deviceTypeInfo?.type ? ( 
+                  <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                    <DeviceIcon className="h-3 w-3 text-muted-foreground" /> 
+                    <span className="text-xs">
+                      {device.deviceTypeInfo.type}
+                      {device.deviceTypeInfo.subtype && (
+                        <span className="text-muted-foreground ml-1">/ {device.deviceTypeInfo.subtype}</span>
+                      )}
+                    </span>
+                  </Badge>
+                ) : (
+                  <span className="text-muted-foreground">Unknown</span>
                 )}
-                
-                <div className="py-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs font-medium text-muted-foreground pl-2">EXTERNAL IDENTIFIERS</span>
-                    <div className="h-px grow bg-border"></div>
-                  </div>
-                </div>
-
-                {/* Raw Identifier */}
-                <DetailRow label="Device Type ID" value={device.type} monospace />
-                {/* External ID with Copy Button */}
-                <DetailRow 
-                  label="Device ID" 
-                  monospace breakAll 
-                  value={( 
-                    <div className="flex items-center justify-between gap-2 w-full"> 
-                      <span className="flex-grow break-all">{device.deviceId}</span> 
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-6 w-6 shrink-0" 
-                        onClick={() => handleCopy(device.deviceId)} 
-                        disabled={isCopied} 
-                      > 
-                        {isCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />} 
-                        <span className="sr-only">{isCopied ? 'Copied' : 'Copy ID'}</span> 
-                      </Button> 
-                    </div> 
-                  )} 
-                />
+            />
+            <DetailRow label="Model" value={device.model || "—"} />
+            {device.connectorCategory === 'piko' && device.vendor && (
+              <DetailRow label="Vendor" value={device.vendor} />
+            )}
+            
+            <div className="py-2">
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-medium text-muted-foreground pl-2">EXTERNAL IDENTIFIERS</span>
+                <div className="h-px grow bg-border"></div>
               </div>
-            </AccordionContent>
-          </AccordionItem>
+            </div>
 
-          {/* Connector Information Section */}
-          <AccordionItem value="connector-info">
-            <AccordionTrigger className="text-sm font-medium">
-              Connector Information
-            </AccordionTrigger>
-            <AccordionContent>
-              <div className="space-y-0.5 rounded-md border">
-                <DetailRow label="Type" value={formatConnectorCategory(device.connectorCategory)} />
-                <DetailRow label="Name" value={device.connectorName} />
-                <DetailRow label="Connector ID" value={device.connectorId} monospace breakAll />
-              </div>
-            </AccordionContent>
-          </AccordionItem>
+            {/* Raw Identifier */}
+            <DetailRow label="Device Type ID" value={device.type} monospace />
+            {/* External ID with Copy Button */}
+            <DetailRow 
+              label="Device ID" 
+              monospace breakAll 
+              value={( 
+                <div className="flex items-center justify-between gap-2 w-full"> 
+                  <span className="flex-grow break-all">{device.deviceId}</span> 
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6 shrink-0" 
+                    onClick={() => handleCopy(device.deviceId)} 
+                    disabled={isCopied} 
+                  > 
+                    {isCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />} 
+                    <span className="sr-only">{isCopied ? 'Copied' : 'Copy ID'}</span> 
+                  </Button> 
+                </div> 
+              )} 
+            />
+          </div>
+        </div>
 
+        {/* Accordion for other sections */}
+        <Accordion type="single" collapsible className="w-full">
           {/* YoLink Device Association Section (Conditional) */}
           {device.connectorCategory === 'yolink' && (
             <AccordionItem value="yolink-associations">
@@ -716,7 +707,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                     <DetailRow 
                       label="Server ID" 
                       value={device.serverId} 
-                      monospace 
+                      monospace
                       breakAll 
                     />
                   )}

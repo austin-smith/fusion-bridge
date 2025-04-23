@@ -484,3 +484,54 @@ export async function createPikoEvent(
   console.log(`Successfully created Piko event for system: ${systemId}, source: ${payload.source}`);
   return result;
 }
+
+/**
+ * Interface for the Piko createBookmark API request body.
+ */
+export interface PikoCreateBookmarkPayload {
+  name: string;
+  description?: string; // Description is optional according to some API examples
+  startTimeMs: number; // Epoch timestamp in milliseconds
+  durationMs: number;
+  tags?: string[]; // Array of tags
+}
+
+// No specific response interface defined for createBookmark as success is usually 200 OK with no body or a simple confirmation.
+// We'll rely on fetchPikoRelayData to throw errors on non-ok statuses.
+
+/**
+ * Creates a bookmark for a specific camera in a Piko system using the Relay API.
+ * @param systemId The ID of the Piko system.
+ * @param systemScopedToken The system-scoped bearer token.
+ * @param pikoCameraDeviceId The external Device ID (GUID) of the Piko camera.
+ * @param payload The bookmark data to send.
+ * @returns Promise resolving when the bookmark is successfully created.
+ * @throws Error if the request fails.
+ */
+export async function createPikoBookmark(
+  systemId: string,
+  systemScopedToken: string,
+  pikoCameraDeviceId: string,
+  payload: PikoCreateBookmarkPayload
+): Promise<void> { // Returns void on success
+  console.log(`createPikoBookmark called for system: ${systemId}, camera: ${pikoCameraDeviceId}, name: ${payload.name}`);
+
+  if (!pikoCameraDeviceId) {
+      throw new Error('Piko Camera Device ID is required to create a bookmark.');
+  }
+
+  const apiPath = `/rest/v3/devices/${pikoCameraDeviceId}/bookmarks`;
+
+  // fetchPikoRelayData will handle JSON parsing and error throwing for non-OK responses
+  await fetchPikoRelayData(
+    systemId,
+    systemScopedToken,
+    apiPath,
+    undefined, // No query parameters
+    'POST',    // HTTP method
+    payload    // The request body
+  );
+
+  // If fetchPikoRelayData does not throw, the request was successful (e.g., 200 OK, 201 Created, or 204 No Content)
+  console.log(`Successfully created Piko bookmark for camera: ${pikoCameraDeviceId} in system: ${systemId}`);
+}

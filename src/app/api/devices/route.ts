@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/data/db';
 import { devices, nodes, pikoServers, cameraAssociations } from '@/data/db/schema';
 import { eq, count } from 'drizzle-orm';
@@ -30,14 +30,39 @@ async function getAssociationCount(
 }
 
 // GET /api/devices – returns devices with connector information and association count
-export async function GET() {
+// Optionally filters by deviceId query parameter
+export async function GET(request: NextRequest) {
   try {
-    // Fetch all devices
-    const allDevices = await db.select().from(devices);
+    // Check for deviceId query parameter
+    const { searchParams } = new URL(request.url);
+    const requestedDeviceId = searchParams.get('deviceId');
+
+    let devicesToProcess: typeof devices.$inferSelect[] = [];
+
+    if (requestedDeviceId) {
+      // Fetch specific device by deviceId
+      const specificDevice = await db.select()
+        .from(devices)
+        .where(eq(devices.deviceId, requestedDeviceId))
+        .limit(1);
+      
+      if (specificDevice.length > 0) {
+        devicesToProcess = specificDevice;
+      } else {
+        // Device not found
+        return NextResponse.json(
+          { success: false, error: 'Device not found' },
+          { status: 404 }
+        );
+      }
+    } else {
+      // Fetch all devices if no specific ID requested
+      devicesToProcess = await db.select().from(devices);
+    }
 
     // Map device rows into DeviceWithConnector objects
     const devicesWithConnector = await Promise.all(
-      allDevices.map(async (deviceRow) => {
+      devicesToProcess.map(async (deviceRow) => {
         let connectorName = 'Unknown';
         let connectorCategory = 'Unknown';
         let serverName: string | undefined = undefined;
@@ -105,7 +130,13 @@ export async function GET() {
       })
     );
 
-    return NextResponse.json({ success: true, data: devicesWithConnector });
+    // If a specific device was requested, return the single object, otherwise the array
+    if (requestedDeviceId) {
+      return NextResponse.json({ success: true, data: devicesWithConnector[0] });
+    } else {
+      return NextResponse.json({ success: true, data: devicesWithConnector });
+    }
+
   } catch (error) {
     console.error('Error fetching devices:', error);
     return NextResponse.json(

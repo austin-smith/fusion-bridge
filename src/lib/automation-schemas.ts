@@ -2,11 +2,21 @@ import { z } from 'zod';
 
 // Schema for the parameters of the 'createEvent' action
 export const CreateEventActionParamsSchema = z.object({
-  sourceTemplate: z.string().min(1, { message: "Source template cannot be empty" }),
-  captionTemplate: z.string().min(1, { message: "Caption template cannot be empty" }),
-  descriptionTemplate: z.string().min(1, { message: "Description template cannot be empty" }),
+  sourceTemplate: z.string().min(1, { message: "Source is required" }),
+  captionTemplate: z.string().min(1, { message: "Caption is required" }),
+  descriptionTemplate: z.string().min(1, { message: "Description is required" }),
   // Future enhancement: Add target entity selection (e.g., Piko camera GUIDs)
   // targetCameraRefs: z.array(z.string()).optional(), 
+});
+
+// Schema for the parameters of the 'createBookmark' action
+export const CreateBookmarkParamsSchema = z.object({
+    nameTemplate: z.string().min(1, "Name is required"),
+    descriptionTemplate: z.string().optional(),
+    // Duration in milliseconds, provided as a string template initially
+    durationMsTemplate: z.string().min(1, "Duration is required"), 
+    // Tags provided as a comma-separated string template initially
+    tagsTemplate: z.string().optional(), 
 });
 
 // Schema for a single action within an automation
@@ -15,6 +25,10 @@ export const AutomationActionSchema = z.discriminatedUnion("type", [
   z.object({ 
     type: z.literal("createEvent"), 
     params: CreateEventActionParamsSchema 
+  }),
+  z.object({
+    type: z.literal("createBookmark"),
+    params: CreateBookmarkParamsSchema
   }),
   // Add future action types here, e.g.:
   // z.object({ type: z.literal("sendNotification"), params: SendNotificationParamsSchema }),

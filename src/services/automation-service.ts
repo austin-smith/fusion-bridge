@@ -5,9 +5,10 @@ import { automations, nodes, devices, cameraAssociations } from '@/data/db/schem
 import { eq, and, inArray } from 'drizzle-orm';
 import type { YolinkEvent } from '@/services/mqtt-service'; // Assuming event type is here
 import * as piko from '@/services/drivers/piko'; // Assuming Piko driver functions are here
-import { type AutomationConfig, AutomationConfigSchema } from '@/lib/automation-schemas';
+import { type AutomationConfig, AutomationConfigSchema, type AutomationAction } from '@/lib/automation-schemas';
 import { minimatch } from 'minimatch'; // For wildcard matching
 import pRetry from 'p-retry'; // Import p-retry
+import type { PikoCreateBookmarkPayload } from '@/services/drivers/piko'; // Import the specific payload type
 // Import other necessary drivers or services as needed
 
 /**
@@ -119,14 +120,21 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                     
                     // Define the operation that p-retry will attempt
                     const runAction = async () => {
-                        const resolvedParams = resolveTokens(action.params, event, deviceContext);
+                        // Resolve tokens *before* the switch, as most actions will need them
+                        // Note: We cast params here because resolveTokens currently returns 'any'
+                        const resolvedParams = resolveTokens(action.params, event, deviceContext) as AutomationAction['params']; 
+                        
                         switch (action.type) {
-                            case 'createEvent':
+                            case 'createEvent': { // Added block scope for clarity
+                                // Check if the action params match the expected type for createEvent
+                                if (!('sourceTemplate' in resolvedParams && 'captionTemplate' in resolvedParams && 'descriptionTemplate' in resolvedParams)) {
+                                    throw new Error(`Invalid parameters resolved for createEvent action.`);
+                                }
+
                                 if (targetNode.category === 'piko') {
                                     const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
-                                    if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config`); }
+                                    if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target node ${targetNode.id}`); }
                                     
-                                    // Fetch Piko Access Token
                                     let pikoTokenResponse: piko.PikoSystemScopedTokenResponse;
                                     try {
                                         pikoTokenResponse = await piko.getSystemScopedAccessToken(username, password, selectedSystem);
@@ -136,67 +144,165 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
 
                                     // --- START: Fetch Associated Camera Refs --- 
                                     let associatedPikoCameraExternalIds: string[] = [];
-                                    // We need the internal DB ID of the source device
                                     const sourceDeviceInternalId = sourceDevice?.id;
                                     if (sourceDeviceInternalId) {
                                         try {
-                                            // Find internal IDs of associated Piko cameras
                                             const associations = await db
                                                 .select({ pikoCameraInternalId: cameraAssociations.pikoCameraId })
                                                 .from(cameraAssociations)
                                                 .where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
-                                            
                                             const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
-
                                             if (internalCameraIds.length > 0) {
-                                                // Fetch the external device IDs for these internal camera IDs
                                                 const cameraDevices = await db
                                                     .select({ externalId: devices.deviceId })
                                                     .from(devices)
-                                                    .where(inArray(devices.id, internalCameraIds)); // Use inArray with the list of internal IDs
+                                                    .where(inArray(devices.id, internalCameraIds)); 
                                                 
                                                 associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
-                                                console.log(`[Rule ${rule.id}] Found associated Piko camera external IDs: [${associatedPikoCameraExternalIds.join(', ')}]`);
+                                                console.log(`[Rule ${rule.id}][Action createEvent] Found associated Piko camera external IDs: [${associatedPikoCameraExternalIds.join(', ')}]`);
                                             } else {
-                                                console.log(`[Rule ${rule.id}] No Piko cameras associated with source device ${sourceDeviceInternalId}`);
+                                                console.log(`[Rule ${rule.id}][Action createEvent] No Piko cameras associated with source device ${sourceDeviceInternalId}`);
                                             }
                                         } catch (assocError) {
-                                            console.error(`[Rule ${rule.id}] Error fetching camera associations:`, assocError);
-                                            // Decide whether to proceed without cameraRefs or throw error
-                                            // For now, log and continue without refs
+                                            console.error(`[Rule ${rule.id}][Action createEvent] Error fetching camera associations:`, assocError);
                                         }
                                     } else {
-                                         console.warn(`[Rule ${rule.id}] Could not get internal ID for source device ${event.deviceId}. Cannot fetch camera associations.`);
+                                         console.warn(`[Rule ${rule.id}][Action createEvent] Could not get internal ID for source device ${event.deviceId}. Cannot fetch camera associations.`);
                                     }
                                     // --- END: Fetch Associated Camera Refs --- 
                                     
-                                    // Construct Piko Payload
                                     const pikoPayload: piko.PikoCreateEventPayload = { 
                                         source: resolvedParams.sourceTemplate, 
                                         caption: resolvedParams.captionTemplate, 
                                         description: resolvedParams.descriptionTemplate, 
                                         timestamp: new Date(event.time).toISOString(),
-                                        // Add metadata if cameras were found
                                         ...(associatedPikoCameraExternalIds.length > 0 && {
                                             metadata: { cameraRefs: associatedPikoCameraExternalIds }
                                         })
                                     };
                                     
-                                    // Call Piko API
                                     try {
                                         await piko.createPikoEvent(selectedSystem, pikoTokenResponse.accessToken, pikoPayload);
-                                        console.log(`[Rule ${rule.id}] Piko event created with payload:`, JSON.stringify(pikoPayload)); // Log success only on final success
+                                        console.log(`[Rule ${rule.id}][Action createEvent] Piko event created.`); // Simplified log on success
                                     } catch (apiError) {
-                                        throw new Error(`Piko API call failed: ${apiError instanceof Error ? apiError.message : apiError}`); 
+                                        throw new Error(`Piko createEvent API call failed: ${apiError instanceof Error ? apiError.message : apiError}`); 
                                     }
                                 } else {
-                                    console.warn(`[Rule ${rule.id}] createEvent unsupported category ${targetNode.category}`);
+                                    console.warn(`[Rule ${rule.id}][Action createEvent] Unsupported target node category ${targetNode.category}`);
                                 }
                                 break;
+                            } // End case 'createEvent'
+                            
+                            case 'createBookmark': { // Added block scope
+                                // Check if the action params match the expected type for createBookmark
+                                if (!('nameTemplate' in resolvedParams && 'durationMsTemplate' in resolvedParams)) {
+                                     throw new Error(`Invalid parameters resolved for createBookmark action.`);
+                                }
+
+                                if (targetNode.category === 'piko') {
+                                    const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
+                                    if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target node ${targetNode.id}`); }
+
+                                     // --- START: Fetch Associated Camera Refs (Reused Logic) --- 
+                                    let associatedPikoCameraExternalIds: string[] = [];
+                                    const sourceDeviceInternalId = sourceDevice?.id;
+                                    if (sourceDeviceInternalId) {
+                                        try {
+                                            const associations = await db
+                                                .select({ pikoCameraInternalId: cameraAssociations.pikoCameraId })
+                                                .from(cameraAssociations)
+                                                .where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
+                                            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
+
+                                            if (internalCameraIds.length > 0) {
+                                                const cameraDevices = await db
+                                                    .select({ externalId: devices.deviceId })
+                                                    .from(devices)
+                                                    .where(inArray(devices.id, internalCameraIds)); 
+                                                
+                                                associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
+                                                console.log(`[Rule ${rule.id}][Action createBookmark] Found associated Piko camera external IDs: [${associatedPikoCameraExternalIds.join(', ')}]`);
+                                            } else {
+                                                // If no cameras are associated, we can't create a bookmark. Log and stop this action.
+                                                console.warn(`[Rule ${rule.id}][Action createBookmark] No Piko cameras associated with source device ${sourceDeviceInternalId}. Skipping bookmark creation.`);
+                                                break; // Exit the switch case for this action
+                                            }
+                                        } catch (assocError) {
+                                            // Log the error and re-throw to let pRetry handle it
+                                            console.error(`[Rule ${rule.id}][Action createBookmark] Error fetching camera associations:`, assocError);
+                                            throw new Error(`Failed to fetch camera associations: ${assocError instanceof Error ? assocError.message : assocError}`);
+                                        }
+                                    } else {
+                                         console.warn(`[Rule ${rule.id}][Action createBookmark] Could not get internal ID for source device ${event.deviceId}. Skipping bookmark creation.`);
+                                         break; // Exit the switch case for this action
+                                    }
+                                    // --- END: Fetch Associated Camera Refs --- 
+
+                                    // Parse Duration
+                                    let durationMs = 5000; // Default duration
+                                    try {
+                                        const parsedDuration = parseInt(resolvedParams.durationMsTemplate, 10);
+                                        if (!isNaN(parsedDuration) && parsedDuration > 0) {
+                                            durationMs = parsedDuration;
+                                        } else {
+                                            console.warn(`[Rule ${rule.id}][Action createBookmark] Invalid duration template value "${resolvedParams.durationMsTemplate}". Using default ${durationMs}ms.`);
+                                        }
+                                    } catch (parseError) {
+                                        console.warn(`[Rule ${rule.id}][Action createBookmark] Error parsing duration template "${resolvedParams.durationMsTemplate}". Using default ${durationMs}ms. Error: ${parseError}`);
+                                    }
+
+                                    // Parse Tags
+                                    let tags: string[] = [];
+                                    if (resolvedParams.tagsTemplate && resolvedParams.tagsTemplate.trim() !== '') {
+                                        try {
+                                            tags = resolvedParams.tagsTemplate.split(',')
+                                                .map(tag => tag.trim())
+                                                .filter(tag => tag !== '');
+                                        } catch (parseError) {
+                                             console.warn(`[Rule ${rule.id}][Action createBookmark] Error parsing tags template "${resolvedParams.tagsTemplate}". No tags will be added. Error: ${parseError}`);
+                                        }
+                                    }
+
+                                    // Get Token (inside runAction to benefit from retry)
+                                    let pikoTokenResponse: piko.PikoSystemScopedTokenResponse;
+                                    try {
+                                        pikoTokenResponse = await piko.getSystemScopedAccessToken(username, password, selectedSystem);
+                                    } catch (tokenError) {
+                                        throw new Error(`Piko token fetch failed: ${tokenError instanceof Error ? tokenError.message : tokenError}`); 
+                                    }
+
+                                    // Loop through associated cameras and create bookmark for each
+                                    for (const pikoCameraDeviceId of associatedPikoCameraExternalIds) {
+                                        const pikoPayload: PikoCreateBookmarkPayload = {
+                                            name: resolvedParams.nameTemplate,
+                                            description: resolvedParams.descriptionTemplate || undefined, // Use undefined if empty/null
+                                            startTimeMs: event.time, // Use original event timestamp (already in ms)
+                                            durationMs: durationMs,
+                                            tags: tags.length > 0 ? tags : undefined // Use undefined if no tags
+                                        };
+
+                                        try {
+                                            await piko.createPikoBookmark(selectedSystem, pikoTokenResponse.accessToken, pikoCameraDeviceId, pikoPayload);
+                                            console.log(`[Rule ${rule.id}][Action createBookmark] Piko bookmark created for camera ${pikoCameraDeviceId}.`);
+                                        } catch (apiError) {
+                                            // Log specific camera error and re-throw to trigger retry for the whole action if needed
+                                            console.error(`[Rule ${rule.id}][Action createBookmark] Piko createBookmark API call failed for camera ${pikoCameraDeviceId}:`, apiError);
+                                            throw new Error(`Piko createBookmark API call failed for camera ${pikoCameraDeviceId}: ${apiError instanceof Error ? apiError.message : apiError}`); 
+                                        }
+                                    } // End loop through cameras
+
+                                } else {
+                                     console.warn(`[Rule ${rule.id}][Action createBookmark] Unsupported target node category ${targetNode.category}`);
+                                }
+                                break;
+                            } // End case 'createBookmark'
+
                             default:
-                                console.warn(`[Rule ${rule.id}] Unknown action type ${action.type}`);
+                                // Use type assertion for exhaustiveness check
+                                const _exhaustiveCheck: never = action;
+                                console.warn(`[Rule ${rule.id}] Unknown or unhandled action type: ${(_exhaustiveCheck as any)?.type}`);
                         }
-                    };
+                    }; // End runAction definition
 
                     // Execute the action using p-retry
                     try {

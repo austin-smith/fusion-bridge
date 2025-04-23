@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, RefreshCw, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Play } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Play, Loader2 } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -61,6 +61,8 @@ import {
 } from "@/components/ui/dialog";
 import { cn, formatConnectorCategory } from "@/lib/utils";
 import { toast } from 'sonner';
+import { DeviceDetailDialogContent } from '@/components/features/devices/device-detail-dialog-content';
+import { DeviceWithConnector } from '@/types';
 
 // Update the event interface - back to simple placeholders
 interface EnrichedEvent {
@@ -168,6 +170,11 @@ export default function EventsPage() {
   });
   const [categoryFilter, setCategoryFilter] = useState('all');
 
+  // State for device detail dialog
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [selectedDeviceForDialog, setSelectedDeviceForDialog] = useState<DeviceWithConnector | null>(null);
+  const [isLoadingDeviceDetail, setIsLoadingDeviceDetail] = useState(false);
+
   // Function to fetch events
   const fetchEvents = useCallback(async (isInitialLoad = false) => {
     if (!isInitialLoad) {
@@ -191,6 +198,41 @@ export default function EventsPage() {
     } finally {
       // setRefreshing(false);
       setLoading(false);
+    }
+  }, []);
+
+  // Function to fetch specific device details
+  const fetchDeviceDetails = useCallback(async (deviceId: string) => {
+    if (!deviceId) return;
+    setIsLoadingDeviceDetail(true);
+    setSelectedDeviceForDialog(null); // Clear previous device
+    setIsDetailDialogOpen(true); // Open dialog immediately
+    try {
+      const response = await fetch(`/api/devices?deviceId=${deviceId}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch device details');
+      }
+      const result = await response.json();
+      if (!result.success || !result.data) {
+        throw new Error(result.error || 'Failed to parse device details');
+      }
+
+      // API should now return the single device object directly when queried by ID
+      if (result.data) {
+        setSelectedDeviceForDialog(result.data);
+      } else {
+        // Handle case where data might be unexpectedly null/undefined even with success: true
+        console.error('API returned success but no device data for ID:', deviceId);
+        throw new Error(`Device data not found for ID ${deviceId}.`);
+      }
+      
+    } catch (error: any) {
+      console.error('Error fetching device details:', error);
+      toast.error(error.message || 'Could not load device details.');
+      setIsDetailDialogOpen(false); // Close dialog on error
+    } finally {
+      setIsLoadingDeviceDetail(false);
     }
   }, []);
 
@@ -234,7 +276,26 @@ export default function EventsPage() {
       header: "Device Name",
       enableSorting: true,
       enableColumnFilter: true,
-      cell: ({ row }) => row.original.deviceName || row.original.deviceId || 'Unknown Device',
+      cell: ({ row }) => {
+        const deviceId = row.original.deviceId;
+        const deviceName = row.original.deviceName || deviceId || 'Unknown Device';
+
+        // Render as button only if deviceId is present
+        if (deviceId) {
+          return (
+            // Using a button styled as a link for better accessibility and clear interaction
+            <Button
+              variant="link"
+              className="p-0 h-auto text-left whitespace-normal text-foreground"
+              onClick={() => fetchDeviceDetails(deviceId)}
+            >
+              {deviceName}
+            </Button>
+          );
+        }
+        // Fallback for system events or events without a deviceId
+        return <span>{deviceName}</span>;
+      },
     },
     {
       accessorKey: 'deviceTypeInfo.type',
@@ -243,6 +304,9 @@ export default function EventsPage() {
       enableColumnFilter: true,
       cell: ({ row }) => {
         const typeInfo = row.original.deviceTypeInfo;
+        if (!typeInfo?.type) {
+          return <span className="text-muted-foreground">Unknown</span>; 
+        }
         const IconComponent = getDeviceTypeIcon(typeInfo.type);
         return (
           <TooltipProvider delayDuration={100}>
@@ -262,7 +326,8 @@ export default function EventsPage() {
         );
       },
       filterFn: (row, id, value) => {
-        return String(row.original.deviceTypeInfo.type).toLowerCase().includes(String(value).toLowerCase());
+        const typeString = String(row.original.deviceTypeInfo?.type || '').toLowerCase();
+        return typeString.includes(String(value).toLowerCase());
       },
     },
     {
@@ -435,18 +500,20 @@ export default function EventsPage() {
                       label={eventData.connectorName || formatConnectorCategory(eventData.connectorCategory)}
                     />
                     
-                    <EventTag 
-                      icon={React.createElement(getDeviceTypeIcon(eventData.deviceTypeInfo.type), { className: "h-3 w-3" })}
-                      label={
-                        <>
-                          {eventData.deviceTypeInfo.type}
-                          {eventData.deviceTypeInfo.subtype && (
-                            <span className="opacity-70 ml-1">/ {eventData.deviceTypeInfo.subtype}</span>
-                          )}
-                        </>
-                      }
-                      variant="secondary"
-                    />
+                    {eventData.deviceTypeInfo?.type && (
+                      <EventTag 
+                        icon={React.createElement(getDeviceTypeIcon(eventData.deviceTypeInfo.type), { className: "h-3 w-3" })}
+                        label={
+                          <>
+                            {eventData.deviceTypeInfo.type}
+                            {eventData.deviceTypeInfo.subtype && (
+                              <span className="opacity-70 ml-1">/ {eventData.deviceTypeInfo.subtype}</span>
+                            )}
+                          </>
+                        }
+                        variant="secondary"
+                      />
+                    )}
                     
                     {eventData.displayState && (
                       <EventTag 
@@ -603,6 +670,31 @@ export default function EventsPage() {
           </TooltipProvider>
         </div>
       </div>
+
+      {/* Device Detail Dialog */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh]">
+          {/* Add visually hidden title and description for accessibility */}
+          <DialogTitle className="sr-only">Device Details</DialogTitle>
+          <DialogDescription className="sr-only">
+            Detailed information about the selected device.
+          </DialogDescription>
+
+          {/* We don't need DialogHeader/Footer here as DeviceDetailDialogContent provides them */}
+          {isLoadingDeviceDetail ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="mr-2 h-6 w-6 animate-spin" /> Loading device details...
+            </div>
+          ) : selectedDeviceForDialog ? (
+            <DeviceDetailDialogContent device={selectedDeviceForDialog} />
+          ) : (
+            // Optional: Display an error message if loading finished but no device data
+            <div className="text-center py-10 text-muted-foreground">
+              Could not load device details.
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {loading && events.length === 0 ? (
         <p className="text-muted-foreground">Loading initial events...</p>
