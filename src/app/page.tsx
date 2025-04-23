@@ -14,6 +14,11 @@ import { Badge } from "@/components/ui/badge";
 export default function Home() {
   const { nodes, isLoading, error, setNodes, deleteNode, setAddConnectorOpen, setLoading, setError } = useFusionStore();
 
+  // Set page title
+  useEffect(() => {
+    document.title = 'Dashboard // Fusion Bridge';
+  }, []);
+
   useEffect(() => {
     async function fetchNodes() {
       try {

@@ -175,6 +175,11 @@ export default function EventsPage() {
   const [selectedDeviceForDialog, setSelectedDeviceForDialog] = useState<DeviceWithConnector | null>(null);
   const [isLoadingDeviceDetail, setIsLoadingDeviceDetail] = useState(false);
 
+  // Set page title
+  useEffect(() => {
+    document.title = 'Events // Fusion Bridge';
+  }, []);
+
   // Function to fetch events
   const fetchEvents = useCallback(async (isInitialLoad = false) => {
     if (!isInitialLoad) {
@@ -599,267 +604,276 @@ export default function EventsPage() {
 
   // Restore the main return structure
   return (
-    <TooltipProvider>
-      <div className="flex items-center justify-between mb-6 gap-4">
-        <div className="flex items-center gap-4">
-          <Activity className="h-6 w-6 text-muted-foreground" />
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">
-              Events
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              View incoming events from connected devices.
-            </p>
+    // Add flex container for overall page layout
+    <div className="flex flex-col h-full p-4 md:p-6">
+      <TooltipProvider>
+        {/* Header Section - Make it non-shrinkable */}
+        <div className="flex items-center justify-between mb-6 gap-4 flex-shrink-0">
+          <div className="flex items-center gap-4">
+            <Activity className="h-6 w-6 text-muted-foreground" />
+            <div>
+              <h1 className="text-2xl font-semibold text-foreground">
+                Events
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                View incoming events from connected devices.
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <ToggleGroup
-            type="single"
-            defaultValue="all"
-            variant="outline"
-            size="sm"
-            onValueChange={(value) => { if (value) setCategoryFilter(value); }}
-            aria-label="Filter by connector type"
-          >
-            <TooltipProvider> 
+          <div className="flex items-center gap-2">
+            <ToggleGroup
+              type="single"
+              defaultValue="all"
+              variant="outline"
+              size="sm"
+              onValueChange={(value) => { if (value) setCategoryFilter(value); }}
+              aria-label="Filter by connector type"
+            >
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ToggleGroupItem value="all" aria-label="All types">All</ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent>All Connectors</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ToggleGroupItem value="yolink" aria-label="YoLink type" className="p-1.5 data-[state=on]:bg-accent">
+                      <ConnectorIcon connectorCategory="yolink" size={16} />
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent>YoLink</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ToggleGroupItem value="piko" aria-label="Piko type" className="p-1.5 data-[state=on]:bg-accent">
+                      <ConnectorIcon connectorCategory="piko" size={16} />
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent>Piko</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </ToggleGroup>
+            <TooltipProvider delayDuration={100}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <ToggleGroupItem value="all" aria-label="All types">All</ToggleGroupItem>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => {
+                      const nextIsGrouped = !isGrouped;
+                      setIsGrouped(nextIsGrouped);
+                      setGrouping(nextIsGrouped ? ['deviceName'] : []);
+                    }}
+                    className="h-8 w-8"
+                  >
+                    {isGrouped ? <List className="h-4 w-4" /> : <Layers className="h-4 w-4" />}
+                    <span className="sr-only">{isGrouped ? 'View Details' : 'Group by Device'}</span>
+                  </Button>
                 </TooltipTrigger>
-                <TooltipContent>All Connectors</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <ToggleGroupItem value="yolink" aria-label="YoLink type" className="p-1.5 data-[state=on]:bg-accent">
-                    <ConnectorIcon connectorCategory="yolink" size={16} />
-                  </ToggleGroupItem>
-                </TooltipTrigger>
-                <TooltipContent>YoLink</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <ToggleGroupItem value="piko" aria-label="Piko type" className="p-1.5 data-[state=on]:bg-accent">
-                    <ConnectorIcon connectorCategory="piko" size={16} />
-                  </ToggleGroupItem>
-                </TooltipTrigger>
-                <TooltipContent>Piko</TooltipContent>
+                <TooltipContent>
+                  <p>{isGrouped ? 'View Details' : 'Group by Device'}</p>
+                </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-          </ToggleGroup>
-          <TooltipProvider delayDuration={100}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => {
-                    const nextIsGrouped = !isGrouped;
-                    setIsGrouped(nextIsGrouped);
-                    setGrouping(nextIsGrouped ? ['deviceName'] : []);
-                  }}
-                  className="h-8 w-8"
-                >
-                  {isGrouped ? <List className="h-4 w-4" /> : <Layers className="h-4 w-4" />}
-                  <span className="sr-only">{isGrouped ? 'View Details' : 'Group by Device'}</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{isGrouped ? 'View Details' : 'Group by Device'}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          </div>
         </div>
-      </div>
 
-      {/* Device Detail Dialog */}
-      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh]">
-          {/* Add visually hidden title and description for accessibility */}
-          <DialogTitle className="sr-only">Device Details</DialogTitle>
-          <DialogDescription className="sr-only">
-            Detailed information about the selected device.
-          </DialogDescription>
+        {/* Device Detail Dialog */}
+        <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+          <DialogContent className="max-w-3xl max-h-[90vh]">
+            <DialogTitle className="sr-only">Device Details</DialogTitle>
+            <DialogDescription className="sr-only">
+              Detailed information about the selected device.
+            </DialogDescription>
+            {isLoadingDeviceDetail ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="mr-2 h-6 w-6 animate-spin" /> Loading device details...
+              </div>
+            ) : selectedDeviceForDialog ? (
+              <DeviceDetailDialogContent device={selectedDeviceForDialog} />
+            ) : (
+              <div className="text-center py-10 text-muted-foreground">
+                Could not load device details.
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
-          {/* We don't need DialogHeader/Footer here as DeviceDetailDialogContent provides them */}
-          {isLoadingDeviceDetail ? (
-            <div className="flex items-center justify-center py-10">
-              <Loader2 className="mr-2 h-6 w-6 animate-spin" /> Loading device details...
-            </div>
-          ) : selectedDeviceForDialog ? (
-            <DeviceDetailDialogContent device={selectedDeviceForDialog} />
-          ) : (
-            // Optional: Display an error message if loading finished but no device data
-            <div className="text-center py-10 text-muted-foreground">
-              Could not load device details.
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+        {/* Conditional Messages - Make non-shrinkable */}
+        <div className="flex-shrink-0 mb-4"> {/* Added mb-4 for spacing */} 
+          {loading && events.length === 0 ? (
+            <p className="text-muted-foreground">Loading initial events...</p>
+          ) : !loading && events.length === 0 ? (
+            <p className="text-muted-foreground">
+              No events have been received yet. This page will update periodically.
+            </p>
+          ) : null} {/* Render nothing if table should show */} 
+        </div>
 
-      {loading && events.length === 0 ? (
-        <p className="text-muted-foreground">Loading initial events...</p>
-      ) : !loading && events.length === 0 ? (
-        <p className="text-muted-foreground">
-          No events have been received yet. This page will update periodically.
-        </p>
-      ) : (
-        <div className="border rounded-md overflow-x-auto">
-          <Table>
-            <TableHeader className="sticky top-0 bg-background z-10">
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <TableHead 
-                      key={header.id}
-                      className="px-2 py-1"
-                    >
-                      <div 
-                        className={header.column.getCanSort() ? "cursor-pointer select-none" : undefined}
-                        onClick={header.column.getToggleSortingHandler()}
-                      >
-                        <div className="flex items-center">
-                          {header.isPlaceholder
-                            ? null
-                            : flexRender(
-                                header.column.columnDef.header,
-                                header.getContext()
+        {/* Table Container - Conditionally render, make it grow and handle overflow */}
+        {!loading && events.length > 0 && (
+          <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
+            {/* Inner container for scrollable table */}
+            <div className="flex-grow overflow-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <TableHead 
+                          key={header.id}
+                          className="px-2 py-1"
+                        >
+                          <div 
+                            className={header.column.getCanSort() ? "cursor-pointer select-none" : undefined}
+                            onClick={header.column.getToggleSortingHandler()}
+                          >
+                            <div className="flex items-center">
+                              {header.isPlaceholder
+                                ? null
+                                : flexRender(
+                                    header.column.columnDef.header,
+                                    header.getContext()
+                                  )}
+                              {header.column.getCanSort() && (
+                                <SortIcon isSorted={header.column.getIsSorted()} />
                               )}
-                          {header.column.getCanSort() && (
-                            <SortIcon isSorted={header.column.getIsSorted()} />
-                          )}
-                        </div>
-                      </div>
-                      <div className="mt-1 h-8">
-                        {header.column.getCanFilter() && (
-                          <DebouncedInput
-                            value={(header.column.getFilterValue() ?? '') as string}
-                            onChange={value => header.column.setFilterValue(value)}
-                            placeholder=""
-                          />
-                        )}
-                      </div>
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {table.getRowModel().rows?.length ? (
-                table.getRowModel().rows.map((row) => (
-                  row.getIsGrouped() ? (
-                    <TableRow key={row.id + '-group'} className="bg-muted/50 hover:bg-muted/60">
-                      <TableCell 
-                        colSpan={columns.length} 
-                        className="p-2 font-medium text-sm capitalize cursor-pointer"
-                        onClick={row.getToggleExpandedHandler()}
-                      >
-                        <div className="flex items-center gap-2">
-                          {row.getIsExpanded() ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                          {row.groupingColumnId}:
-                          <span className="font-normal">
-                            {row.groupingValue as React.ReactNode}
-                          </span>
-                          <span className="ml-1 text-xs text-muted-foreground font-normal">
-                            ({row.subRows.length} items)
-                          </span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id} className="px-2 py-1">
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
+                            </div>
+                          </div>
+                          <div className="mt-1 h-8">
+                            {header.column.getCanFilter() && (
+                              <DebouncedInput
+                                value={(header.column.getFilterValue() ?? '') as string}
+                                onChange={value => header.column.setFilterValue(value)}
+                                placeholder=""
+                              />
+                            )}
+                          </div>
+                        </TableHead>
                       ))}
                     </TableRow>
-                  )
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={columns.length} className="h-24 text-center">
-                    No results match your filters or no events received yet.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-          {/* Pagination Controls */}
-          <div className="flex items-center justify-between p-2 border-t">
-            <div className="flex-1 text-sm text-muted-foreground">
-              Total Rows: {table.getFilteredRowModel().rows.length}
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {table.getRowModel().rows?.length ? (
+                    table.getRowModel().rows.map((row) => (
+                      row.getIsGrouped() ? (
+                        <TableRow key={row.id + '-group'} className="bg-muted/50 hover:bg-muted/60">
+                          <TableCell 
+                            colSpan={columns.length} 
+                            className="p-2 font-medium text-sm capitalize cursor-pointer"
+                            onClick={row.getToggleExpandedHandler()}
+                          >
+                            <div className="flex items-center gap-2">
+                              {row.getIsExpanded() ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
+                              {row.groupingColumnId}:
+                              <span className="font-normal">
+                                {row.groupingValue as React.ReactNode}
+                              </span>
+                              <span className="ml-1 text-xs text-muted-foreground font-normal">
+                                ({row.subRows.length} items)
+                              </span>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
+                          {row.getVisibleCells().map((cell) => (
+                            <TableCell key={cell.id} className="px-2 py-1">
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      )
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={columns.length} className="h-24 text-center">
+                        No results match your filters or no events received yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
             </div>
-            <div className="flex items-center space-x-6 lg:space-x-8">
-              <div className="flex items-center space-x-2">
-                <p className="text-sm font-medium">Rows per page</p>
-                <Select
-                  value={`${table.getState().pagination.pageSize}`}
-                  onValueChange={(value) => {
-                    table.setPageSize(Number(value))
-                  }}
-                >
-                  <SelectTrigger className="h-8 w-[70px]">
-                    <SelectValue placeholder={table.getState().pagination.pageSize} />
-                  </SelectTrigger>
-                  <SelectContent side="top">
-                    {[10, 25, 50, 100].map((pageSize) => (
-                      <SelectItem key={pageSize} value={`${pageSize}`}>
-                        {pageSize}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            {/* Pagination - Keep at bottom, non-shrinkable */}
+            <div className="flex items-center justify-between p-2 border-t flex-shrink-0">
+              <div className="flex-1 text-sm text-muted-foreground">
+                Total Rows: {table.getFilteredRowModel().rows.length}
               </div>
-              <div className="flex w-[100px] items-center justify-center text-sm font-medium">
-                Page {table.getState().pagination.pageIndex + 1} of{" "}
-                {table.getPageCount()}
-              </div>
-              <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  className="hidden h-8 w-8 p-0 lg:flex"
-                  onClick={() => table.setPageIndex(0)}
-                  disabled={!table.getCanPreviousPage()}
-                >
-                  <span className="sr-only">Go to first page</span>
-                  <ChevronsLeftIcon className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-8 w-8 p-0"
-                  onClick={() => table.previousPage()}
-                  disabled={!table.getCanPreviousPage()}
-                >
-                  <span className="sr-only">Go to previous page</span>
-                  <ChevronLeftIcon className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-8 w-8 p-0"
-                  onClick={() => table.nextPage()}
-                  disabled={!table.getCanNextPage()}
-                >
-                  <span className="sr-only">Go to next page</span>
-                  <ChevronRightIcon className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  className="hidden h-8 w-8 p-0 lg:flex"
-                  onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                  disabled={!table.getCanNextPage()}
-                >
-                  <span className="sr-only">Go to last page</span>
-                  <ChevronsRightIcon className="h-4 w-4" />
-                </Button>
+              <div className="flex items-center space-x-6 lg:space-x-8">
+                <div className="flex items-center space-x-2">
+                  <p className="text-sm font-medium">Rows per page</p>
+                  <Select
+                    value={`${table.getState().pagination.pageSize}`}
+                    onValueChange={(value) => {
+                      table.setPageSize(Number(value))
+                    }}
+                  >
+                    <SelectTrigger className="h-8 w-[70px]">
+                      <SelectValue placeholder={table.getState().pagination.pageSize} />
+                    </SelectTrigger>
+                    <SelectContent side="top">
+                      {[10, 25, 50, 100].map((pageSize) => (
+                        <SelectItem key={pageSize} value={`${pageSize}`}>
+                          {pageSize}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex w-[100px] items-center justify-center text-sm font-medium">
+                  Page {table.getState().pagination.pageIndex + 1} of{" "}
+                  {table.getPageCount()}
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    className="hidden h-8 w-8 p-0 lg:flex"
+                    onClick={() => table.setPageIndex(0)}
+                    disabled={!table.getCanPreviousPage()}
+                  >
+                    <span className="sr-only">Go to first page</span>
+                    <ChevronsLeftIcon className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-8 w-8 p-0"
+                    onClick={() => table.previousPage()}
+                    disabled={!table.getCanPreviousPage()}
+                  >
+                    <span className="sr-only">Go to previous page</span>
+                    <ChevronLeftIcon className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-8 w-8 p-0"
+                    onClick={() => table.nextPage()}
+                    disabled={!table.getCanNextPage()}
+                  >
+                    <span className="sr-only">Go to next page</span>
+                    <ChevronRightIcon className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="hidden h-8 w-8 p-0 lg:flex"
+                    onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+                    disabled={!table.getCanNextPage()}
+                  >
+                    <span className="sr-only">Go to last page</span>
+                    <ChevronsRightIcon className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </TooltipProvider>
+        )} {/* End conditional rendering for table */} 
+      </TooltipProvider>
+    </div>
   );
 }

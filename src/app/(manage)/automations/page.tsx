@@ -4,6 +4,11 @@ import { AutomationTable } from "@/components/automations/AutomationTable";
 import { Button } from "@/components/ui/button";
 import { PlusCircle, Workflow } from "lucide-react";
 import Link from 'next/link';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Automations // Fusion Bridge',
+};
 
 export default function AutomationsPage() {
   return (

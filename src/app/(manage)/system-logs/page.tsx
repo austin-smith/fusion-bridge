@@ -22,6 +22,11 @@ export default function SystemLogsPage() {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // Set page title
+  useEffect(() => {
+    document.title = 'System Logs // Fusion Bridge';
+  }, []);
+
   useEffect(() => {
     const eventSource = new EventSource('/api/system-logs');
 

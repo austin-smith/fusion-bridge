@@ -130,6 +130,11 @@ export default function DevicesPage() {
     pageSize: 50,
   });
   
+  // Set page title on client side
+  useEffect(() => {
+    document.title = 'Devices // Fusion Bridge';
+  }, []);
+
   // Function to fetch devices *from the database* using GET
   const loadDevicesFromDb = useCallback(async () => {
     setIsLoading(true);
@@ -468,172 +473,176 @@ export default function DevicesPage() {
   }, [categoryFilter, table]);
 
   return (
-    <TooltipProvider>
-      <div className="flex justify-between items-center mb-6 gap-4">
-        <div className="flex items-center gap-4">
-          <Cpu className="h-6 w-6 text-muted-foreground" />
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">
-              Devices
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Manage and view connected devices.
-            </p>
+    <div className="flex flex-col h-full p-4 md:p-6"> 
+      <TooltipProvider>
+        <div className="flex justify-between items-center mb-6 gap-4 flex-shrink-0">
+          <div className="flex items-center gap-4">
+            <Cpu className="h-6 w-6 text-muted-foreground" />
+            <div>
+              <h1 className="text-2xl font-semibold text-foreground">
+                Devices
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Manage and view connected devices.
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="flex-grow"></div>
-        <div className="flex items-center gap-2">
-          <ToggleGroup
-            type="single"
-            defaultValue="all"
-            variant="outline"
-            size="sm"
-            onValueChange={(value) => {
-              if (value) {
-                setCategoryFilter(value);
-              }
-            }}
-            aria-label="Filter by connector type"
-          >
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <ToggleGroupItem value="all" aria-label="All types">
-                    All
-                  </ToggleGroupItem>
-                </TooltipTrigger>
-                <TooltipContent>All Connectors</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <ToggleGroupItem value="yolink" aria-label="YoLink type" className="p-1.5 data-[state=on]:bg-accent">
-                    <ConnectorIcon connectorCategory="yolink" size={16} />
-                  </ToggleGroupItem>
-                </TooltipTrigger>
-                <TooltipContent>YoLink</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <ToggleGroupItem value="piko" aria-label="Piko type" className="p-1.5 data-[state=on]:bg-accent">
-                    <ConnectorIcon connectorCategory="piko" size={16} />
-                  </ToggleGroupItem>
-                </TooltipTrigger>
-                <TooltipContent>Piko</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </ToggleGroup>
+          <div className="flex-grow"></div>
+          <div className="flex items-center gap-2">
+            <ToggleGroup
+              type="single"
+              defaultValue="all"
+              variant="outline"
+              size="sm"
+              onValueChange={(value) => {
+                if (value) {
+                  setCategoryFilter(value);
+                }
+              }}
+              aria-label="Filter by connector type"
+            >
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ToggleGroupItem value="all" aria-label="All types">
+                      All
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent>All Connectors</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ToggleGroupItem value="yolink" aria-label="YoLink type" className="p-1.5 data-[state=on]:bg-accent">
+                      <ConnectorIcon connectorCategory="yolink" size={16} />
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent>YoLink</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ToggleGroupItem value="piko" aria-label="Piko type" className="p-1.5 data-[state=on]:bg-accent">
+                      <ConnectorIcon connectorCategory="piko" size={16} />
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent>Piko</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </ToggleGroup>
 
-          <Dialog>
+            <Dialog>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <Network className="h-4 w-4" />
+                        <span className="sr-only">View Mappings</span>
+                      </Button>
+                    </DialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>View Device Mappings</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <DialogContent className="sm:max-w-[700px]">
+                <DeviceMappingDialogContent />
+              </DialogContent>
+            </Dialog>
+
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <Network className="h-4 w-4" />
-                      <span className="sr-only">View Mappings</span>
-                    </Button>
-                  </DialogTrigger>
+                  <Button onClick={syncDevices} disabled={isLoading || isSyncing} size="sm">
+                    <RefreshCwIcon className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                    {isSyncing ? 'Syncing...' : 'Sync'}
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>View Device Mappings</p>
+                  <p>Sync devices</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            <DialogContent className="sm:max-w-[700px]">
-              <DeviceMappingDialogContent />
-            </DialogContent>
-          </Dialog>
-
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button onClick={syncDevices} disabled={isLoading || isSyncing} size="sm">
-                  <RefreshCwIcon className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                  {isSyncing ? 'Syncing...' : 'Sync'}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Sync devices</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          </div>
         </div>
-      </div>
 
-      {error && (
-        <div className="mb-4 p-4 bg-destructive/10 text-destructive rounded-md">
-          <p>Error: {error}</p>
+        <div className="flex-shrink-0">
+          {error && (
+            <div className="mb-4 p-4 bg-destructive/10 text-destructive rounded-md">
+              <p>Error: {error}</p>
+            </div>
+          )}
         </div>
-      )}
 
-      {isLoading && filteredDevices.length === 0 && (
-        <p className="text-muted-foreground">Loading devices...</p>
-      )}
-      {filteredDevices.length === 0 && !isLoading && !error && categoryFilter === 'all' && (
-        <p className="text-muted-foreground">
-          No devices found. Try syncing or check your connector configurations.
-        </p>
-      )}
-      {filteredDevices.length === 0 && (isLoading || error || categoryFilter !== 'all' || columnFilters.length > 0) && !isLoading && (
-        <p className="text-muted-foreground">
-          No devices match the current filters.
-        </p>
-      )}
+        {isLoading && filteredDevices.length === 0 && (
+          <p className="text-muted-foreground">Loading devices...</p>
+        )}
+        {filteredDevices.length === 0 && !isLoading && !error && categoryFilter === 'all' && (
+          <p className="text-muted-foreground">
+            No devices found. Try syncing or check your connector configurations.
+          </p>
+        )}
+        {filteredDevices.length === 0 && (isLoading || error || categoryFilter !== 'all' || columnFilters.length > 0) && !isLoading && (
+          <p className="text-muted-foreground">
+            No devices match the current filters.
+          </p>
+        )}
 
-      {filteredDevices.length > 0 && (
-        <div className="border rounded-md">
-          <div className="max-h-[calc(100vh-220px)] overflow-auto">
-            <Table>
-              <TableHeader className="sticky top-0 bg-background z-10">
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead 
-                        key={header.id}
-                        className="px-2 py-1"
-                      >
-                        <div 
-                          className={header.column.getCanSort() ? "cursor-pointer select-none" : undefined}
-                          onClick={header.column.getToggleSortingHandler()}
+        {filteredDevices.length > 0 && (
+          <div className="border rounded-md flex-grow overflow-hidden flex flex-col"> 
+            <div className="flex-grow overflow-auto"> 
+              <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <TableHead 
+                          key={header.id}
+                          className="px-2 py-1"
                         >
-                          <div className="flex items-center">
-                            {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                            {header.column.getCanSort() ? <SortIcon isSorted={header.column.getIsSorted()} /> : null}
+                          <div 
+                            className={header.column.getCanSort() ? "cursor-pointer select-none" : undefined}
+                            onClick={header.column.getToggleSortingHandler()}
+                          >
+                            <div className="flex items-center">
+                              {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                              {header.column.getCanSort() ? <SortIcon isSorted={header.column.getIsSorted()} /> : null}
+                            </div>
                           </div>
-                        </div>
-                        <div className="mt-1 h-8">
-                          {header.column.getCanFilter() ? (
-                            <DebouncedInput
-                              value={(header.column.getFilterValue() ?? '') as string}
-                              onChange={value => header.column.setFilterValue(value)}
-                              placeholder=""
-                            />
-                          ) : null}
-                        </div>
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel().rows?.length ? table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="px-2 py-1">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          <div className="mt-1 h-8">
+                            {header.column.getCanFilter() ? (
+                              <DebouncedInput
+                                value={(header.column.getFilterValue() ?? '') as string}
+                                onChange={value => header.column.setFilterValue(value)}
+                                placeholder=""
+                              />
+                            ) : null}
+                          </div>
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {table.getRowModel().rows?.length ? table.getRowModel().rows.map((row) => (
+                    <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined}>
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className="px-2 py-1">
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  )) : (
+                    <TableRow>
+                      <TableCell colSpan={columns.length} className="h-24 text-center">
+                        No results.
                       </TableCell>
-                    ))}
-                  </TableRow>
-                )) : (
-                  <TableRow>
-                    <TableCell colSpan={columns.length} className="h-24 text-center">
-                      No results.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-            <div className="flex items-center justify-between p-2 border-t">
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="flex items-center justify-between p-2 border-t flex-shrink-0">
               <div className="flex-1 text-sm text-muted-foreground">
                 Total Rows: {table.getFilteredRowModel().rows.length}
               </div>
@@ -703,8 +712,8 @@ export default function DevicesPage() {
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </TooltipProvider>
+        )}
+      </TooltipProvider>
+    </div>
   );
 } 

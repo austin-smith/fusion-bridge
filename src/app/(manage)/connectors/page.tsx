@@ -96,6 +96,11 @@ export default function ConnectorsPage() {
   const [yolinkHomeInfo, setYolinkHomeInfo] = useState<{id: string, nodeName: string} | null>(null);
   const [togglingNodeId, setTogglingNodeId] = useState<string | null>(null);
 
+  // Set page title
+  useEffect(() => {
+    document.title = 'Connectors // Fusion Bridge';
+  }, []);
+
   // --- Data Fetching and Polling ---
   const refreshConnectorsData = useCallback(async (isInitialLoad = false) => {
     if (isInitialLoad) {

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu"; // Import DropdownMenu
 import { FiSun, FiMoon } from "react-icons/fi"; // Import icons
 import { LuMerge } from "react-icons/lu"; // Import LuMerge icon
+import FusionIcon from '@/components/icons/FusionIcon'; // Import the new icon
 
 // Theme Toggle Button Component (Simplified for Header)
 const ThemeToggleButton = () => {
@@ -91,9 +92,9 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
         {/* Header */}
         <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur">
           <div className="container flex h-[60px] items-center">
-            <div className="flex-1 font-bold text-primary text-xl flex items-center gap-2">
-              <LuMerge className="h-6 w-6" />
-              Fusion Bridge
+            <div className="flex-1 font-bold text-xl flex items-center gap-2">
+              <FusionIcon className="h-6 w-6 text-primary" />
+              <span className="font-csg">FUSION BRIDGE</span>
             </div>
             <ThemeToggleButton /> {/* Add Theme Toggle Button */}
           </div>
