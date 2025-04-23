@@ -35,7 +35,7 @@ cd fusion-bridge
 pnpm install
 ```
 
-3. **Run database migrations**
+3. **Run database migrations** (initializes SQLite db)
 
 ```bash
 pnpm migrate
@@ -97,3 +97,29 @@ The application uses a local SQLite database stored at `~/.fusion-bridge/fusion.
 -   `pikoServers` table for Piko-specific server info.
 -   `cameraAssociations` for linking devices (e.g., YoLink sensor to Piko camera).
 -   `automations` table for storing user-defined automation rules, linking source/target nodes and configuration.
+
+## Database Migrations
+
+When you modify the database schema (by editing `src/data/db/schema.ts`), you need to generate and apply migration files:
+
+1.  **Generate Migration Files:**
+    **Run this command FIRST** after changing `schema.ts`.
+    It compares your schema definition to the last known state (tracked in the `migrations/meta/` folder) and generates a new `.sql` file with the necessary changes (e.g., `ALTER TABLE`).
+    ```bash
+    pnpm db:generate 
+
+    # Or run directly (adjust config path if needed):
+    # npx drizzle-kit generate:sqlite --config=./src/data/db/drizzle.config.ts
+    ```
+
+    *Troubleshooting:* If generation fails, check console errors. It might be due to issues with the `migrations/meta/_journal.json` file. Sometimes deleting the `migrations` folder entirely and re-running `pnpm db:generate` can reset the state, but this requires careful handling if you have existing migrations you want to preserve.
+
+2.  **Apply Migrations:**
+    **Run this command SECOND**, after successfully generating the migration file(s).
+    It executes any pending `.sql` migration files found in the `migrations` folder that haven't been recorded as applied in the `_journal.json` file.
+    ```bash
+    pnpm migrate
+
+    # This applies any pending migrations (including newly generated ones)
+    # to your database.
+    ```

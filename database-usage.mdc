@@ -1,0 +1,43 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+### Database Usage Guidelines
+
+This project uses **Drizzle ORM** with the **`better-sqlite3`** driver for local SQLite database interaction.
+
+-   **Location:** Database setup, schema (`schema.ts`), migrations, and the exported `db` instance are located in `src/data/db/`.
+-   **Schema File:** `src/data/db/schema.ts` defines the database tables using Drizzle syntax.
+-   **Configuration:** Drizzle Kit configuration is likely in `src/data/db/drizzle.config.ts` (or root `drizzle.config.ts`).
+-   **Server-Only Access:** The database instance (`db`) relies on Node.js APIs (`fs`, native modules) and is strictly **server-only**. The `src/data/db/index.ts` file is marked with `import 'server-only';` to enforce this.
+-   **NEVER** import the `db` instance directly into client components (`"use client"` files) or other client-side code.
+-   **Data Fetching for Clients:** Client components must fetch data through:
+    -   **API Routes:** Defined in `src/app/api/...`. Create dedicated API routes for data operations needed by the client.
+    -   **Server Components:** Fetch data directly within Server Components and pass it down as props to Client Components.
+    -   **Server Actions:** Use Server Actions for mutations initiated from the client.
+-   **Repositories:** Data fetching/mutation logic should ideally be encapsulated within repository files located in `src/data/repositories/`.
+
+### Migrations
+
+When changes are made to the database schema (`src/data/db/schema.ts`):
+
+1.  **Generate Migration Files:** Create SQL migration files reflecting the schema changes.
+    **Run this step FIRST.** Drizzle Kit compares `schema.ts` to the history recorded in `src/data/db/migrations/meta/_journal.json` and generates a new `.sql` file with the required `ALTER TABLE`, `CREATE TABLE`, etc. statements.
+    ```bash
+    # Check package.json for the exact script name (e.g., db:generate)
+    pnpm db:generate 
+
+    # Or run directly (adjust config path if needed):
+    # npx drizzle-kit generate:sqlite --config=./src/data/db/drizzle.config.ts
+    ```
+2.  **Apply Migrations:** Execute the generated migration files against the database.
+    **Run this step SECOND**, after generation is successful.
+    This command runs the `src/data/db/migrate.js` script, which uses Drizzle ORM's `migrate` function. It reads the `_journal.json` file, finds any `.sql` files in the `migrations` folder that haven't been applied yet, executes them against the database, and updates the journal.
+    ```bash
+    pnpm migrate
+
+    # This likely runs 'drizzle-kit push:sqlite' or similar behind the scenes.
+    ```
+
+*Important:* Always run `pnpm db:generate` before `pnpm migrate` after schema changes. The generator creates the instructions, and the migrator applies them based on the journal file created/updated by the generator. Errors often arise if the `migrations/meta/_journal.json` file is missing, corrupted, or doesn't match the actual `.sql` files present.

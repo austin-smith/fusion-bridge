@@ -9,7 +9,6 @@ import { eq, inArray } from 'drizzle-orm';
 const PostBodySchema = z.object({
     name: z.string().min(1, { message: "Name is required" }),
     sourceNodeId: z.string().uuid({ message: "Invalid source node ID" }),
-    targetNodeId: z.string().uuid({ message: "Invalid target node ID" }),
     enabled: z.boolean().optional().default(true),
     config: AutomationConfigSchema, // Validate the nested config object
 });
@@ -22,46 +21,28 @@ export async function GET(request: Request) {
   try {
     const allAutomations = await db
       .select({
-        // Select specific fields to avoid exposing too much
         id: automations.id,
         name: automations.name,
         enabled: automations.enabled,
         sourceNodeId: automations.sourceNodeId,
-        targetNodeId: automations.targetNodeId,
         createdAt: automations.createdAt,
         updatedAt: automations.updatedAt,
         configJson: automations.configJson,
         // Optionally join with nodes to get names
         sourceNodeName: nodes.name,
-        targetNodeName: nodes.name, // Needs alias to differentiate
       })
       .from(automations)
-      .leftJoin(nodes, eq(automations.sourceNodeId, nodes.id))
-      // How to join the target node and alias its name?
-      // Drizzle syntax for joining the same table twice with aliases might be complex.
-      // For now, just fetch IDs. UI can fetch node details separately if needed.
-      // .leftJoin(nodes as TargetNodesAlias, eq(automations.targetNodeId, TargetNodesAlias.id))
-      ;
+      .leftJoin(nodes, eq(automations.sourceNodeId, nodes.id)); // Only join source node
 
-    // Fetch target node names separately for simplicity for now
-    const targetNodeIds = allAutomations.map(a => a.targetNodeId);
-    let targetNodesMap: Record<string, string> = {};
-    if (targetNodeIds.length > 0) {
-        const targetNodes = await db.select({ id: nodes.id, name: nodes.name}).from(nodes).where(inArray(nodes.id, targetNodeIds));
-        targetNodesMap = targetNodes.reduce((acc, node) => {
-            acc[node.id] = node.name;
-            return acc;
-        }, {} as Record<string, string>);
-    }
-
+    // Since targetNodeId is now per-action within configJson, 
+    // we can't easily display a single target node name at the top level.
+    // The UI (AutomationTable) will need adjustment if it relied on this.
     const results = allAutomations.map(a => ({
-        ...a,
-        // Map source node name correctly (from the first join)
-        sourceNodeName: a.sourceNodeName,
-        // Add target node name from the separate query
-        targetNodeName: targetNodesMap[a.targetNodeId] || null
+      ...a,
+      // Map source node name correctly (from the join)
+      sourceNodeName: a.sourceNodeName,
+      // targetNodeName: nodes.name, // Target node is now per-action, cannot join simply here
     }));
-
 
     return NextResponse.json(results);
   } catch (error) {
@@ -84,7 +65,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Invalid request body", errors: validationResult.error.flatten().fieldErrors }, { status: 400 });
     }
     
-    const { name, sourceNodeId, targetNodeId, enabled, config } = validationResult.data;
+    // Destructure without the top-level targetNodeId
+    const { name, sourceNodeId, enabled, config } = validationResult.data;
 
     // TODO: Optional - Validate that sourceNodeId and targetNodeId actually exist in the nodes table?
 
@@ -92,7 +74,6 @@ export async function POST(request: Request) {
     const newAutomation = await db.insert(automations).values({
       name: name,
       sourceNodeId: sourceNodeId,
-      targetNodeId: targetNodeId,
       enabled: enabled,
       configJson: config, // Store the validated config object directly
       // createdAt and updatedAt have default values

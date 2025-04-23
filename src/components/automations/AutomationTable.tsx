@@ -51,12 +51,10 @@ interface AutomationApiResponse {
   name: string;
   enabled: boolean;
   sourceNodeId: string;
-  targetNodeId: string;
   createdAt: string; // Dates are often strings in JSON
   updatedAt: string;
   configJson: AutomationConfig | null; // Added this
   sourceNodeName: string | null;
-  targetNodeName: string | null;
 }
 
 // Define columns for the DataTable using the API response type
@@ -92,9 +90,9 @@ export const columns = (
       const record = row.original; // Type is now AutomationApiResponse
       // Get the action type from the config if available
       const actionType = record.configJson?.actions?.[0]?.type || 'Unknown Action';
-      // Display action type and target node name if available
-      const targetName = record.targetNodeName ? ` -> ${record.targetNodeName}` : '';
-      return <span>{`${actionType}${targetName}`}</span>;
+      // Target name is no longer available at the top level
+      // We might enhance this later to show target info based on action type/params
+      return <span>{actionType}</span>;
     },
   },
   {

@@ -10,6 +10,8 @@ import { minimatch } from 'minimatch'; // For wildcard matching
 import pRetry from 'p-retry'; // Import p-retry
 import type { PikoCreateBookmarkPayload } from '@/services/drivers/piko'; // Import the specific payload type
 // Import other necessary drivers or services as needed
+import type { SendHttpRequestActionParamsSchema } from '@/lib/automation-schemas';
+import { z } from 'zod'; // Add Zod import
 
 /**
  * Processes an incoming event and triggers matching automations.
@@ -24,7 +26,8 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
         // 1. Find the source node using homeId
         const sourceNode = await db.query.nodes.findFirst({
             where: eq(nodes.yolinkHomeId, homeId),
-            columns: { id: true } // Only select the ID
+            // Select ID and category (needed for action type check)
+            columns: { id: true, category: true }
         });
 
         if (!sourceNode) {
@@ -88,18 +91,6 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
 
                 console.log(`[Automation Service] Rule Matched: ${rule.name} (ID: ${rule.id}) - Processing ${ruleConfig.actions.length} action(s)`);
                 
-                // --- Fetch details common to all actions for this rule --- 
-                // Fetch Target Node configuration (assuming single target per rule)
-                const targetNode = await db.query.nodes.findFirst({
-                    where: eq(nodes.id, rule.targetNodeId),
-                });
-                if (!targetNode || !targetNode.cfg_enc) {
-                    console.error(`[Automation Service] Target node ${rule.targetNodeId} not found or has no config for rule ${rule.id}. Skipping all actions for this rule.`);
-                    continue; // Skip this entire rule if target node is invalid
-                }
-                // TODO: Decrypt cfg_enc if needed
-                const targetConfig = JSON.parse(targetNode.cfg_enc);
-
                 // Fetch Source Device details
                 let sourceDevice = null;
                 if (event.deviceId) { 
@@ -125,13 +116,27 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                         const resolvedParams = resolveTokens(action.params, event, deviceContext) as AutomationAction['params']; 
                         
                         switch (action.type) {
-                            case 'createEvent': { // Added block scope for clarity
-                                // Check if the action params match the expected type for createEvent
-                                if (!('sourceTemplate' in resolvedParams && 'captionTemplate' in resolvedParams && 'descriptionTemplate' in resolvedParams)) {
-                                    throw new Error(`Invalid parameters resolved for createEvent action.`);
+                            case 'createEvent': {
+                                // Type assertion and validation for this action's params
+                                if (!('sourceTemplate' in resolvedParams && 'captionTemplate' in resolvedParams && 'descriptionTemplate' in resolvedParams && 'targetNodeId' in resolvedParams)) {
+                                    throw new Error(`Invalid/missing parameters for createEvent action.`);
                                 }
 
-                                if (targetNode.category === 'piko') {
+                                // --- Fetch Target Node specific to this action --- 
+                                const targetNode = await db.query.nodes.findFirst({
+                                    where: eq(nodes.id, resolvedParams.targetNodeId!),
+                                    // Need category and config for Piko logic
+                                    columns: { id: true, category: true, cfg_enc: true }
+                                });
+                                if (!targetNode || !targetNode.cfg_enc || !targetNode.category) {
+                                    throw new Error(`Target node ${resolvedParams.targetNodeId} not found or has no config/category for createEvent action.`);
+                                }
+                                // TODO: Decrypt cfg_enc if needed
+                                const targetConfig = JSON.parse(targetNode.cfg_enc);
+                                // --- End Fetch Target Node --- 
+
+                                if (sourceNode.category === 'piko') {
+                                    // Use the fetched targetConfig for Piko details
                                     const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
                                     if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target node ${targetNode.id}`); }
                                     
@@ -188,18 +193,33 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                                         throw new Error(`Piko createEvent API call failed: ${apiError instanceof Error ? apiError.message : apiError}`); 
                                     }
                                 } else {
+                                    // Log based on the fetched target node's category
                                     console.warn(`[Rule ${rule.id}][Action createEvent] Unsupported target node category ${targetNode.category}`);
                                 }
                                 break;
                             } // End case 'createEvent'
                             
                             case 'createBookmark': { // Added block scope
-                                // Check if the action params match the expected type for createBookmark
-                                if (!('nameTemplate' in resolvedParams && 'durationMsTemplate' in resolvedParams)) {
-                                     throw new Error(`Invalid parameters resolved for createBookmark action.`);
+                                // Type assertion and validation for this action's params
+                                if (!('nameTemplate' in resolvedParams && 'durationMsTemplate' in resolvedParams && 'targetNodeId' in resolvedParams)) {
+                                    throw new Error(`Invalid/missing parameters for createBookmark action.`);
                                 }
 
-                                if (targetNode.category === 'piko') {
+                                // --- Fetch Target Node specific to this action --- 
+                                const targetNode = await db.query.nodes.findFirst({
+                                    where: eq(nodes.id, resolvedParams.targetNodeId!),
+                                    // Need category and config for Piko logic
+                                    columns: { id: true, category: true, cfg_enc: true }
+                                });
+                                if (!targetNode || !targetNode.cfg_enc || !targetNode.category) {
+                                    throw new Error(`Target node ${resolvedParams.targetNodeId} not found or has no config/category for createBookmark action.`);
+                                }
+                                // TODO: Decrypt cfg_enc if needed
+                                const targetConfig = JSON.parse(targetNode.cfg_enc);
+                                // --- End Fetch Target Node --- 
+
+                                if (sourceNode.category === 'piko') {
+                                    // Use the fetched targetConfig for Piko details
                                     const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
                                     if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target node ${targetNode.id}`); }
 
@@ -292,10 +312,87 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                                     } // End loop through cameras
 
                                 } else {
-                                     console.warn(`[Rule ${rule.id}][Action createBookmark] Unsupported target node category ${targetNode.category}`);
+                                    // Log based on the fetched target node's category
+                                    console.warn(`[Rule ${rule.id}][Action createBookmark] Unsupported target node category ${targetNode.category}`);
                                 }
                                 break;
                             } // End case 'createBookmark'
+
+                            case 'sendHttpRequest': { // --- Add case for sendHttpRequest ---
+                                // Type assertion for parameters
+                                const httpParams = resolvedParams as z.infer<typeof SendHttpRequestActionParamsSchema>; 
+
+                                // Parse Headers Template
+                                const headers = new Headers();
+                                headers.set('User-Agent', 'FusionBridge Automation/1.0'); // Default User-Agent
+                                if (httpParams.headersTemplate) {
+                                    try {
+                                        const lines = httpParams.headersTemplate.split('\n');
+                                        for (const line of lines) {
+                                            const separatorIndex = line.indexOf(':');
+                                            if (separatorIndex > 0) {
+                                                const key = line.substring(0, separatorIndex).trim();
+                                                const value = line.substring(separatorIndex + 1).trim();
+                                                if (key && value) {
+                                                    headers.set(key, value);
+                                                }
+                                            } else if (line.trim()) { // Handle lines without separator if needed, or log warning
+                                                console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Malformed header line: ${line}. Skipping.`);
+                                            }
+                                        }
+                                    } catch (headerParseError) {
+                                        throw new Error(`Failed to parse headers template: ${headerParseError instanceof Error ? headerParseError.message : headerParseError}`);
+                                    }
+                                }
+
+                                // Prepare Fetch options
+                                const fetchOptions: RequestInit = {
+                                    method: httpParams.method,
+                                    headers: headers,
+                                };
+
+                                // Add body only for relevant methods
+                                if (['POST', 'PUT', 'PATCH'].includes(httpParams.method) && httpParams.bodyTemplate) {
+                                    // Automatically set Content-Type if not provided and body is JSON-like
+                                    if (!headers.has('Content-Type') && httpParams.bodyTemplate.trim().startsWith('{')) {
+                                        headers.set('Content-Type', 'application/json');
+                                    }
+                                    fetchOptions.body = httpParams.bodyTemplate;
+                                }
+
+                                // Make the HTTP request using fetch
+                                try {
+                                    console.log(`[Rule ${rule.id}][Action sendHttpRequest] Sending ${httpParams.method} request to ${httpParams.urlTemplate}`);
+                                    const response = await fetch(httpParams.urlTemplate, fetchOptions);
+
+                                    // Log response status
+                                    console.log(`[Rule ${rule.id}][Action sendHttpRequest] Received response status: ${response.status} ${response.statusText}`);
+
+                                    // Check if the response was successful (status code 2xx)
+                                    if (!response.ok) {
+                                        let responseBody = '';
+                                        try {
+                                            // Try to read response body for more context on failure
+                                            responseBody = await response.text();
+                                            console.error(`[Rule ${rule.id}][Action sendHttpRequest] Response body (error): ${responseBody.substring(0, 500)}...`); // Log first 500 chars
+                                        } catch (bodyReadError) {
+                                             console.error(`[Rule ${rule.id}][Action sendHttpRequest] Could not read response body on error.`);
+                                        }
+                                        // Throw an error to trigger retry or final failure
+                                        throw new Error(`HTTP request failed with status ${response.status}: ${response.statusText}`);
+                                    }
+                                    
+                                    // Optional: Log successful response body if needed (consider size)
+                                    // const responseBody = await response.text();
+                                    // console.log(`[Rule ${rule.id}][Action sendHttpRequest] Response body (success): ${responseBody.substring(0, 200)}...`);
+
+                                } catch (requestError) {
+                                    // Log the specific error and re-throw to let pRetry handle it
+                                    console.error(`[Rule ${rule.id}][Action sendHttpRequest] HTTP request failed:`, requestError);
+                                    throw new Error(`HTTP request failed: ${requestError instanceof Error ? requestError.message : requestError}`);
+                                }
+                                break;
+                            } // --- End case sendHttpRequest ---
 
                             default:
                                 // Use type assertion for exhaustiveness check

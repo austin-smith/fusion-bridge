@@ -69,7 +69,6 @@ export const automations = sqliteTable("automations", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()), // Unique ID for the automation config
   name: text("name").notNull(), // User-friendly name
   sourceNodeId: text("source_node_id").notNull().references(() => nodes.id, { onDelete: 'cascade' }), // Link to the source connector node
-  targetNodeId: text("target_node_id").notNull().references(() => nodes.id, { onDelete: 'cascade' }), // Link to the target connector node
   enabled: integer("enabled", { mode: "boolean" }).default(true).notNull(),
   // Configuration stored as JSON string, validated by Zod on read/write
   configJson: text("config_json", { mode: "json" }).notNull().$type<AutomationConfig>(), 
@@ -83,10 +82,5 @@ export const automationsRelations = relations(automations, ({ one }) => ({
     fields: [automations.sourceNodeId],
     references: [nodes.id],
     relationName: 'sourceAutomations',
-  }),
-  targetNode: one(nodes, {
-    fields: [automations.targetNodeId],
-    references: [nodes.id],
-    relationName: 'targetAutomations',
   }),
 }));
