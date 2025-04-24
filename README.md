@@ -117,7 +117,7 @@ The application uses Drizzle ORM and supports two database backends configured v
 
 The database schema (`src/data/db/schema.ts`) includes:
 
--   `nodes` table for storing device connections with their configurations.
+-   `connectors` table for storing device connections with their configurations.
 -   `events` table for storing raw incoming events (e.g., from YoLink).
 -   `devices` table for storing discovered devices from connectors.
 -   `pikoServers` table for Piko-specific server info.

@@ -80,7 +80,7 @@ export type StandardizedEventPayload<T extends EventType = EventType> =
 export interface StandardizedEvent<T extends EventType = EventType> {
   eventId: string; // Unique identifier for this processed event instance
   timestamp: Date; // Original event timestamp
-  connectorId: string; // ID of the connector node instance
+  connectorId: string; // ID of the connector instance
   deviceId: string; // The connector-specific ID of the device/component associated with the event
   deviceInfo: TypedDeviceInfo; // Standardized device type information
   eventCategory: EventCategory;

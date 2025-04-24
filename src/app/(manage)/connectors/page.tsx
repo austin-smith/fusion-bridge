@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/c
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Pencil, Trash2, Plus, Plug } from "lucide-react";
 // Using console for messaging instead of toast
-import { NodeWithConfig } from '@/types'; // Import NodeWithConfig
+import { ConnectorWithConfig } from '@/types'; // Renamed type
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,7 +49,7 @@ const translateStatus = (
   eventsEnabled: boolean,
   state: FetchedMqttState // Use the new FetchedMqttState interface
 ): MqttStatus => {
-  // If the node itself has events disabled, status is unknown regardless of connection
+  // If the connector itself has events disabled, status is unknown regardless of connection
   if (!eventsEnabled) {
     return 'unknown';
   }
@@ -71,29 +71,29 @@ const translateStatus = (
 };
 
 export default function ConnectorsPage() {
-  // Select only state needed for rendering directly
-  const { nodes, isLoading, getMqttState } = useFusionStore((state) => ({
-    nodes: state.nodes,
+  // Select state: use renamed state variable `connectors`
+  const { connectors, isLoading, getMqttState } = useFusionStore((state) => ({
+    connectors: state.connectors,
     isLoading: state.isLoading,
     getMqttState: state.getMqttState
   }));
   
-  // Get stable action references ONCE from the store
+  // Get stable action references using renamed actions
   const { 
-    setNodes,
+    setConnectors, 
     setAddConnectorOpen,
     setLoading, 
     setError,
     setEditConnectorOpen,
-    setEditingNode,
-    deleteNode,
+    setEditingConnector, 
+    deleteConnector, 
     setMqttState
-  } = useFusionStore(); // No selector here returns the whole store, actions are stable
+  } = useFusionStore(); 
 
   // State for modals and delete confirmation
-  const [nodeIdToDelete, setNodeIdToDelete] = useState<string | null>(null);
+  const [connectorIdToDelete, setConnectorIdToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [togglingNodeId, setTogglingNodeId] = useState<string | null>(null);
+  const [togglingConnectorId, setTogglingConnectorId] = useState<string | null>(null);
 
   // Set page title
   useEffect(() => {
@@ -106,76 +106,42 @@ export default function ConnectorsPage() {
       setLoading(true);
     }
     try {
-      // Fetch nodes first
-      const nodesResponse = await fetch('/api/nodes');
-      const nodesData = await nodesResponse.json();
-      let fetchedNodes: NodeWithConfig[] = [];
-      
-      if (nodesData.success) {
-        fetchedNodes = nodesData.data;
-        setNodes(fetchedNodes); // Update nodes in the store
-        
-        // Update YoLink info if found
-        const yolinkNode = fetchedNodes.find((node: NodeWithConfig) => 
-          node.category === 'yolink' && node.yolinkHomeId
-        );
-        /* // Removed - Related to unused yolinkHomeInfo state
-        if (yolinkNode && yolinkNode.yolinkHomeId) {
-          setYolinkHomeInfo({
-            id: yolinkNode.yolinkHomeId,
-            nodeName: yolinkNode.name
-          });
-        } else {
-          setYolinkHomeInfo(null); // Clear if no YoLink node found
-        }
-        */
+      const connectorsResponse = await fetch('/api/connectors');
+      const connectorsData = await connectorsResponse.json();
+      let fetchedConnectors: ConnectorWithConfig[] = [];
+      if (connectorsData.success) {
+        fetchedConnectors = connectorsData.data;
+        setConnectors(fetchedConnectors);
       } else {
-        setError(nodesData.error || 'Failed to load connectors');
-        // If nodes fail to load, maybe skip status fetching?
+        setError(connectorsData.error || 'Failed to load connectors');
         if (isInitialLoad) setLoading(false);
-        return; // Stop if nodes failed
-        }
-        
-      // Fetch MQTT status only if nodes were loaded successfully
-        const statusResponse = await fetch('/api/mqtt-status');
-        const statusData = await statusResponse.json();
-        if (statusData.success && statusData.statuses && Array.isArray(statusData.statuses)) {
-        // Create a map for efficient lookup
-        const nodeMap = new Map(fetchedNodes.map(n => [n.id, n]));
-        
-          for (const nodeStatus of statusData.statuses) {
-            if (nodeStatus.nodeId && nodeStatus.mqttState) {
-            const node = nodeMap.get(nodeStatus.nodeId);
-              if (node) {
-              // Use the FetchedMqttState type here
-              const mqttState: FetchedMqttState = nodeStatus.mqttState;
-              const storeStatus: MqttStatus = translateStatus(node.eventsEnabled === true, mqttState);
-                setMqttState(nodeStatus.nodeId, {
-                  status: storeStatus,
-                error: mqttState.error,
-                lastEventTime: mqttState.lastEvent?.time,
-                eventCount: mqttState.lastEvent?.count
-                });
-              }
+        return;
+      }
+      const statusResponse = await fetch('/api/mqtt-status');
+      const statusData = await statusResponse.json();
+      if (statusData.success && statusData.statuses && Array.isArray(statusData.statuses)) {
+        const connectorMap = new Map(fetchedConnectors.map(c => [c.id, c]));
+        for (const connectorStatus of statusData.statuses) {
+          const connectorId = connectorStatus.connectorId || connectorStatus.connectorId;
+          if (connectorId && connectorStatus.mqttState) {
+            const connector = connectorMap.get(connectorId);
+            if (connector) {
+              const mqttState: FetchedMqttState = connectorStatus.mqttState;
+              const storeStatus: MqttStatus = translateStatus(connector.eventsEnabled === true, mqttState);
+              setMqttState(connectorId, { status: storeStatus, error: mqttState.error, lastEventTime: mqttState.lastEvent?.time, eventCount: mqttState.lastEvent?.count });
             }
+          }
         }
       } else {
         console.error('[ConnectorsPage] Failed to fetch MQTT status:', statusData.error || 'Invalid format');
-        // Don't set global error for status fetch failure, maybe log or show specific indicator
       }
-
     } catch (error) {
       console.error('[ConnectorsPage] Error fetching data:', error);
-      // Set global error only on initial load failure?
-      if (isInitialLoad) {
-      setError('Failed to load page data');
-      }
+      if (isInitialLoad) { setError('Failed to load page data'); }
     } finally {
-      if (isInitialLoad) {
-      setLoading(false);
-      }
+      if (isInitialLoad) { setLoading(false); }
     }
-  }, [setLoading, setNodes, setError, setMqttState]);
+  }, [setLoading, setConnectors, setError, setMqttState]);
 
   // Fetch initial data and set up polling
   useEffect(() => {
@@ -191,119 +157,89 @@ export default function ConnectorsPage() {
      };
   }, [refreshConnectorsData]);
   
-  // --- Event Handlers using stable actions ---
+  // --- Event Handlers using renamed actions and state ---
   const handleAddConnectorClick = useCallback(() => {
     setAddConnectorOpen(true);
   }, [setAddConnectorOpen]);
 
-  const handleEditClick = useCallback((node: NodeWithConfig) => {
-    setEditingNode(node);
+  const handleEditClick = useCallback((connector: ConnectorWithConfig) => {
+    setEditingConnector(connector);
     setEditConnectorOpen(true);
-  }, [setEditingNode, setEditConnectorOpen]);
+  }, [setEditingConnector, setEditConnectorOpen]);
 
-  const handleDeleteClick = useCallback((nodeId: string) => {
-    setNodeIdToDelete(nodeId); 
-  }, []); // Relies only on local state setter
+  const handleDeleteClick = useCallback((connectorId: string) => {
+    setConnectorIdToDelete(connectorId);
+  }, []);
 
   const confirmDelete = useCallback(async () => {
-    if (!nodeIdToDelete) return;
+    if (!connectorIdToDelete) return;
     setIsDeleting(true);
     try {
-      const response = await fetch(`/api/nodes/${nodeIdToDelete}`, { method: 'DELETE' });
+      const response = await fetch(`/api/connectors/${connectorIdToDelete}`, { method: 'DELETE' });
       const data = await response.json();
       if (response.ok && data.success) {
-        deleteNode(nodeIdToDelete);
+        deleteConnector(connectorIdToDelete);
       } else {
         console.error(data.error || "Failed to delete connector.");
-        setError(data.error || 'Failed to delete connector'); // Use store error setter
+        setError(data.error || 'Failed to delete connector');
       }
     } catch (error) {
       console.error("Error deleting connector:", error);
       setError('Network error deleting connector.');
     } finally {
       setIsDeleting(false);
-      setNodeIdToDelete(null);
+      setConnectorIdToDelete(null);
     }
-  }, [nodeIdToDelete, deleteNode, setError]); // Depends on local state + stable setters
+  }, [connectorIdToDelete, deleteConnector, setError]);
 
   // Function to handle toggle change 
-  const handleMqttToggle = useCallback(async (node: NodeWithConfig, currentCheckedState: boolean) => {
+  const handleMqttToggle = useCallback(async (connector: ConnectorWithConfig, currentCheckedState: boolean) => {
     const newValue = !currentCheckedState;
-    const originalNodeState = { ...node }; // Store original for revert
-    // const originalMqttState = { ...getMqttState(node.id) }; // No longer needed for revert here
     
-    setTogglingNodeId(node.id); // <-- Set spinner state
-
-    // --- Optimistic UI Update (Switch ONLY) ---
-    // 1. Update node itself for the switch visual
-    const updatedNodesOptimistic = nodes.map((n: NodeWithConfig) => 
-      n.id === node.id ? {...n, eventsEnabled: newValue} : n
-    );
-    setNodes(updatedNodesOptimistic); 
-
-    // 2. REMOVED optimistic MQTT status update - spinner will show instead
-    /*
-    const optimisticStatus: MqttStatus = newValue ? 'disconnected' : 'unknown';
-    setMqttState(node.id, { ... });
-    */
-    
-    // Revert function in case of error (only reverts switch state now)
-    const revertSwitch = () => {
-      setNodes(nodes.map((n: NodeWithConfig) => n.id === node.id ? originalNodeState : n));
-    };
+    setTogglingConnectorId(connector.id); // Show spinner
 
     try {
+      // Use connectorId in the payload for the toggle API
       const response = await fetch('/api/mqtt-toggle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disabled: !newValue, nodeId: node.id })
+        body: JSON.stringify({ disabled: !newValue, connectorId: connector.id })
       });
       const data = await response.json();
 
       if (!response.ok || !data.success) {
         setError(data.error || 'Failed to update MQTT setting.');
-        revertSwitch(); // Revert switch state
+        // Trigger a refresh even on failure to get latest state
+        refreshConnectorsData(); 
         return; // Stop processing
       }
       
-      // 3. Update with state returned from API (if available) for better accuracy
-      if (data.mqttState) {
-        const state: FetchedMqttState = data.mqttState;
-        const nodeId = data.nodeId || node.id;
-        const storeStatus: MqttStatus = translateStatus(newValue, state);
-        setMqttState(nodeId, {
-          status: storeStatus,
-          error: state.error,
-          lastEventTime: state.lastEvent?.time,
-          eventCount: state.lastEvent?.count
-        });
-      }
-
-      // 4. Trigger immediate refresh for potentially faster final state update
+      // Trigger immediate refresh to get updated DB state and MQTT status
       refreshConnectorsData(); 
 
     } catch (error) {
       setError('Network error updating MQTT setting.');
-      revertSwitch(); // Revert switch state
+      // Trigger a refresh even on network error
+      refreshConnectorsData(); 
     } finally {
-      setTogglingNodeId(null); // <-- Clear spinner state regardless of success/error
+      setTogglingConnectorId(null); // Clear spinner state
     }
-  }, [nodes, setNodes, setError, setMqttState, refreshConnectorsData]); // Removed getMqttState from deps
+  }, [setError, setMqttState, refreshConnectorsData]);
   
   // --- Rendering Logic (using destructured state and stable handlers) ---
   // getStatusColorClass and getMqttStatusText can remain inside or be moved outside 
-  // if they don't rely on component state other than nodeId and getMqttState.
+  // if they don't rely on component state other than connectorId and getMqttState.
   // Keep them inside for now for simplicity, as they run on render anyway.
   
-  // Find the node being deleted to display its name in the dialog
-  const nodeToDelete = nodes.find(node => node.id === nodeIdToDelete);
+  // Find the connector being deleted to display its name in the dialog
+  const connectorToDelete = connectors.find(c => c.id === connectorIdToDelete);
 
   // Get status color class based on MQTT status
-  const getStatusColorClass = (nodeId: string) => {
-    const mqttState = getMqttState(nodeId);
-    // Find node from the list obtained from store selector
-    const node = nodes.find(n => n.id === nodeId);
-    const eventsEnabled = node?.eventsEnabled === true;
+  const getStatusColorClass = (connectorId: string) => {
+    const mqttState = getMqttState(connectorId);
+    // Find connector from the list obtained from store selector
+    const connector = connectors.find(c => c.id === connectorId);
+    const eventsEnabled = connector?.eventsEnabled === true;
     
     // If events are explicitly disabled by the user, show gray
     if (!eventsEnabled) {
@@ -322,10 +258,10 @@ export default function ConnectorsPage() {
   };
   
   // Get status text based on MQTT status
-  const getMqttStatusText = (nodeId: string) => {
-    const mqttState = getMqttState(nodeId);
-    const node = nodes.find(n => n.id === nodeId);
-    const eventsEnabled = node?.eventsEnabled === true;
+  const getMqttStatusText = (connectorId: string) => {
+    const mqttState = getMqttState(connectorId);
+    const connector = connectors.find(c => c.id === connectorId);
+    const eventsEnabled = connector?.eventsEnabled === true;
     
     // If events are explicitly disabled by the user, show "Disabled"
     if (!eventsEnabled) {
@@ -368,7 +304,7 @@ export default function ConnectorsPage() {
           <div className="flex justify-center items-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
-        ) : nodes.length === 0 ? (
+        ) : connectors.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-10 text-center">
               <div className="rounded-full p-3 bg-muted mb-4">
@@ -397,22 +333,22 @@ export default function ConnectorsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {nodes.map((node: NodeWithConfig) => (
-                  <TableRow key={node.id}>
-                    <TableCell className="font-medium">{node.name}</TableCell>
+                {connectors.map((connector: ConnectorWithConfig) => (
+                  <TableRow key={connector.id}>
+                    <TableCell className="font-medium">{connector.name}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                        <ConnectorIcon connectorCategory={node.category} size={12} />
-                        <span className="text-xs">{formatConnectorCategory(node.category)}</span>
+                        <ConnectorIcon connectorCategory={connector.category} size={12} />
+                        <span className="text-xs">{formatConnectorCategory(connector.category)}</span>
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {node.category === 'yolink' ? (
+                      {connector.category === 'yolink' ? (
                         <div className="flex items-center">
                           <Switch 
-                            checked={node.eventsEnabled === true}
-                            onCheckedChange={() => handleMqttToggle(node, node.eventsEnabled === true)}
-                            disabled={togglingNodeId === node.id}
+                            checked={connector.eventsEnabled === true}
+                            onCheckedChange={() => handleMqttToggle(connector, connector.eventsEnabled === true)}
+                            disabled={togglingConnectorId === connector.id}
                           />
                         </div>
                       ) : (
@@ -420,16 +356,16 @@ export default function ConnectorsPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {node.category === 'yolink' ? (
-                        togglingNodeId === node.id ? (
+                      {connector.category === 'yolink' ? (
+                        togglingConnectorId === connector.id ? (
                           <div className="flex items-center justify-start px-2.5 py-1">
                             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                           </div>
                         ) : (
-                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(node.id)}`}>
+                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(connector.id)}`}>
                           <SiMqtt className="h-3.5 w-3.5" />
-                          <span>{getMqttStatusText(node.id)}</span>
-                          {getMqttState(node.id).status === 'reconnecting' && (
+                          <span>{getMqttStatusText(connector.id)}</span>
+                          {getMqttState(connector.id).status === 'reconnecting' && (
                             <Loader2 className="h-3 w-3 animate-spin ml-1" />
                           )}
                         </div>
@@ -440,14 +376,14 @@ export default function ConnectorsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end space-x-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleEditClick(node)}>
+                        <Button variant="ghost" size="icon" onClick={() => handleEditClick(connector)}>
                           <Pencil className="h-4 w-4" />
                           <span className="sr-only">Edit connector</span>
                         </Button>
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          onClick={() => handleDeleteClick(node.id)}
+                          onClick={() => handleDeleteClick(connector.id)}
                           className="text-destructive hover:text-destructive hover:bg-destructive/10"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -466,13 +402,13 @@ export default function ConnectorsPage() {
         <AddConnectorModal />
         
         {/* Delete Confirmation Dialog */}
-        <AlertDialog open={!!nodeIdToDelete} onOpenChange={(open: boolean) => !open && setNodeIdToDelete(null)}>
+        <AlertDialog open={!!connectorIdToDelete} onOpenChange={(open: boolean) => !open && setConnectorIdToDelete(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Are you sure?</AlertDialogTitle>
               <AlertDialogDescription>
                 This action cannot be undone. This will permanently delete the connector{' '}
-                {nodeToDelete && <strong className="font-medium">{nodeToDelete.name}</strong>}.
+                {connectorToDelete && <strong className="font-medium">{connectorToDelete.name}</strong>}.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

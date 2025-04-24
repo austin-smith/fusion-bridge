@@ -1,133 +1,102 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/data/db';
-import { nodes } from '@/data/db/schema';
+import { connectors } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import * as mqttService from '@/services/mqtt-service';
+import { z } from 'zod';
+
+// Schema for the request body
+const toggleSchema = z.object({
+  disabled: z.boolean(),
+  connectorId: z.string(),
+});
 
 /**
- * POST handler for toggling MQTT connection status
- * Accepts { disabled: boolean, nodeId: string } in the request body
+ * POST handler for toggling MQTT connection status for a specific connector
+ * Accepts { disabled: boolean, connectorId: string } in the request body
  */
 export async function POST(request: Request) {
   try {
-    const { disabled, nodeId } = await request.json();
-    console.log(`[MQTT Toggle API] Received request to set disabled=${disabled} for node ${nodeId}`);
-    
-    // Find the specific YoLink node by ID
-    let targetNode;
-    if (nodeId) {
-      // If nodeId is provided, find that specific node
-      const nodeResult = await db.select().from(nodes).where(eq(nodes.id, nodeId));
-      
-      if (nodeResult.length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'Node not found'
-        }, { status: 404 });
-      }
-      
-      targetNode = nodeResult[0];
-      
-      // Check if it's a YoLink node
-      if (targetNode.category !== 'yolink') {
-        return NextResponse.json({
-          success: false,
-          error: 'Selected node is not a YoLink connector'
-        }, { status: 400 });
-      }
-      
-      // Update just this node's eventsEnabled state
-      await db
-        .update(nodes)
-        .set({ eventsEnabled: !disabled })
-        .where(eq(nodes.id, nodeId));
-      
-      console.log(`[MQTT Toggle API] Updated node ${nodeId}: eventsEnabled=${!disabled}`);
-    } else {
-      // Fallback to old behavior - find any YoLink node
-      const yolinkNodes = await db.select().from(nodes).where(eq(nodes.category, 'yolink'));
-      
-      if (yolinkNodes.length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'No YoLink connector found'
-        }, { status: 404 });
-      }
-      
-      targetNode = yolinkNodes[0];
-      
-      // Update all YoLink nodes (old behavior)
-      for (const node of yolinkNodes) {
-        await db
-          .update(nodes)
-          .set({ eventsEnabled: !disabled })
-          .where(eq(nodes.id, node.id));
-        
-        console.log(`[MQTT Toggle API] Updated node ${node.id}: eventsEnabled=${!disabled}`);
-      }
+    const body = await request.json();
+    const result = toggleSchema.safeParse(body);
+
+    if (!result.success) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid request body', details: result.error.format() },
+        { status: 400 }
+      );
     }
+
+    const { disabled, connectorId } = result.data;
+    console.log(`[MQTT Toggle API] Request: disabled=${disabled} for connector ${connectorId}`);
     
-    // Make sure the node has a YoLink Home ID
-    if (!targetNode.yolinkHomeId) {
-      return NextResponse.json({
-        success: false,
-        error: 'YoLink Home ID is missing for this connector'
-      }, { status: 400 });
+    // 1. Check if connector exists and is YoLink
+    const connectorResult = await db.select({ category: connectors.category, cfg_enc: connectors.cfg_enc }) 
+                                    .from(connectors)
+                                    .where(eq(connectors.id, connectorId))
+                                    .limit(1);
+
+    if (connectorResult.length === 0) {
+      return NextResponse.json({ success: false, error: 'Connector not found' }, { status: 404 });
     }
-    
-    const homeId = targetNode.yolinkHomeId;
-    
-    // Enable or disable MQTT connection for the selected node
+    const connector = connectorResult[0];
+
+    if (connector.category !== 'yolink') {
+      return NextResponse.json({ success: false, error: 'Selected connector is not a YoLink connector' }, { status: 400 });
+    }
+
+    // 2. Update DB state (handled within enable/disable functions, but good practice? Maybe remove)
+    // We rely on enable/disableMqttConnection to update the DB via saveDisabledState
+    // console.log(`[MQTT Toggle API] Updating DB: eventsEnabled=${!disabled} for connector ${connectorId}`);
+    // await db.update(connectors).set({ eventsEnabled: !disabled }).where(eq(connectors.id, connectorId));
+
+    // 3. Enable or disable MQTT connection via the service
+    let success = false;
     if (disabled) {
-      console.log(`[MQTT Toggle API] Disabling MQTT connection for homeId ${homeId}`);
-      await mqttService.disableMqttConnection(homeId);
+      console.log(`[MQTT Toggle API] Calling disableMqttConnection for connector ${connectorId}`);
+      await mqttService.disableMqttConnection(connectorId);
+      success = true; // Assume success for disable unless error is thrown (which it doesn't currently)
     } else {
-      console.log(`[MQTT Toggle API] Enabling MQTT connection for node ${targetNode.id} with homeId ${homeId}`);
-      
-      try {
-        // Parse the configuration from the specific node
-        const config = JSON.parse(targetNode.cfg_enc);
-        if (config && config.uaid && config.clientSecret) {
-          // Enable the MQTT service for this specific home
-          console.log(`[MQTT Toggle API] Enabling MQTT service for homeId ${homeId}...`);
-          const success = await mqttService.enableMqttConnection(homeId);
-          console.log(`[MQTT Toggle API] MQTT enable result for ${homeId}: ${success}`);
-          
-          if (!success) {
-            return NextResponse.json({
-              success: false,
-              error: 'Failed to enable MQTT connection'
-            }, { status: 500 });
-          }
-        } else {
-          console.error('[MQTT Toggle API] Invalid YoLink configuration');
-          return NextResponse.json({
-            success: false,
-            error: 'Invalid YoLink configuration (missing uaid or clientSecret)'
-          }, { status: 400 });
-        }
-      } catch (err) {
-        console.error('[MQTT Toggle API] Error enabling MQTT service:', err);
-        return NextResponse.json({
-          success: false,
-          error: err instanceof Error ? err.message : 'An unknown error occurred'
-        }, { status: 500 });
-      }
+      console.log(`[MQTT Toggle API] Calling enableMqttConnection for connector ${connectorId}`);
+      success = await mqttService.enableMqttConnection(connectorId);
     }
-    
-    // Get current MQTT state for this specific home
-    const mqttState = mqttService.getMqttClientState(homeId);
-    console.log(`[MQTT Toggle API] Current MQTT state for ${homeId}:`, mqttState);
+
+    if (!success && !disabled) { // Only check success for enable operation
+       console.error(`[MQTT Toggle API] enableMqttConnection failed for connector ${connectorId}`);
+       // Note: enableMqttConnection already logs errors
+       return NextResponse.json({ success: false, error: 'Failed to enable MQTT connection' }, { status: 500 });
+    }
+
+    console.log(`[MQTT Toggle API] Operation completed for connector ${connectorId}. Disabled status: ${disabled}, Enable success (if applicable): ${success}`);
+
+    // 4. Get current MQTT state (needs homeId)
+    let homeId: string | undefined;
+    let mqttState: mqttService.MqttClientState | undefined;
+    try {
+      const config = JSON.parse(connector.cfg_enc);
+      homeId = config?.homeId;
+      if (homeId) {
+        mqttState = mqttService.getMqttClientState(homeId); // Fetch state using homeId
+        console.log(`[MQTT Toggle API] Fetched MQTT state for homeId ${homeId}:`, mqttState);
+      } else {
+          console.warn(`[MQTT Toggle API] Could not determine homeId for connector ${connectorId} to fetch state.`);
+          mqttState = mqttService.getMqttClientState(undefined); // Get default state
+      }
+    } catch (e) {
+      console.error(`[MQTT Toggle API] Failed to parse config or get MQTT state for ${connectorId}:`, e);
+      mqttState = mqttService.getMqttClientState(undefined); // Get default state on error
+    }
     
     return NextResponse.json({
       success: true,
-      disabled,
-      nodeId: targetNode.id,
-      homeId,
-      mqttState
+      disabled: disabled, // Return the requested state
+      connectorId: connectorId,
+      homeId: homeId, // Return homeId if found
+      mqttState // Return the current state
     });
+
   } catch (error) {
-    console.error('[MQTT Toggle API] Error:', error);
+    console.error('[MQTT Toggle API] General Error:', error);
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : 'An unknown error occurred'

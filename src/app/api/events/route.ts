@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/data/db';
-import { nodes, devices } from '@/data/db/schema';
+import { connectors, devices } from '@/data/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import * as eventsRepository from '@/data/repositories/events';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';

@@ -191,19 +191,43 @@ export default function EventsPage() {
       const response = await fetch('/api/events');
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to fetch events');
+        let errorMessage = `HTTP error! Status: ${response.status}`;
+        try {
+          // Try to get a more specific error message from the API response body
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (jsonError) {
+          // Ignore JSON parsing error if the body isn't valid JSON
+          console.warn('Failed to parse error response body as JSON:', jsonError);
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
+
+      if (!data.success) {
+        // Handle cases where the API returns success: false even with a 200 status
+        throw new Error(data.error || 'API returned success: false');
+      }
 
       setEvents(data.data || []);
 
     } catch (error) {
       console.error('Error fetching events:', error);
-      // toast.error(error instanceof Error ? error.message : 'Failed to fetch events');
+      // Display a user-friendly message based on the error type
+      const displayMessage = error instanceof Error ? error.message : 'An unknown error occurred while fetching events';
+      // Only toast on initial load failure or if specifically needed, avoid spamming toasts on interval failures
+      if (isInitialLoad) {
+         toast.error(displayMessage);
+      } else {
+         console.warn(`Background fetch failed: ${displayMessage}`); // Log subsequent errors quietly
+      }
     } finally {
-      setLoading(false);
+      // Only set loading to false on the initial load attempt
+      // Subsequent background fetches shouldn't affect the loading state
+      if (isInitialLoad) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -255,7 +279,7 @@ export default function EventsPage() {
     fetchEvents(true);
 
     const intervalId = setInterval(() => {
-      fetchEvents();
+      fetchEvents(false);
     }, 5000);
 
     return () => {
@@ -345,13 +369,24 @@ export default function EventsPage() {
       },
     },
     {
-      accessorKey: 'event',
+      accessorKey: 'eventCategory',
+      header: "Event Category",
+      enableSorting: true,
+      enableColumnFilter: true,
+      cell: ({ row }) => (
+        <Badge variant="outline">
+          {row.original.eventCategory}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: 'eventType',
       header: "Event Type",
       enableSorting: true,
       enableColumnFilter: true,
       cell: ({ row }) => (
         <Badge variant="outline">
-          {row.getValue<string>('event')}
+          {row.getValue<string>('eventType')}
         </Badge>
       ),
     },

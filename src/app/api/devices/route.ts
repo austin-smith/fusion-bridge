@@ -1,12 +1,13 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/data/db';
-import { devices, nodes, pikoServers, cameraAssociations } from '@/data/db/schema';
+import { devices, connectors, pikoServers, cameraAssociations } from '@/data/db/schema';
 import { eq, count } from 'drizzle-orm';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import * as pikoDriver from '@/services/drivers/piko';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import type { DeviceWithConnector, PikoServer } from '@/types';
 import { useFusionStore } from '@/stores/store';
+import type { TypedDeviceInfo } from '@/lib/mappings/definitions';
 
 // Helper function to get association count
 async function getAssociationCount(
@@ -68,23 +69,25 @@ export async function GET(request: NextRequest) {
         let connectorCategory = 'Unknown';
         let serverName: string | undefined = undefined;
         let pikoServerDetails: PikoServer | undefined = undefined;
+        let associationCount: number | null = null;
+        let deviceTypeInfo: TypedDeviceInfo | undefined = undefined;
 
-        // Fetch connector info
         try {
+          // Fetch connector info
           const connector = await db
-            .select({ name: nodes.name, category: nodes.category })
-            .from(nodes)
-            .where(eq(nodes.id, deviceRow.connectorId))
+            .select({ name: connectors.name, category: connectors.category })
+            .from(connectors)
+            .where(eq(connectors.id, deviceRow.connectorId))
             .limit(1);
           if (connector.length > 0) {
             connectorName = connector[0].name;
             connectorCategory = connector[0].category;
           }
-        } catch { /* ignore lookup errors */ }
+        } catch (e) { console.error(`Error fetching connector for device ${deviceRow.id}:`, e); }
 
-        // If it's a Piko device and has a serverId, fetch full server details
-        if (connectorCategory === 'piko' && deviceRow.serverId) {
-          try {
+        try {
+          // Fetch Piko server details if applicable
+          if (connectorCategory === 'piko' && deviceRow.serverId) {
             const serverResult = await db
               .select() 
               .from(pikoServers)
@@ -94,20 +97,19 @@ export async function GET(request: NextRequest) {
               pikoServerDetails = serverResult[0] as PikoServer;
               serverName = pikoServerDetails.name; 
             }
-          } catch { /* ignore server lookup errors */ }
-        }
+          }
+        } catch (e) { console.error(`Error fetching piko server ${deviceRow.serverId} for device ${deviceRow.id}:`, e); }
         
-        // Fetch association count using the internal device ID
-        const associationCount = await getAssociationCount(
-          deviceRow.id,
-          connectorCategory
-        );
+        try {
+          associationCount = await getAssociationCount(deviceRow.id, connectorCategory);
+        } catch (e) { console.error(`Error fetching association count for device ${deviceRow.id}:`, e); associationCount = null; }
 
-        // Map device type/subtype
-        const deviceTypeInfo = getDeviceTypeInfo(
-          connectorCategory,
-          deviceRow.type
-        );
+        try {
+          deviceTypeInfo = getDeviceTypeInfo(connectorCategory, deviceRow.type);
+        } catch (e) { 
+          console.error(`Error getting device type info for device ${deviceRow.id} (Category: ${connectorCategory}, Type: ${deviceRow.type}):`, e); 
+          deviceTypeInfo = getDeviceTypeInfo('Unmapped', 'Unknown'); 
+        }
 
         return {
           // original device fields
@@ -126,7 +128,7 @@ export async function GET(request: NextRequest) {
           pikoServerDetails, 
           associationCount, // Include association count
           // Mapped type info object
-          deviceTypeInfo, // Add the mapped info object
+          deviceTypeInfo: deviceTypeInfo!, // Use non-null assertion as we provide a fallback
         } satisfies DeviceWithConnector;
       })
     );
@@ -153,8 +155,8 @@ export async function POST() {
     const errors = [];
     let syncedCount = 0;
     
-    // Fetch all nodes (connectors)
-    const allConnectors = await db.select().from(nodes);
+    // Fetch all connectors
+    const allConnectors = await db.select().from(connectors);
     
     // For each connector, sync devices
     for (const connector of allConnectors) {
@@ -223,9 +225,9 @@ export async function POST() {
         // Fetch connector info
         try {
           const connector = await db
-            .select({ name: nodes.name, category: nodes.category })
-            .from(nodes)
-            .where(eq(nodes.id, deviceRow.connectorId))
+            .select({ name: connectors.name, category: connectors.category })
+            .from(connectors)
+            .where(eq(connectors.id, deviceRow.connectorId))
             .limit(1);
           if (connector.length > 0) {
             connectorName = connector[0].name;

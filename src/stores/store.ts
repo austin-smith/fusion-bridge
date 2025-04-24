@@ -1,8 +1,14 @@
-import { create } from 'zustand';
-import { NodeWithConfig, PikoServer } from '@/types';
+import create from 'zustand';
+import { produce, Draft, enableMapSet } from 'immer';
+import { PikoServer } from '@/types';
 import type { StandardizedEvent, StateChangedPayload } from '@/types/events';
 import type { DisplayState, TypedDeviceInfo } from '@/lib/mappings/definitions';
-import type { DeviceWithConnector } from '@/types';
+import type { DeviceWithConnector, ConnectorWithConfig } from '@/types';
+import { YoLinkConfig } from '@/services/drivers/yolink';
+import { getDeviceTypeInfo } from '@/lib/mappings/identification';
+
+// Enable Immer plugin for Map/Set support
+enableMapSet();
 
 // Type for MQTT status representation in the store
 type MqttStatus = 'connected' | 'disconnected' | 'unknown' | 'reconnecting' | 'error';
@@ -22,7 +28,7 @@ interface DeviceStateInfo {
   displayState?: DisplayState;
   lastStateEvent?: StandardizedEvent<'STATE_CHANGED'>;
   lastStatusEvent?: StandardizedEvent<'ONLINE' | 'OFFLINE' | 'UNAUTHORIZED'>;
-  lastSeen: Date;
+  lastSeen?: Date;
   name?: string;
   model?: string;
   vendor?: string;
@@ -35,230 +41,217 @@ interface DeviceStateInfo {
   // --- END Piko Server Fields --- 
 }
 
+// Default structure for a new/unknown device state
+const defaultDeviceStateInfo: Partial<DeviceStateInfo> = {
+    deviceInfo: getDeviceTypeInfo('unknown', 'unknown'),
+    lastStatusEvent: undefined,
+    lastStateEvent: undefined,
+    displayState: undefined,
+    lastSeen: undefined
+};
+
 interface FusionState {
-  nodes: NodeWithConfig[];
+  connectors: ConnectorWithConfig[];
   isLoading: boolean;
   error: string | null;
-  addConnectorOpen: boolean;
-  yolinkHomeId: string | null;
-  editConnectorOpen: boolean;
-  editingNode: NodeWithConfig | null;
+  isAddConnectorOpen: boolean;
+  isEditConnectorOpen: boolean;
+  editingConnector: ConnectorWithConfig | null;
   
   // MQTT Status States by connector ID
-  mqttStates: Record<string, ConnectorMqttState>;
+  mqttStates: Map<string, ConnectorMqttState>;
   
   // Device state map: key = `${connectorId}:${deviceId}`
-  deviceStates: Record<string, DeviceStateInfo>;
+  deviceStates: Map<string, DeviceStateInfo>;
   
   // Actions
-  setNodes: (nodes: NodeWithConfig[]) => void;
-  addNode: (node: NodeWithConfig) => void;
-  updateNode: (node: NodeWithConfig) => void;
-  deleteNode: (id: string) => void;
+  setConnectors: (connectors: ConnectorWithConfig[]) => void;
+  addConnector: (connector: ConnectorWithConfig) => void;
+  updateConnector: (connector: ConnectorWithConfig) => void;
+  deleteConnector: (id: string) => void;
   setLoading: (isLoading: boolean) => void;
   setError: (error: string | null) => void;
   setAddConnectorOpen: (open: boolean) => void;
-  setYolinkHomeId: (id: string | null) => void;
   setEditConnectorOpen: (open: boolean) => void;
-  setEditingNode: (node: NodeWithConfig | null) => void;
+  setEditingConnector: (connector: ConnectorWithConfig | null) => void;
 
   // MQTT Status Actions
-  setMqttState: (connectorId: string, state: { 
-    status: MqttStatus; 
-    error?: string | null; 
-    lastEventTime?: number | null; 
-    eventCount?: number | null; 
-  }) => void;
+  setMqttState: (connectorId: string, state: Partial<ConnectorMqttState>) => void;
   
   // Get MQTT state for a specific connector
   getMqttState: (connectorId: string) => ConnectorMqttState;
 
-  processStandardizedEvent: (evt: StandardizedEvent<any>) => void;
+  processStandardizedEvent: (evt: StandardizedEvent) => void;
 
   // Action to bulk update device states after a sync operation
   setDeviceStatesFromSync: (syncedDevices: DeviceWithConnector[]) => void;
-  fetchNodes: () => Promise<void>;
+  fetchConnectors: () => Promise<void>;
 }
 
-export const useFusionStore = create<FusionState>((set, get) => ({
-  nodes: [],
-  isLoading: false,
+// Initial state for MQTT (default)
+const initialMqttState: ConnectorMqttState = {
+  status: 'unknown',
   error: null,
-  addConnectorOpen: false,
-  yolinkHomeId: null,
-  editConnectorOpen: false,
-  editingNode: null,
+  lastEventTime: null,
+  eventCount: null,
+};
+
+export const useFusionStore = create<FusionState>((set, get) => ({
+  connectors: [],
+  isLoading: true,
+  error: null,
+  isAddConnectorOpen: false,
+  isEditConnectorOpen: false,
+  editingConnector: null,
   
   // Initial MQTT Status State
-  mqttStates: {},
+  mqttStates: new Map<string, ConnectorMqttState>(),
   
   // Initial Device State map
-  deviceStates: {},
+  deviceStates: new Map<string, DeviceStateInfo>(),
   
   // Actions
-  setNodes: (nodes) => set({ nodes }),
-  addNode: (node) => set((state) => ({ nodes: [...state.nodes, node] })),
-  updateNode: (updatedNode) => set((state) => ({
-    nodes: state.nodes.map((node) => 
-      node.id === updatedNode.id ? updatedNode : node
-    )
-  })),
-  deleteNode: (id) => set((state) => ({
-    nodes: state.nodes.filter((node) => node.id !== id),
-    // Also clean up the MQTT state for this node
-    mqttStates: Object.fromEntries(
-      Object.entries(state.mqttStates).filter(([nodeId]) => nodeId !== id)
-    )
-  })),
+  setConnectors: (connectors) => set({ connectors }),
+  addConnector: (connector) => set((state) => ({ connectors: [...state.connectors, connector] })),
+  updateConnector: (connector) =>
+    set((state) => ({
+      connectors: state.connectors.map((c) => 
+        c.id === connector.id ? connector : c
+      ),
+    })),
+  deleteConnector: (id) =>
+    set((state) => ({
+      connectors: state.connectors.filter((connector) => connector.id !== id),
+      mqttStates: produce(state.mqttStates, (draft: Draft<Map<string, ConnectorMqttState>>) => { draft.delete(id); }),
+      deviceStates: produce(state.deviceStates, (draft: Draft<Map<string, DeviceStateInfo>>) => {
+        for (const key of draft.keys()) {
+          if (key.startsWith(`${id}:`)) {
+            draft.delete(key);
+          }
+        }
+      }),
+    })),
   setLoading: (isLoading) => set({ isLoading }),
   setError: (error) => set({ error }),
-  setAddConnectorOpen: (open) => set({ addConnectorOpen: open }),
-  setYolinkHomeId: (id) => set({ yolinkHomeId: id }),
-  setEditConnectorOpen: (open) => set({ editConnectorOpen: open }),
-  setEditingNode: (node) => set({ editingNode: node }),
+  setAddConnectorOpen: (open) => set({ isAddConnectorOpen: open }),
+  setEditConnectorOpen: (open) => set({ isEditConnectorOpen: open }),
+  setEditingConnector: (connector) => set({ editingConnector: connector }),
 
   // MQTT Status Actions
-  setMqttState: (connectorId, state) => set((existingState) => {
-    const currentState = existingState.mqttStates[connectorId] || {
-      status: 'unknown',
-      error: null,
-      lastEventTime: null,
-      eventCount: null
-    };
-    
-    return {
-      mqttStates: {
-        ...existingState.mqttStates,
-        [connectorId]: {
-          status: state.status,
-          error: state.error !== undefined ? state.error : currentState.error,
-          lastEventTime: state.lastEventTime !== undefined ? state.lastEventTime : currentState.lastEventTime,
-          eventCount: state.eventCount !== undefined ? state.eventCount : currentState.eventCount,
-        }
-      }
-    };
-  }),
+  setMqttState: (connectorId, stateUpdate) =>
+    set((state) => ({
+      mqttStates: produce(state.mqttStates, (draft: Draft<Map<string, ConnectorMqttState>>) => {
+        const currentState = draft.get(connectorId) || { ...initialMqttState };
+        draft.set(connectorId, { ...currentState, ...stateUpdate });
+      }),
+    })),
   
   // Get MQTT state for a specific connector with fallback to default state
   getMqttState: (connectorId) => {
-    const state = get().mqttStates[connectorId];
-    if (!state) {
-      return {
-        status: 'unknown',
-        error: null,
-        lastEventTime: null,
-        eventCount: null
-      };
-    }
-    return state;
+    return get().mqttStates.get(connectorId) || { ...initialMqttState };
   },
 
-  processStandardizedEvent: (evt) => set((state) => {
-    const key = `${evt.connectorId}:${evt.deviceId}`;
-    const existing = state.deviceStates[key] || {}; // Default to empty object if new
+  processStandardizedEvent: (evt: StandardizedEvent) =>
+    set((state) => {
+      const key = `${evt.connectorId}:${evt.deviceId}`;
+      
+      // Find connector category 
+      const connector = state.connectors.find(c => c.id === evt.connectorId);
+      const connectorCategory = connector?.category ?? 'unknown';
 
-    // Base update preserves existing static fields (like name, model) 
-    // and updates dynamic fields from the event.
-    const updated: DeviceStateInfo = {
-      ...existing, // Spread existing first to keep name, model etc.
-      connectorId: evt.connectorId,
-      deviceId: evt.deviceId,
-      deviceInfo: evt.deviceInfo, // This contains standardized type/subtype
-      lastSeen: evt.timestamp,
-      // Update rawType if it comes with the event payload (optional)
-      rawType: (evt.payload as any)?.deviceType ?? (evt.payload as any)?.originalEventType ?? existing.rawType,
-    };
+      const existing = state.deviceStates.get(key) || { 
+          ...defaultDeviceStateInfo, 
+          connectorId: evt.connectorId, 
+          deviceId: evt.deviceId,
+          // Initialize deviceInfo using the event's info or fallback
+          deviceInfo: evt.deviceInfo ?? getDeviceTypeInfo(connectorCategory, 'unknown') 
+      }; 
 
-    // Handle state/status updates
-    if (evt.eventType === 'STATE_CHANGED') {
-      const payload = evt.payload as StateChangedPayload;
-      updated.displayState = payload.displayState;
-      updated.lastStateEvent = evt as StandardizedEvent<'STATE_CHANGED'>;
-    } else if (evt.eventType === 'ONLINE' || evt.eventType === 'OFFLINE' || evt.eventType === 'UNAUTHORIZED') {
-      updated.lastStatusEvent = evt as StandardizedEvent<'ONLINE' | 'OFFLINE' | 'UNAUTHORIZED'>;
-    }
-    // Add logic here if other event types should update specific fields?
+      // Determine the rawType to use for recalculation. Prioritize existing state.
+      const rawTypeForRecalc = existing.rawType ?? 'unknown'; // Use stored rawType if available
 
-    return {
-      deviceStates: {
-        ...state.deviceStates,
-        [key]: updated,
-      },
-    };
-  }),
+      // Extract potential originalEventType from payload (used for UNKNOWN events primarily)
+      const originalEventTypeFromPayload = (evt.payload && typeof evt.payload === 'object' && 'originalEventType' in evt.payload) 
+                                           ? evt.payload.originalEventType as string 
+                                           : undefined;
+
+      // Base update preserves existing static fields
+      const updated: DeviceStateInfo = {
+        ...existing,
+        connectorId: evt.connectorId,
+        deviceId: evt.deviceId,
+        // Recalculate deviceInfo using the determined rawType
+        deviceInfo: getDeviceTypeInfo(connectorCategory, rawTypeForRecalc), 
+        lastSeen: new Date(evt.timestamp.getTime()), // Convert number to Date
+        // Update displayState safely
+        displayState: evt.payload && typeof evt.payload === 'object' && 'displayState' in evt.payload 
+                      ? evt.payload.displayState as DisplayState 
+                      : existing.displayState,
+        // Store the relevant event type conditionally with type assertion
+        lastStatusEvent: (evt.eventCategory === 'DEVICE_STATUS' || evt.eventCategory === 'DEVICE_STATE') && (evt.eventType === 'ONLINE' || evt.eventType === 'OFFLINE' || evt.eventType === 'UNAUTHORIZED')
+          ? evt as StandardizedEvent<'ONLINE' | 'OFFLINE' | 'UNAUTHORIZED'>
+          : existing.lastStatusEvent,
+        lastStateEvent: evt.eventType === 'STATE_CHANGED'
+          ? evt as StandardizedEvent<'STATE_CHANGED'>
+          : existing.lastStateEvent,
+        // Update rawType: Use from payload if available, otherwise keep existing.
+        rawType: originalEventTypeFromPayload ?? existing.rawType, 
+      };
+
+      return {
+        deviceStates: produce(state.deviceStates, (draft: Draft<Map<string, DeviceStateInfo>>) => {
+          draft.set(key, updated);
+        }),
+      };
+    }),
 
   // Action to bulk update device states after a sync operation
   setDeviceStatesFromSync: (syncedDevices) => set((state) => {
-    const newDeviceStates = { ...state.deviceStates }; // Start with current states
+      console.log('[Store] setDeviceStatesFromSync received:', syncedDevices);
+      const newDeviceStates = new Map<string, DeviceStateInfo>();
 
-    for (const syncedDevice of syncedDevices) {
-      const key = `${syncedDevice.connectorId}:${syncedDevice.deviceId}`;
-      const existing = state.deviceStates[key] || {}; // Get existing or empty object
-
-      // Map DeviceWithConnector to DeviceStateInfo
-      const updated: DeviceStateInfo = {
-        // Preserve existing dynamic state unless sync provides newer info
-        ...existing,
-        // Overwrite with details from sync
-        connectorId: syncedDevice.connectorId,
-        deviceId: syncedDevice.deviceId,
-        name: syncedDevice.name,
-        model: syncedDevice.model,
-        vendor: syncedDevice.vendor,
-        url: syncedDevice.url,
-        rawType: syncedDevice.type, // Use the raw type from sync
-        deviceInfo: syncedDevice.deviceTypeInfo,
-        // --- BEGIN Map Piko Server Fields --- 
-        serverId: syncedDevice.serverId, // Map serverId
-        serverName: syncedDevice.serverName, // Map serverName
-        pikoServerDetails: syncedDevice.pikoServerDetails, // <-- Map the full object
-        // --- END Map Piko Server Fields ---
-        // Avoid overwriting lastSeen/displayState/lastEvents from sync?
-        // Sync provides existence & basic info, events provide live state.
-        // Let's keep existing lastSeen/displayState/events unless explicitly handled.
-        lastSeen: existing.lastSeen ?? new Date(0), // Keep existing or default
-        displayState: existing.displayState, // Keep existing
-        lastStateEvent: existing.lastStateEvent, // Keep existing
-        lastStatusEvent: existing.lastStatusEvent, // Keep existing
-      };
-      newDeviceStates[key] = updated;
-    }
-    
-    // TODO: Optionally remove devices from store that are NOT in syncedDevices list?
-
-    return {
-      deviceStates: newDeviceStates,
-    };
+      for (const syncedDevice of syncedDevices) {
+          const key = `${syncedDevice.connectorId}:${syncedDevice.deviceId}`;
+          const updated: DeviceStateInfo = {
+              ...defaultDeviceStateInfo,
+              connectorId: syncedDevice.connectorId,
+              deviceId: syncedDevice.deviceId,
+              name: syncedDevice.name,
+              rawType: syncedDevice.type,
+              vendor: syncedDevice.vendor ?? undefined,
+              model: syncedDevice.model ?? undefined,
+              url: syncedDevice.url ?? undefined,
+              deviceInfo: getDeviceTypeInfo(syncedDevice.connectorCategory, syncedDevice.type),
+              lastSeen: new Date(),
+              serverId: syncedDevice.serverId ?? undefined,
+              serverName: syncedDevice.serverName ?? undefined,
+              pikoServerDetails: syncedDevice.pikoServerDetails ?? undefined,
+          };
+          newDeviceStates.set(key, updated);
+      }
+      
+      console.log('[Store] setDeviceStatesFromSync updated state:', newDeviceStates);
+      return { deviceStates: newDeviceStates };
   }),
 
-  // --- BEGIN Fetch Nodes Action ---
-  fetchNodes: async () => {
+  fetchConnectors: async () => {
+    set({ isLoading: true });
+    console.log('[FusionStore] Fetching connectors...');
     try {
-      // Optional: Set loading state if you have one specific to nodes
-      // set({ isLoading: true }); 
-      console.log('[FusionStore] Fetching nodes...');
-      const response = await fetch('/api/nodes');
+      const response = await fetch('/api/connectors');
       const data = await response.json();
-
       if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to fetch nodes');
+        throw new Error(data.error || 'Failed to fetch connectors');
       }
-
       if (data.data && Array.isArray(data.data)) {
-        set({ nodes: data.data as NodeWithConfig[] });
-        console.log('[FusionStore] Nodes loaded into store:', data.data);
+        set({ connectors: data.data as ConnectorWithConfig[], isLoading: false });
+        console.log('[FusionStore] Connectors loaded into store:', data.data);
       } else {
-        console.warn('[FusionStore] Node fetch returned no data.');
-        set({ nodes: [] }); // Set to empty array if no nodes found
+        set({ connectors: [], isLoading: false });
+        console.warn('[FusionStore] Connector fetch returned no data.');
       }
-    } catch (error) {
-      console.error('[FusionStore] Error fetching nodes:', error);
-      set({ error: error instanceof Error ? error.message : 'Unknown error fetching nodes' });
-      set({ nodes: [] }); // Clear nodes on error
-    } finally {
-      // Optional: Clear loading state
-      // set({ isLoading: false });
+    } catch (error) {      console.error('[FusionStore] Error fetching connectors:', error);
+      set({ error: error instanceof Error ? error.message : 'Unknown error fetching connectors', connectors: [], isLoading: false });
     }
   },
-  // --- END Fetch Nodes Action ---
 })); 

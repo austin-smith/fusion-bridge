@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Button } from '@/components/ui/button';
 import { PlusCircle, Trash2 } from 'lucide-react';
-import { NodeWithConfig } from '@/types';
+import { ConnectorWithConfig } from '@/types';
 import { AddConnectorModal } from '@/components/features/connectors/add-connector-modal';
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,7 +12,7 @@ import { formatConnectorCategory } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
 export default function Home() {
-  const { nodes, isLoading, error, setNodes, deleteNode, setAddConnectorOpen, setLoading, setError } = useFusionStore();
+  const { connectors, isLoading, error, setConnectors, deleteConnector, setAddConnectorOpen, setLoading, setError } = useFusionStore();
 
   // Set page title
   useEffect(() => {
@@ -20,45 +20,45 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    async function fetchNodes() {
+    async function fetchConnectors() {
       try {
         setLoading(true);
-        const response = await fetch('/api/nodes');
+        const response = await fetch('/api/connectors');
         const data = await response.json();
         
         if (data.success) {
-          setNodes(data.data);
+          setConnectors(data.data);
         } else {
-          setError(data.error || 'Failed to fetch nodes');
+          setError(data.error || 'Failed to fetch connectors');
         }
       } catch (error) {
-        console.error('Error fetching nodes:', error);
-        setError('Failed to fetch nodes');
+        console.error('Error fetching connectors:', error);
+        setError('Failed to fetch connectors');
       } finally {
         setLoading(false);
       }
     }
 
-    fetchNodes();
-  }, [setNodes, setLoading, setError]);
+    fetchConnectors();
+  }, [setConnectors, setLoading, setError]);
 
   const handleDelete = async (id: string) => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/nodes/${id}`, {
+      const response = await fetch(`/api/connectors/${id}`, {
         method: 'DELETE',
       });
       
       const data = await response.json();
       
       if (data.success) {
-        deleteNode(id);
+        deleteConnector(id);
       } else {
-        setError(data.error || 'Failed to delete node');
+        setError(data.error || 'Failed to delete connector');
       }
     } catch (error) {
-      console.error('Error deleting node:', error);
-      setError('Failed to delete node');
+      console.error('Error deleting connector:', error);
+      setError('Failed to delete connector');
     } finally {
       setLoading(false);
     }
@@ -89,7 +89,7 @@ export default function Home() {
                <div className="flex items-center justify-center p-8">Loading...</div>
             ) : error ? (
                <div className="text-destructive p-4">{error}</div>
-            ) : nodes.length === 0 ? (
+            ) : connectors.length === 0 ? (
               <div className="text-center p-8 border rounded-md bg-muted/40">
                 <p className="text-muted-foreground">No connectors found</p>
                 <Button 
@@ -102,24 +102,24 @@ export default function Home() {
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {nodes.map((node: NodeWithConfig) => (
+                {connectors.map((connector: ConnectorWithConfig) => (
                   <div 
-                    key={node.id} 
+                    key={connector.id} 
                     className="p-4 border rounded-lg hover:shadow-md transition-shadow flex flex-col justify-between"
                   >
                     <div>
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <h3 className="font-medium mb-1">{node.name}</h3>
+                          <h3 className="font-medium mb-1">{connector.name}</h3>
                           <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                            <ConnectorIcon connectorCategory={node.category} size={12} />
-                            <span className="text-xs">{formatConnectorCategory(node.category)}</span>
+                            <ConnectorIcon connectorCategory={connector.category} size={12} />
+                            <span className="text-xs">{formatConnectorCategory(connector.category)}</span>
                           </Badge>
                         </div>
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          onClick={() => handleDelete(node.id)}
+                          onClick={() => handleDelete(connector.id)}
                           className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 flex-shrink-0"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -128,7 +128,7 @@ export default function Home() {
                       </div>
                     </div>
                     <div className="mt-auto pt-2 text-xs text-muted-foreground">
-                        Created: {new Date(node.createdAt).toLocaleString()}
+                        Created: {new Date(connector.createdAt).toLocaleString()}
                     </div>
                   </div>
                 ))}

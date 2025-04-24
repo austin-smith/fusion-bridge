@@ -1,7 +1,7 @@
 // import 'server-only'; // Removed for now
 
 import { db } from '@/data/db';
-import { automations, nodes, devices, cameraAssociations } from '@/data/db/schema';
+import { automations, connectors, devices, cameraAssociations } from '@/data/db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
@@ -25,40 +25,39 @@ export async function processEvent(stdEvent: StandardizedEvent<any>): Promise<vo
     console.log(`[Automation Service] Processing event: ${stdEvent.eventType} (${stdEvent.eventCategory}) for device ${stdEvent.deviceId} from connector ${stdEvent.connectorId}`);
 
     try {
-        // 1. Find the source node using connectorId from the event
-        const sourceNodeId = stdEvent.connectorId;
-        const sourceNode = await db.query.nodes.findFirst({
-            where: eq(nodes.id, sourceNodeId),
-            columns: { id: true, category: true } // Keep category for potential checks
+        // 1. Find the source connector using connectorId from the event
+        const sourceConnectorId = stdEvent.connectorId;
+        const sourceConnector = await db.query.connectors.findFirst({ // Use db.query.connectors
+            where: eq(connectors.id, sourceConnectorId), // Use connectors.id
+            columns: { id: true, category: true }
         });
 
-        // ---> ADD Log: Check if sourceNode was found <--- 
-        console.log(`[Automation Service] Looked up source node for connectorId ${sourceNodeId}. Found: ${sourceNode ? sourceNode.id : 'null'}`);
+        // ---> ADD Log: Check if sourceConnector was found <--- 
+        console.log(`[Automation Service] Looked up source connector for connectorId ${sourceConnectorId}. Found: ${sourceConnector ? sourceConnector.id : 'null'}`);
 
-        if (!sourceNode) {
+        if (!sourceConnector) {
             // This should ideally not happen if connectorId is valid, but good practice to check
-            console.error(`[Automation Service] Could not find source node with ID ${sourceNodeId}. Skipping event processing.`);
+            console.error(`[Automation Service] Could not find source connector with ID ${sourceConnectorId}. Skipping event processing.`);
             return;
         }
-        // console.log(`[Automation Service] Identified source node: ${sourceNodeId}`); // Log less verbose now
+        // console.log(`[Automation Service] Identified source connector: ${sourceConnectorId}`); // Log less verbose now
 
-        // 2. Fetch enabled automations linked to this source node
+        // 2. Fetch enabled automations linked to this source connector
         const candidateAutomations = await db.query.automations.findMany({
             where: and(
-                eq(automations.enabled, true),
-                eq(automations.sourceNodeId, sourceNodeId)
+                eq(automations.enabled, true)
             ),
         });
 
         // ---> ADD Log: Check how many candidate automations were found <--- 
-        console.log(`[Automation Service] Found ${candidateAutomations.length} candidate automation(s) for node ${sourceNodeId}`);
+        console.log(`[Automation Service] Found ${candidateAutomations.length} candidate automation(s) for connector ${sourceConnectorId}`);
 
         if (candidateAutomations.length === 0) {
             // Log exit reason
-            console.log(`[Automation Service] Exiting: No enabled automations found for source node ${sourceNodeId}.`);
+            console.log(`[Automation Service] Exiting: No enabled automations found for source connector ${sourceConnectorId}.`);
             return; // No rules for this source
         }
-        // console.log(`[Automation Service] Found ${candidateAutomations.length} candidate automation(s) for source node.`);
+        // console.log(`[Automation Service] Found ${candidateAutomations.length} candidate automation(s) for source connector.`);
 
         // Get standardized device type for filtering
         const deviceType = stdEvent.deviceInfo?.type ?? DeviceType.Unmapped; // Use standardized type
@@ -112,7 +111,7 @@ export async function processEvent(stdEvent: StandardizedEvent<any>): Promise<vo
                 if (stdEvent.deviceId) { 
                     sourceDevice = await db.query.devices.findFirst({
                         where: and(
-                            eq(devices.connectorId, sourceNodeId), // Use sourceNodeId directly
+                            eq(devices.connectorId, sourceConnectorId), // Use sourceConnectorId
                             eq(devices.deviceId, stdEvent.deviceId) // Use deviceId from event
                         ),
                         columns: { id: true, name: true, type: true } // Keep fetching internal ID, name
@@ -138,27 +137,27 @@ export async function processEvent(stdEvent: StandardizedEvent<any>): Promise<vo
                         switch (action.type) {
                             case 'createEvent': {
                                 // Type assertion and validation for this action's params
-                                if (!('sourceTemplate' in resolvedParams && 'captionTemplate' in resolvedParams && 'descriptionTemplate' in resolvedParams && 'targetNodeId' in resolvedParams)) {
+                                if (!('sourceTemplate' in resolvedParams && 'captionTemplate' in resolvedParams && 'descriptionTemplate' in resolvedParams && 'targetConnectorId' in resolvedParams)) {
                                     throw new Error(`Invalid/missing parameters for createEvent action.`);
                                 }
 
-                                // --- Fetch Target Node specific to this action --- 
-                                const targetNode = await db.query.nodes.findFirst({
-                                    where: eq(nodes.id, resolvedParams.targetNodeId!),
+                                // --- Fetch Target Connector specific to this action --- 
+                                const targetConnector = await db.query.connectors.findFirst({
+                                    where: eq(connectors.id, resolvedParams.targetConnectorId!),
                                     // Need category and config for Piko logic
                                     columns: { id: true, category: true, cfg_enc: true }
                                 });
-                                if (!targetNode || !targetNode.cfg_enc || !targetNode.category) {
-                                    throw new Error(`Target node ${resolvedParams.targetNodeId} not found or has no config/category for createEvent action.`);
+                                if (!targetConnector || !targetConnector.cfg_enc || !targetConnector.category) {
+                                    throw new Error(`Target connector ${resolvedParams.targetConnectorId} not found or has no config/category for createEvent action.`);
                                 }
                                 // TODO: Decrypt cfg_enc if needed
-                                const targetConfig = JSON.parse(targetNode.cfg_enc);
-                                // --- End Fetch Target Node --- 
+                                const targetConfig = JSON.parse(targetConnector.cfg_enc);
+                                // --- End Fetch Target Connector --- 
 
-                                if (targetNode.category === 'piko') {
+                                if (targetConnector.category === 'piko') {
                                     // Use the fetched targetConfig for Piko details
                                     const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
-                                    if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target node ${targetNode.id}`); }
+                                    if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target connector ${targetConnector.id}`); }
                                     
                                     let pikoTokenResponse: piko.PikoTokenResponse;
                                     try {
@@ -213,35 +212,35 @@ export async function processEvent(stdEvent: StandardizedEvent<any>): Promise<vo
                                         throw new Error(`Piko createEvent API call failed: ${apiError instanceof Error ? apiError.message : apiError}`); 
                                     }
                                 } else {
-                                    // Log based on the fetched target node's category
-                                    console.warn(`[Rule ${rule.id}][Action createEvent] Unsupported target node category ${targetNode.category}`);
+                                    // Log based on the fetched target connector's category
+                                    console.warn(`[Rule ${rule.id}][Action createEvent] Unsupported target connector category ${targetConnector.category}`);
                                 }
                                 break;
                             } // End case 'createEvent'
                             
                             case 'createBookmark': { // Added block scope
                                 // Type assertion and validation for this action's params
-                                if (!('nameTemplate' in resolvedParams && 'durationMsTemplate' in resolvedParams && 'targetNodeId' in resolvedParams)) {
+                                if (!('nameTemplate' in resolvedParams && 'durationMsTemplate' in resolvedParams && 'targetConnectorId' in resolvedParams)) {
                                     throw new Error(`Invalid/missing parameters for createBookmark action.`);
                                 }
 
-                                // --- Fetch Target Node specific to this action --- 
-                                const targetNode = await db.query.nodes.findFirst({
-                                    where: eq(nodes.id, resolvedParams.targetNodeId!),
+                                // --- Fetch Target Connector specific to this action --- 
+                                const targetConnector = await db.query.connectors.findFirst({
+                                    where: eq(connectors.id, resolvedParams.targetConnectorId!),
                                     // Need category and config for Piko logic
                                     columns: { id: true, category: true, cfg_enc: true }
                                 });
-                                if (!targetNode || !targetNode.cfg_enc || !targetNode.category) {
-                                    throw new Error(`Target node ${resolvedParams.targetNodeId} not found or has no config/category for createBookmark action.`);
+                                if (!targetConnector || !targetConnector.cfg_enc || !targetConnector.category) {
+                                    throw new Error(`Target connector ${resolvedParams.targetConnectorId} not found or has no config/category for createBookmark action.`);
                                 }
                                 // TODO: Decrypt cfg_enc if needed
-                                const targetConfig = JSON.parse(targetNode.cfg_enc);
-                                // --- End Fetch Target Node --- 
+                                const targetConfig = JSON.parse(targetConnector.cfg_enc);
+                                // --- End Fetch Target Connector --- 
 
-                                if (targetNode.category === 'piko') {
+                                if (targetConnector.category === 'piko') {
                                     // Use the fetched targetConfig for Piko details
                                     const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
-                                    if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target node ${targetNode.id}`); }
+                                    if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target connector ${targetConnector.id}`); }
 
                                      // --- START: Fetch Associated Camera Refs (Reused Logic) --- 
                                     let associatedPikoCameraExternalIds: string[] = [];
@@ -332,8 +331,8 @@ export async function processEvent(stdEvent: StandardizedEvent<any>): Promise<vo
                                     } // End loop through cameras
 
                                 } else {
-                                    // Log based on the fetched target node's category
-                                    console.warn(`[Rule ${rule.id}][Action createBookmark] Unsupported target node category ${targetNode.category}`);
+                                    // Log based on the fetched target connector's category
+                                    console.warn(`[Rule ${rule.id}][Action createBookmark] Unsupported target connector category ${targetConnector.category}`);
                                 }
                                 break;
                             } // End case 'createBookmark'

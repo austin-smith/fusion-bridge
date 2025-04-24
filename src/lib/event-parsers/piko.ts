@@ -4,7 +4,7 @@ import { StandardizedEvent } from '@/types/events';
  * Parses a raw event object received from the Piko connector 
  * into one or more StandardizedEvent objects.
  * 
- * @param connectorId The ID of the Piko connector node instance.
+ * @param connectorId The ID of the Piko connector instance.
  * @param rawEvent The raw event object from Piko (structure TBD).
  * @returns An array of StandardizedEvent objects, or an empty array if the event is ignored/unparseable.
  */

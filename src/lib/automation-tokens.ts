@@ -14,7 +14,7 @@ export const AVAILABLE_AUTOMATION_TOKENS: AutomationToken[] = [
     { token: '{{event.timestamp}}', description: 'Timestamp event occurred (ISO format)', group: 'Event' },
     { token: '{{event.timestampMs}}', description: 'Timestamp event occurred (Epoch milliseconds)', group: 'Event' },
     { token: '{{event.deviceId}}', description: 'Connector-specific ID of the triggering device', group: 'Event' },
-    { token: '{{event.connectorId}}', description: 'Internal ID of the connector node', group: 'Event' },
+    { token: '{{event.connectorId}}', description: 'Internal ID of the connector', group: 'Event' },
 
     // --- Flattened Payload Data (Common fields) ---
     { token: '{{event.newState}}', description: 'Standardized state (ON, OFF, OPEN, CLOSED, ALERT, NORMAL, etc.)', group: 'Event Payload' },

@@ -1,12 +1,11 @@
 import React from 'react';
 import { db } from '@/data/db';
-import { automations, nodes } from '@/data/db/schema';
+import { automations, connectors } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { notFound } from 'next/navigation';
 import AutomationForm from '@/components/automations/AutomationForm';
 import type { AutomationConfig } from '@/lib/automation-schemas';
-import type { Node } from '@/lib/types'; // Import Node type from central types file
 import { deviceIdentifierMap } from '@/lib/mappings/identification'; // Corrected path
 import type { MultiSelectOption } from '@/components/ui/multi-select-combobox'; // Import type
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,26 +15,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType
 
 // Define the shape of the data expected by the form
-// Includes joined node names and allows configJson to be potentially null for 'new'
+// Includes joined connector names and allows configJson to be potentially null for 'new'
 export type AutomationFormData = {
   id: string;
   name: string | null;
   enabled: boolean | null;
-  sourceNodeId: string | null;
+  sourceConnectorId: string | null;
   configJson: AutomationConfig | null; // Allow null for 'new' case
   createdAt: Date | null; // Drizzle returns Date objects for timestamp_ms
   updatedAt: Date | null;
-  sourceNodeName?: string | null;
+  sourceConnectorName?: string | null;
 };
 
-// Fetch all available nodes for dropdowns
-async function getAvailableNodes(): Promise<Pick<Node, 'id' | 'name' | 'category'>[]> {
-    // Select only necessary fields 
+// Fetch all available connectors for dropdowns
+async function getAvailableConnectors(): Promise<Pick<Connector, 'id' | 'name' | 'category'>[]> {
     return db.select({ 
-        id: nodes.id, 
-        name: nodes.name, 
-        category: nodes.category 
-    }).from(nodes);
+        id: connectors.id, 
+        name: connectors.name, 
+        category: connectors.category 
+    }).from(connectors);
 }
 
 // Get AVAILABLE Standardized Device Types for multi-select
@@ -59,7 +57,7 @@ async function getAutomationData(id: string): Promise<AutomationFormData | null>
             id: 'new',
             name: null,
             enabled: true,
-            sourceNodeId: null,
+            sourceConnectorId: null,
             configJson: null,
             createdAt: null,
             updatedAt: null,
@@ -67,22 +65,22 @@ async function getAutomationData(id: string): Promise<AutomationFormData | null>
     }
 
     try {
-        const sourceNodeAlias = alias(nodes, "sourceNode");
+        const sourceConnectorAlias = alias(Connectors, "sourceConnector");
 
         const result = await db
             .select({
                 id: automations.id,
                 name: automations.name,
                 enabled: automations.enabled,
-                sourceNodeId: automations.sourceNodeId,
+                sourceConnectorId: automations.sourceConnectorId,
                 configJson: automations.configJson,
                 createdAt: automations.createdAt,
                 updatedAt: automations.updatedAt,
-                sourceNodeName: sourceNodeAlias.name,
+                sourceConnectorName: sourceConnectorAlias.name,
             })
             .from(automations)
             .where(eq(automations.id, id))
-            .leftJoin(sourceNodeAlias, eq(automations.sourceNodeId, sourceNodeAlias.id))
+            .leftJoin(sourceConnectorAlias, eq(automations.sourceConnectorId, sourceConnectorAlias.id))
             .limit(1);
 
         if (result.length === 0) {
@@ -110,10 +108,10 @@ export default async function AutomationSettingsPage({ params }: { params: Promi
   const { id: automationId } = await params; // Await params and destructure id
   const standardizedDeviceTypes = getStandardizedDeviceTypeOptions(); // Use the new function to get standardized types
 
-  // Fetch initial data and available nodes in parallel
-  const [initialData, availableNodes] = await Promise.all([
+  // Fetch initial data and available connectors in parallel
+  const [initialData, availableConnectors] = await Promise.all([
     getAutomationData(automationId),
-    getAvailableNodes(),
+    getAvailableConnectors(),
   ]);
 
   // Handle not found case for existing IDs
@@ -136,7 +134,7 @@ export default async function AutomationSettingsPage({ params }: { params: Promi
       {/* Pass initialData which matches AutomationFormData */}
       <AutomationForm 
         initialData={initialData!} // Use non-null assertion as we handled null cases
-        availableNodes={availableNodes} 
+        availableConnectors={availableConnectors} 
         sourceDeviceTypeOptions={standardizedDeviceTypes} // Pass the standardized types to the form
        />
     </div>

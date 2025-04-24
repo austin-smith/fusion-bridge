@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from "@/components/ui/input";
 import { toast } from 'sonner';
 import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network } from 'lucide-react';
-import { DeviceWithConnector, NodeWithConfig, PikoServer } from '@/types';
+import { DeviceWithConnector, ConnectorWithConfig, PikoServer } from '@/types';
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { getDeviceTypeIcon, getDisplayStateIcon } from "@/lib/mappings/presentation";
 import type { DisplayState, TypedDeviceInfo } from '@/lib/mappings/definitions';
@@ -128,12 +128,12 @@ function DebouncedInput({
 }
 
 export default function DevicesPage() {
-  // Fetch data from Zustand store
+  // Fetch data from Zustand store - use connectors
   const deviceStates = useFusionStore(state => state.deviceStates);
   const setDeviceStatesFromSync = useFusionStore(state => state.setDeviceStatesFromSync); 
-  const fetchNodes = useFusionStore(state => state.fetchNodes); // <-- Get fetchNodes action
-  // Cast nodes to NodeWithConfig[] if necessary, assuming store holds the enriched type
-  const nodes = useFusionStore(state => state.nodes as NodeWithConfig<any>[]); 
+  // const fetchConnectors = useFusionStore(state => state.fetchConnectors); 
+  // Use connectors state variable
+  const connectors = useFusionStore(state => state.connectors as ConnectorWithConfig<any>[]); 
   
   // const [devices, setDevices] = useState<DeviceWithConnector[]>([]); // Remove local state
   const [isLoadingInitial, setIsLoadingInitial] = useState(true); // <-- Add loading state for initial fetch
@@ -153,30 +153,29 @@ export default function DevicesPage() {
   // Set page title
   useEffect(() => { document.title = 'Devices // Fusion Bridge'; }, []);
 
-  // --- BEGIN Initial Data Fetch --- 
+  // --- Initial Data Fetch --- 
   useEffect(() => {
     const fetchInitialData = async () => {
       setIsLoadingInitial(true);
       setError(null);
       try {
-        console.log('[DevicesPage] Fetching initial data (Devices & Nodes)...');
-        // Fetch nodes and devices in parallel
-        const [nodesResponse, devicesResponse] = await Promise.all([
-          fetch('/api/nodes'), // Fetch nodes using direct API call here
-          fetch('/api/devices') // Fetch devices
+        console.log('[DevicesPage] Fetching initial data (Connectors & Devices)...');
+        // Fetch connectors and devices in parallel
+        const [connectorsResponse, devicesResponse] = await Promise.all([
+          fetch('/api/connectors'), // Fetch connectors endpoint
+          fetch('/api/devices')
         ]);
 
-        // Process Nodes Response
-        const nodesData = await nodesResponse.json();
-        if (!nodesResponse.ok || !nodesData.success) {
-          console.error('[DevicesPage] Failed to fetch initial nodes:', nodesData.error || 'Unknown error');
-          // Set nodes to empty but continue to fetch devices?
-          useFusionStore.getState().setNodes([]); 
-        } else if (nodesData.data && Array.isArray(nodesData.data)) {
-          useFusionStore.getState().setNodes(nodesData.data as NodeWithConfig[]); // Use direct setter
-          console.log('[DevicesPage] Initial nodes loaded into store.');
+        // Process Connectors Response
+        const connectorsData = await connectorsResponse.json();
+        if (!connectorsResponse.ok || !connectorsData.success) {
+          console.error('[DevicesPage] Failed to fetch initial connectors:', connectorsData.error || 'Unknown error');
+          useFusionStore.getState().setConnectors([]); // Use setConnectors
+        } else if (connectorsData.data && Array.isArray(connectorsData.data)) {
+          useFusionStore.getState().setConnectors(connectorsData.data as ConnectorWithConfig[]); // Use setConnectors
+          console.log('[DevicesPage] Initial connectors loaded into store.');
         } else {
-          useFusionStore.getState().setNodes([]);
+          useFusionStore.getState().setConnectors([]); // Use setConnectors
         }
         
         // Process Devices Response
@@ -196,31 +195,27 @@ export default function DevicesPage() {
       } catch (err) {
         console.error('[DevicesPage] Error fetching initial data:', err);
         setError(err instanceof Error ? err.message : 'Unknown error fetching data');
-        // Clear both on error
-        useFusionStore.getState().setNodes([]);
+        useFusionStore.getState().setConnectors([]); // Use setConnectors
         setDeviceStatesFromSync([]); 
       } finally {
         setIsLoadingInitial(false);
       }
     };
-
     fetchInitialData();
-    // Removed fetchNodes from dependency array as we call the API directly now
-  }, [setDeviceStatesFromSync]); // Only depends on the setter now
-  // --- END Initial Data Fetch ---
+  }, [setDeviceStatesFromSync]);
 
-  // Combine store data into the format the table expects
+  // Combine store data into the format the table expects - use connectors
   const tableData = useMemo((): DisplayedDevice[] => {
-    const nodesMap = new Map(nodes.map(n => [n.id, n]));
+    console.log('[DevicesPage] tableData useMemo received deviceStates:', deviceStates);
     
-    // Map over deviceStates from Zustand store
-    return Object.values(deviceStates).map(state => {
-        const node = nodesMap.get(state.connectorId);
-        const serverName = state.serverName; // Directly use serverName from DeviceStateInfo
-        const serverId = state.serverId;     // Directly use serverId from DeviceStateInfo
-        const pikoServerDetails = state.pikoServerDetails; // <-- Get the details object from store state
+    const connectorsMap = new Map(connectors.map(c => [c.id, c])); 
 
-        // Get device details directly from the DeviceStateInfo object (`state`)
+    // Change iteration method: Use Array.from(deviceStates.values()) instead of Object.values()
+    const mappedData = Array.from(deviceStates.values()).map(state => {
+        const connector = connectorsMap.get(state.connectorId);
+        const serverName = state.serverName; 
+        const serverId = state.serverId;     
+        const pikoServerDetails = state.pikoServerDetails; 
         const deviceName = state.name ?? 'Unknown Device'; 
         const model = state.model ?? 'N/A';       
         const vendor = state.vendor ?? 'N/A';      
@@ -232,34 +227,37 @@ export default function DevicesPage() {
             deviceId: state.deviceId,
             connectorId: state.connectorId,
             name: deviceName, 
-            connectorName: node?.name ?? 'Unknown Connector',
-            connectorCategory: node?.category ?? 'unknown',
-            deviceTypeInfo: state.deviceInfo, // Pass the whole object
+            connectorName: connector?.name ?? 'Unknown Connector',
+            connectorCategory: connector?.category ?? 'unknown',
+            deviceTypeInfo: state.deviceInfo, 
             displayState: state.displayState, 
             lastSeen: state.lastSeen,
             associationCount: 0, // Placeholder 
-            type: rawDeviceType, // Add back the raw type string
+            type: rawDeviceType, 
             url: url,
             model: model,
             vendor: vendor,
-            serverName: serverName, // Pass the directly accessed serverName
-            serverId: serverId,     // Pass the directly accessed serverId
-            pikoServerDetails: pikoServerDetails, // <-- Pass the full object
-            // Add any other fields required by DisplayedDevice or DeviceWithConnector base
+            serverName: serverName,
+            serverId: serverId,
+            pikoServerDetails: pikoServerDetails,
         };
-    // Remove the filter predicate for now, let's ensure the mapping is correct first
-    // }).filter((device): device is DisplayedDevice => !!device.deviceTypeInfo); 
     });
-  }, [deviceStates, nodes]);
 
-  // Filter devices based on the category toggle *before* passing to the table
+    console.log('[DevicesPage] Mapped tableData:', mappedData);
+    return mappedData;
+  }, [deviceStates, connectors]);
+
+  // Filter devices based on the category toggle
   const filteredTableData = useMemo(() => {
     if (categoryFilter === 'all') {
+      console.log('[DevicesPage] Filtered Data (all):', tableData);
       return tableData;
     }
-    return tableData.filter(device => 
+    const filtered = tableData.filter(device => 
       device.connectorCategory?.toLowerCase() === categoryFilter
     );
+    console.log(`[DevicesPage] Filtered Data (${categoryFilter}):`, filtered);
+    return filtered;
   }, [tableData, categoryFilter]);
 
   // --- Keep syncDevices but update messaging --- 
@@ -307,13 +305,26 @@ export default function DevicesPage() {
     }
   }, []); 
 
-  // --- Keep fetchAssociatedDevices but adapt it --- 
+  // Re-add fetchAssociatedDevices definition
   const fetchAssociatedDevices = useCallback(async (deviceId: string, category: string) => {
-    // ... (existing logic is okay, but might need adjustment if deviceId structure changes)
-    // It relies on the external deviceId which is still present in our DisplayedDevice structure
-    // It also relies on fetching /api/devices, which might become stale if not synced? 
-    // Maybe fetch associations directly via API instead of relying on local list?
-  }, [/* dependencies? tableData? */]); 
+    setLoadingAssociatedDevices(true);
+    setActiveDeviceId(deviceId);
+    try {
+      const response = await fetch(`/api/device-associations?deviceId=${deviceId}&category=${category}`);
+      const data = await response.json();
+      if (data.success) {
+        setAssociatedDevices(data.data);
+      } else {
+        console.error("Failed to fetch associated devices:", data.error);
+        setAssociatedDevices([]);
+      }
+    } catch (error) {
+      console.error("Error fetching associated devices:", error);
+      setAssociatedDevices([]);
+    } finally {
+      setLoadingAssociatedDevices(false);
+    }
+  }, []); // Keep empty dependency array for fetchAssociatedDevices itself
 
   // Define columns for TanStack Table
   const columns = useMemo<ColumnDef<DisplayedDevice>[]>(() => [
@@ -413,20 +424,6 @@ export default function DevicesPage() {
         },
       },
       {
-        accessorKey: 'model', // Access model directly
-        header: "Model",
-        enableSorting: true,
-        enableColumnFilter: true,
-        cell: ({ row }) => row.original.model || 'N/A',
-      },
-       {
-        accessorKey: 'vendor', // Access vendor directly
-        header: "Vendor",
-        enableSorting: true,
-        enableColumnFilter: true,
-        cell: ({ row }) => row.original.vendor || 'N/A',
-      },
-      {
         accessorKey: 'serverName',
         header: "Server",
         enableSorting: true,
@@ -443,71 +440,36 @@ export default function DevicesPage() {
         enableSorting: true,
         cell: ({ row }) => {
           const device = row.original;
-          const showCount = device.connectorCategory === 'yolink' || 
-                           device.connectorCategory === 'piko'; // Show for all Piko devices
+          const showCount = device.connectorCategory === 'yolink' || device.connectorCategory === 'piko';
           const count = device.associationCount;
-          
-          if (!showCount || count === null || count === undefined || count === 0) {
-            return null;
-          }
-          
+          if (!showCount || count === null || count === undefined || count === 0) return null;
           return (
             <div>
-              <Popover onOpenChange={(open) => {
-                if (open) {
-                  // Always fetch when opening, regardless of count
-                  fetchAssociatedDevices(device.deviceId, device.connectorCategory);
-                }
-              }}>
+              <Popover onOpenChange={(open) => { if (open) { fetchAssociatedDevices(device.deviceId, device.connectorCategory); } }}>
                 <PopoverTrigger asChild>
-                  <Button 
-                    variant={count > 0 ? "secondary" : "outline"} 
-                    size="sm"
-                    className="h-5 min-w-[1.5rem] px-1.5 text-xs font-medium"
-                  >
-                    {count}
-                  </Button>
+                  <Button variant={count > 0 ? "secondary" : "outline"} size="sm" className="h-5 min-w-[1.5rem] px-1.5 text-xs font-medium">{count}</Button>
                 </PopoverTrigger>
                 <PopoverContent className="text-sm p-3 max-w-[250px] w-full" align="center">
                   {count > 0 ? (
                     <div className="space-y-2">
-                      <p className="font-medium border-b pb-1">
-                        {device.connectorCategory === 'yolink' 
-                          ? `Piko Cameras (${count})`
-                          : `YoLink Devices (${count})`
-                        }
-                      </p>
+                      <p className="font-medium border-b pb-1">{device.connectorCategory === 'yolink' ? `Piko Cameras (${count})` : `YoLink Devices (${count})`}</p>
                       <div>
                         {loadingAssociatedDevices ? (
-                          <div className="flex justify-center items-center py-4">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            <span className="text-xs text-muted-foreground">Loading...</span>
-                          </div>
+                          <div className="flex justify-center items-center py-4"><Loader2 className="h-4 w-4 animate-spin" /><span className="text-xs text-muted-foreground">Loading...</span></div>
                         ) : associatedDevices.length > 0 && activeDeviceId === device.deviceId ? (
                           <ul className="space-y-1 max-h-[150px] overflow-y-auto">
-                            {associatedDevices.map(device => (
-                              <li key={device.id} className="text-xs py-1 px-1.5 border-b border-border/50 last:border-0">
-                                {device.name}
-                              </li>
+                            {associatedDevices.map(assocDevice => (
+                              <li key={assocDevice.id} className="text-xs py-1 px-1.5 border-b border-border/50 last:border-0">{assocDevice.name}</li>
                             ))}
                           </ul>
                         ) : activeDeviceId === device.deviceId ? (
-                          <p className="text-xs text-muted-foreground py-1">
-                            No associated devices found.
-                          </p>
+                          <p className="text-xs text-muted-foreground py-1">No associated devices found.</p>
                         ) : (
-                          <div className="flex justify-center items-center py-4">
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            <span className="text-xs text-muted-foreground">Loading...</span>
-                          </div>
+                          <div className="flex justify-center items-center py-4"><Loader2 className="h-4 w-4 mr-2 animate-spin" /><span className="text-xs text-muted-foreground">Loading...</span></div>
                         )}
                       </div>
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <p>No associated devices</p>
-                    </div>
-                  )}
+                  ) : (<div className="space-y-2"><p>No associated devices</p></div>)}
                 </PopoverContent>
               </Popover>
             </div>
@@ -518,23 +480,17 @@ export default function DevicesPage() {
         id: 'actions',
         header: "Actions",
         cell: ({ row }) => {
-          const device = row.original; 
-          // Pass the correctly structured DisplayedDevice object
+          const device = row.original;
           return (
             <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <EyeIcon className="h-4 w-4" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[600px]">
-                <DeviceDetailDialogContent device={device} /> 
-              </DialogContent>
+              <DialogTrigger asChild><Button variant="ghost" size="icon"><EyeIcon className="h-4 w-4" /></Button></DialogTrigger>
+              <DialogContent className="sm:max-w-[600px]"><DeviceDetailDialogContent device={device} /></DialogContent>
             </Dialog>
           );
         },
       },
     ],
+    // Add dependencies back to the columns useMemo hook
     [fetchAssociatedDevices, loadingAssociatedDevices, associatedDevices, activeDeviceId]
   );
 

@@ -1,5 +1,5 @@
 import { db } from '@/data/db';
-import { events, devices, nodes } from '@/data/db/schema';
+import { events, devices, connectors } from '@/data/db/schema';
 import { desc, asc, count, eq, sql, and } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // Import the StandardizedEvent type
 
@@ -38,7 +38,7 @@ export async function storeStandardizedEvent(stdEvent: StandardizedEvent<any>) {
 }
 
 /**
- * Gets recent events from the database, enriched with device and node info.
+ * Gets recent events from the database, enriched with device and connector info.
  */
 export async function getRecentEvents(limit = 100) {
   try {
@@ -61,9 +61,9 @@ export async function getRecentEvents(limit = 100) {
         // Joined Device fields (nullable due to LEFT JOIN)
         deviceName: devices.name,
         rawDeviceType: devices.type, // The crucial raw identifier
-        // Joined Node fields (nullable due to LEFT JOIN)
-        connectorName: nodes.name,
-        connectorCategory: nodes.category
+        // Joined Connector fields (use connectors table)
+        connectorName: connectors.name,
+        connectorCategory: connectors.category
       })
       .from(events)
       // Left Join with devices ON matching connectorId AND deviceId
@@ -71,8 +71,8 @@ export async function getRecentEvents(limit = 100) {
           eq(devices.connectorId, events.connectorId),
           eq(devices.deviceId, events.deviceId) 
       ))
-      // Left Join with nodes ON matching connectorId
-      .leftJoin(nodes, eq(nodes.id, events.connectorId))
+      // Left Join with connectors (use connectors table)
+      .leftJoin(connectors, eq(connectors.id, events.connectorId))
       .orderBy(desc(events.timestamp))
       .limit(limit);
 

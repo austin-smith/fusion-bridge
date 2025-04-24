@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/data/db';
-import { automations, nodes } from '@/data/db/schema';
+import { automations, connectors } from '@/data/db/schema';
 import { AutomationConfigSchema } from '@/lib/automation-schemas';
 import { z } from 'zod';
-import { eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 // Schema for validating the POST request body
 const PostBodySchema = z.object({
     name: z.string().min(1, { message: "Name is required" }),
-    sourceNodeId: z.string().uuid({ message: "Invalid source node ID" }),
+    sourceConnectorId: z.string().uuid({ message: "Invalid source connector ID" }),
     enabled: z.boolean().optional().default(true),
-    config: AutomationConfigSchema, // Validate the nested config object
+    config: AutomationConfigSchema,
 });
 
 /**
@@ -19,32 +19,23 @@ const PostBodySchema = z.object({
  */
 export async function GET(request: Request) {
   try {
-    const allAutomations = await db
+    const results = await db
       .select({
         id: automations.id,
         name: automations.name,
         enabled: automations.enabled,
-        sourceNodeId: automations.sourceNodeId,
+        sourceConnectorId: automations.sourceConnectorId,
         createdAt: automations.createdAt,
         updatedAt: automations.updatedAt,
         configJson: automations.configJson,
-        // Optionally join with nodes to get names
-        sourceNodeName: nodes.name,
+        sourceConnectorName: connectors.name,
       })
       .from(automations)
-      .leftJoin(nodes, eq(automations.sourceNodeId, nodes.id)); // Only join source node
+      .leftJoin(connectors, eq(automations.sourceConnectorId, connectors.id));
 
-    // Since targetNodeId is now per-action within configJson, 
-    // we can't easily display a single target node name at the top level.
-    // The UI (AutomationTable) will need adjustment if it relied on this.
-    const results = allAutomations.map(a => ({
-      ...a,
-      // Map source node name correctly (from the join)
-      sourceNodeName: a.sourceNodeName,
-      // targetNodeName: nodes.name, // Target node is now per-action, cannot join simply here
-    }));
-
+    // No need for the .map() step anymore
     return NextResponse.json(results);
+
   } catch (error) {
     console.error("Failed to fetch automations:", error);
     return NextResponse.json({ message: "Failed to fetch automations" }, { status: 500 });
@@ -59,35 +50,35 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     
-    // Validate request body
     const validationResult = PostBodySchema.safeParse(body);
     if (!validationResult.success) {
       return NextResponse.json({ message: "Invalid request body", errors: validationResult.error.flatten().fieldErrors }, { status: 400 });
     }
     
-    // Destructure without the top-level targetNodeId
-    const { name, sourceNodeId, enabled, config } = validationResult.data;
+    const { name, sourceConnectorId, enabled, config } = validationResult.data;
 
-    // TODO: Optional - Validate that sourceNodeId and targetNodeId actually exist in the nodes table?
+    // Optional: Validate that sourceConnectorId exists in the connectors table
+    const sourceConnectorExists = await db.select({ id: connectors.id }).from(connectors).where(eq(connectors.id, sourceConnectorId)).limit(1);
+    if (!sourceConnectorExists.length) {
+        return NextResponse.json({ message: "Source connector not found" }, { status: 404 });
+    }
+    // TODO: Optionally validate targetConnectorId within actions config against connectors table?
 
-    // Insert into database
     const newAutomation = await db.insert(automations).values({
       name: name,
-      sourceNodeId: sourceNodeId,
+      sourceConnectorId: sourceConnectorId,
       enabled: enabled,
-      configJson: config, // Store the validated config object directly
-      // createdAt and updatedAt have default values
-    }).returning(); // Return the newly created record
+      configJson: config,
+    }).returning();
 
     if (!newAutomation || newAutomation.length === 0) {
         throw new Error("Failed to create automation record in database.")
     }
 
-    return NextResponse.json(newAutomation[0], { status: 201 }); // 201 Created
+    return NextResponse.json(newAutomation[0], { status: 201 });
 
   } catch (error) {
     console.error("Failed to create automation:", error);
-    // Handle potential unique constraint errors or other DB issues if necessary
     if (error instanceof z.ZodError) {
        return NextResponse.json({ message: "Invalid configuration data", errors: error.flatten().fieldErrors }, { status: 400 });
     }

@@ -2,14 +2,13 @@ import { sqliteTable, text, integer, primaryKey, uniqueIndex, index } from "driz
 import { relations, sql } from "drizzle-orm";
 import type { AutomationConfig } from "@/lib/automation-schemas"; // Import the config type
 
-export const nodes = sqliteTable("nodes", {
+export const connectors = sqliteTable("connectors", {
   id: text("id").primaryKey(),
   category: text("category").notNull(),
   name: text("name").notNull(),
   cfg_enc: text("cfg_enc").notNull(), // Stores config as JSON string
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-  yolinkHomeId: text("yolink_home_id"),  // New column to store YoLink home ID
-  eventsEnabled: integer("events_enabled", { mode: "boolean" }).notNull().default(false), // Whether events are enabled for this node
+  eventsEnabled: integer("events_enabled", { mode: "boolean" }).notNull().default(false),
 });
 
 // --- NEW events table schema ---
@@ -20,7 +19,7 @@ export const events = sqliteTable("events", {
 
   // Timing and Source
   timestamp: integer("timestamp", { mode: "timestamp" }).notNull(), // StandardizedEvent.timestamp
-  connectorId: text("connector_id").notNull().references(() => nodes.id, { onDelete: 'set null' }), // StandardizedEvent.connectorId - Set null if node deleted
+  connectorId: text("connector_id").notNull().references(() => connectors.id, { onDelete: 'cascade' }), // StandardizedEvent.connectorId - Set null if connector deleted
   deviceId: text("device_id").notNull(), // StandardizedEvent.deviceId (connector-specific)
 
   // Standardized Classification
@@ -42,7 +41,7 @@ export const events = sqliteTable("events", {
 export const devices = sqliteTable("devices", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()), // Add default UUID generation
   deviceId: text("device_id").notNull(), // External device ID from the connector
-  connectorId: text("connector_id").notNull().references(() => nodes.id, { onDelete: 'cascade' }), // References the connector node
+  connectorId: text("connector_id").notNull().references(() => connectors.id, { onDelete: 'cascade' }),
   name: text("name").notNull(),
   type: text("type").notNull(), // Device type/model
   status: text("status"), // Device status (nullable)
@@ -61,7 +60,7 @@ export const devices = sqliteTable("devices", {
 // Table for storing Piko server information
 export const pikoServers = sqliteTable("piko_servers", {
   serverId: text("id").primaryKey(), // Piko server ID (e.g., "{45645270...}")
-  connectorId: text("connector_id").notNull().references(() => nodes.id, { onDelete: 'cascade' }), // References the Piko connector node
+  connectorId: text("connector_id").notNull().references(() => connectors.id, { onDelete: 'cascade' }),
   name: text("name").notNull(),
   status: text("status"), // e.g., "Online"
   version: text("version"), // e.g., "6.0.3.40568"
@@ -84,21 +83,20 @@ export const cameraAssociations = sqliteTable('camera_associations', { // Rename
 
 // Table for storing automation configurations
 export const automations = sqliteTable("automations", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()), // Unique ID for the automation config
-  name: text("name").notNull(), // User-friendly name
-  sourceNodeId: text("source_node_id").notNull().references(() => nodes.id, { onDelete: 'cascade' }), // Link to the source connector node
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  sourceConnectorId: text("source_connector_id").notNull().references(() => connectors.id, { onDelete: 'cascade' }), // Renamed field
   enabled: integer("enabled", { mode: "boolean" }).default(true).notNull(),
-  // Configuration stored as JSON string, validated by Zod on read/write
   configJson: text("config_json", { mode: "json" }).notNull().$type<AutomationConfig>(), 
   createdAt: integer("created_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
 });
 
-// Define relations for automations (linking back to nodes)
+// Define relations for automations (linking back to connectors)
 export const automationsRelations = relations(automations, ({ one }) => ({
-  sourceNode: one(nodes, {
-    fields: [automations.sourceNodeId],
-    references: [nodes.id],
+  sourceConnector: one(connectors, { // Renamed relation and target table
+    fields: [automations.sourceConnectorId], // Use the corrected field name here
+    references: [connectors.id],
     relationName: 'sourceAutomations',
   }),
 }));

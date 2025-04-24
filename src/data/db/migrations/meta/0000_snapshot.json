@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "sqlite",
-  "id": "d789d917-9777-42ba-b0eb-8c43fddb1b95",
+  "id": "e9962ba4-d15e-4b04-8e28-9ae2257692c3",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "automations": {
@@ -21,8 +21,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "source_node_id": {
-          "name": "source_node_id",
+        "source_connector_id": {
+          "name": "source_connector_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -62,12 +62,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "automations_source_node_id_nodes_id_fk": {
-          "name": "automations_source_node_id_nodes_id_fk",
+        "automations_source_connector_id_connectors_id_fk": {
+          "name": "automations_source_connector_id_connectors_id_fk",
           "tableFrom": "automations",
-          "tableTo": "nodes",
+          "tableTo": "connectors",
           "columnsFrom": [
-            "source_node_id"
+            "source_connector_id"
           ],
           "columnsTo": [
             "id"
@@ -142,6 +142,58 @@
           "name": "camera_associations_device_id_piko_camera_id_pk"
         }
       },
+      "uniqueConstraints": {}
+    },
+    "connectors": {
+      "name": "connectors",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cfg_enc": {
+          "name": "cfg_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "events_enabled": {
+          "name": "events_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {}
     },
     "devices": {
@@ -243,10 +295,10 @@
         }
       },
       "foreignKeys": {
-        "devices_connector_id_nodes_id_fk": {
-          "name": "devices_connector_id_nodes_id_fk",
+        "devices_connector_id_connectors_id_fk": {
+          "name": "devices_connector_id_connectors_id_fk",
           "tableFrom": "devices",
-          "tableTo": "nodes",
+          "tableTo": "connectors",
           "columnsFrom": [
             "connector_id"
           ],
@@ -283,15 +335,8 @@
           "notNull": true,
           "autoincrement": true
         },
-        "device_id": {
-          "name": "device_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "event_type": {
-          "name": "event_type",
+        "event_uuid": {
+          "name": "event_uuid",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -304,75 +349,95 @@
           "notNull": true,
           "autoincrement": false
         },
-        "payload": {
-          "name": "payload",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
-    },
-    "nodes": {
-      "name": "nodes",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "category": {
-          "name": "category",
+        "connector_id": {
+          "name": "connector_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "name": {
-          "name": "name",
+        "device_id": {
+          "name": "device_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "cfg_enc": {
-          "name": "cfg_enc",
+        "standardized_event_category": {
+          "name": "standardized_event_category",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
+        "standardized_event_type": {
+          "name": "standardized_event_type",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "yolink_home_id": {
-          "name": "yolink_home_id",
+        "raw_event_type": {
+          "name": "raw_event_type",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "events_enabled": {
-          "name": "events_enabled",
-          "type": "integer",
+        "standardized_payload": {
+          "name": "standardized_payload",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
-          "default": false
+          "autoincrement": false
+        },
+        "raw_payload": {
+          "name": "raw_payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
         }
       },
-      "indexes": {},
-      "foreignKeys": {},
+      "indexes": {
+        "events_event_uuid_unique": {
+          "name": "events_event_uuid_unique",
+          "columns": [
+            "event_uuid"
+          ],
+          "isUnique": true
+        },
+        "events_timestamp_idx": {
+          "name": "events_timestamp_idx",
+          "columns": [
+            "timestamp"
+          ],
+          "isUnique": false
+        },
+        "events_connector_device_idx": {
+          "name": "events_connector_device_idx",
+          "columns": [
+            "connector_id",
+            "device_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "events_connector_id_connectors_id_fk": {
+          "name": "events_connector_id_connectors_id_fk",
+          "tableFrom": "events",
+          "tableTo": "connectors",
+          "columnsFrom": [
+            "connector_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {}
     },
@@ -452,10 +517,10 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "piko_servers_connector_id_nodes_id_fk": {
-          "name": "piko_servers_connector_id_nodes_id_fk",
+        "piko_servers_connector_id_connectors_id_fk": {
+          "name": "piko_servers_connector_id_connectors_id_fk",
           "tableFrom": "piko_servers",
-          "tableTo": "nodes",
+          "tableTo": "connectors",
           "columnsFrom": [
             "connector_id"
           ],

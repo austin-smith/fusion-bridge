@@ -1,23 +1,23 @@
 import { Separator } from "@/components/ui/separator";
 import React from "react";
-import AutomationForm from "@/components/automations/AutomationForm"; // Default import
+import AutomationForm from "@/components/automations/AutomationForm";
 import { db } from "@/data/db"; 
-import { nodes } from "@/data/db/schema"; 
-import { automations } from "@/data/db/schema"; // Import automations schema
+import { connectors } from "@/data/db/schema";
+import { automations } from "@/data/db/schema";
 import { eq } from "drizzle-orm";
-import { deviceIdentifierMap } from "@/lib/mappings/identification"; // Corrected path
+import { deviceIdentifierMap } from "@/lib/mappings/identification";
 import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
-import { redirect } from 'next/navigation'; // For handling non-existent IDs
-import { type AutomationConfig, type AutomationAction } from "@/lib/automation-schemas"; // Import necessary types 
-import { DeviceType } from "@/lib/mappings/definitions"; // <-- Ensure DeviceType is imported
+import { redirect } from 'next/navigation';
+import { type AutomationConfig, type AutomationAction } from "@/lib/automation-schemas";
+import { DeviceType } from "@/lib/mappings/definitions";
 
 // Define AutomationFormData based on its usage for the form
 interface AutomationFormData {
   id: string;
   name: string;
   enabled: boolean;
-  sourceNodeId: string;
-  configJson: AutomationConfig; // Use the imported AutomationConfig type
+  sourceConnectorId: string;
+  configJson: AutomationConfig;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,12 +46,12 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
     redirect('/');
   }
 
-  // Fetch all nodes for the dropdowns
-  const availableNodes = await db.select({ 
-      id: nodes.id,
-      name: nodes.name,
-      category: nodes.category,
-    }).from(nodes);
+  // Fetch all connectors for the dropdowns
+  const availableConnectors = await db.select({ 
+      id: connectors.id,
+      name: connectors.name,
+      category: connectors.category,
+    }).from(connectors);
     
   // --- CORRECTED: Prepare options using DeviceType enum --- 
   const sourceDeviceTypeOptions: MultiSelectOption[] = Object.values(DeviceType)
@@ -127,7 +127,7 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
       id: automation.id, // Use the ID fetched from the database record
       name: automation.name,
       enabled: automation.enabled,
-      sourceNodeId: automation.sourceNodeId,
+      sourceConnectorId: automation.sourceConnectorId,
       configJson: configJsonData,
       createdAt: automation.createdAt, 
       updatedAt: automation.updatedAt,
@@ -147,9 +147,9 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
       {/* Render the Automation Form Component */}
       <div className="pt-4">
         <AutomationForm 
-          initialData={initialData} // Use locally fetched data
-          availableNodes={availableNodes} // Use locally fetched data
-          sourceDeviceTypeOptions={sourceDeviceTypeOptions} // Pass corrected options
+          initialData={initialData} 
+          availableConnectors={availableConnectors}
+          sourceDeviceTypeOptions={sourceDeviceTypeOptions}
         />
       </div>
     </div>

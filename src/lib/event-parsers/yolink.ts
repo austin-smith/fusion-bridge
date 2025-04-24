@@ -83,7 +83,7 @@ interface RawYoLinkEventPayload {
  * into one or more StandardizedEvent objects, based on the confirmed structure.
  * Attempts to parse known state changes, otherwise returns an UNKNOWN_EXTERNAL_EVENT.
  *
- * @param connectorId The ID of the YoLink connector node instance.
+ * @param connectorId The ID of the YoLink connector instance.
  * @param rawEvent The raw event object.
  * @returns An array of StandardizedEvent objects derived from the raw event.
  */

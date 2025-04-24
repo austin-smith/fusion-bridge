@@ -42,7 +42,7 @@ import type { PikoServer } from '@/types'; // Keep if pikoServerDetails is used
 
 // Define the shape of the expected prop, compatible with DisplayedDevice from page.tsx
 // It needs all fields used internally, *excluding* the original 'status' field.
-interface DeviceDetailProps {
+export interface DeviceDetailProps {
   id: string; // Internal ID used for keys?
   deviceId: string;
   connectorId: string;

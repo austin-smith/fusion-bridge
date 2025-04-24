@@ -50,11 +50,10 @@ const displayStateIconMap: Partial<Record<DisplayState, LucideIcon>> = {
     [CLOSED]: DoorClosed,
     [LEAK_DETECTED]: AlertTriangle,
     [DRY]: ShieldCheck,
-    [MOTION_DETECTED]: AlertTriangle, // Consider if a different icon is better for state vs analytic motion
+    [MOTION_DETECTED]: AlertTriangle,
     [NO_MOTION]: ShieldCheck,
     [VIBRATION_DETECTED]: AlertTriangle,
     [NO_VIBRATION]: ShieldCheck,
-    // Add more specific states as needed
 };
 
 // Helper function to get display state icon component
