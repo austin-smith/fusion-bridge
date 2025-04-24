@@ -20,6 +20,14 @@ export function getDbPath(): string {
 }
 
 /**
+ * Checks if the caught error is a NodeJS SystemError with a code property.
+ * Type guard function.
+ */
+function isNodeErrorWithCode(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
+}
+
+/**
  * Ensures the database directory (~/.fusion-bridge) exists.
  * Throws an error if creation fails for reasons other than EEXIST.
  */
@@ -28,11 +36,18 @@ export function ensureDbDir(): void {
   try {
     mkdirSync(dbDir, { recursive: true });
     // console.log(`Database directory ensured: ${dbDir}`); // Optional: uncomment for debugging
-  } catch (err: any) { // Use 'any' or proper error type checking
-    if (err.code !== 'EEXIST') {
-      console.error(`Error creating database directory '${dbDir}':`, err);
-      throw err; // Re-throw critical errors
+  } catch (err: unknown) { // Use unknown instead of any
+    // Check if the error is a system error with a code property
+    if (isNodeErrorWithCode(err)) {
+      if (err.code !== 'EEXIST') {
+        console.error(`Error creating database directory '${dbDir}':`, err);
+        throw err; // Re-throw critical errors
+      }
+      // EEXIST is fine, directory already exists
+    } else {
+      // It's some other type of error, re-throw it
+      console.error(`Unknown error creating database directory '${dbDir}':`, err);
+      throw err;
     }
-    // EEXIST is fine, directory already exists
   }
 } 
