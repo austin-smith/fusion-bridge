@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "db:generate": "drizzle-kit generate:sqlite",
-    "migrate": "node -e \"require('./src/data/db/migrate.js').runMigrations()\"",
+    "migrate": "dotenv -e .env.local -- node -e \"require('./src/data/db/migrate.js').runMigrations()\"",
     "db:push": "drizzle-kit push:sqlite",
     "test": "echo \"No tests configured\""
   },
@@ -77,6 +77,7 @@
     "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.17",
     "dotenv": "^16.5.0",
+    "dotenv-cli": "^8.0.0",
     "drizzle-kit": "^0.20.13",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.0.0",
