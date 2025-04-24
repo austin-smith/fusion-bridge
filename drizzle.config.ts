@@ -1,20 +1,26 @@
 import type { Config } from 'drizzle-kit';
-import { join } from 'path';
-import { homedir } from 'os';
+import { getDbPath, ensureDbDir } from './src/data/db/utils'; // Import helpers
 
-// Define the path for the local SQLite database file
-const dbPath = join(homedir(), '.fusion-bridge', 'fusion.db');
-console.log(`Using local SQLite database at: ${dbPath}`); // Add log to confirm path
+// Get the standard local DB path
+const dbPath = getDbPath();
+console.log(`Drizzle Kit targeting local SQLite database at: ${dbPath}`);
+
+// Ensure the directory exists before drizzle-kit tries to access the file
+try {
+  ensureDbDir(); 
+} catch (e) {
+  console.error("Failed to ensure database directory for Drizzle Kit:", e);
+  // Depending on severity, you might want to process.exit(1) here
+}
 
 export default {
   schema: './src/data/db/schema.ts',
   out: './src/data/db/migrations',
-  driver: 'better-sqlite', // Revert driver to SQLite
+  driver: 'better-sqlite',
   dbCredentials: {
-    // Point back to the local file path
+    // Point to the path from utils.ts
     url: dbPath,
   },
-  // Remove verbose/strict if not needed, keep if helpful
   verbose: true, 
   strict: true,
 } satisfies Config; 
