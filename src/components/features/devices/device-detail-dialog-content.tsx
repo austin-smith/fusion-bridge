@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { DeviceWithConnector } from '@/types'; 
+// Remove the direct import of DeviceWithConnector if not needed elsewhere
+// import { DeviceWithConnector } from '@/types'; 
+import type { DisplayState, TypedDeviceInfo } from '@/lib/mappings/definitions';
+import { getDisplayStateIcon } from '@/lib/mappings/presentation';
+import { getDeviceTypeIcon } from "@/lib/mappings/presentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle } from "lucide-react";
@@ -11,7 +15,6 @@ import {
   DialogClose,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { getDeviceTypeIcon } from "@/lib/device-mapping";
 import { type VariantProps } from "class-variance-authority";
 import { badgeVariants } from "@/components/ui/badge";
 import { toast } from 'sonner';
@@ -35,6 +38,35 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
+import type { PikoServer } from '@/types'; // Keep if pikoServerDetails is used
+
+// Define the shape of the expected prop, compatible with DisplayedDevice from page.tsx
+// It needs all fields used internally, *excluding* the original 'status' field.
+interface DeviceDetailProps {
+  id: string; // Internal ID used for keys?
+  deviceId: string;
+  connectorId: string;
+  name: string;
+  connectorName: string;
+  connectorCategory: string;
+  deviceTypeInfo: TypedDeviceInfo;
+  displayState?: DisplayState;
+  lastSeen?: Date;
+  associationCount?: number | null;
+  type: string; // Raw type string
+  url?: string;
+  model?: string;
+  vendor?: string;
+  serverName?: string;
+  serverId?: string;
+  pikoServerDetails?: PikoServer;
+  // Add lastStateEvent / lastStatusEvent if needed in dialog?
+}
+
+// Define the component's Props interface using the new type
+interface DeviceDetailDialogContentProps {
+  device: DeviceDetailProps; // Use the new interface
+}
 
 // Helper function requires entity type for context
 // Returns EITHER a valid variant name OR a specific Tailwind class string
@@ -65,10 +97,6 @@ const getStatusBadgeStyle = (
   }
 };
 
-interface DeviceDetailDialogContentProps {
-  device: DeviceWithConnector;
-}
-
 // List of known badge variant names
 const knownBadgeVariants = ['default', 'secondary', 'destructive', 'outline'];
 
@@ -79,7 +107,8 @@ interface DeviceOption {
 }
 
 export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps> = ({ device }) => {
-  // console.log('Device prop received by DeviceDetailDialogContent:', device); // Remove log
+  // No need for internal casting anymore
+  // const displayDevice = device as ...;
 
   // --- State for Associations ---
   // For YoLink -> Piko associations
@@ -108,7 +137,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
 
   // Fetch available devices and current associations
   useEffect(() => {
-    // Run for YoLink devices or ANY Piko device
+    // Use device directly
     if (device.connectorCategory !== 'yolink' && device.connectorCategory !== 'piko') return;
 
     const fetchData = async () => {
@@ -134,8 +163,8 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         if (device.connectorCategory === 'yolink') {
           // Get Piko cameras when viewing a YoLink device
           const pikoCameras = allDevices
-            .filter((d: DeviceWithConnector) => d.connectorCategory === 'piko' && d.deviceTypeInfo?.type === 'Camera') 
-            .map((d: DeviceWithConnector): DeviceOption => ({ value: d.deviceId, label: d.name }))
+            .filter((d: DeviceDetailProps) => d.connectorCategory === 'piko' && d.deviceTypeInfo?.type === 'Camera') 
+            .map((d: DeviceDetailProps): DeviceOption => ({ value: d.deviceId, label: d.name }))
             .sort((a: DeviceOption, b: DeviceOption) => a.label.localeCompare(b.label));
           setAvailablePikoCameras(pikoCameras);
           
@@ -151,8 +180,8 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         else if (device.connectorCategory === 'piko') {
           // Get YoLink devices when viewing any Piko device
           const yolinkDevices = allDevices
-            .filter((d: DeviceWithConnector) => d.connectorCategory === 'yolink')
-            .map((d: DeviceWithConnector): DeviceOption => ({ value: d.deviceId, label: d.name }))
+            .filter((d: DeviceDetailProps) => d.connectorCategory === 'yolink')
+            .map((d: DeviceDetailProps): DeviceOption => ({ value: d.deviceId, label: d.name }))
             .sort((a: DeviceOption, b: DeviceOption) => a.label.localeCompare(b.label));
           setAvailableYoLinkDevices(yolinkDevices);
           
@@ -181,7 +210,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
 
     fetchData();
 
-  }, [device.deviceId, device.connectorCategory, device.type, device.deviceTypeInfo?.type]); // Add optional chaining to dependency
+  }, [device.deviceId, device.connectorCategory, device.deviceTypeInfo?.type]); // Updated dependency
 
   // --- Handle Saving Associations ---
   const handleSaveAssociations = async () => {
@@ -294,21 +323,6 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     }
   };
 
-  // Function to render a status badge conditionally
-  const renderStatusBadge = (status: string | null | undefined, entityType: 'device' | 'server') => {
-    if (!status) return 'N/A';
-    const styleValue = getStatusBadgeStyle(status, entityType);
-    const isKnownVariant = knownBadgeVariants.includes(styleValue as string);
-    return (
-      <Badge 
-        variant={isKnownVariant ? styleValue as VariantProps<typeof badgeVariants>["variant"] : 'outline'} 
-        className={cn(!isKnownVariant ? styleValue : undefined)}
-      >
-        {status}
-      </Badge>
-    );
-  };
-
   // Function to render a detail row with label and value
   const DetailRow = ({label, value, monospace = false, breakAll = false}: {label: string, value: React.ReactNode, monospace?: boolean, breakAll?: boolean}) => (
     <div className="flex flex-row py-1.5 border-b border-muted/40 last:border-0">
@@ -333,8 +347,17 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         <div className="flex items-center gap-2">
           <DeviceIcon className="h-5 w-5 text-muted-foreground" /> 
           <DialogTitle>{device.name}</DialogTitle>
-          {device.status && (
-            <div>{renderStatusBadge(device.status, 'device')}</div>
+          {device.displayState ? (
+            <div className="flex items-center gap-1.5">
+              <Badge variant="outline" className="px-1.5 py-0.5">
+                 {getDisplayStateIcon(device.displayState) && (
+                     React.createElement(getDisplayStateIcon(device.displayState)!, { className: "h-3 w-3" })
+                 )}
+              </Badge>
+              <span className="text-sm text-muted-foreground">{device.displayState}</span>
+            </div>
+          ) : (
+            <Badge variant="outline">Unknown State</Badge>
           )}
         </div>
         <DialogDescription className="pt-1" asChild>
@@ -425,6 +448,11 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                   </Button> 
                 </div> 
               )} 
+            />
+
+            <DetailRow 
+                label="Last Seen" 
+                value={device.lastSeen ? new Date(device.lastSeen).toLocaleString() : 'Never'} 
             />
           </div>
         </div>
@@ -658,7 +686,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
           )}
 
           {/* Piko Server Details Section (Conditional) */}
-          {device.connectorCategory === 'piko' && (device.pikoServerDetails) && (
+          {device.connectorCategory === 'piko' && device.pikoServerDetails && (
             <AccordionItem value="piko-server">
               <AccordionTrigger className="text-sm font-medium">
                 Piko Server Details
@@ -673,7 +701,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                   {device.pikoServerDetails.status && (
                     <DetailRow 
                       label="Server Status" 
-                      value={renderStatusBadge(device.pikoServerDetails.status, 'server')} 
+                      value={<Badge variant={getStatusBadgeStyle(device.pikoServerDetails.status, 'server') as any}>{device.pikoServerDetails.status}</Badge>}
                     />
                   )}
                   

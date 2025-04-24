@@ -3,7 +3,8 @@
 import { db } from '@/data/db';
 import { automations, nodes, devices, cameraAssociations } from '@/data/db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
-import type { YolinkEvent } from '@/services/mqtt-service'; // Assuming event type is here
+import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
+import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
 import * as piko from '@/services/drivers/piko'; // Assuming Piko driver functions are here
 import { type AutomationConfig, AutomationConfigSchema, type AutomationAction } from '@/lib/automation-schemas';
 import { minimatch } from 'minimatch'; // For wildcard matching
@@ -14,28 +15,32 @@ import type { SendHttpRequestActionParamsSchema } from '@/lib/automation-schemas
 import { z } from 'zod'; // Add Zod import
 
 /**
- * Processes an incoming event and triggers matching automations.
+ * Processes an incoming StandardizedEvent and triggers matching automations.
  * 
- * @param event The incoming event object (e.g., from YoLink MQTT).
- * @param homeId The YoLink Home ID associated with the MQTT connection where the event originated.
+ * @param stdEvent The incoming StandardizedEvent object.
  */
-export async function processEvent(event: YolinkEvent, homeId: string): Promise<void> {
-    console.log(`[Automation Service] Processing event: ${event.event} for device ${event.deviceId} from home ${homeId}`);
+export async function processEvent(stdEvent: StandardizedEvent<any>): Promise<void> { // <-- Updated Signature
+    console.log(`[Automation Service] ENTERED processEvent for event: ${stdEvent.eventId}`);
+
+    console.log(`[Automation Service] Processing event: ${stdEvent.eventType} (${stdEvent.eventCategory}) for device ${stdEvent.deviceId} from connector ${stdEvent.connectorId}`);
 
     try {
-        // 1. Find the source node using homeId
+        // 1. Find the source node using connectorId from the event
+        const sourceNodeId = stdEvent.connectorId;
         const sourceNode = await db.query.nodes.findFirst({
-            where: eq(nodes.yolinkHomeId, homeId),
-            // Select ID and category (needed for action type check)
-            columns: { id: true, category: true }
+            where: eq(nodes.id, sourceNodeId),
+            columns: { id: true, category: true } // Keep category for potential checks
         });
 
+        // ---> ADD Log: Check if sourceNode was found <--- 
+        console.log(`[Automation Service] Looked up source node for connectorId ${sourceNodeId}. Found: ${sourceNode ? sourceNode.id : 'null'}`);
+
         if (!sourceNode) {
-            console.error(`[Automation Service] Could not find source node for homeId ${homeId}. Skipping event processing.`);
+            // This should ideally not happen if connectorId is valid, but good practice to check
+            console.error(`[Automation Service] Could not find source node with ID ${sourceNodeId}. Skipping event processing.`);
             return;
         }
-        const sourceNodeId = sourceNode.id;
-        console.log(`[Automation Service] Identified source node: ${sourceNodeId}`);
+        // console.log(`[Automation Service] Identified source node: ${sourceNodeId}`); // Log less verbose now
 
         // 2. Fetch enabled automations linked to this source node
         const candidateAutomations = await db.query.automations.findMany({
@@ -45,65 +50,80 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
             ),
         });
 
-        if (candidateAutomations.length === 0) {
-            // console.log(`[Automation Service] No enabled automations found for source node ${sourceNodeId}.`);
-            return;
-        }
-        console.log(`[Automation Service] Found ${candidateAutomations.length} candidate automation(s) for source node.`);
+        // ---> ADD Log: Check how many candidate automations were found <--- 
+        console.log(`[Automation Service] Found ${candidateAutomations.length} candidate automation(s) for node ${sourceNodeId}`);
 
-        const eventDeviceType = event.event.split('.')[0] || ''; // e.g., "DoorSensor"
+        if (candidateAutomations.length === 0) {
+            // Log exit reason
+            console.log(`[Automation Service] Exiting: No enabled automations found for source node ${sourceNodeId}.`);
+            return; // No rules for this source
+        }
+        // console.log(`[Automation Service] Found ${candidateAutomations.length} candidate automation(s) for source node.`);
+
+        // Get standardized device type for filtering
+        const deviceType = stdEvent.deviceInfo?.type ?? DeviceType.Unmapped; // Use standardized type
 
         // 3. Filter candidates in code based on configJson criteria
         for (const rule of candidateAutomations) {
             let ruleConfig: AutomationConfig;
             try {
-                // Parse config
-                if (rule.configJson && typeof rule.configJson === 'object') {
-                    // Use safeParse with the correct schema
-                    const parseResult = AutomationConfigSchema.safeParse(rule.configJson);
-                    if (!parseResult.success) {
-                        throw new Error(`Invalid config structure: ${parseResult.error.message}`);
-                    }
-                    ruleConfig = parseResult.data;
-                } else {
-                    throw new Error('Automation configJson is missing or not an object');
+                // Parse config (no change needed here)
+                const parseResult = AutomationConfigSchema.safeParse(rule.configJson);
+                if (!parseResult.success) {
+                    // Log parsing error specifically
+                    console.error(`[Automation Service] Rule ID ${rule.id}: Failed to parse configJson - ${parseResult.error.message}`);
+                    continue; // Skip rule if config is invalid
                 }
+                ruleConfig = parseResult.data;
 
-                // Check 1: Event Type Filter
+                // --- UPDATED FILTERING --- 
+                // Check 1: Event Type Filter (Using Standardized Event Type)
                 if (ruleConfig.eventTypeFilter && ruleConfig.eventTypeFilter.trim() !== '') {
-                    if (!minimatch(event.event, ruleConfig.eventTypeFilter)) {
-                        // console.log(`[Rule ${rule.id}] Skipping: Event type ${event.event} does not match filter ${ruleConfig.eventTypeFilter}`);
+                    if (!minimatch(stdEvent.eventType, ruleConfig.eventTypeFilter)) { 
+                        // console.log(`[Rule ${rule.id}] Skipping: Standardized event type ${stdEvent.eventType} does not match filter ${ruleConfig.eventTypeFilter}`);
                         continue;
                     }
+                     console.log(`[Automation Service] Rule ID ${rule.id}: Event type filter PASSED.`); // Log pass
                 }
 
-                // Check 2: Source Entity Types Filter
-                if (!ruleConfig.sourceEntityTypes?.includes(eventDeviceType)) {
-                    // console.log(`[Rule ${rule.id}] Skipping: Device type ${eventDeviceType} not in allowed types [${ruleConfig.sourceEntityTypes?.join(', ')}]`);
-                    continue;
+                // Check 2: Source Entity Types Filter (Using Standardized Device Type)
+                if (ruleConfig.sourceEntityTypes && ruleConfig.sourceEntityTypes.length > 0) { 
+                    if (!ruleConfig.sourceEntityTypes.includes(deviceType)) {
+                        // console.log(`[Rule ${rule.id}] Skipping: Device type ${deviceType} not in allowed types [${ruleConfig.sourceEntityTypes.join(', ')}]`);
+                        continue;
+                    }
+                    console.log(`[Automation Service] Rule ID ${rule.id}: Device type filter PASSED.`); // Log pass
                 }
+                // --- END UPDATED FILTERING --- 
                 
-                 // Check 3: Actions defined
+                 // Check 3: Actions defined (no change needed)
                 if (!ruleConfig.actions || ruleConfig.actions.length === 0) {
-                     console.warn(`[Automation Service] No actions defined for rule ${rule.id}. Skipping.`);
+                     console.warn(`[Automation Service] Rule ID ${rule.id}: Skipping - No actions defined.`);
                      continue;
                 }
-
-                console.log(`[Automation Service] Rule Matched: ${rule.name} (ID: ${rule.id}) - Processing ${ruleConfig.actions.length} action(s)`);
                 
-                // Fetch Source Device details
+                // ---> ADD LOG BEFORE ACTION EXECUTION <--- 
+                console.log(`[Automation Service] Rule ID ${rule.id}: All filters PASSED. Proceeding to execute actions.`);
+
+                console.log(`[Automation Service] Rule Matched: ${rule.name} (ID: ${rule.id}) - Processing ${ruleConfig.actions.length} action(s) for event ${stdEvent.eventId}`);
+                
+                // Fetch Source Device details (using standardized IDs)
                 let sourceDevice = null;
-                if (event.deviceId) { 
+                if (stdEvent.deviceId) { 
                     sourceDevice = await db.query.devices.findFirst({
                         where: and(
-                            eq(devices.connectorId, sourceNodeId),
-                            eq(devices.deviceId, event.deviceId)
+                            eq(devices.connectorId, sourceNodeId), // Use sourceNodeId directly
+                            eq(devices.deviceId, stdEvent.deviceId) // Use deviceId from event
                         ),
-                        columns: { id: true, name: true, type: true }
+                        columns: { id: true, name: true, type: true } // Keep fetching internal ID, name
                     });
                 }
-                const deviceContext = sourceDevice ?? { id: event.deviceId, name: 'Unknown Device', type: eventDeviceType };
-                // --- End Fetch common details --- 
+                // Use stdEvent fields for context if device not found in DB yet
+                const deviceContext = sourceDevice ?? { 
+                    id: stdEvent.deviceId, // Use connector-specific ID as fallback ID
+                    name: 'Unknown Device', // Fallback name
+                    type: deviceType // Use standardized type 
+                }; 
 
                 // --- Loop through and execute each action defined in the rule --- 
                 for (const action of ruleConfig.actions) {
@@ -111,9 +131,9 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                     
                     // Define the operation that p-retry will attempt
                     const runAction = async () => {
-                        // Resolve tokens *before* the switch, as most actions will need them
-                        // Note: We cast params here because resolveTokens currently returns 'any'
-                        const resolvedParams = resolveTokens(action.params, event, deviceContext) as AutomationAction['params']; 
+                        // TODO: Update resolveTokens function signature and logic
+                        // For now, pass stdEvent and deviceContext
+                        const resolvedParams = resolveTokens(action.params, stdEvent, deviceContext) as AutomationAction['params']; 
                         
                         switch (action.type) {
                             case 'createEvent': {
@@ -172,7 +192,7 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                                             console.error(`[Rule ${rule.id}][Action createEvent] Error fetching camera associations:`, assocError);
                                         }
                                     } else {
-                                         console.warn(`[Rule ${rule.id}][Action createEvent] Could not get internal ID for source device ${event.deviceId}. Cannot fetch camera associations.`);
+                                         console.warn(`[Rule ${rule.id}][Action createEvent] Could not get internal ID for source device ${stdEvent.deviceId}. Cannot fetch camera associations.`);
                                     }
                                     // --- END: Fetch Associated Camera Refs --- 
                                     
@@ -180,7 +200,7 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                                         source: resolvedParams.sourceTemplate, 
                                         caption: resolvedParams.captionTemplate, 
                                         description: resolvedParams.descriptionTemplate, 
-                                        timestamp: new Date(event.time).toISOString(),
+                                        timestamp: stdEvent.timestamp.toISOString(),
                                         ...(associatedPikoCameraExternalIds.length > 0 && {
                                             metadata: { cameraRefs: associatedPikoCameraExternalIds }
                                         })
@@ -253,7 +273,7 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                                             throw new Error(`Failed to fetch camera associations: ${assocError instanceof Error ? assocError.message : assocError}`);
                                         }
                                     } else {
-                                         console.warn(`[Rule ${rule.id}][Action createBookmark] Could not get internal ID for source device ${event.deviceId}. Skipping bookmark creation.`);
+                                         console.warn(`[Rule ${rule.id}][Action createBookmark] Could not get internal ID for source device ${stdEvent.deviceId}. Skipping bookmark creation.`);
                                          break; // Exit the switch case for this action
                                     }
                                     // --- END: Fetch Associated Camera Refs --- 
@@ -296,7 +316,7 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
                                         const pikoPayload: PikoCreateBookmarkPayload = {
                                             name: resolvedParams.nameTemplate,
                                             description: resolvedParams.descriptionTemplate || undefined, // Use undefined if empty/null
-                                            startTimeMs: event.time, // Use original event timestamp (already in ms)
+                                            startTimeMs: stdEvent.timestamp.getTime(), // <-- Use stdEvent.timestamp
                                             durationMs: durationMs,
                                             tags: tags.length > 0 ? tags : undefined // Use undefined if no tags
                                         };
@@ -440,43 +460,88 @@ export async function processEvent(event: YolinkEvent, homeId: string): Promise<
 }
 
 /**
- * Resolves tokens in action parameter templates.
+ * Resolves tokens in action parameter templates using StandardizedEvent data.
  */
 function resolveTokens(
-    params: Record<string, unknown> | null | undefined, // Changed any to Record<string, unknown> | null | undefined
-    event: YolinkEvent, 
-    device: Record<string, unknown> | null | undefined // Changed any to Record<string, unknown> | null | undefined
-): Record<string, unknown> | null | undefined { // Changed return any to Record<string, unknown> | null | undefined
+    params: Record<string, unknown> | null | undefined, 
+    stdEvent: StandardizedEvent<any>, // <-- Updated parameter type
+    deviceContext: Record<string, unknown> | null | undefined 
+): Record<string, unknown> | null | undefined { 
     
     if (params === null || params === undefined) {
         return params;
     }
     
-    const resolved = { ...params };
+    // --- Build the context for token replacement --- 
     const tokenContext = {
+        // Event-related tokens
         event: {
-            ...event,
-            time: new Date(event.time).toISOString(),
-            data: event.data || {},
+            id: stdEvent.eventId,
+            category: stdEvent.eventCategory,
+            type: stdEvent.eventType,
+            timestamp: stdEvent.timestamp.toISOString(), // Keep ISO string format
+            timestampMs: stdEvent.timestamp.getTime(), // Add epoch ms
+            deviceId: stdEvent.deviceId,
+            connectorId: stdEvent.connectorId,
+            // Flatten relevant payload fields for easier access
+            // Add more fields from specific payload types as needed
+            ...(stdEvent.payload && typeof stdEvent.payload === 'object' ? {
+                newState: (stdEvent.payload as any).newState,
+                displayState: (stdEvent.payload as any).displayState,
+                statusType: (stdEvent.payload as any).statusType,
+                detectionType: (stdEvent.payload as any).detectionType,
+                confidence: (stdEvent.payload as any).confidence,
+                zone: (stdEvent.payload as any).zone,
+                originalEventType: (stdEvent.payload as any).originalEventType,
+                // Add direct access to raw state value if useful
+                rawStateValue: (stdEvent.payload as any).rawStateValue,
+                rawStatusValue: (stdEvent.payload as any).rawStatusValue,
+            } : {}),
+             // Include the full payload object if needed, but nested access is harder
+            // payload: stdEvent.payload 
+             // Include raw payload if needed for specific use cases
+            // rawPayload: stdEvent.rawEventPayload 
         },
-        device: device || {},
+        // Device-related tokens (based on DB lookup or fallback)
+        device: {
+            ...(deviceContext ?? {}), // Spread the provided device context
+            // Standardize access to standardized type/subtype from event
+            type: stdEvent.deviceInfo?.type,
+            subtype: stdEvent.deviceInfo?.subtype
+        }
     };
 
+    // --- Token Replacement Logic --- 
+    const resolved = { ...params }; // Create a copy to modify
+
     const replaceToken = (template: string): string => {
-        if (typeof template !== 'string') return template; // Handle non-string inputs
+        if (typeof template !== 'string') return template; 
+        
         return template.replace(/\{\{\s*([^}]+)\s*\}\}/g, (match, path) => {
             const keys = path.trim().split('.');
-            let value: unknown = tokenContext; // Changed any to unknown
+            let value: unknown = tokenContext; 
+            
             try {
                 for (const key of keys) {
                     // Check if value is an object and key exists before accessing
-                    if (value && typeof value === 'object' && key in value) {
-                        value = (value as Record<string, unknown>)[key]; // Assertion needed after check
+                    if (value !== null && typeof value === 'object' && key in value) {
+                        value = (value as Record<string, unknown>)[key]; 
                     } else {
-                        return match; // Keep original token if path invalid
+                        // Path is invalid or key doesn't exist at this level
+                        console.warn(`[Token Resolve] Path '${path}' not found in context.`);
+                        return match; // Return original token {{...}}
                     }
                 }
-                return (typeof value === 'object' && value !== null) ? JSON.stringify(value) : String(value);
+                
+                // Convert resolved value to string
+                // Stringify objects/arrays, handle null/undefined, convert others
+                if (value === undefined || value === null) {
+                    return ''; // Replace null/undefined with empty string
+                } else if (typeof value === 'object') {
+                    return JSON.stringify(value); // Stringify objects/arrays
+                } else {
+                    return String(value); // Convert primitives to string
+                }
             } catch (e) {
                 console.error(`[Token Resolve] Error resolving path ${path}:`, e);
                 return match; // Keep original token on error
@@ -484,11 +549,14 @@ function resolveTokens(
         });
     };
 
+    // Iterate over parameters and apply token replacement
     for (const key in resolved) {
-        // Ensure the property exists and is a string before replacing
         if (Object.prototype.hasOwnProperty.call(resolved, key) && typeof resolved[key] === 'string') {
             resolved[key] = replaceToken(resolved[key] as string);
         }
+        // Optionally handle nested structures or arrays within params if needed
     }
     return resolved;
 }
+
+

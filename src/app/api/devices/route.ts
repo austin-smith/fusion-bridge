@@ -4,8 +4,9 @@ import { devices, nodes, pikoServers, cameraAssociations } from '@/data/db/schem
 import { eq, count } from 'drizzle-orm';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import * as pikoDriver from '@/services/drivers/piko';
-import { getDeviceTypeInfo } from '@/lib/device-mapping';
+import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import type { DeviceWithConnector, PikoServer } from '@/types';
+import { useFusionStore } from '@/stores/store';
 
 // Helper function to get association count
 async function getAssociationCount(
@@ -280,6 +281,16 @@ export async function POST() {
         } satisfies DeviceWithConnector;
       })
     );
+    
+    // <-- ADD STORE UPDATE CALL HERE -->
+    try {
+      useFusionStore.getState().setDeviceStatesFromSync(devicesWithConnector);
+      console.log('[API Sync] Successfully updated FusionStore with synced devices.');
+    } catch (storeError) {
+      console.error('[API Sync] Failed to update FusionStore:', storeError);
+      // Optionally add this error to the 'errors' array returned to the client?
+      // errors.push({ connectorName: 'StoreUpdate', error: 'Failed to update application state.' });
+    }
     
     return NextResponse.json({
       success: true,

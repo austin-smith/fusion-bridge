@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, primaryKey, uniqueIndex, index } from "drizzle-orm/sqlite-core";
 import { relations, sql } from "drizzle-orm";
 import type { AutomationConfig } from "@/lib/automation-schemas"; // Import the config type
 
@@ -12,14 +12,31 @@ export const nodes = sqliteTable("nodes", {
   eventsEnabled: integer("events_enabled", { mode: "boolean" }).notNull().default(false), // Whether events are enabled for this node
 });
 
-// Table for storing YoLink events
+// --- NEW events table schema ---
 export const events = sqliteTable("events", {
-  id: integer("id").primaryKey({ autoIncrement: true }), // Auto-incrementing primary key
-  deviceId: text("device_id").notNull(), // Device ID that generated the event
-  eventType: text("event_type").notNull(), // Type of event (e.g., "Switch.Report")
-  timestamp: integer("timestamp", { mode: "timestamp" }).notNull(), // When the event occurred
-  payload: text("payload").notNull(), // JSON string of the complete event payload
-});
+  // Core identifiers
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  eventUuid: text("event_uuid").notNull().unique(), // Store StandardizedEvent.eventId
+
+  // Timing and Source
+  timestamp: integer("timestamp", { mode: "timestamp" }).notNull(), // StandardizedEvent.timestamp
+  connectorId: text("connector_id").notNull().references(() => nodes.id, { onDelete: 'set null' }), // StandardizedEvent.connectorId - Set null if node deleted
+  deviceId: text("device_id").notNull(), // StandardizedEvent.deviceId (connector-specific)
+
+  // Standardized Classification
+  standardizedEventCategory: text("standardized_event_category").notNull(), // StandardizedEvent.eventCategory
+  standardizedEventType: text("standardized_event_type").notNull(), // StandardizedEvent.eventType
+
+  // Payloads
+  rawEventType: text("raw_event_type"), // Original event type string (nullable? - let's keep nullable for now)
+  standardizedPayload: text("standardized_payload", { mode: "json" }).notNull(), // JSON string of StandardizedEvent.payload
+  rawPayload: text("raw_payload", { mode: "json" }).notNull(), // JSON string of StandardizedEvent.rawEventPayload
+
+}, (table) => ({
+    // Indexes for common query patterns
+    timestampIdx: index("events_timestamp_idx").on(table.timestamp),
+    connectorDeviceIdx: index("events_connector_device_idx").on(table.connectorId, table.deviceId),
+}));
 
 // Table for storing devices from all connectors
 export const devices = sqliteTable("devices", {
@@ -36,6 +53,7 @@ export const devices = sqliteTable("devices", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
+  // Keep existing unique index for devices
   connectorDeviceUniqueIdx: uniqueIndex("devices_connector_device_unique_idx")
     .on(table.connectorId, table.deviceId),
 }));

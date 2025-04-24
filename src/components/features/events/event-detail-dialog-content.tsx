@@ -21,20 +21,24 @@ import {
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { toast } from 'sonner';
-import { getDeviceTypeIcon, getDisplayStateIcon } from '@/lib/device-mapping';
-import { TypedDeviceInfo, DisplayState } from '@/types/device-mapping';
+import { getDeviceTypeIcon, getDisplayStateIcon } from '@/lib/mappings/presentation';
+import { TypedDeviceInfo, DisplayState, DeviceType } from '@/lib/mappings/definitions';
 import { cn, formatConnectorCategory } from "@/lib/utils";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 
 // Interface matching the event data structure passed from the events page
+// This might need updating based on the actual structure from API/page
 interface EventData {
-  event: string;
-  time: number;
-  msgid: string;
-  data: Record<string, unknown>;
-  payload?: Record<string, unknown>;
+  event?: string; // Might not exist directly anymore, use eventType
+  eventType: string;
+  eventCategory: string;
+  timestamp: number; // Assuming epoch ms from API
+  eventUuid: string;
+  // data: Record<string, unknown>; // Likely replaced by payload
+  payload?: Record<string, any> | null; // Standardized payload
   deviceId: string;
   deviceName?: string;
+  connectorId: string;
   connectorName?: string;
   deviceTypeInfo: TypedDeviceInfo;
   connectorCategory: string;
@@ -73,11 +77,12 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
     }
   };
 
-  const eventData = event.payload || event.data || {};
-  const jsonString = JSON.stringify(eventData, null, 2);
+  // Use the standardized payload for JSON view
+  const eventDataForJson = event.payload || {};
+  const jsonString = JSON.stringify(eventDataForJson, null, 2);
 
   // Get mapped type info & state icon for the modal header
-  const typeInfo = event.deviceTypeInfo;
+  const typeInfo = event.deviceTypeInfo || { type: DeviceType.Unmapped }; // Default if missing
   const DeviceIcon = getDeviceTypeIcon(typeInfo.type);
   const StateIcon = event.displayState ? getDisplayStateIcon(event.displayState) : null;
 
@@ -93,7 +98,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
         <DialogHeader className="pb-4 border-b">
           <div className="flex items-center gap-2">
             <DeviceIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <DialogTitle>{event.event}</DialogTitle>
+            <DialogTitle>{event.eventType || event.eventCategory || 'Event Details'}</DialogTitle>
           </div>
           <DialogDescription asChild>
            <div className="pt-2 text-sm text-muted-foreground flex items-center justify-start gap-1.5">
@@ -130,9 +135,11 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
               {
                 (() => {
                   const deviceName = event.deviceName || event.deviceId || 'Unknown Device';
-                  const typeInfo = event.deviceTypeInfo;
+                  // Use derived typeInfo
+                  const typeInfo = event.deviceTypeInfo || { type: DeviceType.Unmapped }; 
                   const DeviceIcon = getDeviceTypeIcon(typeInfo.type);
-                  const eventData = event.payload || event.data || {};
+                  // Use standardized payload
+                  const eventPayload = event.payload || {}; 
 
                   // Prepare entries for the Device Information section
                   const deviceInfoEntries: { key: string, value: React.ReactNode }[] = [
@@ -155,8 +162,8 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
 
                   // Extract non-object payload entries for Event Data section
                   let payloadEntries: { key: string, value: unknown }[] = [];
-                  if (eventData && typeof eventData === 'object') {
-                    payloadEntries = Object.entries(eventData)
+                  if (eventPayload && typeof eventPayload === 'object') {
+                    payloadEntries = Object.entries(eventPayload)
                       .filter(([, value]) => typeof value !== 'object' && value !== null && value !== undefined)
                       .map(([key, value]) => ({ key, value }));
                   }
@@ -217,8 +224,9 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                           {payloadEntries.map(({ key, value }) => (
                             <DetailRow 
                               key={key} 
-                              label={key.charAt(0).toUpperCase() + key.slice(1)} // Capitalize key
-                              value={String(value)} 
+                              label={key.charAt(0).toUpperCase() + key.slice(1)} 
+                              // Display value, handle potential null/undefined explicitly
+                              value={value !== null && value !== undefined ? String(value) : 'N/A'} 
                             />
                           ))}
                         </>

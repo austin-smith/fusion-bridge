@@ -5,10 +5,11 @@ import { db } from "@/data/db";
 import { nodes } from "@/data/db/schema"; 
 import { automations } from "@/data/db/schema"; // Import automations schema
 import { eq } from "drizzle-orm";
-import { deviceIdentifierMap } from "@/lib/device-mapping"; 
+import { deviceIdentifierMap } from "@/lib/mappings/identification"; // Corrected path
 import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
 import { redirect } from 'next/navigation'; // For handling non-existent IDs
 import { type AutomationConfig, type AutomationAction } from "@/lib/automation-schemas"; // Import necessary types 
+import { DeviceType } from "@/lib/mappings/definitions"; // <-- Ensure DeviceType is imported
 
 // Define AutomationFormData based on its usage for the form
 interface AutomationFormData {
@@ -52,13 +53,14 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
       category: nodes.category,
     }).from(nodes);
     
-  // Prepare options for the Source Device Types multi-select combobox
-  const sourceDeviceTypeOptions: MultiSelectOption[] = Object.entries(deviceIdentifierMap.yolink)
-    .map(([value /* Removed unused 'info' */]) => ({ // info is unused here, but kept for consistency
-        value, 
-        label: value // Use the device type string (value) as the label
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label)); // Sort alphabetically by label
+  // --- CORRECTED: Prepare options using DeviceType enum --- 
+  const sourceDeviceTypeOptions: MultiSelectOption[] = Object.values(DeviceType)
+    .filter(type => type !== DeviceType.Unmapped)
+    .sort((a, b) => a.localeCompare(b))
+    .map(typeValue => ({ 
+        value: typeValue, 
+        label: typeValue 
+    }));
     
   // Prepare initial data structure from the fetched automation
   let configJsonData: AutomationConfig = { 
@@ -147,7 +149,7 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
         <AutomationForm 
           initialData={initialData} // Use locally fetched data
           availableNodes={availableNodes} // Use locally fetched data
-          sourceDeviceTypeOptions={sourceDeviceTypeOptions} // Use locally fetched data
+          sourceDeviceTypeOptions={sourceDeviceTypeOptions} // Pass corrected options
         />
       </div>
     </div>

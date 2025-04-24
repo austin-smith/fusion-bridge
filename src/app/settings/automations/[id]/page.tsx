@@ -7,8 +7,13 @@ import { notFound } from 'next/navigation';
 import AutomationForm from '@/components/automations/AutomationForm';
 import type { AutomationConfig } from '@/lib/automation-schemas';
 import type { Node } from '@/lib/types'; // Import Node type from central types file
-import { deviceIdentifierMap } from '@/lib/device-mapping'; // Import from device-mapping instead
+import { deviceIdentifierMap } from '@/lib/mappings/identification'; // Corrected path
 import type { MultiSelectOption } from '@/components/ui/multi-select-combobox'; // Import type
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useFieldArray, useForm } from "react-hook-form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType
 
 // Define the shape of the data expected by the form
 // Includes joined node names and allows configJson to be potentially null for 'new'
@@ -33,13 +38,17 @@ async function getAvailableNodes(): Promise<Pick<Node, 'id' | 'name' | 'category
     }).from(nodes);
 }
 
-// Get YoLink device types for multi-select
-function getYoLinkDeviceTypeOptions(): MultiSelectOption[] {
-    // Use deviceIdentifierMap from the device-mapping.ts
-    return Object.entries(deviceIdentifierMap.yolink).map(([value, typeInfo]) => ({
-        value: value,
-        label: typeInfo.subtype ? `${typeInfo.type} (${typeInfo.subtype})` : String(typeInfo.type),
-    }));
+// Get AVAILABLE Standardized Device Types for multi-select
+function getStandardizedDeviceTypeOptions(): MultiSelectOption[] {
+    // Use DeviceType enum values
+    return Object.values(DeviceType)
+        // Optionally filter out types you don't want selectable (like Unmapped?)
+        .filter(type => type !== DeviceType.Unmapped) 
+        .sort((a, b) => a.localeCompare(b)) // Sort alphabetically
+        .map(typeValue => ({
+            value: typeValue, // e.g., "Sensor"
+            label: typeValue, // e.g., "Sensor"
+        }));
 }
 
 // Fetch automation data for a specific ID
@@ -99,7 +108,7 @@ async function getAutomationData(id: string): Promise<AutomationFormData | null>
 
 export default async function AutomationSettingsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: automationId } = await params; // Await params and destructure id
-  const yoLinkDeviceTypes = getYoLinkDeviceTypeOptions(); // Get device types
+  const standardizedDeviceTypes = getStandardizedDeviceTypeOptions(); // Use the new function to get standardized types
 
   // Fetch initial data and available nodes in parallel
   const [initialData, availableNodes] = await Promise.all([
@@ -128,7 +137,7 @@ export default async function AutomationSettingsPage({ params }: { params: Promi
       <AutomationForm 
         initialData={initialData!} // Use non-null assertion as we handled null cases
         availableNodes={availableNodes} 
-        sourceDeviceTypeOptions={yoLinkDeviceTypes} // Pass options to form
+        sourceDeviceTypeOptions={standardizedDeviceTypes} // Pass the standardized types to the form
        />
     </div>
   );

@@ -4,9 +4,16 @@ import AutomationForm from "@/components/automations/AutomationForm";
 import { db } from "@/data/db"; // Import database instance
 import { nodes } from "@/data/db/schema"; // Import nodes schema
 import type { AutomationFormData } from "@/app/settings/automations/[id]/page"; // Reuse type
-import { deviceIdentifierMap } from "@/lib/device-mapping";
+import { deviceIdentifierMap } from "@/lib/mappings/identification";
 import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
 import type { Metadata } from 'next';
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useFieldArray, useForm } from "react-hook-form";
+import { useRouter } from 'next/navigation';
+import { type AutomationConfig, AutomationConfigSchema, type AutomationAction } from '@/lib/automation-schemas';
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { DeviceType } from "@/lib/mappings/definitions"; // <-- Import DeviceType
 
 // Set page title metadata
 export const metadata: Metadata = {
@@ -21,13 +28,14 @@ async function getFormData() {
       category: nodes.category,
     }).from(nodes);
     
-  // Prepare options for the Source Device Types multi-select combobox
-  const sourceDeviceTypeOptions: MultiSelectOption[] = Object.entries(deviceIdentifierMap.yolink)
-    .map(([value]) => ({ 
-        value, 
-        label: value 
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label)); // Sort alphabetically by label
+  // Prepare options for the Source Device Types using Standardized Types
+  const sourceDeviceTypeOptions: MultiSelectOption[] = Object.values(DeviceType)
+    .filter(type => type !== DeviceType.Unmapped)
+    .sort((a, b) => a.localeCompare(b))
+    .map(typeValue => ({ 
+        value: typeValue, 
+        label: typeValue 
+    }));
     
   // Prepare initial data structure for a new automation
   const initialData: AutomationFormData = {

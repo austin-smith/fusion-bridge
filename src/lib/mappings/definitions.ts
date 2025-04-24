@@ -33,7 +33,6 @@ export enum DeviceSubtype {
   Vibration = 'Vibration',
   // Switch
   Dimmer = 'Dimmer',
-  Finger = 'Finger',
   Toggle = 'Toggle',
 }
 
@@ -195,4 +194,4 @@ export const validDisplayStatesMap: ValidDisplayStatesMap = {
     [DeviceSubtype.Toggle]: [ON, OFF],
   },
   // Add mappings for other devices as needed
-};
+}; 

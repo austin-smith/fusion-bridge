@@ -19,22 +19,41 @@ const yoLinkConfigSchema = z.object({
   clientSecret: z.string().min(1, "Client Secret is required"),
 }).passthrough(); // Allow other potential fields in config
 
+// GET /api/nodes - Fetches all connector nodes
 export async function GET() {
   try {
-    const allNodes = await db.select().from(nodes);
-    
-    // Convert stored JSON strings back to objects
-    const nodesWithParsedConfig: NodeWithConfig[] = allNodes.map(node => ({
-      ...node,
-      config: JSON.parse(node.cfg_enc || '{}'),
-      yolinkHomeId: node.yolinkHomeId === null ? undefined : node.yolinkHomeId,
-    }));
-    
-    return NextResponse.json({ success: true, data: nodesWithParsedConfig });
-  } catch (error) {
+    const allNodesRaw = await db.select().from(nodes);
+
+    // Optionally parse the cfg_enc if needed by the client
+    // Or adjust NodeWithConfig type if client expects raw cfg_enc
+    const allNodes: NodeWithConfig[] = allNodesRaw.map(node => {
+      let config = {};
+      try {
+        config = node.cfg_enc ? JSON.parse(node.cfg_enc) : {};
+      } catch (e) {
+        console.error(`Failed to parse config for node ${node.id}:`, e);
+        // Keep default empty config on parse error
+      }
+      return {
+        id: node.id,
+        category: node.category,
+        name: node.name,
+        createdAt: node.createdAt, 
+        yolinkHomeId: node.yolinkHomeId ?? undefined,
+        eventsEnabled: node.eventsEnabled,
+        config: config, // Parsed config
+        // You might not need to send cfg_enc to the client
+        // cfg_enc: node.cfg_enc 
+      };
+    });
+
+    return NextResponse.json({ success: true, data: allNodes });
+
+  } catch (error: unknown) {
     console.error('Error fetching nodes:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch nodes' },
+      { success: false, error: `Failed to fetch nodes: ${errorMessage}` },
       { status: 500 }
     );
   }

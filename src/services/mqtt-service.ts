@@ -10,6 +10,8 @@ import { nodes } from '@/data/db/schema';
 import { eq, and } from 'drizzle-orm';
 import * as eventsRepository from '@/data/repositories/events';
 import { processEvent } from '@/services/automation-service'; // Import the automation processor
+import { parseYoLinkEvent } from '@/lib/event-parsers/yolink'; // <-- Import the new parser
+import { useFusionStore } from '@/stores/store'; // <-- Import Zustand store
 
 // Define event type based on the example
 export interface YolinkEvent {
@@ -248,30 +250,79 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
     });
     
     connection.client.on('message', async (topic, payload) => {
+      const payloadString = payload.toString();
+      let rawEvent: Record<string, any>;
       try {
-        const payloadString = payload.toString();
-        const event = JSON.parse(payloadString) as YolinkEvent;
-        console.log(`[${homeId}] Received YoLink event:`, event.event, 'for device:', event.deviceId);
+        rawEvent = JSON.parse(payloadString);
+        const deviceIdForLog = rawEvent?.deviceId ?? 'unknown';
+        const eventTypeForLog = rawEvent?.event ?? 'unknown';
+        // console.log(`[${homeId}] Received Raw YoLink MQTT Event: ${eventTypeForLog} for device: ${deviceIdForLog}`); // Log less verbosely now
+      } catch (err) {
+        console.error(`[${homeId}] Failed to parse incoming MQTT payload:`, payloadString, err);
+        return;
+      }
+
+      let connectorId: string | null = null;
+      try {
+        // Find the connector node associated with this homeId
+        const nodeResult = await db.select({ id: nodes.id })
+          .from(nodes)
+          .where(and(eq(nodes.category, 'yolink'), eq(nodes.yolinkHomeId, homeId)))
+          .limit(1);
         
-        await storeEvent(event, payloadString);
+        if (!nodeResult || nodeResult.length === 0 || !nodeResult[0].id) {
+          console.error(`[${homeId}] Cannot process event: Could not find connector node ID for homeId.`);
+          return;
+        }
+        connectorId = nodeResult[0].id;
 
-        // Pass homeId to processEvent
-        processEvent(event, homeId).catch(err => {
-          console.error(`[Automation Service][${homeId}] Error processing event ${event.msgid}:`, err);
-        });
+        // Call the YoLink parser
+        const standardizedEvents = parseYoLinkEvent(connectorId, rawEvent);
 
-        // Update last event data
-        const count = await getEventCount();
+        // --- Process each generated StandardizedEvent --- 
+        for (const stdEvent of standardizedEvents) {
+           // 1. Store the standardized event
+           try {
+              await eventsRepository.storeStandardizedEvent(stdEvent);
+           } catch (storeErr) {
+              console.error(`[${homeId}] Failed to store standardized event ${stdEvent.eventId}:`, storeErr);
+              continue; // Skip processing this specific stdEvent if storage fails
+           }
+
+           // 2. Update Zustand Store State
+           try {
+               useFusionStore.getState().processStandardizedEvent(stdEvent);
+           } catch (storeUpdateErr) {
+               console.error(`[${homeId}] Failed to update Zustand store for event ${stdEvent.eventId}:`, storeUpdateErr);
+           }
+
+           // ---> ADD THIS LOG <--- 
+           console.log(`[MQTT Service] About to call processEvent for event: ${stdEvent.eventId}, Type: ${stdEvent.eventType}, Device: ${stdEvent.deviceId}`);
+
+           // 3. Trigger Automations (Pass the standardized event)
+           processEvent(stdEvent).catch(err => { // Call with stdEvent
+              console.error(`[Automation Service][${homeId}] Error processing standardized event ${stdEvent.eventId}:`, err);
+           });
+        }
+        // --- End Processing Loop --- 
+
+        // Update last event data (using raw event timestamp)
+        const count = await eventsRepository.getEventCount(); 
         if (connections.has(homeId)) {
           const updatedConnection = connections.get(homeId)!;
-          updatedConnection.lastEventData = { 
-            time: new Date(event.time),
-            count
-          };
-          connections.set(homeId, updatedConnection);
+          const rawEventTime = rawEvent?.time as number | undefined;
+          if (rawEventTime) {
+              updatedConnection.lastEventData = { 
+                time: new Date(rawEventTime),
+                count
+              };
+              connections.set(homeId, updatedConnection);
+          }
         }
+
       } catch (err) {
-        console.error(`[${homeId}] Failed to process YoLink event message:`, err);
+        // Catch errors during DB lookup, parsing, storing, or automation trigger
+        console.error(`[${homeId}] Failed during event processing pipeline:`, err, { rawEvent }); 
       }
     });
     
@@ -327,16 +378,19 @@ export async function initMqttService(config: YoLinkConfig, homeId: string) {
     
     // Get initial event count
     try {
-      const count = await getEventCount();
+      const count = await eventsRepository.getEventCount(); 
       const recentEvents = await eventsRepository.getRecentEvents(1);
       
       if (recentEvents.length > 0 && connections.has(homeId)) {
         const updatedConnection = connections.get(homeId)!;
-        updatedConnection.lastEventData = {
-          time: new Date(recentEvents[0].time),
-          count
-        };
-        connections.set(homeId, updatedConnection);
+        // Ensure recentEvents[0].timestamp exists and is a Date before using it
+        if (recentEvents[0]?.timestamp instanceof Date) {
+             updatedConnection.lastEventData = {
+               time: recentEvents[0].timestamp, // Use timestamp from DB query result
+               count
+             };
+             connections.set(homeId, updatedConnection);
+        } 
       }
     } catch (err) {
       console.error(`[${homeId}] Failed to get initial event data:`, err);
@@ -495,21 +549,6 @@ export async function disconnectAllMqtt(): Promise<void> {
     promises.push(disconnectMqtt(homeId));
   }
   await Promise.all(promises);
-}
-
-// Store an event in the database
-async function storeEvent(event: YolinkEvent, rawPayload: string) {
-  try {
-    // Store event with original payload - no translation needed here
-    await eventsRepository.storeEvent({
-      deviceId: event.deviceId,
-      eventType: event.event,
-      timestamp: new Date(event.time),
-      payload: rawPayload, // Store the original payload without modification
-    });
-  } catch (err) {
-    console.error('Failed to store event:', err);
-  }
 }
 
 // Get recent events
