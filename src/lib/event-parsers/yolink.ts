@@ -90,7 +90,7 @@ interface RawYoLinkEventPayload {
 export function parseYoLinkEvent(
     connectorId: string, 
     rawEvent: unknown
-): StandardizedEvent<'STATE_CHANGED' | 'UNKNOWN_EXTERNAL_EVENT'>[] { // Updated return type
+): StandardizedEvent<EventType>[] {
 
     // --- Basic Validation ---
     if (
@@ -145,7 +145,7 @@ export function parseYoLinkEvent(
                     deviceId: event.deviceId,
                     deviceInfo: deviceInfo,
                     eventCategory: EventCategory.DEVICE_STATE,
-                    eventType: 'STATE_CHANGED',
+                    eventType: EventType.STATE_CHANGED,
                     payload: payload,
                     rawEventPayload: event, // Store original event
                 }];
@@ -179,7 +179,7 @@ export function parseYoLinkEvent(
             deviceId: event.deviceId, 
             deviceInfo: deviceInfo, // Include deviceInfo even if unknown, might be helpful
             eventCategory: EventCategory.UNKNOWN, // Use the dedicated UNKNOWN category
-            eventType: 'UNKNOWN_EXTERNAL_EVENT',
+            eventType: EventType.UNKNOWN_EXTERNAL_EVENT,
             payload: payload,
             // rawEventPayload: event, // Redundant as it's in the payload
         }];

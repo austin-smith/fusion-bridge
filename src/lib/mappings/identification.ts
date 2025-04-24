@@ -1,7 +1,7 @@
-import { DeviceType, DeviceSubtype, TypedDeviceInfo } from './definitions';
+import { DeviceType, DeviceSubtype, TypedDeviceInfo, ConnectorCategory } from './definitions';
 
 // Map: Connector Category -> Device Identifier -> Standardized Type Info
-export const deviceIdentifierMap: Record<string, Record<string, TypedDeviceInfo>> = {
+export const deviceIdentifierMap: Partial<Record<ConnectorCategory, Record<string, TypedDeviceInfo>>> = {
   yolink: {
     'COSmokeSensor': { type: DeviceType.Sensor, subtype: DeviceSubtype.COSmoke },
     'CSDevice': { type: DeviceType.Unmapped },
@@ -31,12 +31,13 @@ export const deviceIdentifierMap: Record<string, Record<string, TypedDeviceInfo>
     'WaterDepthSensor': { type: DeviceType.Unmapped },
     'WaterMeterController': { type: DeviceType.Unmapped },
   },
-  piko: {
+  piko: { // Map from Piko's `deviceType` string
     'Camera': { type: DeviceType.Camera },
     'Encoder': { type: DeviceType.Encoder },
     'IOModule': { type: DeviceType.IOModule },
     'HornSpeaker': { type: DeviceType.Alarm, subtype: DeviceSubtype.Siren },
     'MultisensorCamera': { type: DeviceType.Camera },
+    // Add more known Piko deviceType strings here as needed
   },
   // Add other connector categories as needed
 };
@@ -47,21 +48,23 @@ const unknownDeviceInfo: TypedDeviceInfo = { type: DeviceType.Unmapped };
 /**
  * Gets the standardized device type information based on connector category and identifier.
  * @param connectorCategory The category of the connector ('yolink', 'piko', etc.)
- * @param identifier The raw device type identifier (e.g., 'COSmokeSensor', 'Camera')
+ * @param identifier The raw device type identifier. 
+ *                   For YoLink, this is like 'COSmokeSensor'.
+ *                   For Piko, this should be the `deviceType` string (e.g., 'Camera') obtained 
+ *                   by looking up the event's resource GUID in the fetched device map.
  * @returns A TypedDeviceInfo object representing the mapped type and subtype.
  */
-export function getDeviceTypeInfo(connectorCategory: string | null | undefined, identifier: string | null | undefined): TypedDeviceInfo {
+export function getDeviceTypeInfo(connectorCategory: ConnectorCategory | string | null | undefined, identifier: string | null | undefined): TypedDeviceInfo {
   if (!identifier || !connectorCategory) {
-    // Optional: Add warning if needed, but might be noisy.
-    // console.warn(`Missing identifier or category. Identifier: ${identifier}, Category: ${connectorCategory}. Defaulting to Unknown.`);
     return unknownDeviceInfo;
   }
 
-  const categoryKey = connectorCategory.toLowerCase(); // Normalize category key
+  const categoryKey = connectorCategory.toLowerCase() as ConnectorCategory;
+  
+  // Fetch the map for the specific connector category
   const categoryMap = deviceIdentifierMap[categoryKey];
 
   if (!categoryMap) {
-    // console.warn(`No mappings found for category: ${connectorCategory}. Defaulting to Unknown.`);
     return unknownDeviceInfo;
   }
 

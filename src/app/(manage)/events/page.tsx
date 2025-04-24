@@ -39,7 +39,14 @@ import {
   getPaginationRowModel,
 } from '@tanstack/react-table';
 import { getDeviceTypeIcon, getDisplayStateIcon } from '@/lib/mappings/presentation';
-import { TypedDeviceInfo, DisplayState } from '@/lib/mappings/definitions';
+import { 
+  TypedDeviceInfo, 
+  DisplayState, 
+  EventType, 
+  EventCategory, 
+  EVENT_TYPE_DISPLAY_MAP, 
+  EVENT_CATEGORY_DISPLAY_MAP 
+} from '@/lib/mappings/definitions';
 import {
   Tooltip,
   TooltipContent,
@@ -375,7 +382,7 @@ export default function EventsPage() {
       enableColumnFilter: true,
       cell: ({ row }) => (
         <Badge variant="outline">
-          {row.original.eventCategory}
+          {EVENT_CATEGORY_DISPLAY_MAP[row.original.eventCategory as EventCategory] || row.original.eventCategory}
         </Badge>
       ),
     },
@@ -386,7 +393,7 @@ export default function EventsPage() {
       enableColumnFilter: true,
       cell: ({ row }) => (
         <Badge variant="outline">
-          {row.getValue<string>('eventType')}
+          {EVENT_TYPE_DISPLAY_MAP[row.original.eventType as EventType] || row.original.eventType}
         </Badge>
       ),
     },

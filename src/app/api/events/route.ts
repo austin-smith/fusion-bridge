@@ -17,6 +17,7 @@ interface RepoEnrichedEvent {
   standardizedEventType: string;
   standardizedPayload: unknown; // Keep as unknown for parsing
   rawPayload: unknown;
+  rawEventType: string | null; // Added from repo
   connectorId: string;
   deviceName: string | null; // Field from JOIN
   rawDeviceType: string | null; // Field from JOIN
@@ -37,8 +38,10 @@ interface ApiEnrichedEvent {
   eventCategory: string;
   eventType: string;
   payload: Record<string, any> | null; 
+  rawPayload: Record<string, any> | null;
   deviceTypeInfo: TypedDeviceInfo;
   displayState?: DisplayState;
+  rawEventType?: string; // Add optional rawEventType
 }
 
 // GET handler to fetch events
@@ -50,6 +53,7 @@ export async function GET() {
     // Map the repository results to the API response structure
     const apiEvents = recentEnrichedEvents.map((event: RepoEnrichedEvent): ApiEnrichedEvent => {
       let payload: Record<string, any> | null = null;
+      let rawPayload: Record<string, any> | null = null;
       let displayState: DisplayState | undefined = undefined;
       const connectorCategory = event.connectorCategory ?? 'unknown'; // Default if null from JOIN
 
@@ -62,6 +66,17 @@ export async function GET() {
         }
       } catch (e) {
         console.warn(`Failed to parse standardized payload for event ${event.eventUuid}:`, e);
+      }
+
+      // Try to parse raw payload
+      try {
+        if (typeof event.rawPayload === 'string' && event.rawPayload) {
+             rawPayload = JSON.parse(event.rawPayload);
+        } else {
+             rawPayload = event.rawPayload as Record<string, any> | null;
+        }
+      } catch (e) {
+        console.warn(`Failed to parse raw payload for event ${event.eventUuid}:`, e);
       }
 
       // Derive deviceTypeInfo using the joined rawDeviceType
@@ -85,6 +100,8 @@ export async function GET() {
         payload: payload,
         deviceTypeInfo: deviceTypeInfo,
         displayState: displayState,
+        rawPayload: rawPayload,
+        rawEventType: event.rawEventType ?? undefined, // Include rawEventType
       } satisfies ApiEnrichedEvent; // Use satisfies for type checking
     });
 

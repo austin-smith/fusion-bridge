@@ -42,22 +42,21 @@ export async function processEvent(stdEvent: StandardizedEvent<any>): Promise<vo
         }
         // console.log(`[Automation Service] Identified source connector: ${sourceConnectorId}`); // Log less verbose now
 
-        // 2. Fetch enabled automations linked to this source connector
+        // 2. Fetch enabled automations for the specific connector and event type
         const candidateAutomations = await db.query.automations.findMany({
             where: and(
-                eq(automations.enabled, true)
+                eq(automations.enabled, true),
+                eq(automations.sourceConnectorId, sourceConnectorId)
             ),
         });
 
-        // ---> ADD Log: Check how many candidate automations were found <--- 
-        console.log(`[Automation Service] Found ${candidateAutomations.length} candidate automation(s) for connector ${sourceConnectorId}`);
+        // Log reflects the result *after* DB filtering by event type AND connector
+        console.log(`[Automation Service] Found ${candidateAutomations.length} enabled automation(s) for connector ${sourceConnectorId} matching eventType '${stdEvent.eventType}'`);
 
         if (candidateAutomations.length === 0) {
-            // Log exit reason
-            console.log(`[Automation Service] Exiting: No enabled automations found for source connector ${sourceConnectorId}.`);
-            return; // No rules for this source
+            // console.log(`[Automation Service] Exiting: No enabled automations found for connector ${sourceConnectorId} matching eventType '${stdEvent.eventType}'.`);
+            return; // No rules matching this specific event type and connector
         }
-        // console.log(`[Automation Service] Found ${candidateAutomations.length} candidate automation(s) for source connector.`);
 
         // Get standardized device type for filtering
         const deviceType = stdEvent.deviceInfo?.type ?? DeviceType.Unmapped; // Use standardized type

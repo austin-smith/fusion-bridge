@@ -1,7 +1,8 @@
 import { db } from '@/data/db';
 import { events, devices, connectors } from '@/data/db/schema';
 import { desc, asc, count, eq, sql, and } from 'drizzle-orm';
-import type { StandardizedEvent } from '@/types/events'; // Import the StandardizedEvent type
+import type { StandardizedEvent } from '@/types/events';
+import { EventCategory } from '@/lib/mappings/definitions';
 
 // Maximum number of events to keep
 const MAX_EVENTS = 1000;
@@ -12,17 +13,15 @@ const MAX_EVENTS = 1000;
  */
 export async function storeStandardizedEvent(stdEvent: StandardizedEvent<any>) {
   try {
-    // Extract raw event type if possible (e.g., from YoLink's 'event' field)
-    const rawEventType = typeof stdEvent.rawEventPayload === 'object' && stdEvent.rawEventPayload !== null && 'event' in stdEvent.rawEventPayload ? 
-                         stdEvent.rawEventPayload.event as string : 
-                         null; // Set to null if not found or payload is not an object
+    // Use the rawEventType provided by the parser (if any)
+    const rawEventType = stdEvent.rawEventType ?? null;
 
     await db.insert(events).values({
       eventUuid: stdEvent.eventId,
       timestamp: stdEvent.timestamp,
       connectorId: stdEvent.connectorId,
       deviceId: stdEvent.deviceId,
-      standardizedEventCategory: stdEvent.eventCategory,
+      standardizedEventCategory: stdEvent.eventCategory ?? EventCategory.UNKNOWN,
       standardizedEventType: stdEvent.eventType,
       standardizedPayload: JSON.stringify(stdEvent.payload), // Store the structured payload as JSON
       rawEventType: rawEventType,
@@ -57,6 +56,7 @@ export async function getRecentEvents(limit = 100) {
         standardizedEventType: events.standardizedEventType,
         standardizedPayload: events.standardizedPayload,
         rawPayload: events.rawPayload,
+        rawEventType: events.rawEventType,
         connectorId: events.connectorId,
         // Joined Device fields (nullable due to LEFT JOIN)
         deviceName: devices.name,

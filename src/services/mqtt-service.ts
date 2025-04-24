@@ -13,6 +13,7 @@ import { processEvent } from '@/services/automation-service'; // Import the auto
 import { parseYoLinkEvent } from '@/lib/event-parsers/yolink'; // <-- Import the new parser
 import { useFusionStore } from '@/stores/store'; // <-- Import Zustand store
 import { Connector } from '@/types'; // Import Connector type
+import { initializePikoConnections } from './piko-websocket-service'; // Import Piko initializer
 
 // Define event type based on the example
 export interface YolinkEvent {
@@ -131,7 +132,7 @@ async function saveDisabledState(connectorId: string, isDisabled: boolean): Prom
 // Initialize or update the MQTT service for a specific CONNECTOR ID
 // Returns a Promise that resolves(true) on successful connection, rejects on failure/timeout.
 export async function initMqttService(connectorId: string): Promise<boolean> {
-  console.log(`[initMqttService][${connectorId}] Starting initialization...`);
+  // console.log(`[initMqttService][${connectorId}] Starting initialization...`);
   
   let connector: Connector | undefined;
   let config: (YoLinkConfig & { homeId?: string }) | undefined;
@@ -151,7 +152,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
       connector = connectorResult[0];
 
       if (connector.category !== 'yolink') {
-          console.log(`[initMqttService][${connectorId}] Skipping MQTT init, not a YoLink connector.`);
+          // console.log(`[initMqttService][${connectorId}] Skipping MQTT init, not a YoLink connector.`);
           return Promise.resolve(false);
       }
 
@@ -176,7 +177,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
       const currentHomeId = homeId!; // We know homeId is valid here
       const currentConfig = { uaid: config!.uaid, clientSecret: config!.clientSecret };
       const isDisabled = !connector.eventsEnabled;
-      console.log(`[initMqttService][${connectorId}] Target Home ID: ${currentHomeId}, Disabled: ${isDisabled}`);
+      // console.log(`[initMqttService][${connectorId}] Target Home ID: ${currentHomeId}, Disabled: ${isDisabled}`);
       const connection: MqttConnection = connections.get(currentHomeId) ?? {
           client: null,
           config: currentConfig,
@@ -193,7 +194,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
       connections.set(currentHomeId, connection);
 
       if (isDisabled) {
-          console.log(`[initMqttService][${connectorId}] MQTT events are disabled in DB.`);
+          // console.log(`[initMqttService][${connectorId}] MQTT events are disabled in DB.`);
           connection.disabled = true;
           connection.isConnected = false;
           connection.connectionError = null;
@@ -206,7 +207,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
           return Promise.resolve(false);
       }
       
-      console.log(`[initMqttService][${connectorId}] Events are enabled.`);
+      // console.log(`[initMqttService][${connectorId}] Events are enabled.`);
       connection.disabled = false;
       connection.connectionError = null;
       connection.reconnectAttempts = 0;
@@ -220,7 +221,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
       }
 
       if (!connection.client) {
-          console.log(`[initMqttService][${currentHomeId}] Attempting MQTT connection for connector ${connectorId}...`);
+          // console.log(`[initMqttService][${currentHomeId}] Attempting MQTT connection for connector ${connectorId}...`);
           
           return new Promise<boolean>(async (resolve, reject) => {
               let connectTimeoutId: NodeJS.Timeout | null = null;
@@ -239,7 +240,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
 
               try {
                   const token = await getAccessToken(connection.config);
-                  console.log(`[${currentHomeId}] Access token obtained.`);
+                  // console.log(`[${currentHomeId}] Access token obtained.`);
                   
                   // Start connection timeout
                   connectTimeoutId = setTimeout(() => {
@@ -277,7 +278,9 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
                                   console.error(`[${currentHomeId}] Failed to subscribe:`, err);
                                   conn.connectionError = `Failed to subscribe: ${err.message}`;
                                   connections.set(currentHomeId, conn);
-                              } else { console.log(`[${currentHomeId}] Subscribed to ${topic}`); }
+                              } else { 
+                                  // console.log(`[${currentHomeId}] Subscribed to ${topic}`); 
+                              }
                           });
                       }
                       resolve(true); // Resolve the promise on successful connection
@@ -297,7 +300,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
 
                   connection.client.once('close', () => { // Use .once for initial connect failure
                       cleanup(); // Clear timeout
-                      console.log(`[${currentHomeId}] MQTT client connection closed during initial connect.`);
+                      // console.log(`[${currentHomeId}] MQTT client connection closed during initial connect.`);
                       if (connections.has(currentHomeId)) {
                           const conn = connections.get(currentHomeId)!; conn.isConnected = false; conn.client = null;
                           conn.connectionError = conn.connectionError || 'Connection closed unexpectedly'; // Keep existing error or set default
@@ -338,7 +341,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
                   });
 
                   connection.client.on('offline', () => {
-                      console.log(`[${currentHomeId}] MQTT client is offline.`);
+                      // console.log(`[${currentHomeId}] MQTT client is offline.`);
                       if (connections.has(currentHomeId)) {
                           const conn = connections.get(currentHomeId)!; conn.connectionError = 'Connection offline'; conn.isConnected = false;
                           connections.set(currentHomeId, conn);
@@ -360,7 +363,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
           }); // End of new Promise
 
       } else {
-          console.log(`[initMqttService][${currentHomeId}] Client already exists for connector ${connectorId}. Assuming connected or reconnecting.`);
+          // console.log(`[initMqttService][${currentHomeId}] Client already exists for connector ${connectorId}. Assuming connected or reconnecting.`);
           // If client exists, assume it's either connected or attempting reconnection.
           // Resolve true immediately if already connected, otherwise maybe wait briefly?
           // For simplicity, let's resolve true if connection.isConnected is true
@@ -376,7 +379,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
 // Schedule a reconnection attempt for a specific HOME ID
 function scheduleReconnect(homeId: string): void {
   if (!connections.has(homeId)) {
-      console.log(`[scheduleReconnect][${homeId}] Aborted: No connection found in map.`);
+      // console.log(`[scheduleReconnect][${homeId}] Aborted: No connection found in map.`);
       return; // Should not happen if called from event handlers
   }
   const connection = connections.get(homeId)!;
@@ -385,7 +388,7 @@ function scheduleReconnect(homeId: string): void {
       return; 
   }
   if (connection.disabled) { // Check internal state first
-      console.log(`[scheduleReconnect][${homeId}] Aborted: Connection state is disabled.`);
+      // console.log(`[scheduleReconnect][${homeId}] Aborted: Connection state is disabled.`);
       return;
   }
   
@@ -400,18 +403,18 @@ function scheduleReconnect(homeId: string): void {
   connections.set(homeId, connection); // Save increased attempt count immediately
 
   // Now check DB state before scheduling timeout
-  console.log(`[scheduleReconnect][${homeId}] Checking DB state for connector ${connectorId}...`);
+  // console.log(`[scheduleReconnect][${homeId}] Checking DB state for connector ${connectorId}...`);
   loadDisabledState(connectorId).then(isDisabled => {
       // Re-fetch connection state in case it changed during async DB check
       if (!connections.has(homeId)) return; // Connection removed
       const currentConnection = connections.get(homeId)!;
 
       if (currentConnection.reconnectAttempts === 0) { // Check if reset elsewhere (e.g., explicit disconnect/enable)
-        console.log(`[scheduleReconnect][${homeId}] Aborted: Reconnect attempts were reset.`);
+        // console.log(`[scheduleReconnect][${homeId}] Aborted: Reconnect attempts were reset.`);
         return; 
       }
       if (currentConnection.disabled || isDisabled) {
-        console.log(`[scheduleReconnect][${homeId}] Aborted: Connector ${connectorId} is disabled (state: ${currentConnection.disabled}, db: ${isDisabled}). Resetting attempts.`);
+        // console.log(`[scheduleReconnect][${homeId}] Aborted: Connector ${connectorId} is disabled (state: ${currentConnection.disabled}, db: ${isDisabled}). Resetting attempts.`);
         currentConnection.reconnectAttempts = 0;
         currentConnection.connectionError = null;
         currentConnection.disabled = true;
@@ -432,13 +435,13 @@ function scheduleReconnect(homeId: string): void {
         const checkConnection = connections.get(homeId)!;
 
         if (checkConnection.disabled || checkConnection.isConnected || checkConnection.reconnectAttempts === 0) { // Check again before attempting
-          console.log(`[scheduleReconnect][${homeId}] Skipping reconnect attempt: Disabled=${checkConnection.disabled}, Connected=${checkConnection.isConnected}, Attempts=${checkConnection.reconnectAttempts}`);
+          // console.log(`[scheduleReconnect][${homeId}] Skipping reconnect attempt: Disabled=${checkConnection.disabled}, Connected=${checkConnection.isConnected}, Attempts=${checkConnection.reconnectAttempts}`);
           if (checkConnection.isConnected) checkConnection.reconnectAttempts = 0; // Reset if connected
           connections.set(homeId, checkConnection);
           return;
         }
 
-        console.log(`[scheduleReconnect][${homeId}] Timeout fired. Attempting initMqttService for connector ${connectorId}...`);
+        // console.log(`[scheduleReconnect][${homeId}] Timeout fired. Attempting initMqttService for connector ${connectorId}...`);
         initMqttService(connectorId).catch(err => {
           console.error(`[${homeId}][${connectorId}] Reconnection attempt via initMqttService failed:`, err);
           // Don't reset attempts here, let the error/close handler trigger the *next* scheduleReconnect
@@ -468,7 +471,7 @@ export async function disconnectMqtt(homeId: string): Promise<void> {
     connections.set(homeId, connection);
     
     client.end(true, {}, () => {
-      console.log(`[${homeId}] Disconnected from MQTT broker via client.end callback.`);
+      // console.log(`[${homeId}] Disconnected from MQTT broker via client.end callback.`);
       resolve();
     });
   });
@@ -476,23 +479,23 @@ export async function disconnectMqtt(homeId: string): Promise<void> {
 
 // Disconnect all MQTT connections
 export async function disconnectAllMqtt(): Promise<void> {
-  console.log('[disconnectAllMqtt] Disconnecting all clients...');
+  // console.log('[disconnectAllMqtt] Disconnecting all clients...');
   const promises: Promise<void>[] = [];
   for (const homeId of connections.keys()) { promises.push(disconnectMqtt(homeId)); }
   await Promise.all(promises);
-  console.log('[disconnectAllMqtt] All disconnects initiated.');
+  // console.log('[disconnectAllMqtt] All disconnects initiated.');
 }
 
 // Manually reconnect to MQTT for a specific CONNECTOR ID
 export async function reconnectMqtt(connectorId: string): Promise<boolean> {
-  console.log(`[reconnectMqtt][${connectorId}] Starting manual reconnect...`);
+  // console.log(`[reconnectMqtt][${connectorId}] Starting manual reconnect...`);
   try {
     const connector = await db.select({ category: connectors.category, eventsEnabled: connectors.eventsEnabled, cfg_enc: connectors.cfg_enc }).from(connectors).where(eq(connectors.id, connectorId)).limit(1);
     if (!connector.length) throw new Error(`Connector ${connectorId} not found.`);
     if (connector[0].category !== 'yolink') throw new Error(`Connector ${connectorId} is not a YoLink connector.`);
     if (!connector[0].eventsEnabled) throw new Error(`Events are disabled for connector ${connectorId}.`);
     
-    console.log(`[reconnectMqtt][${connectorId}] Calling initMqttService...`);
+    // console.log(`[reconnectMqtt][${connectorId}] Calling initMqttService...`);
     await initMqttService(connectorId);
     
     // Check connection status after init attempt
@@ -511,7 +514,7 @@ export async function reconnectMqtt(connectorId: string): Promise<boolean> {
 
 // Disable the MQTT connection for a specific CONNECTOR ID
 export async function disableMqttConnection(connectorId: string): Promise<void> {
-  console.log(`[disableMqttConnection][${connectorId}] Attempting to disable...`);
+  // console.log(`[disableMqttConnection][${connectorId}] Attempting to disable...`);
   try {
     // 1. Update DB state first
     await saveDisabledState(connectorId, true);
@@ -527,13 +530,13 @@ export async function disableMqttConnection(connectorId: string): Promise<void> 
     if (homeId && connections.has(homeId)) {
         // Ensure we only disconnect if this connection belongs to the connector being disabled
         if (connections.get(homeId)?.connectorId === connectorId) {
-            console.log(`[disableMqttConnection][${connectorId}] Found active connection for home ${homeId}. Disconnecting.`);
+            // console.log(`[disableMqttConnection][${connectorId}] Found active connection for home ${homeId}. Disconnecting.`);
             await disconnectMqtt(homeId); // This also updates the connection state map (disabled, isConnected=false, etc.)
         } else {
-            console.log(`[disableMqttConnection][${connectorId}] Found connection for home ${homeId}, but it belongs to a different connector (${connections.get(homeId)?.connectorId}). Skipping disconnect.`);
+            // console.log(`[disableMqttConnection][${connectorId}] Found connection for home ${homeId}, but it belongs to a different connector (${connections.get(homeId)?.connectorId}). Skipping disconnect.`);
         }
     } else {
-        console.log(`[disableMqttConnection][${connectorId}] No active MQTT connection found for homeId ${homeId}.`);
+        // console.log(`[disableMqttConnection][${connectorId}] No active MQTT connection found for homeId ${homeId}.`);
     }
   } catch (error) {
       console.error(`[disableMqttConnection][${connectorId}] Error:`, error);
@@ -542,17 +545,17 @@ export async function disableMqttConnection(connectorId: string): Promise<void> 
 
 // Enable the MQTT connection for a specific CONNECTOR ID
 export async function enableMqttConnection(connectorId: string): Promise<boolean> {
-  console.log(`[enableMqttConnection][${connectorId}] Attempting to enable...`);
+  // console.log(`[enableMqttConnection][${connectorId}] Attempting to enable...`);
   try {
       const connector = await db.select({ category: connectors.category, cfg_enc: connectors.cfg_enc }).from(connectors).where(eq(connectors.id, connectorId)).limit(1);
       if (!connector.length || connector[0].category !== 'yolink') throw new Error('Connector not found or not YoLink.');
 
       await saveDisabledState(connectorId, false);
       
-      console.log(`[enableMqttConnection][${connectorId}] Calling and awaiting initMqttService...`);
+      // console.log(`[enableMqttConnection][${connectorId}] Calling and awaiting initMqttService...`);
       // Await the result of initMqttService
       const success = await initMqttService(connectorId);
-      console.log(`[enableMqttConnection][${connectorId}] initMqttService completed. Result: ${success}`);
+      // console.log(`[enableMqttConnection][${connectorId}] initMqttService completed. Result: ${success}`);
       return success; // Return the resolved status
 
   } catch (err) {
@@ -568,22 +571,22 @@ export async function isMqttDisabled(connectorId: string): Promise<boolean> {
 }
 
 // Scan DB and automatically initialize/cleanup connections for all YoLink connectors.
-export async function initializeEnabledConnections(): Promise<void> {
-  console.log('[initializeEnabledConnections] Starting scan for all YoLink connectors...');
+export async function initializeYoLinkConnections(): Promise<void> {
+  // console.log('[initializeYoLinkConnections] Starting scan for all YoLink connectors...');
   try {
     const allDbYolinkConnectors = await db.select().from(connectors).where(eq(connectors.category, 'yolink'));
-    console.log(`[initializeEnabledConnections] Found ${allDbYolinkConnectors.length} total YoLink connectors in DB.`);
+    // console.log(`[initializeYoLinkConnections] Found ${allDbYolinkConnectors.length} total YoLink connectors in DB.`);
     const dbConnectorMap = new Map(allDbYolinkConnectors.map(c => [c.id, c]));
     const currentConnectionsMap = new Map(connections); // Clone current connections
 
     // 1. Initialize/Update connections based on DB state
     for (const connector of allDbYolinkConnectors) {
       if (connector.eventsEnabled) {
-        console.log(`[initializeEnabledConnections] Initializing enabled connector: ${connector.id} (${connector.name})`);
+        // console.log(`[initializeYoLinkConnections] Initializing enabled connector: ${connector.id} (${connector.name})`);
         try { await initMqttService(connector.id); } catch (err) { /* init logs errors */ }
       } else {
         // If connector is disabled in DB, ensure any existing connection for it is stopped
-        console.log(`[initializeEnabledConnections] Ensuring disabled connector is stopped: ${connector.id} (${connector.name})`);
+        // console.log(`[initializeYoLinkConnections] Ensuring disabled connector is stopped: ${connector.id} (${connector.name})`);
         await disableMqttConnection(connector.id); // This handles finding by homeId and disconnecting
       }
     }
@@ -591,18 +594,42 @@ export async function initializeEnabledConnections(): Promise<void> {
     // 2. Cleanup: Remove connections from map if their connector was deleted from DB
     for (const [homeId, connection] of currentConnectionsMap.entries()) {
         if (!dbConnectorMap.has(connection.connectorId)) {
-            console.warn(`[initializeEnabledConnections] Connector ${connection.connectorId} (Home: ${homeId}) not found in DB. Removing connection state and disconnecting.`);
+            console.warn(`[initializeYoLinkConnections] Connector ${connection.connectorId} (Home: ${homeId}) not found in DB. Removing connection state and disconnecting.`);
             await disconnectMqtt(homeId);
             // connections.delete(homeId); // disconnectMqtt should clear the client, map entry can potentially linger but is harmless? Let's delete.
             connections.delete(homeId);
         }
     }
 
-    console.log('[initializeEnabledConnections] Scan finished.');
+    // console.log('[initializeYoLinkConnections] Scan finished.');
   } catch (err) {
-    console.error('[initializeEnabledConnections] Error during scan:', err);
+    console.error('[initializeYoLinkConnections] Error during scan:', err);
   }
-} 
+}
+
+// --- Initialization Coordinator ---
+
+/**
+ * Initializes connections for ALL supported connector types (YoLink MQTT, Piko WS).
+ */
+export async function initializeAllConnections(): Promise<void> {
+    // console.log('[initializeAllConnections] Starting initialization for all connector types...');
+    
+    // Run initializations concurrently
+    const initPromises = [
+        initializeYoLinkConnections(),
+        initializePikoConnections()
+    ];
+    
+    try {
+        await Promise.allSettled(initPromises);
+        // console.log('[initializeAllConnections] Initialization scan finished for all types.');
+    } catch (error) {
+        // This catch might not be strictly necessary if using allSettled,
+        // as individual errors are logged within the specific init functions.
+        console.error('[initializeAllConnections] An unexpected error occurred during overall initialization:', error);
+    }
+}
 
 // --- Event Repository Passthrough --- 
 

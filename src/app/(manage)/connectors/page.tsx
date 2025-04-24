@@ -29,33 +29,42 @@ import {
 } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 import { SiMqtt } from "react-icons/si";
+import { LuArrowRightLeft } from "react-icons/lu"; // Use requested WebSocket icon
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon"; // Import ConnectorIcon
 import { TooltipProvider } from "@/components/ui/tooltip"; // Import TooltipProvider
 import { formatConnectorCategory } from "@/lib/utils"; // Import formatConnectorCategory
 
-// Define structure for fetched MQTT status
+// Define structure for fetched YoLink MQTT state from API
 interface FetchedMqttState {
   connected: boolean;
   lastEvent: { time: number; count: number } | null;
   error: string | null;
   reconnecting: boolean;
   disabled: boolean;
+  homeId?: string | null; // Add optional homeId
 }
 
-type MqttStatus = 'connected' | 'disconnected' | 'unknown' | 'reconnecting' | 'error';
+// Define structure for fetched Piko WebSocket state from API
+interface FetchedPikoState {
+  isConnected: boolean;
+  isConnecting: boolean;
+  error: string | null;
+  reconnecting: boolean;
+  disabled: boolean;
+  lastActivity: number | null; // Assuming timestamp
+  systemId?: string | null; // Add optional systemId
+}
 
-// Helper function to translate fetched state to store status
-const translateStatus = (
+// Shared connection status type used in the store
+type ConnectionStatus = 'connected' | 'disconnected' | 'unknown' | 'reconnecting' | 'error';
+
+// Helper function to translate YoLink fetched state to store status
+const translateMqttStatus = (
   eventsEnabled: boolean,
-  state: FetchedMqttState // Use the new FetchedMqttState interface
-): MqttStatus => {
-  // If the connector itself has events disabled, status is unknown regardless of connection
-  if (!eventsEnabled) {
-    return 'unknown';
-  }
-  // If the backend service reports it as disabled, treat as unknown (user hasn't enabled)
-  if (state.disabled) {
-    return 'unknown';
+  state: FetchedMqttState
+): ConnectionStatus => {
+  if (!eventsEnabled || state.disabled) {
+    return 'unknown'; // Explicitly disabled by user OR by backend service
   }
   if (state.connected) {
     return 'connected';
@@ -66,19 +75,39 @@ const translateStatus = (
   if (state.error) {
     return 'error';
   }
-  // If not connected, not reconnecting, no error, and not disabled -> disconnected
+  return 'disconnected';
+};
+
+// Helper function to translate Piko fetched state to store status
+const translatePikoStatus = (
+  eventsEnabled: boolean,
+  state: FetchedPikoState
+): ConnectionStatus => {
+  if (!eventsEnabled || state.disabled) {
+    return 'unknown'; // Explicitly disabled by user OR by backend service
+  }
+  if (state.isConnected) {
+    return 'connected';
+  }
+  if (state.isConnecting || state.reconnecting) { // Consider both connecting and reconnecting states
+    return 'reconnecting';
+  }
+  if (state.error) {
+    return 'error';
+  }
   return 'disconnected';
 };
 
 export default function ConnectorsPage() {
-  // Select state: use renamed state variable `connectors`
-  const { connectors, isLoading, getMqttState } = useFusionStore((state) => ({
+  // Select state
+  const { connectors, isLoading, getMqttState, getPikoState } = useFusionStore((state) => ({
     connectors: state.connectors,
     isLoading: state.isLoading,
-    getMqttState: state.getMqttState
+    getMqttState: state.getMqttState,
+    getPikoState: state.getPikoState, // Now should work
   }));
   
-  // Get stable action references using renamed actions
+  // Get stable action references
   const { 
     setConnectors, 
     setAddConnectorOpen,
@@ -87,7 +116,8 @@ export default function ConnectorsPage() {
     setEditConnectorOpen,
     setEditingConnector, 
     deleteConnector, 
-    setMqttState
+    setMqttState, // Get MQTT action
+    setPikoState // <<< Get Piko action
   } = useFusionStore(); 
 
   // State for modals and delete confirmation
@@ -117,31 +147,57 @@ export default function ConnectorsPage() {
         if (isInitialLoad) setLoading(false);
         return;
       }
-      const statusResponse = await fetch('/api/mqtt-status');
+      // Fetch status from the /api/connection-status endpoint
+      const statusResponse = await fetch('/api/connection-status'); 
       const statusData = await statusResponse.json();
+      
       if (statusData.success && statusData.statuses && Array.isArray(statusData.statuses)) {
         const connectorMap = new Map(fetchedConnectors.map(c => [c.id, c]));
-        for (const connectorStatus of statusData.statuses) {
-          const connectorId = connectorStatus.connectorId || connectorStatus.connectorId;
-          if (connectorId && connectorStatus.mqttState) {
-            const connector = connectorMap.get(connectorId);
-            if (connector) {
-              const mqttState: FetchedMqttState = connectorStatus.mqttState;
-              const storeStatus: MqttStatus = translateStatus(connector.eventsEnabled === true, mqttState);
-              setMqttState(connectorId, { status: storeStatus, error: mqttState.error, lastEventTime: mqttState.lastEvent?.time, eventCount: mqttState.lastEvent?.count });
-            }
+
+        for (const statusPayload of statusData.statuses) {
+          const connectorId = statusPayload.connectorId;
+          const connector = connectorMap.get(connectorId);
+
+          if (!connector) {
+            console.warn(`[ConnectorsPage] Received status for unknown connector ID: ${connectorId}`);
+            continue;
+          }
+
+          // Process based on connectionType
+          if (statusPayload.connectionType === 'mqtt' && statusPayload.state) {
+            const mqttState: FetchedMqttState = statusPayload.state;
+            const storeStatus: ConnectionStatus = translateMqttStatus(connector.eventsEnabled === true, mqttState);
+            setMqttState(connectorId, { 
+              status: storeStatus, 
+              error: mqttState.error,
+              // Extract time/count from lastEvent object if it exists
+              lastEventTime: mqttState.lastEvent?.time ?? null, 
+              eventCount: mqttState.lastEvent?.count ?? null 
+            });
+          } else if (statusPayload.connectionType === 'websocket' && statusPayload.state) {
+            const pikoState: FetchedPikoState = statusPayload.state;
+            const storeStatus: ConnectionStatus = translatePikoStatus(connector.eventsEnabled === true, pikoState);
+            setPikoState(connectorId, { 
+              status: storeStatus, 
+              error: pikoState.error,
+              lastEventTime: pikoState.lastActivity, // Map lastActivity to lastEventTime
+              eventCount: null // Piko state doesn't seem to track event count in this structure
+            });
+          } else if (statusPayload.connectionType !== 'unknown') {
+            console.warn(`[ConnectorsPage] Received status for connector ${connectorId} with unknown state or connection type:`, statusPayload);
           }
         }
       } else {
-        console.error('[ConnectorsPage] Failed to fetch MQTT status:', statusData.error || 'Invalid format');
+        console.error('[ConnectorsPage] Failed to fetch or parse connection statuses:', statusData.error || 'Invalid format');
       }
     } catch (error) {
-      console.error('[ConnectorsPage] Error fetching data:', error);
+      console.error('[ConnectorsPage] Error refreshing data:', error);
       if (isInitialLoad) { setError('Failed to load page data'); }
     } finally {
       if (isInitialLoad) { setLoading(false); }
     }
-  }, [setLoading, setConnectors, setError, setMqttState]);
+    // Include setPikoState in dependencies
+  }, [setLoading, setConnectors, setError, setMqttState, setPikoState]);
 
   // Fetch initial data and set up polling
   useEffect(() => {
@@ -192,7 +248,7 @@ export default function ConnectorsPage() {
     }
   }, [connectorIdToDelete, deleteConnector, setError]);
 
-  // Function to handle toggle change 
+  // Function to handle toggle change for YoLink MQTT
   const handleMqttToggle = useCallback(async (connector: ConnectorWithConfig, currentCheckedState: boolean) => {
     const newValue = !currentCheckedState;
     
@@ -225,6 +281,39 @@ export default function ConnectorsPage() {
       setTogglingConnectorId(null); // Clear spinner state
     }
   }, [setError, setMqttState, refreshConnectorsData]);
+
+  // Function to handle toggle change for Piko WebSocket
+  const handleWebSocketToggle = useCallback(async (connector: ConnectorWithConfig, currentCheckedState: boolean) => {
+    const newValue = !currentCheckedState;
+    
+    setTogglingConnectorId(connector.id); // Show spinner
+
+    try {
+      // Use connectorId in the payload for the toggle API
+      const response = await fetch('/api/websocket-toggle', { // <-- Use new API endpoint
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disabled: !newValue, connectorId: connector.id })
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        setError(data.error || 'Failed to update WebSocket setting.');
+        refreshConnectorsData(); 
+        return;
+      }
+      
+      // Trigger immediate refresh to get updated DB state and connection status
+      refreshConnectorsData(); 
+
+    } catch (error) {
+      setError('Network error updating WebSocket setting.');
+      refreshConnectorsData(); 
+    } finally {
+      setTogglingConnectorId(null); // Clear spinner state
+    }
+    // Note: No direct setPikoState here, rely on refreshConnectorsData
+  }, [setError, refreshConnectorsData]); 
   
   // --- Rendering Logic (using destructured state and stable handlers) ---
   // getStatusColorClass and getMqttStatusText can remain inside or be moved outside 
@@ -273,7 +362,49 @@ export default function ConnectorsPage() {
       case 'connected': return 'Connected';
       case 'reconnecting': return 'Reconnecting';
       case 'disconnected': return 'Disconnected';
-      case 'error': return mqttState.error ? `Error: ${mqttState.error}` : 'Error';
+      case 'error': return 'Disconnected'; // Treat any error as Disconnected for display
+      case 'unknown': return 'Unknown';
+      default: return 'Unknown';
+    }
+  };
+
+  // --- Piko Status Helpers (ASSUMING getPikoState exists in store) ---
+
+  // Get status color class based on Piko WebSocket status 
+  const getPikoStatusColorClass = (connectorId: string) => {
+    const pikoState = getPikoState(connectorId); // Assume this exists
+    const connector = connectors.find(c => c.id === connectorId);
+    const eventsEnabled = connector?.eventsEnabled === true;
+    
+    if (!eventsEnabled) {
+      return 'bg-slate-300/20 text-slate-500 border border-slate-300/20';
+    }
+    
+    switch (pikoState?.status) { // Use optional chaining as state might not exist yet
+      case 'connected': return 'bg-green-500/20 text-green-600 border border-green-500/20';
+      case 'reconnecting': return 'bg-yellow-500/20 text-yellow-600 border border-yellow-500/20';
+      case 'disconnected': return 'bg-red-500/25 text-red-600 border border-red-500/30';
+      case 'error': return 'bg-red-500/25 text-red-600 border border-red-500/30';
+      case 'unknown': return 'bg-slate-300/20 text-slate-500 border border-slate-300/20';
+      default: return 'bg-muted text-muted-foreground border border-muted-foreground/20';
+    }
+  };
+  
+  // Get status text based on Piko WebSocket status
+  const getPikoStatusText = (connectorId: string) => {
+    const pikoState = getPikoState(connectorId); // Assume this exists
+    const connector = connectors.find(c => c.id === connectorId);
+    const eventsEnabled = connector?.eventsEnabled === true;
+    
+    if (!eventsEnabled) {
+      return 'Disabled';
+    }
+    
+    switch (pikoState?.status) { // Use optional chaining
+      case 'connected': return 'Connected';
+      case 'reconnecting': return 'Reconnecting';
+      case 'disconnected': return 'Disconnected';
+      case 'error': return pikoState.error ? `Error: ${pikoState.error}` : 'Error';
       case 'unknown': return 'Unknown';
       default: return 'Unknown';
     }
@@ -343,11 +474,17 @@ export default function ConnectorsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {connector.category === 'yolink' ? (
+                      {(connector.category === 'yolink' || connector.category === 'piko') ? (
                         <div className="flex items-center">
                           <Switch 
                             checked={connector.eventsEnabled === true}
-                            onCheckedChange={() => handleMqttToggle(connector, connector.eventsEnabled === true)}
+                            onCheckedChange={() => {
+                                if (connector.category === 'yolink') {
+                                    handleMqttToggle(connector, connector.eventsEnabled === true);
+                                } else if (connector.category === 'piko') {
+                                    handleWebSocketToggle(connector, connector.eventsEnabled === true);
+                                }
+                            }}
                             disabled={togglingConnectorId === connector.id}
                           />
                         </div>
@@ -356,12 +493,13 @@ export default function ConnectorsPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {connector.category === 'yolink' ? (
-                        togglingConnectorId === connector.id ? (
-                          <div className="flex items-center justify-start px-2.5 py-1">
-                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                          </div>
-                        ) : (
+                      {togglingConnectorId === connector.id ? (
+                        // Common Loader for both types while toggling
+                        <div className="flex items-center justify-start px-2.5 py-1">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : connector.category === 'yolink' ? (
+                        // YoLink MQTT Status
                         <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(connector.id)}`}>
                           <SiMqtt className="h-3.5 w-3.5" />
                           <span>{getMqttStatusText(connector.id)}</span>
@@ -369,8 +507,17 @@ export default function ConnectorsPage() {
                             <Loader2 className="h-3 w-3 animate-spin ml-1" />
                           )}
                         </div>
-                        )
+                      ) : connector.category === 'piko' ? (
+                        // Piko WebSocket Status (assuming getPikoState exists)
+                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getPikoStatusColorClass(connector.id)}`}>
+                           <LuArrowRightLeft className="h-3.5 w-3.5" /> {/* WebSocket Icon */}
+                           <span>{getPikoStatusText(connector.id)}</span>
+                           {getPikoState(connector.id)?.status === 'reconnecting' && ( // ASSUMES getPikoState exists
+                             <Loader2 className="h-3 w-3 animate-spin ml-1" />
+                           )}
+                        </div>
                       ) : (
+                        // Default for other types (or if state not ready)
                         <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>

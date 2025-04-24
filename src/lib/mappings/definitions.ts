@@ -194,4 +194,77 @@ export const validDisplayStatesMap: ValidDisplayStatesMap = {
     [DeviceSubtype.Toggle]: [ON, OFF],
   },
   // Add mappings for other devices as needed
-}; 
+};
+
+// --- CONNECTOR CATEGORIES ---
+export type ConnectorCategory = 'yolink' | 'piko';
+
+// --- Intermediate State Enums ---
+// Used as a standardized, abstract representation of device states,
+// independent of connector-specific values or final display strings.
+
+export enum EventCategory {
+  DEVICE_STATE = 'DEVICE_STATE',
+  DEVICE_CONNECTIVITY = 'DEVICE_CONNECTIVITY',
+  ANALYTICS = 'ANALYTICS',
+  UNKNOWN = 'UNKNOWN',
+}
+
+export enum EventType {
+  // Device State Changes
+  STATE_CHANGED = 'STATE_CHANGED',
+  BATTERY_LEVEL_CHANGED = 'BATTERY_LEVEL_CHANGED',
+  
+  // Connectivity Status
+  DEVICE_ONLINE = 'DEVICE_ONLINE',
+  DEVICE_OFFLINE = 'DEVICE_OFFLINE',
+  
+  // Analytics Events
+  ANALYTICS_EVENT = 'ANALYTICS_EVENT', // General or unknown analytics event
+  PERSON_DETECTED = 'PERSON_DETECTED',
+  LOITERING = 'LOITERING',
+  LINE_CROSSING = 'LINE_CROSSING',
+
+  // Catch-all for unhandled external events
+  UNKNOWN_EXTERNAL_EVENT = 'UNKNOWN_EXTERNAL_EVENT',
+
+  // Internal/System Events (Placeholder)
+  SYSTEM_NOTIFICATION = 'SYSTEM_NOTIFICATION',
+}
+
+// --- EVENT TYPE DISPLAY STRINGS ---
+export const PERSON_DETECTED_DISPLAY = 'Person Detected';
+export const LOITERING_DISPLAY = 'Loitering';
+export const LINE_CROSSING_DISPLAY = 'Line Crossing';
+export const GENERIC_ANALYTICS_DISPLAY = 'Generic Analytics';
+export const STATE_CHANGED_DISPLAY = 'State Changed';
+export const DEVICE_ONLINE_DISPLAY = 'Device Online';
+export const DEVICE_OFFLINE_DISPLAY = 'Device Offline';
+
+// --- EVENT TYPE DISPLAY MAP ---
+export const EVENT_TYPE_DISPLAY_MAP = {
+  [EventType.PERSON_DETECTED]: PERSON_DETECTED_DISPLAY,
+  [EventType.LOITERING]: LOITERING_DISPLAY,
+  [EventType.LINE_CROSSING]: LINE_CROSSING_DISPLAY,
+  [EventType.ANALYTICS_EVENT]: GENERIC_ANALYTICS_DISPLAY,
+  [EventType.STATE_CHANGED]: STATE_CHANGED_DISPLAY,
+  [EventType.BATTERY_LEVEL_CHANGED]: 'Battery Level Changed',
+  [EventType.DEVICE_ONLINE]: DEVICE_ONLINE_DISPLAY,
+  [EventType.DEVICE_OFFLINE]: DEVICE_OFFLINE_DISPLAY,
+  [EventType.UNKNOWN_EXTERNAL_EVENT]: 'Unknown Event',
+  [EventType.SYSTEM_NOTIFICATION]: 'System Notification',
+} as const;
+
+// --- EVENT CATEGORY DISPLAY STRINGS ---
+export const DEVICE_STATE_CATEGORY_DISPLAY = 'Device State';
+export const DEVICE_CONNECTIVITY_CATEGORY_DISPLAY = 'Connectivity';
+export const ANALYTICS_CATEGORY_DISPLAY = 'Analytics';
+export const UNKNOWN_CATEGORY_DISPLAY = 'Unknown';
+
+// --- EVENT CATEGORY DISPLAY MAP ---
+export const EVENT_CATEGORY_DISPLAY_MAP = {
+  [EventCategory.DEVICE_STATE]: DEVICE_STATE_CATEGORY_DISPLAY,
+  [EventCategory.DEVICE_CONNECTIVITY]: DEVICE_CONNECTIVITY_CATEGORY_DISPLAY,
+  [EventCategory.ANALYTICS]: ANALYTICS_CATEGORY_DISPLAY,
+  [EventCategory.UNKNOWN]: UNKNOWN_CATEGORY_DISPLAY,
+} as const;

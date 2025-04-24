@@ -52,7 +52,7 @@ interface PikoServerRaw {
 }
 
 // Interface for raw device data from API
-interface PikoDeviceRaw {
+export interface PikoDeviceRaw {
   id: string;
   deviceType?: string;
   mac?: string;
@@ -399,7 +399,7 @@ async function _fetchPikoToken(
       throw new Error('Piko auth response did not contain an access token');
     }
 
-    console.log(`Successfully authenticated with Piko (scope: ${scope || 'general'})`);
+    console.log(`Successfully authenticated with Piko (scope: ${scope || 'general'}). Token received.`);
     
     // Return token data in camelCase format
     return {
@@ -531,4 +531,68 @@ export async function createPikoBookmark(
 
   // If fetchPikoRelayData does not throw, the request was successful (e.g., 200 OK, 201 Created, or 204 No Content)
   console.log(`Successfully created Piko bookmark for camera: ${pikoCameraDeviceId} in system: ${systemId}`);
+}
+
+// --- WebSocket Event Subscription Interfaces ---
+
+/**
+ * Parameters for the JSON-RPC event subscription request.
+ */
+export interface PikoJsonRpcSubscribeParams {
+    startTimeMs: number; // Typically Date.now()
+    eventType: "analyticsSdkEvent"; // Currently only supporting this type
+    eventsOnly: boolean; // Set to true
+    _with: "eventParams"; // Include detailed event parameters
+    // Potential future params: serverId, deviceId, etc.
+}
+
+/**
+ * JSON-RPC request format for subscribing to events.
+ */
+export interface PikoJsonRpcSubscribeRequest {
+    jsonrpc: "2.0";
+    id: string; // Unique connection/request ID (e.g., crypto.randomUUID())
+    method: "rest.v3.servers.events.subscribe";
+    params: PikoJsonRpcSubscribeParams;
+}
+
+/**
+ * Detailed parameters received within an event update message.
+ * Based on the 'analyticsSdkEvent' example.
+ */
+export interface PikoJsonRpcEventParams {
+    analyticsEngineId?: string; // GUID "{...}"
+    caption?: string; // e.g., "Loitering - Person - Area 1"
+    description?: string; // e.g., "Start", "Stop"
+    eventResourceId?: string; // GUID "{...}" - Often the Camera ID
+    eventTimestampUsec?: string; // Timestamp as string "..."
+    eventType?: string; // e.g., "analyticsSdkEvent"
+    inputPortId?: string; // e.g., "cvedia.rt.loitering"
+    key?: string; // Unique event instance key, e.g., "loitering-..."
+    metadata?: {
+        allUsers?: boolean;
+        level?: string;
+        [key: string]: unknown; // Allow other metadata fields
+    };
+    objectTrackId?: string; // GUID "{...}"
+    omitDbLogging?: boolean;
+    progress?: number;
+    reasonCode?: string;
+    sourceServerId?: string; // GUID "{...}"
+    // Other potential fields based on event type
+    [key: string]: unknown;
+}
+
+/**
+ * JSON-RPC message format for incoming event updates via WebSocket.
+ */
+export interface PikoJsonRpcEventUpdateMessage {
+    jsonrpc: "2.0";
+    method: "rest.v3.servers.events.update";
+    params?: {
+        eventParams?: PikoJsonRpcEventParams; // The core event data
+        // Potentially other params fields exist
+        [key: string]: unknown;
+    };
+    // No 'id' field expected for notifications
 }

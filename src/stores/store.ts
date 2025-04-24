@@ -10,14 +10,22 @@ import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 // Enable Immer plugin for Map/Set support
 enableMapSet();
 
-// Type for MQTT status representation in the store
-type MqttStatus = 'connected' | 'disconnected' | 'unknown' | 'reconnecting' | 'error';
+// Type for connection status representation in the store (shared)
+type ConnectionStatus = 'connected' | 'disconnected' | 'unknown' | 'reconnecting' | 'error';
 
 // MQTT state for a specific connector
 interface ConnectorMqttState {
-  status: MqttStatus;
+  status: ConnectionStatus; // Use shared type
   error: string | null;
   lastEventTime: number | null; 
+  eventCount: number | null;
+}
+
+// Piko WebSocket state for a specific connector
+interface ConnectorPikoState {
+  status: ConnectionStatus; // Use shared type
+  error: string | null;
+  lastEventTime: number | null;
   eventCount: number | null;
 }
 
@@ -61,6 +69,9 @@ interface FusionState {
   // MQTT Status States by connector ID
   mqttStates: Map<string, ConnectorMqttState>;
   
+  // Piko WebSocket Status States by connector ID
+  pikoStates: Map<string, ConnectorPikoState>; 
+
   // Device state map: key = `${connectorId}:${deviceId}`
   deviceStates: Map<string, DeviceStateInfo>;
   
@@ -78,8 +89,14 @@ interface FusionState {
   // MQTT Status Actions
   setMqttState: (connectorId: string, state: Partial<ConnectorMqttState>) => void;
   
+  // Piko Status Actions
+  setPikoState: (connectorId: string, state: Partial<ConnectorPikoState>) => void; 
+
   // Get MQTT state for a specific connector
   getMqttState: (connectorId: string) => ConnectorMqttState;
+
+  // Get Piko state for a specific connector
+  getPikoState: (connectorId: string) => ConnectorPikoState; 
 
   processStandardizedEvent: (evt: StandardizedEvent) => void;
 
@@ -90,6 +107,14 @@ interface FusionState {
 
 // Initial state for MQTT (default)
 const initialMqttState: ConnectorMqttState = {
+  status: 'unknown',
+  error: null,
+  lastEventTime: null,
+  eventCount: null,
+};
+
+// Initial state for Piko WebSocket (default)
+const initialPikoState: ConnectorPikoState = {
   status: 'unknown',
   error: null,
   lastEventTime: null,
@@ -107,6 +132,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   // Initial MQTT Status State
   mqttStates: new Map<string, ConnectorMqttState>(),
   
+  // Initial Piko WebSocket Status State
+  pikoStates: new Map<string, ConnectorPikoState>(),
+
   // Initial Device State map
   deviceStates: new Map<string, DeviceStateInfo>(),
   
@@ -123,6 +151,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     set((state) => ({
       connectors: state.connectors.filter((connector) => connector.id !== id),
       mqttStates: produce(state.mqttStates, (draft: Draft<Map<string, ConnectorMqttState>>) => { draft.delete(id); }),
+      pikoStates: produce(state.pikoStates, (draft: Draft<Map<string, ConnectorPikoState>>) => { draft.delete(id); }),
       deviceStates: produce(state.deviceStates, (draft: Draft<Map<string, DeviceStateInfo>>) => {
         for (const key of draft.keys()) {
           if (key.startsWith(`${id}:`)) {
@@ -146,9 +175,23 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       }),
     })),
   
+  // Piko Status Actions
+  setPikoState: (connectorId, stateUpdate) =>
+    set((state) => ({
+      pikoStates: produce(state.pikoStates, (draft: Draft<Map<string, ConnectorPikoState>>) => {
+        const currentState = draft.get(connectorId) || { ...initialPikoState };
+        draft.set(connectorId, { ...currentState, ...stateUpdate });
+      }),
+    })),
+
   // Get MQTT state for a specific connector with fallback to default state
   getMqttState: (connectorId) => {
     return get().mqttStates.get(connectorId) || { ...initialMqttState };
+  },
+
+  // Get Piko state for a specific connector with fallback to default state
+  getPikoState: (connectorId) => {
+    return get().pikoStates.get(connectorId) || { ...initialPikoState };
   },
 
   processStandardizedEvent: (evt: StandardizedEvent) =>

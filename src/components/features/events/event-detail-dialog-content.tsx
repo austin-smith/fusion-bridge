@@ -22,7 +22,13 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { toast } from 'sonner';
 import { getDeviceTypeIcon, getDisplayStateIcon } from '@/lib/mappings/presentation';
-import { TypedDeviceInfo, DisplayState, DeviceType } from '@/lib/mappings/definitions';
+import { 
+  TypedDeviceInfo, 
+  DisplayState, 
+  DeviceType, 
+  EventType, 
+  EVENT_TYPE_DISPLAY_MAP 
+} from '@/lib/mappings/definitions';
 import { cn, formatConnectorCategory } from "@/lib/utils";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 
@@ -36,6 +42,8 @@ interface EventData {
   eventUuid: string;
   // data: Record<string, unknown>; // Likely replaced by payload
   payload?: Record<string, any> | null; // Standardized payload
+  rawPayload?: Record<string, any> | null; // Add rawPayload
+  rawEventType?: string; // Add rawEventType from API
   deviceId: string;
   deviceName?: string;
   connectorId: string;
@@ -77,8 +85,8 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
     }
   };
 
-  // Use the standardized payload for JSON view
-  const eventDataForJson = event.payload || {};
+  // Use the raw payload for the JSON view tab
+  const eventDataForJson = event.rawPayload || {};
   const jsonString = JSON.stringify(eventDataForJson, null, 2);
 
   // Get mapped type info & state icon for the modal header
@@ -98,7 +106,9 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
         <DialogHeader className="pb-4 border-b">
           <div className="flex items-center gap-2">
             <DeviceIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <DialogTitle>{event.eventType || event.eventCategory || 'Event Details'}</DialogTitle>
+            <DialogTitle>
+              {EVENT_TYPE_DISPLAY_MAP[event.eventType as EventType] || event.eventType || event.eventCategory || 'Event Details'}
+            </DialogTitle>
           </div>
           <DialogDescription asChild>
            <div className="pt-2 text-sm text-muted-foreground flex items-center justify-start gap-1.5">
@@ -221,6 +231,14 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                               <div className="h-px grow bg-border"></div>
                             </div>
                           </div>
+                          {/* Display Original Event Type if available */}
+                          {event.rawEventType && (
+                            <DetailRow
+                              label="Original Event Type"
+                              value={event.rawEventType}
+                              monospace // Use monospace for potentially technical strings
+                            />
+                          )}
                           {payloadEntries.map(({ key, value }) => (
                             <DetailRow 
                               key={key} 
