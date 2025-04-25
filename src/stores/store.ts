@@ -1,4 +1,4 @@
-import create from 'zustand';
+import { create } from 'zustand';
 import { produce, Draft, enableMapSet } from 'immer';
 import { PikoServer } from '@/types';
 import type { StandardizedEvent, StateChangedPayload } from '@/types/events';

@@ -392,7 +392,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                           </Badge>
                         )
                       },
-                      { key: 'Device/Camera ID', value: event.deviceId, monospace: true, breakAll: true },
+                      { key: 'Device ID', value: event.deviceId, monospace: true, breakAll: true },
                     ];
 
                     // Also add Object Track ID if available
