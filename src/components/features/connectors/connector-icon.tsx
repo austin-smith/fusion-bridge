@@ -11,6 +11,7 @@ import { formatConnectorCategory } from '@/lib/utils'; // For fallback text
 const connectorIconMap: Record<string, { src: string; name: string }> = {
   yolink: { src: '/yolink.png', name: 'YoLink' },
   piko: { src: '/piko.png', name: 'Piko' },
+  netbox: { src: '/lenel-s2.png', name: 'NetBox' },
   // Add more connectors here as needed
 };
 

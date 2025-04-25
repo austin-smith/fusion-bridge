@@ -9,6 +9,7 @@ export function cn(...inputs: ClassValue[]) {
 export enum ConnectorCategory {
   YoLink = 'yolink',
   Piko = 'piko',
+  NetBox = 'netbox',
   // Add other known categories here
 }
 
@@ -16,6 +17,7 @@ export enum ConnectorCategory {
 const categoryDisplayNames: Record<string, string> = {
   [ConnectorCategory.YoLink]: 'YoLink',
   [ConnectorCategory.Piko]: 'Piko',
+  [ConnectorCategory.NetBox]: 'NetBox',
   // Add other display names corresponding to the enum
 };
 

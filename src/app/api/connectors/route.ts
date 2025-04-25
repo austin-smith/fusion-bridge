@@ -5,10 +5,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { ConnectorWithConfig } from '@/types';
 import { getAccessToken, getHomeInfo } from '@/services/drivers/yolink';
+import crypto from 'crypto'; // Import crypto
 
 // Schema for connector creation
 const createConnectorSchema = z.object({
-  category: z.enum(['yolink', 'piko']),
+  category: z.enum(['yolink', 'piko', 'netbox']),
   name: z.string().optional(),
   config: z.record(z.any()).optional(),
 });
@@ -114,6 +115,29 @@ export async function POST(request: Request) {
         );
       }
     }
+    
+    // --- Add NetBox specific logic ---
+    else if (category === 'netbox') {
+      console.log("Creating a NetBox connector...");
+      // Ensure webhookId exists (use client-provided or generate)
+      if (!finalConfig.webhookId || typeof finalConfig.webhookId !== 'string') {
+        const serverGeneratedWebhookId = uuidv4();
+        console.log("Client did not provide a valid webhookId, generating one server-side:", serverGeneratedWebhookId);
+        finalConfig.webhookId = serverGeneratedWebhookId; 
+      } else {
+        console.log("Using client-provided webhook ID:", finalConfig.webhookId);
+      }
+      // Ensure webhookSecret exists (use client-provided or generate)
+      if (!finalConfig.webhookSecret || typeof finalConfig.webhookSecret !== 'string') {
+        const serverGeneratedSecret = crypto.randomBytes(32).toString('hex');
+        console.log("Client did not provide webhookSecret, generating one server-side.");
+        finalConfig.webhookSecret = serverGeneratedSecret;
+      } else {
+        // Optionally add validation here if needed
+        console.log("Using client-provided webhook secret."); 
+      }
+    }
+    // -------------------------------
     
     // Stringify the potentially updated config
     const configString = JSON.stringify(finalConfig);
