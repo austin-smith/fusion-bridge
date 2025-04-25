@@ -818,7 +818,7 @@ export function AddConnectorModal() {
                             .map(system => (
                             <SelectItem key={system.id} value={system.id}>
                               <div className="flex items-center">
-                                <span className="mr-2">{system.name}</span>
+                                <span>{system.name}</span>
                                 {system.health === 'online' && (
                                   <span className="h-2 w-2 rounded-full bg-green-500" />
                                 )}

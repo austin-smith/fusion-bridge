@@ -38,6 +38,7 @@ interface MqttConnection {
   reconnectAttempts: number;
   disabled: boolean; // Mirroring the connector's eventsEnabled state
   isConnected: boolean;
+  lastStandardizedPayload: Record<string, any> | null; // <<< Renamed from lastEventPayload
 }
 
 // Map storing active MQTT connections, keyed by YoLink Home ID
@@ -55,6 +56,7 @@ export interface MqttClientState {
   error: string | null;
   reconnecting: boolean;
   disabled: boolean;
+  lastStandardizedPayload: Record<string, any> | null; // <<< Renamed from lastEventPayload
 }
 
 /**
@@ -72,11 +74,12 @@ export function getMqttClientState(homeId?: string): MqttClientState {
       connectorId: connection.connectorId,
       error: !isConnected && !isReconnecting ? connection.connectionError : null,
       reconnecting: isReconnecting,
-      disabled: connection.disabled
+      disabled: connection.disabled,
+      lastStandardizedPayload: connection.lastStandardizedPayload // <<< Copy renamed payload field
     };
   }
   // Return default disconnected state if homeId not found
-  return { connected: false, lastEvent: null, homeId: homeId ?? null, connectorId: null, error: 'No connection state found', reconnecting: false, disabled: true };
+  return { connected: false, lastEvent: null, homeId: homeId ?? null, connectorId: null, error: 'No connection state found', reconnecting: false, disabled: true, lastStandardizedPayload: null };
 }
 
 /**
@@ -94,7 +97,8 @@ export function getAllMqttClientStates(): Map<string, MqttClientState> {
       connectorId: connection.connectorId,
       error: !isConnected && !isReconnecting ? connection.connectionError : null,
       reconnecting: isReconnecting,
-      disabled: connection.disabled
+      disabled: connection.disabled,
+      lastStandardizedPayload: connection.lastStandardizedPayload // <<< Copy renamed payload field
     });
   }
   return states;
@@ -185,6 +189,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
           homeId: currentHomeId,
           connectorId: connectorId,
           lastEventData: null,
+          lastStandardizedPayload: null, // <<< Initialize renamed payload field
           connectionError: null,
           reconnectAttempts: 0,
           disabled: true, // Will be updated below
@@ -336,7 +341,11 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
                           const conn = connections.get(currentHomeId);
                           if (conn) {
                               const rawEventTime = rawEvent?.time as number | undefined;
-                              if (rawEventTime) { conn.lastEventData = { time: new Date(rawEventTime), count }; connections.set(currentHomeId, conn); }
+                              if (rawEventTime) { 
+                                conn.lastEventData = { time: new Date(rawEventTime), count }; 
+                                conn.lastStandardizedPayload = standardizedEvents[0]?.payload ?? null; // <<< Store first standardized payload
+                                connections.set(currentHomeId, conn); 
+                              }
                           }
                       } catch(err) { console.error(`[${currentHomeId}][${associatedConnectorId}] Error processing event pipeline:`, err); }
                   });
@@ -637,6 +646,11 @@ export async function initializeAllConnections(): Promise<void> {
 export async function getRecentEvents(limit = 100) { return eventsRepository.getRecentEvents(limit); }
 export async function truncateEvents() {
   const result = await eventsRepository.truncateEvents();
-  if (result) { for (const conn of connections.values()) { conn.lastEventData = null; } }
+  if (result) { 
+    for (const conn of connections.values()) { 
+      conn.lastEventData = null; 
+      conn.lastStandardizedPayload = null; // <<< Clear renamed payload field
+    } 
+  } 
   return result;
 } 

@@ -36,6 +36,7 @@ interface PikoWebSocketConnection {
     periodicRefreshTimerId: NodeJS.Timeout | null; // Timer ID for periodic device refresh
     disabled: boolean; // Mirroring connector's eventsEnabled state
     lastActivity: Date | null; // Track last message or connection event
+    lastStandardizedPayload: Record<string, any> | null; // Added standardized payload
 }
 
 // Map storing active WebSocket connections, keyed by Connector ID
@@ -56,6 +57,7 @@ export interface PikoWebSocketState {
     reconnecting: boolean;
     disabled: boolean;
     lastActivity: number | null; // Timestamp ms
+    lastStandardizedPayload: Record<string, any> | null; // Added standardized payload
 }
 
 /**
@@ -64,7 +66,7 @@ export interface PikoWebSocketState {
 export function getPikoWebSocketState(connectorId: string): PikoWebSocketState {
     const connection = connections.get(connectorId);
     if (!connection) {
-        return { connectorId, systemId: null, isConnected: false, isConnecting: false, error: 'No connection state found', reconnecting: false, disabled: true, lastActivity: null };
+        return { connectorId, systemId: null, isConnected: false, isConnecting: false, error: 'No connection state found', reconnecting: false, disabled: true, lastActivity: null, lastStandardizedPayload: null };
     }
 
     const isReconnecting = !connection.isConnected && !connection.isConnecting && connection.reconnectAttempts > 0 && !connection.disabled;
@@ -77,6 +79,7 @@ export function getPikoWebSocketState(connectorId: string): PikoWebSocketState {
         reconnecting: isReconnecting,
         disabled: connection.disabled,
         lastActivity: connection.lastActivity?.getTime() ?? null,
+        lastStandardizedPayload: connection.lastStandardizedPayload,
     };
 }
 
@@ -158,7 +161,8 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
         connection = {
             client: null, config: null, systemId: null, connectorId: connectorId, tokenInfo: null,
             deviceGuidMap: null, isConnected: false, isConnecting: false, connectionError: null, 
-            reconnectAttempts: 0, periodicRefreshTimerId: null, disabled: true, lastActivity: null
+            reconnectAttempts: 0, periodicRefreshTimerId: null, disabled: true, lastActivity: null,
+            lastStandardizedPayload: null
         };
         connections.set(connectorId, connection);
     }
@@ -342,6 +346,7 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                             conn.connectionError = null;
                             conn.reconnectAttempts = 0;
                             conn.lastActivity = new Date();
+                            conn.lastStandardizedPayload = null;
                             connections.set(conn.connectorId, conn); 
                             cleanupAttempt(); 
 
@@ -434,6 +439,7 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                              } else {
                                  conn.connectionError = null;
                                  conn.reconnectAttempts = 0;
+                                 conn.lastStandardizedPayload = null;
                                  connections.set(connectorId, conn);
                              }
 
@@ -591,6 +597,7 @@ async function _handlePikoMessage(connectorId: string, messageData: WebSocket.Da
                  try { await eventsRepository.storeStandardizedEvent(stdEvent); } catch (e) { console.error(`[${connectorId}] Store error for ${stdEvent.eventId}:`, e); continue; }
                  try { useFusionStore.getState().processStandardizedEvent(stdEvent); } catch (e) { console.error(`[${connectorId}] Zustand error for ${stdEvent.eventId}:`, e); }
                  processEvent(stdEvent).catch(err => { console.error(`[${connectorId}] Automation error for ${stdEvent.eventId}:`, err); });
+                 connection.lastStandardizedPayload = stdEvent.payload ?? null;
             }
         } else if (message.result !== undefined || message.error !== undefined) {
             // Handle responses to our requests (like the initial subscribe)
@@ -637,7 +644,10 @@ function scheduleReconnect(connectorId: string): void {
         if (!currentConnection || currentConnection.disabled || currentConnection.isConnected || currentConnection.isConnecting || currentConnection.reconnectAttempts === 0) {
             console.log(`[scheduleReconnect][${connectorId}] Skipping reconnect attempt: State changed or reset.`);
              if (currentConnection && currentConnection.isConnected) currentConnection.reconnectAttempts = 0; // Reset if connected
-             if(currentConnection) connections.set(connectorId, currentConnection);
+             if(currentConnection) {
+                currentConnection.lastStandardizedPayload = null;
+                connections.set(connectorId, currentConnection);
+             }
             return;
         }
 
@@ -669,6 +679,7 @@ export async function disconnectPikoWebSocket(connectorId: string): Promise<void
                  connection.isConnecting = false;
                  connection.reconnectAttempts = 0; // Stop retries
                  connection.connectionError = null;
+                 connection.lastStandardizedPayload = null;
                  connections.set(connectorId, connection);
             }
             resolve();
@@ -720,12 +731,14 @@ export async function disablePikoConnection(connectorId: string): Promise<void> 
          const connection = connections.get(connectorId);
          if (connection) {
              connection.disabled = true;
+             connection.lastStandardizedPayload = null;
              connections.set(connectorId, connection);
          } else {
              // Add a basic disabled state if it didn't exist
              connections.set(connectorId, {
                  client: null, config: null, systemId: null, connectorId: connectorId, tokenInfo: null,
-                 deviceGuidMap: null, isConnected: false, isConnecting: false, connectionError: null, reconnectAttempts: 0, periodicRefreshTimerId: null, disabled: true, lastActivity: null
+                 deviceGuidMap: null, isConnected: false, isConnecting: false, connectionError: null, reconnectAttempts: 0, periodicRefreshTimerId: null, disabled: true, lastActivity: null,
+                 lastStandardizedPayload: null
              });
          }
           console.log(`[disablePikoConnection][${connectorId}] Connection disabled and state updated.`);
@@ -758,7 +771,8 @@ export async function enablePikoConnection(connectorId: string): Promise<boolean
         // Update local state immediately to reflect enabled status
         const connection = connections.get(connectorId) ?? {
              client: null, config: null, systemId: null, connectorId: connectorId, tokenInfo: null,
-             deviceGuidMap: null, isConnected: false, isConnecting: false, connectionError: null, reconnectAttempts: 0, periodicRefreshTimerId: null, disabled: true, lastActivity: null
+             deviceGuidMap: null, isConnected: false, isConnecting: false, connectionError: null, reconnectAttempts: 0, periodicRefreshTimerId: null, disabled: true, lastActivity: null,
+             lastStandardizedPayload: null
         };
         connection.disabled = false;
         connections.set(connectorId, connection);
@@ -774,6 +788,7 @@ export async function enablePikoConnection(connectorId: string): Promise<boolean
         const connection = connections.get(connectorId);
         if (connection) {
             connection.disabled = true; // Mark as disabled again if init failed
+            connection.lastStandardizedPayload = null;
             connections.set(connectorId, connection);
         }
         return false;

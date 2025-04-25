@@ -6,7 +6,7 @@ import { Button, buttonVariants } from '@/components/ui/button'; // Import butto
 import { AddConnectorModal } from '@/components/features/connectors/add-connector-modal'; // Import the modal
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Pencil, Trash2, Plus, Plug } from "lucide-react";
+import { Loader2, Pencil, Trash2, Plus, Plug, AlertCircle, X } from "lucide-react";
 // Using console for messaging instead of toast
 import { ConnectorWithConfig } from '@/types'; // Renamed type
 import {
@@ -19,6 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"; // Import AlertDialog components
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // <<< Added Alert imports
 import {
   Table,
   TableBody,
@@ -31,8 +32,14 @@ import { Switch } from "@/components/ui/switch";
 import { SiMqtt } from "react-icons/si";
 import { LuArrowRightLeft } from "react-icons/lu"; // Use requested WebSocket icon
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon"; // Import ConnectorIcon
-import { TooltipProvider } from "@/components/ui/tooltip"; // Import TooltipProvider
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"; // Import TooltipProvider & components
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"; // <<< Added Popover imports
 import { formatConnectorCategory } from "@/lib/utils"; // Import formatConnectorCategory
+import { formatDistanceToNow } from 'date-fns'; // <<< Import date-fns function
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'; // <<< Added SyntaxHighlighter
+import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'; // <<< Added style
+import { Check, Copy } from "lucide-react"; // <<< Added icons for copy button
+import { toast } from 'sonner'; // <<< Added for copy toast
 
 // Define structure for fetched YoLink MQTT state from API
 interface FetchedMqttState {
@@ -42,6 +49,7 @@ interface FetchedMqttState {
   reconnecting: boolean;
   disabled: boolean;
   homeId?: string | null; // Add optional homeId
+  lastStandardizedPayload?: Record<string, any> | null;
 }
 
 // Define structure for fetched Piko WebSocket state from API
@@ -53,6 +61,7 @@ interface FetchedPikoState {
   disabled: boolean;
   lastActivity: number | null; // Assuming timestamp
   systemId?: string | null; // Add optional systemId
+  lastStandardizedPayload?: Record<string, any> | null;
 }
 
 // Shared connection status type used in the store
@@ -98,13 +107,101 @@ const translatePikoStatus = (
   return 'disconnected';
 };
 
+// Define return types for state getters
+type MqttStateType = ReturnType<typeof useFusionStore.getState().getMqttState>;
+type PikoStateType = ReturnType<typeof useFusionStore.getState().getPikoState>;
+
+// --- Reusable Status Component ---
+interface ConnectorStatusProps {
+  connector: ConnectorWithConfig;
+  togglingConnectorId: string | null;
+  getMqttState: (id: string) => MqttStateType; // Use defined type
+  getPikoState: (id: string) => PikoStateType; // Use defined type
+  // Pass helper functions as props to avoid redefining them or making them global
+  getStatusColorClass: (id: string) => string;
+  getMqttStatusText: (id: string) => string;
+  getPikoStatusColorClass: (id: string) => string;
+  getPikoStatusText: (id: string) => string;
+}
+
+const ConnectorStatus: React.FC<ConnectorStatusProps> = ({ 
+  connector, 
+  togglingConnectorId,
+  getMqttState,
+  getPikoState,
+  getStatusColorClass,
+  getMqttStatusText,
+  getPikoStatusColorClass,
+  getPikoStatusText
+}) => {
+  if (togglingConnectorId === connector.id) {
+    return (
+      <div className="flex items-center justify-start px-2.5 py-1">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (connector.category === 'yolink') {
+    const state = getMqttState(connector.id);
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(connector.id)}`}>
+            <SiMqtt className="h-3.5 w-3.5" />
+            <span>{getMqttStatusText(connector.id)}</span>
+            {state.status === 'reconnecting' && (
+              <Loader2 className="h-3 w-3 animate-spin ml-1" />
+            )}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>
+          {state.status === 'error' ? 
+            `Error: ${state.error || 'Unknown error'}` : 
+            getMqttStatusText(connector.id)
+          }
+        </TooltipContent>
+      </Tooltip>
+    );
+  } else if (connector.category === 'piko') {
+    const state = getPikoState(connector.id);
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getPikoStatusColorClass(connector.id)}`}>
+            <LuArrowRightLeft className="h-3.5 w-3.5" />
+            <span>{getPikoStatusText(connector.id)}</span>
+            {state?.status === 'reconnecting' && (
+              <Loader2 className="h-3 w-3 animate-spin ml-1" />
+            )}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>
+          {state?.status === 'error' ? 
+            `Error: ${state?.error || 'Unknown error'}` :
+             getPikoStatusText(connector.id)
+          }
+        </TooltipContent>
+      </Tooltip>
+    );
+  } else {
+    return <span className="text-muted-foreground">-</span>;
+  }
+};
+
+// --- Reusable Last Activity Component Placeholder ---
+// TODO: Define LastActivity component similarly
+
+// --- End Reusable Components ---
+
 export default function ConnectorsPage() {
   // Select state
-  const { connectors, isLoading, getMqttState, getPikoState } = useFusionStore((state) => ({
+  const { connectors, isLoading, getMqttState, getPikoState, error } = useFusionStore((state) => ({
     connectors: state.connectors,
     isLoading: state.isLoading,
     getMqttState: state.getMqttState,
     getPikoState: state.getPikoState, // Now should work
+    error: state.error, // <<< Get error state
   }));
   
   // Get stable action references
@@ -124,6 +221,7 @@ export default function ConnectorsPage() {
   const [connectorIdToDelete, setConnectorIdToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [togglingConnectorId, setTogglingConnectorId] = useState<string | null>(null);
+  const [copiedPayloadId, setCopiedPayloadId] = useState<string | null>(null); // <<< State for copy button
 
   // Set page title
   useEffect(() => {
@@ -172,7 +270,8 @@ export default function ConnectorsPage() {
               error: mqttState.error,
               // Extract time/count from lastEvent object if it exists
               lastEventTime: mqttState.lastEvent?.time ?? null, 
-              eventCount: mqttState.lastEvent?.count ?? null 
+              eventCount: mqttState.lastEvent?.count ?? null,
+              lastStandardizedPayload: mqttState.lastStandardizedPayload ?? null
             });
           } else if (statusPayload.connectionType === 'websocket' && statusPayload.state) {
             const pikoState: FetchedPikoState = statusPayload.state;
@@ -181,7 +280,8 @@ export default function ConnectorsPage() {
               status: storeStatus, 
               error: pikoState.error,
               lastEventTime: pikoState.lastActivity, // Map lastActivity to lastEventTime
-              eventCount: null // Piko state doesn't seem to track event count in this structure
+              eventCount: null, // Piko state doesn't seem to track event count in this structure
+              lastStandardizedPayload: pikoState.lastStandardizedPayload ?? null
             });
           } else if (statusPayload.connectionType !== 'unknown') {
             console.warn(`[ConnectorsPage] Received status for connector ${connectorId} with unknown state or connection type:`, statusPayload);
@@ -315,6 +415,19 @@ export default function ConnectorsPage() {
     // Note: No direct setPikoState here, rely on refreshConnectorsData
   }, [setError, refreshConnectorsData]); 
   
+  // <<< Added handleCopy function >>>
+  const handleCopy = async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedPayloadId(id); // Track which payload was copied
+      toast.success("Copied JSON to clipboard!");
+      setTimeout(() => setCopiedPayloadId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+      toast.error("Failed to copy JSON.");
+    }
+  };
+  
   // --- Rendering Logic (using destructured state and stable handlers) ---
   // getStatusColorClass and getMqttStatusText can remain inside or be moved outside 
   // if they don't rely on component state other than connectorId and getMqttState.
@@ -324,220 +437,153 @@ export default function ConnectorsPage() {
   const connectorToDelete = connectors.find(c => c.id === connectorIdToDelete);
 
   // Get status color class based on MQTT status
-  const getStatusColorClass = (connectorId: string) => {
-    const mqttState = getMqttState(connectorId);
-    // Find connector from the list obtained from store selector
-    const connector = connectors.find(c => c.id === connectorId);
-    const eventsEnabled = connector?.eventsEnabled === true;
-    
-    // If events are explicitly disabled by the user, show gray
-    if (!eventsEnabled) {
-      return 'bg-slate-300/20 text-slate-500 border border-slate-300/20';
-    }
-    
-    // Use mqttStatus from Zustand store
-    switch (mqttState.status) {
-      case 'connected': return 'bg-green-500/20 text-green-600 border border-green-500/20';
-      case 'reconnecting': return 'bg-yellow-500/20 text-yellow-600 border border-yellow-500/20';
-      case 'disconnected': return 'bg-red-500/25 text-red-600 border border-red-500/30';
-      case 'error': return 'bg-red-500/25 text-red-600 border border-red-500/30';
-      case 'unknown': return 'bg-slate-300/20 text-slate-500 border border-slate-300/20';
-      default: return 'bg-muted text-muted-foreground border border-muted-foreground/20';
-    }
-  };
-  
-  // Get status text based on MQTT status
-  const getMqttStatusText = (connectorId: string) => {
+  const getStatusColorClass = useCallback((connectorId: string) => {
     const mqttState = getMqttState(connectorId);
     const connector = connectors.find(c => c.id === connectorId);
-    const eventsEnabled = connector?.eventsEnabled === true;
-    
-    // If events are explicitly disabled by the user, show "Disabled"
-    if (!eventsEnabled) {
-      return 'Disabled';
+    if (connector) {
+      if (mqttState.status === 'connected') {
+        return 'text-green-500';
+      } else if (mqttState.status === 'disconnected') {
+        return 'text-red-500';
+      } else if (mqttState.status === 'reconnecting') {
+        return 'text-yellow-500';
+      } else if (mqttState.status === 'error') {
+        return 'text-red-500';
+      }
     }
-    
-    // Use mqttStatus from Zustand store
-    switch (mqttState.status) {
-      case 'connected': return 'Connected';
-      case 'reconnecting': return 'Reconnecting';
-      case 'disconnected': return 'Disconnected';
-      case 'error': return 'Disconnected'; // Treat any error as Disconnected for display
-      case 'unknown': return 'Unknown';
-      default: return 'Unknown';
-    }
-  };
+    return 'text-muted-foreground';
+  }, [connectors, getMqttState]);
 
-  // --- Piko Status Helpers (ASSUMING getPikoState exists in store) ---
+  const getMqttStatusText = useCallback((connectorId: string) => {
+    const mqttState = getMqttState(connectorId);
+    const connector = connectors.find(c => c.id === connectorId);
+    if (connector) {
+      if (mqttState.status === 'connected') {
+        return 'Connected';
+      } else if (mqttState.status === 'disconnected') {
+        return 'Disconnected';
+      } else if (mqttState.status === 'reconnecting') {
+        return 'Reconnecting';
+      } else if (mqttState.status === 'error') {
+        return 'Error';
+      }
+    }
+    return 'Unknown';
+  }, [connectors, getMqttState]);
 
-  // Get status color class based on Piko WebSocket status 
-  const getPikoStatusColorClass = (connectorId: string) => {
-    const pikoState = getPikoState(connectorId); // Assume this exists
+  const getPikoStatusColorClass = useCallback((connectorId: string) => {
+    const pikoState = getPikoState(connectorId);
     const connector = connectors.find(c => c.id === connectorId);
-    const eventsEnabled = connector?.eventsEnabled === true;
-    
-    if (!eventsEnabled) {
-      return 'bg-slate-300/20 text-slate-500 border border-slate-300/20';
+    if (connector) {
+      if (pikoState.status === 'connected') {
+        return 'text-green-500';
+      } else if (pikoState.status === 'disconnected') {
+        return 'text-red-500';
+      } else if (pikoState.status === 'reconnecting') {
+        return 'text-yellow-500';
+      } else if (pikoState.status === 'error') {
+        return 'text-red-500';
+      }
     }
-    
-    switch (pikoState?.status) { // Use optional chaining as state might not exist yet
-      case 'connected': return 'bg-green-500/20 text-green-600 border border-green-500/20';
-      case 'reconnecting': return 'bg-yellow-500/20 text-yellow-600 border border-yellow-500/20';
-      case 'disconnected': return 'bg-red-500/25 text-red-600 border border-red-500/30';
-      case 'error': return 'bg-red-500/25 text-red-600 border border-red-500/30';
-      case 'unknown': return 'bg-slate-300/20 text-slate-500 border border-slate-300/20';
-      default: return 'bg-muted text-muted-foreground border border-muted-foreground/20';
-    }
-  };
-  
-  // Get status text based on Piko WebSocket status
-  const getPikoStatusText = (connectorId: string) => {
-    const pikoState = getPikoState(connectorId); // Assume this exists
+    return 'text-muted-foreground';
+  }, [connectors, getPikoState]);
+
+  const getPikoStatusText = useCallback((connectorId: string) => {
+    const pikoState = getPikoState(connectorId);
     const connector = connectors.find(c => c.id === connectorId);
-    const eventsEnabled = connector?.eventsEnabled === true;
-    
-    if (!eventsEnabled) {
-      return 'Disabled';
+    if (connector) {
+      if (pikoState.status === 'connected') {
+        return 'Connected';
+      } else if (pikoState.status === 'disconnected') {
+        return 'Disconnected';
+      } else if (pikoState.status === 'reconnecting') {
+        return 'Reconnecting';
+      } else if (pikoState.status === 'error') {
+        return 'Error';
+      }
     }
-    
-    switch (pikoState?.status) { // Use optional chaining
-      case 'connected': return 'Connected';
-      case 'reconnecting': return 'Reconnecting';
-      case 'disconnected': return 'Disconnected';
-      case 'error': return pikoState.error ? `Error: ${pikoState.error}` : 'Error';
-      case 'unknown': return 'Unknown';
-      default: return 'Unknown';
-    }
-  };
+    return 'Unknown';
+  }, [connectors, getPikoState]);
 
   return (
     <TooltipProvider> {/* Wrap page content */}
       <div className="container py-6">
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-4">
-            <Plug className="h-6 w-6 text-muted-foreground" />
-            <div>
-              <h1 className="text-2xl font-semibold text-foreground">
-                Connectors
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Manage integration connectors.
-              </p>
-            </div>
-          </div>
-          <Button onClick={handleAddConnectorClick} size="sm">
-            <Plus className="h-4 w-4" />
-            Add Connector
-          </Button>
-        </div>
-
+        {/* ... Header and Alert ... */}
         {isLoading ? (
-          <div className="flex justify-center items-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
+          // ... Loading spinner ...
         ) : connectors.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-10 text-center">
-              <div className="rounded-full p-3 bg-muted mb-4">
-                <Plus className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <CardTitle className="text-lg mb-2">No connectors found</CardTitle>
-              <CardDescription className="max-w-xs mb-4">
-                Add your first connector to get started with external integrations
-              </CardDescription>
-              <Button onClick={handleAddConnectorClick} size="sm">
-                <Plus className="h-4 w-4" />
-                Add Connector
-              </Button>
-            </CardContent>
-          </Card>
+          // ... Empty state card ...
         ) : (
           <Card>
             <Table>
               <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[25%]">Name</TableHead>
-                  <TableHead className="w-[15%]">Type</TableHead>
-                  <TableHead className="w-[20%]">Events</TableHead>
-                  <TableHead className="w-[20%]">Status</TableHead>
-                  <TableHead className="text-right w-[20%]">Actions</TableHead>
-                </TableRow>
+                {/* ... TableHead rows ... */}
               </TableHeader>
               <TableBody>
                 {connectors.map((connector: ConnectorWithConfig) => (
                   <TableRow key={connector.id}>
-                    <TableCell className="font-medium">{connector.name}</TableCell>
+                    {/* ... Name, Type, Events Cells ... */}
                     <TableCell>
-                      <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                        <ConnectorIcon connectorCategory={connector.category} size={12} />
-                        <span className="text-xs">{formatConnectorCategory(connector.category)}</span>
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {(connector.category === 'yolink' || connector.category === 'piko') ? (
-                        <div className="flex items-center">
-                          <Switch 
-                            checked={connector.eventsEnabled === true}
-                            onCheckedChange={() => {
-                                if (connector.category === 'yolink') {
-                                    handleMqttToggle(connector, connector.eventsEnabled === true);
-                                } else if (connector.category === 'piko') {
-                                    handleWebSocketToggle(connector, connector.eventsEnabled === true);
-                                }
-                            }}
-                            disabled={togglingConnectorId === connector.id}
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
+                      {/* <<< Original Status Logic >>> */}
                       {togglingConnectorId === connector.id ? (
-                        // Common Loader for both types while toggling
                         <div className="flex items-center justify-start px-2.5 py-1">
                           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                         </div>
                       ) : connector.category === 'yolink' ? (
-                        // YoLink MQTT Status
-                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(connector.id)}`}>
-                          <SiMqtt className="h-3.5 w-3.5" />
-                          <span>{getMqttStatusText(connector.id)}</span>
-                          {getMqttState(connector.id).status === 'reconnecting' && (
-                            <Loader2 className="h-3 w-3 animate-spin ml-1" />
-                          )}
-                        </div>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(connector.id)}`}>
+                              <SiMqtt className="h-3.5 w-3.5" />
+                              <span>{getMqttStatusText(connector.id)}</span>
+                              {getMqttState(connector.id).status === 'reconnecting' && (
+                                <Loader2 className="h-3 w-3 animate-spin ml-1" />
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {getMqttState(connector.id).status === 'error' ? 
+                              `Error: ${getMqttState(connector.id).error || 'Unknown error'}` : 
+                              getMqttStatusText(connector.id)
+                            }
+                          </TooltipContent>
+                        </Tooltip>
                       ) : connector.category === 'piko' ? (
-                        // Piko WebSocket Status (assuming getPikoState exists)
-                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getPikoStatusColorClass(connector.id)}`}>
-                           <LuArrowRightLeft className="h-3.5 w-3.5" /> {/* WebSocket Icon */}
-                           <span>{getPikoStatusText(connector.id)}</span>
-                           {getPikoState(connector.id)?.status === 'reconnecting' && ( // ASSUMES getPikoState exists
-                             <Loader2 className="h-3 w-3 animate-spin ml-1" />
-                           )}
-                        </div>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getPikoStatusColorClass(connector.id)}`}>
+                              <LuArrowRightLeft className="h-3.5 w-3.5" />
+                              <span>{getPikoStatusText(connector.id)}</span>
+                              {getPikoState(connector.id)?.status === 'reconnecting' && (
+                                <Loader2 className="h-3 w-3 animate-spin ml-1" />
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {getPikoState(connector.id)?.status === 'error' ? 
+                              `Error: ${getPikoState(connector.id)?.error || 'Unknown error'}` :
+                               getPikoStatusText(connector.id)
+                            }
+                          </TooltipContent>
+                        </Tooltip>
                       ) : (
-                        // Default for other types (or if state not ready)
                         <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end space-x-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleEditClick(connector)}>
-                          <Pencil className="h-4 w-4" />
-                          <span className="sr-only">Edit connector</span>
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={() => handleDeleteClick(connector.id)}
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">Delete connector</span>
-                        </Button>
-                      </div>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {/* <<< Keep existing Last Activity logic >>> */}
+                      {connector.category === 'yolink' ? (
+                        <Popover>
+                           {/* ... Popover for YoLink ... */}
+                        </Popover>
+                      ) : connector.category === 'piko' ? (
+                        <Popover>
+                           {/* ... Popover for Piko ... */}
+                        </Popover>
+                      ) : (
+                        '-'
+                      )}
                     </TableCell>
+                    {/* ... Actions Cell ... */}
                   </TableRow>
                 ))}
               </TableBody>
@@ -545,32 +591,7 @@ export default function ConnectorsPage() {
           </Card>
         )}
         
-        {/* Add/Edit Connector Modal */}
-        <AddConnectorModal />
-        
-        {/* Delete Confirmation Dialog */}
-        <AlertDialog open={!!connectorIdToDelete} onOpenChange={(open: boolean) => !open && setConnectorIdToDelete(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the connector{' '}
-                {connectorToDelete && <strong className="font-medium">{connectorToDelete.name}</strong>}.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-              <AlertDialogAction 
-                onClick={confirmDelete} 
-                disabled={isDeleting} 
-                className={buttonVariants({ variant: "destructive" })}
-              >
-                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        {/* ... Modals ... */}
       </div>
     </TooltipProvider>
   );

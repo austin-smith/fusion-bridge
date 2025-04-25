@@ -19,6 +19,7 @@ interface ConnectorMqttState {
   error: string | null;
   lastEventTime: number | null; 
   eventCount: number | null;
+  lastStandardizedPayload: Record<string, any> | null;
 }
 
 // Piko WebSocket state for a specific connector
@@ -27,6 +28,7 @@ interface ConnectorPikoState {
   error: string | null;
   lastEventTime: number | null;
   eventCount: number | null;
+  lastStandardizedPayload: Record<string, any> | null;
 }
 
 interface DeviceStateInfo {
@@ -111,6 +113,7 @@ const initialMqttState: ConnectorMqttState = {
   error: null,
   lastEventTime: null,
   eventCount: null,
+  lastStandardizedPayload: null,
 };
 
 // Initial state for Piko WebSocket (default)
@@ -119,6 +122,7 @@ const initialPikoState: ConnectorPikoState = {
   error: null,
   lastEventTime: null,
   eventCount: null,
+  lastStandardizedPayload: null,
 };
 
 export const useFusionStore = create<FusionState>((set, get) => ({

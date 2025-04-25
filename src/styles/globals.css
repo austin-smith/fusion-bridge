@@ -94,3 +94,10 @@
     @apply bg-background text-foreground;
   }
 } 
+
+@layer components {
+  /* Custom Tooltip Styling */
+  [role="tooltip"] {
+    @apply bg-black text-white dark:bg-zinc-800 dark:text-white;
+  }
+} 
