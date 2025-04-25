@@ -1,14 +1,13 @@
 // Common interfaces used throughout the application
-import { TypedDeviceInfo } from './device-mapping';
+import { TypedDeviceInfo } from '@/lib/mappings/definitions';
 
-// Node type for the database entities
-export interface Node {
+// Connector type for the database entities
+export interface Connector {
   id: string;
   category: string;
   name: string;
   cfg_enc: string;
   createdAt: Date;
-  yolinkHomeId?: string;
   eventsEnabled: boolean;
 }
 
@@ -26,8 +25,8 @@ export interface PikoConfigRaw {
   password: string;
 }
 
-// Node with decoded configuration
-export interface NodeWithConfig<T = unknown> extends Omit<Node, 'cfg_enc'> {
+// Connector with decoded configuration
+export interface ConnectorWithConfig<T = unknown> extends Omit<Connector, 'cfg_enc'> {
   config: T;
 }
 

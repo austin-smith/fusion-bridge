@@ -1,111 +1,162 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/data/db';
-import { nodes, devices } from '@/data/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { connectors, devices } from '@/data/db/schema';
+import { eq, sql, and } from 'drizzle-orm';
 import * as eventsRepository from '@/data/repositories/events';
-import { getDeviceTypeInfo } from '@/lib/device-mapping';
-import { TypedDeviceInfo } from '@/types/device-mapping';
-import { translateDeviceState } from '@/lib/device-state-translation';
+import { getDeviceTypeInfo } from '@/lib/mappings/identification';
+import { TypedDeviceInfo, DisplayState, DeviceType, EventCategory } from '@/lib/mappings/definitions';
+import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
+import { PikoConfig } from '@/services/drivers/piko';
 
-// Interface for the raw event structure returned by the repository's map
-interface RawRepoEvent {
-  event: string;
-  time: number;
-  msgid: string;
-  data: Record<string, unknown>;
-  payload: Record<string, unknown>;
+// Define the enriched event structure returned by getRecentEvents
+interface RepoEnrichedEvent {
+  id: number;
+  eventUuid: string;
   deviceId: string;
+  timestamp: Date;
+  standardizedEventCategory: string;
+  standardizedEventType: string;
+  standardizedPayload: unknown; // Keep as unknown for parsing
+  rawPayload: unknown;
+  rawEventType: string | null; // Added from repo
+  connectorId: string;
+  deviceName: string | null; // Field from JOIN
+  rawDeviceType: string | null; // Field from JOIN
+  connectorName: string | null; // Field from JOIN
+  connectorCategory: string | null; // Field from JOIN
+  connectorConfig: string | null;
 }
 
-// Define an interface for the enriched event structure sent to the client
-interface EnrichedEvent extends RawRepoEvent {
-  deviceName: string;
-  connectorName: string;
-  deviceTypeInfo: TypedDeviceInfo;
+// Interface for the final enriched event data returned by the API
+interface ApiEnrichedEvent {
+  id: number;
+  eventUuid: string;
+  deviceId: string;
+  deviceName?: string;
+  connectorId: string;
+  connectorName?: string;
   connectorCategory: string;
-  displayState: string | undefined;
+  timestamp: number; // Epoch ms
+  eventCategory: string;
+  eventType: string;
+  payload: Record<string, any> | null;
+  rawPayload: Record<string, any> | null;
+  deviceTypeInfo: TypedDeviceInfo;
+  displayState?: DisplayState;
+  rawEventType?: string; // Add optional rawEventType
+  bestShotUrlComponents?: {
+    pikoSystemId: string;
+    connectorId: string;
+    objectTrackId: string;
+    cameraId: string;
+  };
 }
 
 // GET handler to fetch events
-export async function GET({ url }: Request) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(url);
-    const limit = parseInt(searchParams.get('limit') || '100', 10);
-    
-    // Get basic events first (matches RawRepoEvent structure)
-    const rawEvents: RawRepoEvent[] = await eventsRepository.getRecentEvents(limit);
-    
-    // Enrich with device and connector info
-    const enrichedEvents = await Promise.all(rawEvents.map(async (event): Promise<EnrichedEvent> => {
-      let deviceName = 'Unknown Device';
-      let connectorName = 'Unknown';
-      let connectorCategory = 'unknown'; // Default category
-      let rawDeviceType: string | null = null; // Store the raw identifier
+    // Fetch enriched events directly from the repository
+    const recentEnrichedEvents: RepoEnrichedEvent[] = await eventsRepository.getRecentEvents(200);
 
-      // Try to find device info
-      const deviceInfoResult = await db
-        .select({
-          name: devices.name,
-          type: devices.type, // Fetch raw identifier
-          connectorId: devices.connectorId,
-        })
-        .from(devices)
-        .where(eq(devices.deviceId, event.deviceId))
-        .limit(1);
+    // Map the repository results to the API response structure
+    const apiEvents = recentEnrichedEvents.map((event: RepoEnrichedEvent): ApiEnrichedEvent => {
+      let payload: Record<string, any> | null = null;
+      let rawPayload: Record<string, any> | null = null;
+      let displayState: DisplayState | undefined = undefined;
+      let bestShotUrlComponents: ApiEnrichedEvent['bestShotUrlComponents'] | undefined = undefined;
+      const connectorCategory = event.connectorCategory ?? 'unknown'; // Default if null from JOIN
+
+      // Try to parse standardized payload
+      try {
+        if (typeof event.standardizedPayload === 'string' && event.standardizedPayload) {
+             payload = JSON.parse(event.standardizedPayload);
+        } else {
+             payload = event.standardizedPayload as Record<string, any> | null;
+        }
+      } catch (e) {
+        console.warn(`Failed to parse standardized payload for event ${event.eventUuid}:`, e);
+      }
+
+      // Try to parse raw payload
+      try {
+        if (typeof event.rawPayload === 'string' && event.rawPayload) {
+             rawPayload = JSON.parse(event.rawPayload);
+        } else {
+             rawPayload = event.rawPayload as Record<string, any> | null;
+        }
+      } catch (e) {
+        console.warn(`Failed to parse raw payload for event ${event.eventUuid}:`, e);
+      }
+
+      // Derive deviceTypeInfo using the joined rawDeviceType
+      const deviceTypeInfo = getDeviceTypeInfo(connectorCategory, event.rawDeviceType ?? 'Unknown');
+
+      // Derive displayState from parsed payload
+      displayState = payload?.displayState;
       
-      // If device found, get its details and connector info
-      if (deviceInfoResult.length > 0) {
-        const deviceInfo = deviceInfoResult[0];
-        deviceName = deviceInfo.name;
-        rawDeviceType = deviceInfo.type; // Store the raw identifier
+      // NEW: Check if this is a Piko analytics event with an objectTrackId
+      if (
+        connectorCategory === 'piko' &&
+        event.standardizedEventCategory === EventCategory.ANALYTICS && // Check category
+        payload?.objectTrackId && 
+        typeof payload.objectTrackId === 'string' &&
+        event.deviceId // Ensure we have the camera/device ID
+      ) {
+        // --- START: Parse Piko Config to get actual System ID ---
+        let actualPikoSystemId: string | undefined = undefined;
+        
+        if (event.connectorConfig) {
+            try {
+                const config = JSON.parse(event.connectorConfig) as PikoConfig;
+                if (config.type === 'cloud' && config.selectedSystem) {
+                    actualPikoSystemId = config.selectedSystem;
+                } else {
+                  console.warn(`Piko event ${event.eventUuid} has invalid or incomplete config in connector ${event.connectorId}`);
+                }
+            } catch (e) {
+                console.warn(`Failed to parse Piko config for connector ${event.connectorId} on event ${event.eventUuid}:`, e);
+            }
+        }
+        // --- END: Parse Piko Config ---
 
-        if (deviceInfo.connectorId) {
-          const connectorInfo = await db
-            .select({
-              name: nodes.name,
-              category: nodes.category, // Fetch connector category
-            })
-            .from(nodes)
-            .where(eq(nodes.id, deviceInfo.connectorId))
-            .limit(1);
-          
-          if (connectorInfo.length > 0) {
-            connectorName = connectorInfo[0].name;
-            connectorCategory = connectorInfo[0].category; // Store connector category
-          }
+        // Only create components if we successfully got the actual Piko System ID
+        if (actualPikoSystemId) {
+             bestShotUrlComponents = {
+                pikoSystemId: actualPikoSystemId, // USE ACTUAL PIKO SYSTEM ID
+                objectTrackId: payload.objectTrackId,
+                cameraId: event.deviceId, // The event's deviceId is the camera GUID
+                connectorId: event.connectorId // Pass our internal connector ID too (using correct name)
+             };
+        } else {
+             console.warn(`Could not determine actual Piko System ID for event ${event.eventUuid}, cannot create bestShotUrlComponents.`);
         }
       }
-      
-      // Get mapped type info
-      const deviceTypeInfo = getDeviceTypeInfo(connectorCategory, rawDeviceType);
 
-      // Perform state translation by passing the relevant payload part
-      // translateDeviceState will delegate based on connectorCategory
-      const payloadData = event.payload?.data;
-      const displayState = translateDeviceState(
-        connectorCategory,
-        rawDeviceType, // Pass the TYPE string (e.g., 'DoorSensor') for mapping lookup
-        // Ensure payloadData is an object before passing
-        typeof payloadData === 'object' && payloadData !== null 
-          ? payloadData as Record<string, unknown>
-          : undefined
-      );
+      // Assemble the final API event object
+      const finalEventObject: ApiEnrichedEvent = {
+        id: event.id,
+        eventUuid: event.eventUuid,
+        deviceId: event.deviceId,
+        deviceName: event.deviceName ?? undefined, // Use joined name, convert null to undefined
+        connectorId: event.connectorId,
+        connectorName: event.connectorName ?? undefined, // Use joined name
+        connectorCategory: connectorCategory,
+        timestamp: event.timestamp.getTime(), // Convert Date to epoch ms
+        eventCategory: event.standardizedEventCategory,
+        eventType: event.standardizedEventType,
+        payload: payload,
+        deviceTypeInfo: deviceTypeInfo,
+        displayState: displayState,
+        rawPayload: rawPayload,
+        rawEventType: event.rawEventType ?? undefined, // Include rawEventType
+        bestShotUrlComponents: bestShotUrlComponents,
+      }; // Removed 'satisfies ApiEnrichedEvent' here to simplify debugging if needed
 
-      // Return enriched event conforming to the interface
-      return {
-        ...event, // Spread the raw event properties
-        deviceName,
-        connectorName,
-        connectorCategory, // Add the fetched connector category
-        deviceTypeInfo, // Add the mapped type info object
-        displayState, // Add the translated display state
-      };
-    }));
-    
-    return NextResponse.json({
-      success: true,
-      data: enrichedEvents
+      return finalEventObject; // Return the constructed object
     });
+
+    return NextResponse.json({ success: true, data: apiEvents });
+
   } catch (error) {
     console.error('Error fetching events:', error);
     return NextResponse.json(

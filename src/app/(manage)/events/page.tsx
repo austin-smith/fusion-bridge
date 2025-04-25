@@ -38,8 +38,15 @@ import {
   PaginationState,
   getPaginationRowModel,
 } from '@tanstack/react-table';
-import { getDeviceTypeIcon, getDisplayStateIcon } from '@/lib/device-mapping';
-import { TypedDeviceInfo, DisplayState } from '@/types/device-mapping';
+import { getDeviceTypeIcon, getDisplayStateIcon } from '@/lib/mappings/presentation';
+import { 
+  TypedDeviceInfo, 
+  DisplayState, 
+  EventType, 
+  EventCategory, 
+  EVENT_TYPE_DISPLAY_MAP, 
+  EVENT_CATEGORY_DISPLAY_MAP 
+} from '@/lib/mappings/definitions';
 import {
   Tooltip,
   TooltipContent,
@@ -62,24 +69,34 @@ import {
 import { formatConnectorCategory } from "@/lib/utils";
 import { toast } from 'sonner';
 import { DeviceDetailDialogContent } from '@/components/features/devices/device-detail-dialog-content';
+import { type DeviceDetailProps } from '@/components/features/devices/device-detail-dialog-content';
 import { DeviceWithConnector } from '@/types';
 
-// Update the event interface - back to simple placeholders
+// Update the event interface
 interface EnrichedEvent {
-  event: string;
-  time: number;
-  msgid: string;
-  data: Record<string, unknown>;
-  payload?: Record<string, unknown>;
+  id: number; // Added ID from API response
+  eventUuid: string; // Added from API response
+  timestamp: number; // ADD this (epoch ms)
+  payload?: Record<string, unknown> | null; // Use the payload from API
+  rawPayload?: Record<string, any> | null; // Add rawPayload from API
   deviceId: string;
   deviceName?: string;
   connectorName?: string;
   deviceTypeInfo: TypedDeviceInfo;
   connectorCategory: string;
+  connectorId: string; // Added from API response
+  eventCategory: string; // Added from API response
+  eventType: string; // Added from API response
+  rawEventType?: string; // Add optional rawEventType from API
   displayState?: DisplayState | undefined;
-  thumbnailUrl?: string; // For single video placeholder
-  videoUrl?: string; // For single video placeholder
-  // associatedPikoCameras?: PikoCameraInfo[]; // Removed array
+  thumbnailUrl?: string; // KEEP For single video placeholder FOR NOW
+  videoUrl?: string; // KEEP For single video placeholder FOR NOW
+  bestShotUrlComponents?: {
+    pikoSystemId: string;
+    connectorId: string;
+    objectTrackId: string;
+    cameraId: string;
+  };
 }
 
 // Define a cleaner tag component for the dialog
@@ -157,7 +174,7 @@ export default function EventsPage() {
   const [events, setEvents] = useState<EnrichedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [sorting, setSorting] = useState<SortingState>([
-    { id: 'time', desc: true }
+    { id: 'timestamp', desc: true }
   ]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [grouping, setGrouping] = useState<GroupingState>([]);
@@ -171,7 +188,7 @@ export default function EventsPage() {
 
   // State for device detail dialog
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
-  const [selectedDeviceForDialog, setSelectedDeviceForDialog] = useState<DeviceWithConnector | null>(null);
+  const [selectedDeviceForDialog, setSelectedDeviceForDialog] = useState<DeviceDetailProps | null>(null);
   const [isLoadingDeviceDetail, setIsLoadingDeviceDetail] = useState(false);
 
   // Set page title
@@ -185,19 +202,43 @@ export default function EventsPage() {
       const response = await fetch('/api/events');
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to fetch events');
+        let errorMessage = `HTTP error! Status: ${response.status}`;
+        try {
+          // Try to get a more specific error message from the API response body
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (jsonError) {
+          // Ignore JSON parsing error if the body isn't valid JSON
+          console.warn('Failed to parse error response body as JSON:', jsonError);
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
+
+      if (!data.success) {
+        // Handle cases where the API returns success: false even with a 200 status
+        throw new Error(data.error || 'API returned success: false');
+      }
 
       setEvents(data.data || []);
 
     } catch (error) {
       console.error('Error fetching events:', error);
-      // toast.error(error instanceof Error ? error.message : 'Failed to fetch events');
+      // Display a user-friendly message based on the error type
+      const displayMessage = error instanceof Error ? error.message : 'An unknown error occurred while fetching events';
+      // Only toast on initial load failure or if specifically needed, avoid spamming toasts on interval failures
+      if (isInitialLoad) {
+         toast.error(displayMessage);
+      } else {
+         console.warn(`Background fetch failed: ${displayMessage}`); // Log subsequent errors quietly
+      }
     } finally {
-      setLoading(false);
+      // Only set loading to false on the initial load attempt
+      // Subsequent background fetches shouldn't affect the loading state
+      if (isInitialLoad) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -219,8 +260,14 @@ export default function EventsPage() {
       }
 
       // API should now return the single device object directly when queried by ID
-      if (result.data) {
-        setSelectedDeviceForDialog(result.data);
+      const deviceData = result.data as DeviceWithConnector; // Cast for type safety
+      if (deviceData) {
+        // Construct the object expected by the dialog, including the composite 'id'
+        const deviceForDialog: DeviceDetailProps = {
+          ...deviceData,
+          id: `${deviceData.connectorId}:${deviceData.deviceId}` // Construct the required ID
+        };
+        setSelectedDeviceForDialog(deviceForDialog);
       } else {
         // Handle case where data might be unexpectedly null/undefined even with success: true
         console.error('API returned success but no device data for ID:', deviceId);
@@ -243,7 +290,7 @@ export default function EventsPage() {
     fetchEvents(true);
 
     const intervalId = setInterval(() => {
-      fetchEvents();
+      fetchEvents(false);
     }, 5000);
 
     return () => {
@@ -333,13 +380,24 @@ export default function EventsPage() {
       },
     },
     {
-      accessorKey: 'event',
+      accessorKey: 'eventCategory',
+      header: "Event Category",
+      enableSorting: true,
+      enableColumnFilter: true,
+      cell: ({ row }) => (
+        <Badge variant="outline">
+          {EVENT_CATEGORY_DISPLAY_MAP[row.original.eventCategory as EventCategory] || row.original.eventCategory}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: 'eventType',
       header: "Event Type",
       enableSorting: true,
       enableColumnFilter: true,
       cell: ({ row }) => (
         <Badge variant="outline">
-          {row.getValue<string>('event')}
+          {EVENT_TYPE_DISPLAY_MAP[row.original.eventType as EventType] || row.original.eventType}
         </Badge>
       ),
     },
@@ -379,12 +437,12 @@ export default function EventsPage() {
       },
     },
     {
-      accessorKey: 'time',
+      accessorKey: 'timestamp',
       header: "Time",
       enableSorting: true,
       enableColumnFilter: true,
       cell: ({ row }: { row: Row<EnrichedEvent> }) => {
-        const timeValue = row.getValue<number>('time');
+        const timeValue = row.getValue<number>('timestamp');
         if (isNaN(timeValue) || timeValue <= 0) {
           return <span className="text-muted-foreground">Invalid time</span>;
         }
@@ -397,14 +455,14 @@ export default function EventsPage() {
         const isThisWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) < eventTime;
         
         let displayTime;
-        const tooltipTime = format(eventTime, 'PPpp'); // Changed let to const
+        const tooltipTime = format(eventTime, 'PPpp');
         
         if (isToday) {
-          displayTime = format(eventTime, 'h:mm a'); // Just time for today
+          displayTime = format(eventTime, 'h:mm a');
         } else if (isThisWeek) {
-          displayTime = format(eventTime, 'EEE h:mm a'); // Day and time for this week
+          displayTime = format(eventTime, 'EEE h:mm a');
         } else {
-          displayTime = format(eventTime, 'MMM d, yyyy'); // Date for older events
+          displayTime = format(eventTime, 'MMM d, yyyy');
         }
         
         return (
@@ -487,16 +545,12 @@ export default function EventsPage() {
                 </div>
                 
                 {/* Context Area: Device/Tags on Left, Time on Right */}
-                <div className="grid grid-cols-[1fr_auto] gap-x-4 items-start mb-4"> {/* Parent grid */}
-                  {/* Left Column: Device Name + Tags */}
-                   {/* Event Context: Tags + Device Name Row */}
-                  <div className="flex flex-wrap gap-1.5"> {/* Removed mb-2 */}
-                    {/* Device Name - Most prominent */}
+                <div className="grid grid-cols-[1fr_auto] gap-x-4 items-start mb-4">
+                  <div className="flex flex-wrap gap-1.5">
                     <div className="w-full px-0.5 mb-0.5">
                       <span className="text-md font-medium">{eventData.deviceName || eventData.deviceId}</span>
                     </div>
                     
-                    {/* Tags Row */}
                     <EventTag 
                       icon={<ConnectorIcon connectorCategory={eventData.connectorCategory} size={12} />}
                       label={eventData.connectorName || formatConnectorCategory(eventData.connectorCategory)}
@@ -524,18 +578,13 @@ export default function EventsPage() {
                       />
                     )}
                   </div>
-                  {/* End Left Column */}
-
-                  {/* Right Column: Event Time */}
-                   {/* Event Time - Moved here */}
-                  <div className="text-xs text-muted-foreground text-right"> {/* Removed mb, added text-right */}
-                    Event occurred {formatDistanceToNow(new Date(eventData.time), { addSuffix: true })}
+                  <div className="text-xs text-muted-foreground text-right">
+                    Event occurred {formatDistanceToNow(new Date(eventData.timestamp), { addSuffix: true })}
                     <span className="block mt-0.5 opacity-80">
-                      {format(new Date(eventData.time), 'PPpp')}
+                      {format(new Date(eventData.timestamp), 'PPpp')}
                     </span>
                   </div>
-                  {/* End Right Column */}
-                </div> {/* End Parent grid */}
+                </div>
 
                 <DialogFooter>
                   <DialogClose asChild>
@@ -547,7 +596,17 @@ export default function EventsPage() {
             {/* --- End Single Unconditional Video Dialog --- */}
 
             {/* Existing Details Button */}
-            <EventDetailDialogContent event={eventData} />
+            <EventDetailDialogContent 
+              event={{
+                ...eventData,
+                bestShotUrlComponents: eventData.bestShotUrlComponents ? {
+                  pikoSystemId: eventData.bestShotUrlComponents.pikoSystemId,
+                  connectorId: eventData.bestShotUrlComponents.connectorId,
+                  objectTrackId: eventData.bestShotUrlComponents.objectTrackId,
+                  cameraId: eventData.bestShotUrlComponents.cameraId,
+                } : undefined,
+              }}
+            />
           </div>
         );
       },
@@ -577,7 +636,7 @@ export default function EventsPage() {
     getExpandedRowModel: getExpandedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     enableMultiSort: true,
-    getRowId: (originalRow) => originalRow.msgid, 
+    getRowId: (originalRow) => originalRow.eventUuid,
   });
 
   // Effect to update column filters based on category filter
@@ -698,14 +757,14 @@ export default function EventsPage() {
         </Dialog>
 
         {/* Conditional Messages - Make non-shrinkable */}
-        <div className="flex-shrink-0 mb-4"> {/* Added mb-4 for spacing */} 
+        <div className="flex-shrink-0 mb-4">
           {loading && events.length === 0 ? (
             <p className="text-muted-foreground">Loading initial events...</p>
           ) : !loading && events.length === 0 ? (
             <p className="text-muted-foreground">
               No events have been received yet. This page will update periodically.
             </p>
-          ) : null} {/* Render nothing if table should show */} 
+          ) : null}
         </div>
 
         {/* Table Container - Conditionally render, make it grow and handle overflow */}
@@ -869,7 +928,7 @@ export default function EventsPage() {
               </div>
             </div>
           </div>
-        )} {/* End conditional rendering for table */} 
+        )}
       </TooltipProvider>
     </div>
   );

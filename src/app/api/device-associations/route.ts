@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/data/db';
-import { cameraAssociations, devices, nodes } from '@/data/db/schema';
+import { cameraAssociations, devices, connectors } from '@/data/db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -146,11 +146,11 @@ export async function PUT(request: Request) {
       .select({ id: devices.id })
       .from(devices)
       .innerJoin(
-        nodes,
-        eq(devices.connectorId, nodes.id)
+        connectors,
+        eq(devices.connectorId, connectors.id)
       )
       .where(and(
-        eq(nodes.category, 'piko'),
+        eq(connectors.category, 'piko'),
         inArray(devices.deviceId, pikoCameraIds)
       ));
 

@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/data/db';
-import { automations, nodes } from '@/data/db/schema';
+import { automations, connectors } from '@/data/db/schema';
 import { AutomationConfigSchema } from '@/lib/automation-schemas';
 import { z } from 'zod';
 import { eq, sql, and } from 'drizzle-orm';
@@ -10,7 +10,7 @@ import { alias } from 'drizzle-orm/sqlite-core';
 // Ensures the entire configuration is provided on update
 const PutBodySchema = z.object({
     name: z.string().min(1, { message: "Name is required" }),
-    sourceNodeId: z.string().uuid({ message: "Invalid source node ID" }),
+    sourceConnectorId: z.string().uuid({ message: "Invalid source connector ID" }),
     enabled: z.boolean().optional(), // Make optional for PUT
     config: AutomationConfigSchema, // Validate the nested config object
 });
@@ -26,30 +26,29 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Fetch automation and join with nodes to get names directly
-    // Use aliases for joining the same table twice
-    const sourceNodeAlias = alias(nodes, "sourceNode");
+    // Use connectors table for the alias
+    const sourceConnectorAlias = alias(connectors, "sourceConnector"); // Renamed alias
 
     const result = await db
       .select({
         id: automations.id,
         name: automations.name,
         enabled: automations.enabled,
-        sourceNodeId: automations.sourceNodeId,
+        sourceConnectorId: automations.sourceConnectorId,
         configJson: automations.configJson,
         createdAt: automations.createdAt,
         updatedAt: automations.updatedAt,
-        sourceNodeName: sourceNodeAlias.name,
+        sourceConnectorName: sourceConnectorAlias.name, // Use new alias name
       })
       .from(automations)
       .where(eq(automations.id, id))
-      .leftJoin(sourceNodeAlias, eq(automations.sourceNodeId, sourceNodeAlias.id))
+      .leftJoin(sourceConnectorAlias, eq(automations.sourceConnectorId, sourceConnectorAlias.id)) // Use new alias
       .limit(1);
 
     if (result.length === 0) {
       return NextResponse.json({ message: "Automation not found" }, { status: 404 });
     }
-
+    
     return NextResponse.json(result[0]);
 
   } catch (error) {
@@ -76,16 +75,21 @@ export async function PUT(
       return NextResponse.json({ message: "Invalid request body", errors: validationResult.error.flatten().fieldErrors }, { status: 400 });
     }
 
-    const { name, sourceNodeId, enabled, config } = validationResult.data;
+    const { name, sourceConnectorId, enabled, config } = validationResult.data;
 
-    // TODO: Optional - Validate that sourceNodeId exists?
+    // Optional: Validate that sourceConnectorId exists in the connectors table
+    const sourceConnectorExists = await db.select({ id: connectors.id }).from(connectors).where(eq(connectors.id, sourceConnectorId)).limit(1);
+    if (!sourceConnectorExists.length) {
+        return NextResponse.json({ message: "Source connector not found" }, { status: 404 });
+    }
+    // TODO: Validate targetConnectorId within actions config against connectors table?
 
     // Update the record
     const updatedAutomation = await db
       .update(automations)
       .set({
         name: name,
-        sourceNodeId: sourceNodeId,
+        sourceConnectorId: sourceConnectorId,
         enabled: enabled, // Use validated value (could be undefined if optional allows)
         configJson: config,
         updatedAt: sql`(unixepoch('now', 'subsec') * 1000)`, // Manually update timestamp

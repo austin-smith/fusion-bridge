@@ -5,7 +5,7 @@ export const CreateEventActionParamsSchema = z.object({
   sourceTemplate: z.string().min(1, { message: "Source is required" }),
   captionTemplate: z.string().min(1, { message: "Caption is required" }),
   descriptionTemplate: z.string().min(1, { message: "Description is required" }),
-  targetNodeId: z.string().uuid("Target Connector is required and must be a valid UUID"),
+  targetConnectorId: z.string().uuid("Target Connector is required and must be a valid UUID"),
   // Future enhancement: Add target entity selection (e.g., Piko camera GUIDs)
   // targetCameraRefs: z.array(z.string()).optional(), 
 });
@@ -18,7 +18,7 @@ export const CreateBookmarkParamsSchema = z.object({
     durationMsTemplate: z.string().min(1, "Duration is required"), 
     // Tags provided as a comma-separated string template initially
     tagsTemplate: z.string().optional(), 
-    targetNodeId: z.string().uuid("Target Connector is required and must be a valid UUID"),
+    targetConnectorId: z.string().uuid("Target Connector is required and must be a valid UUID"),
 });
 
 // --- START: Add Schema for Send HTTP Request action ---

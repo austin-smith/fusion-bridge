@@ -1,4 +1,4 @@
-import type { nodes } from '@/data/db/schema';
+import type { connectors } from '@/data/db/schema';
 
-// Define Node type based on Drizzle schema inference
-export type Node = typeof nodes.$inferSelect; 
+// Define Connector type based on Drizzle schema inference
+export type Connector = typeof connectors.$inferSelect; 

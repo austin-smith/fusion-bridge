@@ -1,93 +1,86 @@
 import { db } from '@/data/db';
-import { events, devices, nodes } from '@/data/db/schema';
-import { desc, asc, count, eq, sql } from 'drizzle-orm';
+import { events, devices, connectors } from '@/data/db/schema';
+import { desc, asc, count, eq, sql, and } from 'drizzle-orm';
+import type { StandardizedEvent } from '@/types/events';
+import { EventCategory } from '@/lib/mappings/definitions';
 
 // Maximum number of events to keep
 const MAX_EVENTS = 1000;
 
 /**
-* Store an event in the database and trigger integrations
-*/
-export async function storeEvent(eventData: {
-  deviceId: string;
-  eventType: string;
-  timestamp: Date;
-  payload: string; // Complete event payload as JSON string
-}) {
+ * Stores a StandardizedEvent in the database.
+ * Replaces the old storeEvent function.
+ */
+export async function storeStandardizedEvent(stdEvent: StandardizedEvent<any>) {
   try {
-    // Store event
-    await db.insert(events).values({
-      deviceId: eventData.deviceId,
-      eventType: eventData.eventType,
-      timestamp: eventData.timestamp,
-      payload: eventData.payload, // Store the raw payload string directly
-    }).returning();
+    // Use the rawEventType provided by the parser (if any)
+    const rawEventType = stdEvent.rawEventType ?? null;
 
-    // Clean up old events
+    await db.insert(events).values({
+      eventUuid: stdEvent.eventId,
+      timestamp: stdEvent.timestamp,
+      connectorId: stdEvent.connectorId,
+      deviceId: stdEvent.deviceId,
+      standardizedEventCategory: stdEvent.eventCategory ?? EventCategory.UNKNOWN,
+      standardizedEventType: stdEvent.eventType,
+      standardizedPayload: JSON.stringify(stdEvent.payload), // Store the structured payload as JSON
+      rawEventType: rawEventType,
+      rawPayload: JSON.stringify(stdEvent.rawEventPayload ?? {}), // Store the original raw payload as JSON
+    });
+
+    // Clean up old events (keeping this logic)
     await cleanupOldEvents();
   } catch (err) {
-    console.error('Failed to store event:', err);
-    throw err;
+    console.error('Failed to store standardized event:', err, { eventUuid: stdEvent.eventId });
+    throw err; // Re-throw error so callers can be aware
   }
 }
 
-
 /**
-* Get recent events from the database
-*/
+ * Gets recent events from the database, enriched with device and connector info.
+ */
 export async function getRecentEvents(limit = 100) {
   try {
-    const recentEvents = await db
+    // Remove warning, as we are updating it now
+    // console.warn('[getRecentEvents] Function needs review/update for new events schema columns.');
+    
+    // Select required fields from events and joined tables
+    const recentEnrichedEvents = await db
       .select({
+        // Event fields
         id: events.id,
+        eventUuid: events.eventUuid,
         deviceId: events.deviceId,
-        eventType: events.eventType,
         timestamp: events.timestamp,
-        payload: events.payload,
-        connectorCategory: nodes.category,
+        standardizedEventCategory: events.standardizedEventCategory,
+        standardizedEventType: events.standardizedEventType,
+        standardizedPayload: events.standardizedPayload,
+        rawPayload: events.rawPayload,
+        rawEventType: events.rawEventType,
+        connectorId: events.connectorId,
+        // Joined Device fields (nullable due to LEFT JOIN)
+        deviceName: devices.name,
+        rawDeviceType: devices.type, // The crucial raw identifier
+        // Joined Connector fields (use connectors table)
+        connectorName: connectors.name,
+        connectorCategory: connectors.category,
+        connectorConfig: connectors.cfg_enc
       })
       .from(events)
-      .innerJoin(devices, eq(devices.deviceId, events.deviceId))
-      .innerJoin(nodes, eq(nodes.id, devices.connectorId))
+      // Left Join with devices ON matching connectorId AND deviceId
+      .leftJoin(devices, and(
+          eq(devices.connectorId, events.connectorId),
+          eq(devices.deviceId, events.deviceId) 
+      ))
+      // Left Join with connectors (use connectors table)
+      .leftJoin(connectors, eq(connectors.id, events.connectorId))
       .orderBy(desc(events.timestamp))
       .limit(limit);
 
-    // Process events one by one
-    const processedEvents = await Promise.all(recentEvents.map(async event => {
-      // Payload is now stored as JSONB, should already be an object/null
-      let payload: Record<string, unknown> | null = null;
-      if (typeof event.payload === 'string') {
-        // If it's still a string (e.g., old data or error during storage), try parsing
-        try { payload = JSON.parse(event.payload); } catch { /* ignore parse error */ }
-      } else if (typeof event.payload === 'object' && event.payload !== null) {
-        payload = event.payload as Record<string, unknown>;
-      }
-      
-      // Fallback to an empty object if payload is null/invalid
-      const safePayload = payload || {};
-
-      // Return the event data including the connectorCategory from the join
-      // Type assertion needed because Drizzle's select doesn't perfectly infer payload type
-      return {
-        event: event.eventType,
-        time: event.timestamp.getTime(),
-        msgid: `event-${event.id}`,
-        data: safePayload?.data || {},
-        payload: safePayload,
-        deviceId: event.deviceId,
-        connectorCategory: event.connectorCategory || 'unknown', // Provide default if join failed somehow
-      } as {
-        event: string;
-        time: number;
-        msgid: string;
-        data: Record<string, unknown>;
-        payload: Record<string, unknown>;
-        deviceId: string;
-        connectorCategory: string;
-      };
-    }));
-
-    return processedEvents;
+    // Return the enriched rows directly
+    // The structure should align better with what the API route needs.
+    return recentEnrichedEvents;
+    
   } catch (err) {
     console.error('Failed to get recent events:', err);
     return [];
@@ -96,6 +89,7 @@ export async function getRecentEvents(limit = 100) {
 
 /**
 * Get the total number of events
+* (This function should still work correctly)
 */
 export async function getEventCount(): Promise<number> {
   try {
@@ -109,6 +103,7 @@ export async function getEventCount(): Promise<number> {
 
 /**
 * Clean up old events to prevent database growth
+* (This function should still work correctly as it relies on timestamp/id)
 */
 export async function cleanupOldEvents() {
   try {
@@ -119,16 +114,16 @@ export async function cleanupOldEvents() {
       // Calculate how many events to delete
       const eventsToDeleteCount = eventCount - MAX_EVENTS;
       
-      // Find the ID of the Nth oldest event (where N = eventsToDeleteCount + 1)
-      // This approach is generally safer with potential duplicate timestamps
-      const thresholdEvent = await db.select({ id: events.id })
+      // Find the ID of the Nth oldest event (where N = eventsToDeleteCount)
+      // Using offset directly is simpler if supported and performs okay
+      const thresholdEvents = await db.select({ id: events.id })
         .from(events)
         .orderBy(asc(events.timestamp), asc(events.id)) // Secondary sort by ID for stability
         .limit(1)
-        .offset(eventsToDeleteCount);
+        .offset(eventsToDeleteCount); // Offset by the number to delete
 
-      if (thresholdEvent.length > 0) {
-        const thresholdId = thresholdEvent[0].id;
+      if (thresholdEvents.length > 0) {
+        const thresholdId = thresholdEvents[0].id;
 
         // Get the timestamp of the threshold event
         const thresholdEventDetails = await db.select({ timestamp: events.timestamp })
@@ -140,12 +135,10 @@ export async function cleanupOldEvents() {
           const thresholdTimestamp = thresholdEventDetails[0].timestamp;
 
           // Delete events that are older than the threshold timestamp,
-          // OR have the same timestamp but a smaller or equal ID
+          // OR have the same timestamp but an ID less than or equal to the threshold ID
           await db.delete(events)
             .where(sql`${events.timestamp} < ${thresholdTimestamp} OR (${events.timestamp} = ${thresholdTimestamp} AND ${events.id} <= ${thresholdId})`);
 
-          // Drizzle's .run() might be needed for row counts in some drivers, adapt if necessary
-          // For now, assume the delete executed. Log based on the count we intended to delete.
           console.log(`Cleaned up ${eventsToDeleteCount} old events (target count).`); 
         }
       }
@@ -157,6 +150,7 @@ export async function cleanupOldEvents() {
 
 /**
 * Truncate the events table
+* (This function should still work correctly)
 */
 export async function truncateEvents() {
   try {

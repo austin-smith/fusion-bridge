@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   DialogHeader,
   DialogTitle,
@@ -16,28 +16,27 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  deviceIdentifierMap,
-  getDeviceTypeIcon,
-  DeviceType, // Import DeviceType enum
-} from '@/lib/device-mapping';
-import { TypedDeviceInfo, validDisplayStatesMap, DeviceSubtype, DisplayState } from '@/types/device-mapping'; // Import necessary types
+import { DeviceType, DeviceSubtype } from '@/lib/mappings/definitions';
+import { deviceIdentifierMap } from '@/lib/mappings/identification';
+import { getDeviceTypeIcon } from '@/lib/mappings/presentation';
+import { TypedDeviceInfo, validDisplayStatesMap, DisplayState } from '@/lib/mappings/definitions';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Switch } from '@/components/ui/switch'; // Import Switch
-import { Label } from '@/components/ui/label';   // Import Label
-import { formatConnectorCategory } from "@/lib/utils"; // Import formatter
-import { Input } from "@/components/ui/input"; // Import Input
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"; 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Import Tabs components
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { formatConnectorCategory } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     Tooltip,
     TooltipContent,
     TooltipProvider,
     TooltipTrigger,
-} from "@/components/ui/tooltip"; // Import Tooltip components
+} from "@/components/ui/tooltip";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
-import { Badge } from "@/components/ui/badge"; // Import Badge
-import { Button } from "@/components/ui/button"; // Import Button
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { HelpCircle } from 'lucide-react';
 
 // Helper type for flattened data
 type FlattenedMapping = {

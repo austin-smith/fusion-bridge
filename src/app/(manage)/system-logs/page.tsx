@@ -1,9 +1,9 @@
 "use client"; // Add this directive for client-side hooks
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Eraser, Terminal, Activity, ChevronsUpDown } from "lucide-react";
+import { Eraser, Terminal, Activity, ChevronsUpDown, Search, X } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -22,36 +22,45 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Toggle } from "@/components/ui/toggle";
+import { Input } from "@/components/ui/input";
+import { useDebounce } from 'use-debounce';
 
 export default function SystemLogsPage() {
   // TODO: Fetch logs from a source (API, WebSocket, etc.)
   // const logs = exampleLogs;
   const [logs, setLogs] = useState<string[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  type ConnectionStatus = 'connecting' | 'connected' | 'error' | 'paused';
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting'); // Initialize based on isLiveEnabled later
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isLiveEnabled, setIsLiveEnabled] = useState(true);
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery] = useDebounce(searchQuery, 300);
 
   // Set page title
   useEffect(() => {
     document.title = 'System Logs // Fusion Bridge';
   }, []);
 
+  // Initialize connectionStatus based on initial isLiveEnabled
+  useEffect(() => {
+    setConnectionStatus(isLiveEnabled ? 'connecting' : 'paused');
+  }, []); // Run only once on mount
+
   useEffect(() => {
     if (!isLiveEnabled) {
-      setIsConnected(false);
+      setConnectionStatus('paused');
       return; // Don't connect if live logs are disabled
     }
 
+    setConnectionStatus('connecting'); // Set to connecting when attempting connection
     const eventSource = new EventSource('/api/system-logs');
     let isMounted = true; // Flag to track if component is mounted
 
     eventSource.onopen = () => {
       if (!isMounted) return;
-      setIsConnected(true);
-      setError(null);
+      setConnectionStatus('connected');
     };
 
     eventSource.addEventListener('initial', (event) => {
@@ -79,14 +88,12 @@ export default function SystemLogsPage() {
     eventSource.onerror = (err) => {
       console.error('EventSource error:', err);
       if (!isMounted) return;
-      setError('Connection error. Retrying...');
-      setIsConnected(false);
+      setConnectionStatus('error');
     };
 
     return () => {
       isMounted = false;
       eventSource.close();
-      setIsConnected(false);
     };
   }, [isLiveEnabled]); // Re-run effect when isLiveEnabled changes
 
@@ -105,12 +112,29 @@ export default function SystemLogsPage() {
     setLogs([]);
   };
 
+  // Filter logs based on debounced search query
+  const filteredLogs = useMemo(() => {
+    if (!debouncedSearchQuery) {
+      return logs;
+    }
+    const lowerCaseQuery = debouncedSearchQuery.toLowerCase();
+    return logs.filter(log => log.toLowerCase().includes(lowerCaseQuery));
+  }, [logs, debouncedSearchQuery]);
+
+  const handleSearchChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value);
+  }, []);
+
+  const clearSearch = useCallback(() => {
+    setSearchQuery('');
+  }, []);
+
   return (
     <div className="px-6">
       <Card className="h-[calc(100vh-12rem)] flex flex-col">
         <CardHeader className="flex-none pb-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-4 flex-shrink-0">
               <Terminal className="h-6 w-6 text-muted-foreground" />
               <div>
                 <CardTitle>System Logs</CardTitle>
@@ -119,8 +143,26 @@ export default function SystemLogsPage() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap justify-end">
               <div className="flex items-center gap-3">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        variant="outline"
+                        size="icon"
+                        onClick={clearLogs}
+                        className="h-8 w-8"
+                      >
+                        <Eraser className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Clear Logs
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
                 <Toggle 
                   pressed={isLiveEnabled} 
                   onPressedChange={setIsLiveEnabled}
@@ -145,52 +187,59 @@ export default function SystemLogsPage() {
                 </Toggle>
               </div>
 
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button 
-                      variant="outline" 
-                      size="icon"
-                      onClick={clearLogs}
-                      className="h-8 w-8"
-                    >
-                      <Eraser className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Clear Logs
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
               <Badge variant={
-                !isLiveEnabled ? "outline" : 
-                isConnected ? "default" : "destructive"
-              } className="h-7 px-3 flex items-center gap-1.5 w-24 justify-center pointer-events-none">
-                <span className={`h-2 w-2 rounded-full inline-flex flex-shrink-0 ${
-                  !isLiveEnabled ? 'bg-gray-500' : 
-                  isConnected ? 'bg-green-500' : 'bg-red-400 ring-1 ring-white'
-                }`} />
-                <span className="inline-flex">
-                  {!isLiveEnabled ? 'Paused' : 
-                   isConnected ? 'Connected' : 'Error'}
+                connectionStatus === 'paused' ? "outline" :
+                connectionStatus === 'connected' ? "default" :
+                connectionStatus === 'connecting' ? "secondary" :
+                "destructive" // error state
+              } className="h-8 px-3 flex items-center gap-1.5 w-28 justify-center pointer-events-none">
+                <span className={`h-2 w-2 rounded-full inline-flex flex-shrink-0 animate-pulse ${
+                  connectionStatus === 'paused' ? 'bg-gray-500' :
+                  connectionStatus === 'connected' ? 'bg-green-400 ring-1 ring-white' :
+                  connectionStatus === 'connecting' ? 'bg-yellow-400 ring-1 ring-white' :
+                  'bg-red-400 ring-1 ring-white'
+                } ${connectionStatus !== 'connecting' ? 'animate-none' : ''}`} />
+                <span className="inline-flex text-white">
+                  {connectionStatus === 'paused' ? 'Paused' :
+                   connectionStatus === 'connected' ? 'Connected' :
+                   connectionStatus === 'connecting' ? 'Connecting...' :
+                   'Error'}
                 </span>
               </Badge>
             </div>
           </div>
         </CardHeader>
         <CardContent className="flex-1 p-0 min-h-0">
-          <div className="h-full bg-gray-950 rounded-md">
+          <div className="h-full bg-gray-950 rounded-md flex flex-col">
+            <div className="flex-none p-2 border-b border-gray-800">
+              <div className="relative max-w-xs">
+                <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Search logs..."
+                  value={searchQuery}
+                  onChange={handleSearchChange}
+                  className="pl-8 h-7 bg-gray-900 border-gray-700 focus:border-blue-500 focus:ring-blue-500 text-sm"
+                />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-1/2 h-6 w-6 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={clearSearch}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
             <div 
               ref={scrollContainerRef}
-              className="h-full overflow-auto"
+              className="flex-1 overflow-auto"
             >
               <div className="p-4 font-mono text-sm">
-                {error && (
-                  <div className="text-red-500 mb-2">{error}</div>
-                )}
-                {logs.length > 0 ? (
-                  logs.map((log, index) => (
+                {filteredLogs.length > 0 ? (
+                  filteredLogs.map((log, index) => (
                     <SyntaxHighlighter
                       key={index}
                       language="log" // Or "plaintext", "json" etc. based on log content
@@ -204,7 +253,10 @@ export default function SystemLogsPage() {
                   ))
                 ) : (
                   <div className="text-muted-foreground italic">
-                    {isConnected || isLiveEnabled ? 'Waiting for logs...' : 'Live logs disabled.'}
+                    {searchQuery ? 'No logs match your search.' :
+                     connectionStatus === 'connected' || connectionStatus === 'connecting' ? 'Waiting for logs...' :
+                     connectionStatus === 'paused' ? 'Live logs disabled.' :
+                     'Connection error.'}
                   </div>
                 )}
               </div>

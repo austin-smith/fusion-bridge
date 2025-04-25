@@ -49,11 +49,11 @@ interface AutomationApiResponse {
   id: string;
   name: string;
   enabled: boolean;
-  sourceNodeId: string;
+  sourceConnectorId: string;
   createdAt: string; // Dates are often strings in JSON
   updatedAt: string;
   configJson: AutomationConfig | null; // Added this
-  sourceNodeName: string | null;
+  sourceConnectorName: string | null;
 }
 
 // --- START: New Row Actions Component ---
@@ -166,7 +166,7 @@ export const columns = (
       const record = row.original; // Type is now AutomationApiResponse
       const config = record.configJson; // Type is AutomationConfig | null
       
-      const sourceName = record.sourceNodeName || 'Unknown Source';
+      const sourceName = record.sourceConnectorName || 'Unknown Source';
       const entityTypes = config?.sourceEntityTypes?.length 
                           ? config.sourceEntityTypes.join(', ') 
                           : 'Any Type';

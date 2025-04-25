@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useFusionStore } from '@/stores/store';
 import { toast } from "sonner";
-import { NodeWithConfig } from '@/types';
+import { ConnectorWithConfig } from '@/types';
 
 import {
   Dialog,
@@ -38,6 +38,7 @@ import { Loader2 } from 'lucide-react';
 interface YoLinkConfig {
   uaid: string;
   clientSecret: string;
+  homeId?: string;
 }
 
 interface PikoConfig {
@@ -62,7 +63,6 @@ const formSchema = z.object({
   // YoLink fields
   uaid: z.string().optional(),
   clientSecret: z.string().optional(),
-  yolinkHomeId: z.string().optional(),
   
   // Piko fields
   type: z.enum(['cloud']).optional(),
@@ -90,20 +90,21 @@ type PikoWizardStep = 'credentials' | 'system-selection';
 
 export function AddConnectorModal() {
   const {
-    addConnectorOpen,
+    isAddConnectorOpen,
     setAddConnectorOpen,
-    editConnectorOpen,
+    isEditConnectorOpen,
     setEditConnectorOpen,
-    editingNode,
-    setEditingNode,
-    addNode,
-    updateNode,
+    editingConnector,
+    setEditingConnector,
+    addConnector,
+    updateConnector,
     setLoading,
     setError,
     isLoading
   } = useFusionStore();
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testedYoLinkHomeId, setTestedYoLinkHomeId] = useState<string | null>(null);
   
   // Wizard state for Piko
   const [pikoWizardStep, setPikoWizardStep] = useState<PikoWizardStep>('credentials');
@@ -118,7 +119,6 @@ export function AddConnectorModal() {
       category: '',
       uaid: '',
       clientSecret: '',
-      yolinkHomeId: '',
       type: 'cloud', // Default to cloud for Piko
       username: '',
       password: '',
@@ -126,8 +126,8 @@ export function AddConnectorModal() {
     },
   });
 
-  const isEditMode = !!editingNode;
-  const currentOpenState = isEditMode ? editConnectorOpen : addConnectorOpen;
+  const isEditMode = !!editingConnector;
+  const currentOpenState = isEditMode ? isEditConnectorOpen : isAddConnectorOpen;
   const currentSetOpenState = isEditMode ? setEditConnectorOpen : setAddConnectorOpen;
 
   // Reset form to initial state
@@ -137,29 +137,28 @@ export function AddConnectorModal() {
       category: '',
       uaid: '',
       clientSecret: '',
-      yolinkHomeId: '',
       type: 'cloud',
       username: '',
       password: '',
       selectedSystem: '',
     });
     setTestResult(null);
+    setTestedYoLinkHomeId(null);
     setPikoWizardStep('credentials');
     setPikoSystems([]);
   }, [form]);
 
   useEffect(() => {
-    if (isEditMode && editingNode) {
+    if (isEditMode && editingConnector) {
       let configValues = {};
-      if (editingNode.category === 'yolink' && editingNode.config) {
-        const yolinkConfig = editingNode.config as YoLinkConfig;
+      if (editingConnector.category === 'yolink' && editingConnector.config) {
+        const yolinkConfig = editingConnector.config as YoLinkConfig;
         configValues = {
           uaid: yolinkConfig.uaid || '',
           clientSecret: yolinkConfig.clientSecret || '',
-          yolinkHomeId: editingNode.yolinkHomeId || '',
         };
-      } else if (editingNode.category === 'piko' && editingNode.config) {
-        const pikoConfig = editingNode.config as PikoConfig;
+      } else if (editingConnector.category === 'piko' && editingConnector.config) {
+        const pikoConfig = editingConnector.config as PikoConfig;
         configValues = {
           type: pikoConfig.type || 'cloud',
           username: pikoConfig.username || '',
@@ -169,24 +168,25 @@ export function AddConnectorModal() {
       }
 
       const defaultValues: Partial<FormValues> = {
-        name: editingNode.name || '',
-        category: editingNode.category,
+        name: editingConnector.name || '',
+        category: editingConnector.category,
         ...configValues,
       };
       form.reset(defaultValues);
     } else {
       resetForm();
     }
-  }, [editingNode, isEditMode, form, resetForm]);
+  }, [editingConnector, isEditMode, form, resetForm]);
 
   useEffect(() => {
     if (!currentOpenState) {
       if (isEditMode) {
-        setEditingNode(null);
+        setEditingConnector(null);
       }
       resetForm();
+      setTestedYoLinkHomeId(null);
     }
-  }, [currentOpenState, isEditMode, setEditingNode, resetForm]);
+  }, [currentOpenState, isEditMode, setEditingConnector, resetForm]);
 
   const selectedCategory = form.watch('category');
   const isPiko = selectedCategory === 'piko';
@@ -207,7 +207,7 @@ export function AddConnectorModal() {
       // Call the API to get systems
       toast.loading('Authenticating with Piko...', { id: 'fetch-piko-systems' });
       
-      const response = await fetch('/api/piko-systems', {
+      const response = await fetch('/api/piko/systems', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -255,96 +255,13 @@ export function AddConnectorModal() {
 
     try {
       let config: ConnectorConfig | undefined;
-      let yolinkHomeId: string | null = null;
 
       if (values.category === 'yolink') {
         config = {
           uaid: values.uaid || '',
           clientSecret: values.clientSecret || '',
+          homeId: testedYoLinkHomeId ?? undefined,
         };
-
-        // In edit mode, use the existing yolinkHomeId if available
-        if (isEditMode && editingNode?.yolinkHomeId) {
-          yolinkHomeId = editingNode.yolinkHomeId;
-          console.log('Using existing YoLink Home ID:', yolinkHomeId);
-        } else {
-          // Fetch YoLink home ID - required for YoLink connectors
-          try {
-            console.log('Attempting to fetch YoLink Home ID with credentials');
-            
-            toast.loading('Fetching YoLink Home ID...', { id: 'fetch-home-id' });
-            
-            // Verify credentials are present
-            if (!config.uaid || !config.clientSecret) {
-              throw new Error('Missing UAID or Client Secret for YoLink');
-            }
-            
-            // Step 1: Get access token using our proxy API
-            console.log('Getting YoLink Access Token via proxy...');
-            const tokenResponse = await fetch('/api/yolink-proxy', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-yolink-action': 'getAccessToken'
-              },
-              body: JSON.stringify({
-                uaid: config.uaid,
-                clientSecret: config.clientSecret
-              })
-            });
-            
-            const tokenData = await tokenResponse.json();
-            if (!tokenData.success || !tokenData.accessToken) {
-              throw new Error(tokenData.error || 'Failed to get YoLink access token');
-            }
-            
-            const accessToken = tokenData.accessToken;
-            console.log('Access Token obtained via proxy. Fetching YoLink Home Info...');
-            
-            // Step 2: Get home ID using our proxy API
-            const homeResponse = await fetch('/api/yolink-proxy', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-yolink-action': 'getHomeInfo'
-              },
-              body: JSON.stringify({
-                accessToken
-              })
-            });
-            
-            const homeData = await homeResponse.json();
-            if (!homeData.success || !homeData.homeId) {
-              throw new Error(homeData.error || 'Failed to get YoLink home ID');
-            }
-            
-            yolinkHomeId = homeData.homeId;
-            console.log('Retrieved YoLink Home ID via proxy:', yolinkHomeId);
-            toast.dismiss('fetch-home-id');
-            
-            if (yolinkHomeId) {
-              toast.success(`Retrieved YoLink Home ID: ${yolinkHomeId.substring(0, 8)}...`);
-            } else {
-              console.error('YoLink Home ID returned null or empty');
-              toast.error('YoLink Home ID not found');
-              setLoading(false);
-              return; // Stop the submission if no home ID was returned
-            }
-          } catch (error) {
-            toast.dismiss('fetch-home-id');
-            console.error('Error fetching YoLink Home ID:', error);
-            
-            // More detailed error message for debugging
-            const errorMessage = error instanceof Error 
-              ? `Failed to retrieve YoLink Home ID: ${error.message}` 
-              : 'Failed to retrieve YoLink Home ID: Unknown error';
-            
-            console.error(errorMessage);
-            toast.error(errorMessage);
-            setLoading(false);
-            return; // Stop the submission if home ID fetch fails
-          }
-        }
       } else if (values.category === 'piko') {
         config = {
           type: 'cloud',
@@ -363,47 +280,27 @@ export function AddConnectorModal() {
         throw new Error('Invalid connector configuration');
       }
 
-      const nodePayload: Omit<NodeWithConfig, 'id' | 'createdAt'> & { id?: string; yolinkHomeId?: string } = {
-        name: values.name || 'Untitled Connector', // Default name if none provided
-        category: values.category,
-        config,
-        eventsEnabled: true, // Add the required eventsEnabled property
-      };
-
-      // Add yolinkHomeId for YoLink connectors (required)
-      if (values.category === 'yolink') {
-        if (!yolinkHomeId) {
-          toast.error('Cannot save connector without YoLink Home ID');
-          setLoading(false);
-          return; // Ensure we don't proceed without home ID
-        }
-        nodePayload.yolinkHomeId = yolinkHomeId;
-      }
-
-      // Explicitly define payload structure for API calls
+      // Define the payload for the API
       const apiPayload = {
-        name: nodePayload.name,
-        category: nodePayload.category,
-        config: nodePayload.config,
-        yolinkHomeId: nodePayload.yolinkHomeId, // Include yolinkHomeId in API payload
-        eventsEnabled: nodePayload.eventsEnabled,
+        name: values.name || `${values.category} Connector`,
+        category: values.category,
+        config: config,
       };
 
       let response: Response;
       let successMessage = '';
 
-      if (isEditMode && editingNode) {
-        nodePayload.id = editingNode.id;
-        response = await fetch(`/api/nodes/${editingNode.id}`, {
+      if (isEditMode && editingConnector) {
+        response = await fetch(`/api/connectors/${editingConnector.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(apiPayload), 
+          body: JSON.stringify({ name: apiPayload.name, config: apiPayload.config }), 
         });
         successMessage = 'Connector updated successfully!';
       } else {
-        response = await fetch('/api/nodes', {
+        response = await fetch('/api/connectors', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -417,17 +314,18 @@ export function AddConnectorModal() {
 
       if (response.ok && data.success) {
         if (isEditMode) {
-          updateNode(data.data);
+          updateConnector(data.data);
         } else {
-          addNode(data.data);
+          addConnector(data.data);
         }
         toast.success(successMessage);
         currentSetOpenState(false);
         form.reset();
         setTestResult(null);
+        setTestedYoLinkHomeId(null);
         setPikoWizardStep('credentials');
         setPikoSystems([]);
-        if (isEditMode) setEditingNode(null);
+        if (isEditMode) setEditingConnector(null);
       } else {
         const errorMsg = data.error || (isEditMode ? 'Failed to update connector' : 'Failed to create connector');
         setError(errorMsg);
@@ -447,6 +345,7 @@ export function AddConnectorModal() {
     try {
       setIsTestingConnection(true);
       setTestResult(null);
+      setTestedYoLinkHomeId(null);
       
       // Validate the form using react-hook-form's built-in validation
       const isValid = await form.trigger();
@@ -486,7 +385,6 @@ export function AddConnectorModal() {
       }
       
       // Handle YoLink testing
-      // Prepare the configuration based on the selected category
       let testConfig: YoLinkConfig | undefined;
       
       if (driver === 'yolink') {
@@ -521,8 +419,8 @@ export function AddConnectorModal() {
           
           // If it's a YoLink connection, try to get the Home ID
           if (driver === 'yolink' && data.data.homeId) {
-            // Store it in the form for submission
-            form.setValue('yolinkHomeId', data.data.homeId);
+            // Store it in the component state, not the form
+            setTestedYoLinkHomeId(data.data.homeId);
             
             setTestResult({
               success: true,
@@ -578,7 +476,7 @@ export function AddConnectorModal() {
           </DialogTitle>
           <DialogDescription>
             {isEditMode
-              ? `Update the details for the connector: ${editingNode?.name || ''}`
+              ? `Update the details for the connector: ${editingConnector?.name || ''}`
               : isPiko
                 ? pikoWizardStep === 'credentials'
                   ? 'Enter your Piko account credentials.'
@@ -603,6 +501,7 @@ export function AddConnectorModal() {
                           field.onChange(value);
                           // Reset kind and test result when category changes
                           setTestResult(null);
+                          setTestedYoLinkHomeId(null);
                         }}
                         defaultValue={field.value}
                         disabled={isEditMode}
@@ -631,10 +530,10 @@ export function AddConnectorModal() {
                       <FormLabel>Connector Name</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder="e.g., My YoLink Hub" 
+                          placeholder={selectedCategory === 'yolink' ? "e.g., My YoLink Hub" : "e.g., Main Piko System"} 
                           {...field} 
-                          disabled={isPiko}
-                          className={isPiko ? "bg-muted text-muted-foreground" : ""}
+                          disabled={isPiko && !isEditMode}
+                          className={(isPiko && !isEditMode) ? "bg-muted text-muted-foreground" : ""}
                         />
                       </FormControl>
                       <FormMessage />
@@ -650,40 +549,11 @@ export function AddConnectorModal() {
             {/* YoLink Settings Section */}
             {selectedCategory === 'yolink' && (
               <div className="space-y-4">
-                {/* Display YoLink Home ID in edit mode */}
-                {isEditMode && form.getValues("yolinkHomeId") && (
-                  <FormField
-                    control={form.control}
-                    name="yolinkHomeId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>YoLink Home ID</FormLabel>
-                        <FormControl>
-                          <Input 
-                            {...field} 
-                            disabled={true}
-                            className="bg-muted text-muted-foreground"
-                          />
-                        </FormControl>
-                        <FormDescription className="text-xs">
-                          This ID was automatically fetched from YoLink.
-                        </FormDescription>
-                      </FormItem>
-                    )}
-                  />
-                )}
-                
                 <FormField
                   control={form.control}
                   name="uaid"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>UAID</FormLabel>
-                      <FormControl>
-                        <Input type="text" autoComplete="new-password" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                    <FormItem><FormLabel>UAID</FormLabel><FormControl><Input type="text" autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>
                   )}
                 />
                 
@@ -691,21 +561,12 @@ export function AddConnectorModal() {
                   control={form.control}
                   name="clientSecret"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Client Secret</FormLabel>
-                      <FormControl>
-                        <Input type="password" autoComplete="new-password" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                     <FormItem><FormLabel>Client Secret</FormLabel><FormControl><Input type="password" autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>
                   )}
                 />
                 
                 <FormDescription className="mt-2 text-xs">
-                  Find your UAID and Client Secret in the YoLink App (Account &gt; Advanced Settings &gt; Personal Access Credentials).{' '}
-                  <a href="http://doc.yosmart.com/docs/overall/qsg_uac" target="_blank" rel="noopener noreferrer" className="underline">
-                    Learn more
-                  </a>.
+                  Find credentials in YoLink App (Account &gt; Advanced Settings). <a href="http://doc.yosmart.com/docs/overall/qsg_uac" target="_blank" rel="noopener noreferrer" className="underline">Learn more</a>.
                 </FormDescription>
               </div>
             )}
