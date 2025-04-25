@@ -2,7 +2,7 @@ import create from 'zustand';
 import { produce, Draft, enableMapSet } from 'immer';
 import { PikoServer } from '@/types';
 import type { StandardizedEvent, StateChangedPayload } from '@/types/events';
-import type { DisplayState, TypedDeviceInfo } from '@/lib/mappings/definitions';
+import { DisplayState, TypedDeviceInfo, EventType, EventCategory } from '@/lib/mappings/definitions';
 import type { DeviceWithConnector, ConnectorWithConfig } from '@/types';
 import { YoLinkConfig } from '@/services/drivers/yolink';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
@@ -34,8 +34,8 @@ interface DeviceStateInfo {
   deviceId: string; // Connector-specific ID
   deviceInfo: TypedDeviceInfo;
   displayState?: DisplayState;
-  lastStateEvent?: StandardizedEvent<'STATE_CHANGED'>;
-  lastStatusEvent?: StandardizedEvent<'ONLINE' | 'OFFLINE' | 'UNAUTHORIZED'>;
+  lastStateEvent?: StandardizedEvent<EventType.STATE_CHANGED>;
+  lastStatusEvent?: StandardizedEvent<EventType.DEVICE_ONLINE | EventType.DEVICE_OFFLINE>;
   lastSeen?: Date;
   name?: string;
   model?: string;
@@ -230,12 +230,13 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         displayState: evt.payload && typeof evt.payload === 'object' && 'displayState' in evt.payload 
                       ? evt.payload.displayState as DisplayState 
                       : existing.displayState,
-        // Store the relevant event type conditionally with type assertion
-        lastStatusEvent: (evt.eventCategory === 'DEVICE_STATUS' || evt.eventCategory === 'DEVICE_STATE') && (evt.eventType === 'ONLINE' || evt.eventType === 'OFFLINE' || evt.eventType === 'UNAUTHORIZED')
-          ? evt as StandardizedEvent<'ONLINE' | 'OFFLINE' | 'UNAUTHORIZED'>
+        // Store the relevant event type conditionally with type assertion using enums
+        lastStatusEvent: (evt.eventCategory === EventCategory.DEVICE_CONNECTIVITY) && 
+                         (evt.eventType === EventType.DEVICE_ONLINE || evt.eventType === EventType.DEVICE_OFFLINE)
+          ? evt as StandardizedEvent<EventType.DEVICE_ONLINE | EventType.DEVICE_OFFLINE>
           : existing.lastStatusEvent,
-        lastStateEvent: evt.eventType === 'STATE_CHANGED'
-          ? evt as StandardizedEvent<'STATE_CHANGED'>
+        lastStateEvent: evt.eventType === EventType.STATE_CHANGED
+          ? evt as StandardizedEvent<EventType.STATE_CHANGED>
           : existing.lastStateEvent,
         // Update rawType: Use from payload if available, otherwise keep existing.
         rawType: originalEventTypeFromPayload ?? existing.rawType, 

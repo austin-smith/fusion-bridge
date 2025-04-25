@@ -10,12 +10,12 @@ To generate the favicon:
 
 Note: You'll need to create a new page at app/favicon-generator/page.tsx with this content:
 
-import { FusionBridgeIcon } from "@/components/icons/FusionBridgeIcon";
+import { FusionIcon } from '@/components/icons/FusionIcon';
 
 export default function FaviconGenerator() {
   return (
     <div style={{ padding: '2rem' }}>
-      <FusionBridgeIcon />
+      <FusionIcon />
     </div>
   );
 }

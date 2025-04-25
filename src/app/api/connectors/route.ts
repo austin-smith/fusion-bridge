@@ -77,7 +77,7 @@ export async function POST(request: Request) {
     }
 
     const safeConfig = config && typeof config === 'object' ? config : {};
-    let finalConfig = { ...safeConfig }; // Create a mutable copy to potentially add homeId
+    const finalConfig = { ...safeConfig }; // Create a mutable copy to potentially add homeId
     
     const id = uuidv4();
     

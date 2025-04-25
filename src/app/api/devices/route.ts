@@ -397,20 +397,6 @@ async function syncYoLinkDevices(connectorId: string, config: yolinkDriver.YoLin
       }
     }
 
-    // Optional: Delete devices that exist in DB but were NOT in the latest API response
-    // const apiDeviceIds = new Set(yolinkDevicesFromApi.map(d => d.deviceId));
-    // const devicesToDelete = await db.select({ deviceId: devices.deviceId })
-    //   .from(devices)
-    //   .where(eq(devices.connectorId, connectorId))
-    //   .then(dbDevices => dbDevices.filter(dbDev => !apiDeviceIds.has(dbDev.deviceId)));
-    // if (devicesToDelete.length > 0) {
-    //   console.log(`Deleting ${devicesToDelete.length} devices not found in latest API sync...`);
-    //   await db.delete(devices).where(and(
-    //     eq(devices.connectorId, connectorId),
-    //     inArray(devices.deviceId, devicesToDelete.map(d => d.deviceId))
-    //   ));
-    // }
-
     console.log(`Sync finished for ${connectorId}. Total devices processed: ${processedCount}`);
     return processedCount;
   } catch (error: unknown) {

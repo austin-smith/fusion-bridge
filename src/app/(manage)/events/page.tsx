@@ -76,11 +76,9 @@ import { DeviceWithConnector } from '@/types';
 interface EnrichedEvent {
   id: number; // Added ID from API response
   eventUuid: string; // Added from API response
-  event: string; // Keep for compatibility? Maybe remove if eventType is preferred
   timestamp: number; // ADD this (epoch ms)
-  msgid?: string; // Keep optional?
-  data?: Record<string, unknown>; // Keep optional?
   payload?: Record<string, unknown> | null; // Use the payload from API
+  rawPayload?: Record<string, any> | null; // Add rawPayload from API
   deviceId: string;
   deviceName?: string;
   connectorName?: string;
@@ -89,10 +87,16 @@ interface EnrichedEvent {
   connectorId: string; // Added from API response
   eventCategory: string; // Added from API response
   eventType: string; // Added from API response
+  rawEventType?: string; // Add optional rawEventType from API
   displayState?: DisplayState | undefined;
-  thumbnailUrl?: string; // For single video placeholder
-  videoUrl?: string; // For single video placeholder
-  // associatedPikoCameras?: PikoCameraInfo[]; // Removed array
+  thumbnailUrl?: string; // KEEP For single video placeholder FOR NOW
+  videoUrl?: string; // KEEP For single video placeholder FOR NOW
+  bestShotUrlComponents?: {
+    pikoSystemId: string;
+    connectorId: string;
+    objectTrackId: string;
+    cameraId: string;
+  };
 }
 
 // Define a cleaner tag component for the dialog
@@ -592,7 +596,17 @@ export default function EventsPage() {
             {/* --- End Single Unconditional Video Dialog --- */}
 
             {/* Existing Details Button */}
-            <EventDetailDialogContent event={eventData} />
+            <EventDetailDialogContent 
+              event={{
+                ...eventData,
+                bestShotUrlComponents: eventData.bestShotUrlComponents ? {
+                  pikoSystemId: eventData.bestShotUrlComponents.pikoSystemId,
+                  connectorId: eventData.bestShotUrlComponents.connectorId,
+                  objectTrackId: eventData.bestShotUrlComponents.objectTrackId,
+                  cameraId: eventData.bestShotUrlComponents.cameraId,
+                } : undefined,
+              }}
+            />
           </div>
         );
       },

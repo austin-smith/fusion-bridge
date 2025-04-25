@@ -3,6 +3,14 @@ import { PikoJsonRpcEventParams, PikoDeviceRaw } from '@/services/drivers/piko';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { DeviceType } from '../mappings/definitions';
 
+// Define the possible EventTypes this parser can return
+type ParsedPikoEventType = EventType.ANALYTICS_EVENT 
+                         | EventType.LOITERING 
+                         | EventType.ARMED_PERSON 
+                         | EventType.TAILGATING 
+                         | EventType.INTRUSION 
+                         | EventType.LINE_CROSSING;
+
 /**
  * Parses the event parameters from a Piko JSON-RPC event update message 
  * into a StandardizedEvent object for analytics.
@@ -11,14 +19,14 @@ import { DeviceType } from '../mappings/definitions';
  * @param rawEventParams The `eventParams` object from the Piko JSON-RPC message.
  * @param deviceGuidMap A map where keys are Piko Device GUIDs (eventResourceId) 
  *                      and values are the corresponding PikoDeviceRaw info.
- * @returns An array containing a single ANALYTICS_EVENT or LOITERING StandardizedEvent, 
+ * @returns An array containing a single StandardizedEvent corresponding to the parsed Piko event type, 
  *          or an empty array if the event is ignored or unparseable.
  */
 export function parsePikoEvent(
     connectorId: string, 
     rawEventParams: PikoJsonRpcEventParams | undefined | null,
     deviceGuidMap: Map<string, PikoDeviceRaw> | null // Added map parameter
-): StandardizedEvent<EventType.ANALYTICS_EVENT | EventType.LOITERING>[] { 
+): StandardizedEvent<ParsedPikoEventType>[] { 
 
     // --- Basic Validation ---
     if (!rawEventParams) {
@@ -78,12 +86,24 @@ export function parsePikoEvent(
     };
 
     // --- Determine Specific Event Type ---
-    let specificEventType: EventType.ANALYTICS_EVENT | EventType.LOITERING = EventType.ANALYTICS_EVENT; // Default
+    let specificEventType: ParsedPikoEventType = EventType.ANALYTICS_EVENT; // Default
+    const inputPortId = rawEventParams.inputPortId;
 
-    if (rawEventParams.inputPortId === 'cvedia.rt.loitering') {
+    if (inputPortId === 'cvedia.rt.loitering') {
         specificEventType = EventType.LOITERING;
+    } else if (inputPortId === 'cvedia.rt.armed_person') {
+        specificEventType = EventType.ARMED_PERSON;
+    } else if (inputPortId === 'cvedia.rt.tailgating') {
+        specificEventType = EventType.TAILGATING;
+    } else if (inputPortId === 'cvedia.rt.intrusion') {
+        specificEventType = EventType.INTRUSION;
+    } else if (inputPortId === 'cvedia.rt.crossing') {
+        specificEventType = EventType.LINE_CROSSING;
     }
-    // TODO: Add mappings for PERSON_DETECTED and LINE_CROSSING based on Piko fields
+    // TODO: Add mapping for PERSON_DETECTED based on Piko fields
+    // else if (inputPortId === 'SOME_PIKO_ID_FOR_PERSON') {
+    //     specificEventType = EventType.PERSON_DETECTED;
+    // }
 
     // --- Create Standardized Event ---
     // Use the determined specificEventType

@@ -13,6 +13,7 @@ import { useFieldArray, useForm } from "react-hook-form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType
+import type { Connector } from '@/lib/types';
 
 // Define the shape of the data expected by the form
 // Includes joined connector names and allows configJson to be potentially null for 'new'
@@ -65,7 +66,7 @@ async function getAutomationData(id: string): Promise<AutomationFormData | null>
     }
 
     try {
-        const sourceConnectorAlias = alias(Connectors, "sourceConnector");
+        const sourceConnectorAlias = alias(connectors, "sourceConnector");
 
         const result = await db
             .select({
@@ -133,7 +134,14 @@ export default async function AutomationSettingsPage({ params }: { params: Promi
       <h1 className="text-2xl font-bold mb-6">{title}</h1>
       {/* Pass initialData which matches AutomationFormData */}
       <AutomationForm 
-        initialData={initialData!} // Use non-null assertion as we handled null cases
+        initialData={{
+          ...initialData!,
+          name: initialData!.name ?? '', // Provide default empty string for null name
+          enabled: initialData!.enabled ?? false, // Provide default false for null enabled
+          configJson: initialData!.configJson ?? { sourceEntityTypes: [], eventTypeFilter: '', actions: [] }, // Provide default config
+          createdAt: initialData!.createdAt ?? new Date(), // Provide default Date
+          updatedAt: initialData!.updatedAt ?? new Date(), // Provide default Date for updatedAt too
+        }}
         availableConnectors={availableConnectors} 
         sourceDeviceTypeOptions={standardizedDeviceTypes} // Pass the standardized types to the form
        />

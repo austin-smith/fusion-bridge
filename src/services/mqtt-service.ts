@@ -41,6 +41,7 @@ interface MqttConnection {
 }
 
 // Map storing active MQTT connections, keyed by YoLink Home ID
+// eslint-disable-next-line no-var
 declare global { var __mqttConnections: Map<string, MqttConnection> | undefined; }
 const connections: Map<string, MqttConnection> = globalThis.__mqttConnections || (globalThis.__mqttConnections = new Map());
 

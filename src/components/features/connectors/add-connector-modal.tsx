@@ -104,6 +104,7 @@ export function AddConnectorModal() {
   } = useFusionStore();
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testedYoLinkHomeId, setTestedYoLinkHomeId] = useState<string | null>(null);
   
   // Wizard state for Piko
   const [pikoWizardStep, setPikoWizardStep] = useState<PikoWizardStep>('credentials');
@@ -142,6 +143,7 @@ export function AddConnectorModal() {
       selectedSystem: '',
     });
     setTestResult(null);
+    setTestedYoLinkHomeId(null);
     setPikoWizardStep('credentials');
     setPikoSystems([]);
   }, [form]);
@@ -182,6 +184,7 @@ export function AddConnectorModal() {
         setEditingConnector(null);
       }
       resetForm();
+      setTestedYoLinkHomeId(null);
     }
   }, [currentOpenState, isEditMode, setEditingConnector, resetForm]);
 
@@ -204,7 +207,7 @@ export function AddConnectorModal() {
       // Call the API to get systems
       toast.loading('Authenticating with Piko...', { id: 'fetch-piko-systems' });
       
-      const response = await fetch('/api/piko-systems', {
+      const response = await fetch('/api/piko/systems', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -257,6 +260,7 @@ export function AddConnectorModal() {
         config = {
           uaid: values.uaid || '',
           clientSecret: values.clientSecret || '',
+          homeId: testedYoLinkHomeId ?? undefined,
         };
       } else if (values.category === 'piko') {
         config = {
@@ -318,6 +322,7 @@ export function AddConnectorModal() {
         currentSetOpenState(false);
         form.reset();
         setTestResult(null);
+        setTestedYoLinkHomeId(null);
         setPikoWizardStep('credentials');
         setPikoSystems([]);
         if (isEditMode) setEditingConnector(null);
@@ -340,6 +345,7 @@ export function AddConnectorModal() {
     try {
       setIsTestingConnection(true);
       setTestResult(null);
+      setTestedYoLinkHomeId(null);
       
       // Validate the form using react-hook-form's built-in validation
       const isValid = await form.trigger();
@@ -379,7 +385,6 @@ export function AddConnectorModal() {
       }
       
       // Handle YoLink testing
-      // Prepare the configuration based on the selected category
       let testConfig: YoLinkConfig | undefined;
       
       if (driver === 'yolink') {
@@ -414,8 +419,8 @@ export function AddConnectorModal() {
           
           // If it's a YoLink connection, try to get the Home ID
           if (driver === 'yolink' && data.data.homeId) {
-            // Store it in the form for submission
-            form.setValue('yolinkHomeId', data.data.homeId);
+            // Store it in the component state, not the form
+            setTestedYoLinkHomeId(data.data.homeId);
             
             setTestResult({
               success: true,
@@ -496,6 +501,7 @@ export function AddConnectorModal() {
                           field.onChange(value);
                           // Reset kind and test result when category changes
                           setTestResult(null);
+                          setTestedYoLinkHomeId(null);
                         }}
                         defaultValue={field.value}
                         disabled={isEditMode}

@@ -36,6 +36,7 @@ interface PikoWebSocketConnection {
 }
 
 // Map storing active WebSocket connections, keyed by Connector ID
+// eslint-disable-next-line no-var
 declare global { var __pikoWsConnections: Map<string, PikoWebSocketConnection> | undefined; }
 const connections: Map<string, PikoWebSocketConnection> = globalThis.__pikoWsConnections || (globalThis.__pikoWsConnections = new Map());
 
@@ -230,7 +231,7 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
             // Return a promise that resolves/rejects based on the connection attempt
             return new Promise<boolean>(async (resolve, reject) => {
                 let connectTimeoutId: NodeJS.Timeout | null = null;
-                let connectionPromiseSettled = false; // Flag to prevent double resolve/reject
+                const connectionPromiseSettled = false; // Flag to prevent double resolve/reject
 
                 // Store reference to the specific client being created in this attempt
                 let attemptClient: WebSocket | null = null;
@@ -259,7 +260,7 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                     // 6b. Get system-scoped token
                     // TODO: Implement proper token refresh logic based on expiresAt and stored refreshToken
                     let currentToken = connection.tokenInfo?.accessToken;
-                    let tokenNeedsRefresh = !currentToken; 
+                    const tokenNeedsRefresh = !currentToken; 
 
                     if (tokenNeedsRefresh) {
                         console.log(`[initPikoWebSocket][${connectorId}] Fetching new system-scoped token...`);

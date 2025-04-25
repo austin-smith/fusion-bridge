@@ -224,6 +224,9 @@ export enum EventType {
   PERSON_DETECTED = 'PERSON_DETECTED',
   LOITERING = 'LOITERING',
   LINE_CROSSING = 'LINE_CROSSING',
+  ARMED_PERSON = 'ARMED_PERSON',
+  TAILGATING = 'TAILGATING',
+  INTRUSION = 'INTRUSION',
 
   // Catch-all for unhandled external events
   UNKNOWN_EXTERNAL_EVENT = 'UNKNOWN_EXTERNAL_EVENT',
@@ -236,6 +239,9 @@ export enum EventType {
 export const PERSON_DETECTED_DISPLAY = 'Person Detected';
 export const LOITERING_DISPLAY = 'Loitering';
 export const LINE_CROSSING_DISPLAY = 'Line Crossing';
+export const ARMED_PERSON_DISPLAY = 'Armed Person Detected';
+export const TAILGATING_DISPLAY = 'Tailgating Detected';
+export const INTRUSION_DISPLAY = 'Intrusion Detected';
 export const GENERIC_ANALYTICS_DISPLAY = 'Generic Analytics';
 export const STATE_CHANGED_DISPLAY = 'State Changed';
 export const DEVICE_ONLINE_DISPLAY = 'Device Online';
@@ -246,6 +252,9 @@ export const EVENT_TYPE_DISPLAY_MAP = {
   [EventType.PERSON_DETECTED]: PERSON_DETECTED_DISPLAY,
   [EventType.LOITERING]: LOITERING_DISPLAY,
   [EventType.LINE_CROSSING]: LINE_CROSSING_DISPLAY,
+  [EventType.ARMED_PERSON]: ARMED_PERSON_DISPLAY,
+  [EventType.TAILGATING]: TAILGATING_DISPLAY,
+  [EventType.INTRUSION]: INTRUSION_DISPLAY,
   [EventType.ANALYTICS_EVENT]: GENERIC_ANALYTICS_DISPLAY,
   [EventType.STATE_CHANGED]: STATE_CHANGED_DISPLAY,
   [EventType.BATTERY_LEVEL_CHANGED]: 'Battery Level Changed',

@@ -63,7 +63,8 @@ export async function getRecentEvents(limit = 100) {
         rawDeviceType: devices.type, // The crucial raw identifier
         // Joined Connector fields (use connectors table)
         connectorName: connectors.name,
-        connectorCategory: connectors.category
+        connectorCategory: connectors.category,
+        connectorConfig: connectors.cfg_enc
       })
       .from(events)
       // Left Join with devices ON matching connectorId AND deviceId

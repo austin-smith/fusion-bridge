@@ -135,6 +135,7 @@ export function parseYoLinkEvent(
                     newState: intermediateState,
                     displayState: displayState,
                     rawStateValue: rawState,
+                    rawEventPayload: event.data || {}
                 };
                 // If state parsed correctly, return ONLY the STATE_CHANGED event
                 successfullyParsed = true;
@@ -147,10 +148,11 @@ export function parseYoLinkEvent(
                     eventCategory: EventCategory.DEVICE_STATE,
                     eventType: EventType.STATE_CHANGED,
                     payload: payload,
-                    rawEventPayload: event, // Store original event
+                    rawEventType: event.event,
+                    rawEventPayload: event, // Store the full original event
                 }];
             } else {
-                console.warn(`[YoLink Parser] State Change: Could not map intermediate state '${intermediateState}' to display state for ${event.deviceId}. Raw: ${rawState}`);
+                console.warn(`[YoLink Parser][${connectorId}] Could not map intermediate state '${intermediateState}' to display state for device ${event.deviceId}`);
             }
         } else {
              console.warn(`[YoLink Parser] State Change: Could not translate raw YoLink state '${rawState}' for ${event.deviceId}.`);

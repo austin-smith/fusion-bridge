@@ -4,8 +4,9 @@ import { connectors, devices } from '@/data/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import * as eventsRepository from '@/data/repositories/events';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
-import { TypedDeviceInfo, DisplayState, DeviceType } from '@/lib/mappings/definitions';
+import { TypedDeviceInfo, DisplayState, DeviceType, EventCategory } from '@/lib/mappings/definitions';
 import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
+import { PikoConfig } from '@/services/drivers/piko';
 
 // Define the enriched event structure returned by getRecentEvents
 interface RepoEnrichedEvent {
@@ -23,6 +24,7 @@ interface RepoEnrichedEvent {
   rawDeviceType: string | null; // Field from JOIN
   connectorName: string | null; // Field from JOIN
   connectorCategory: string | null; // Field from JOIN
+  connectorConfig: string | null;
 }
 
 // Interface for the final enriched event data returned by the API
@@ -37,11 +39,17 @@ interface ApiEnrichedEvent {
   timestamp: number; // Epoch ms
   eventCategory: string;
   eventType: string;
-  payload: Record<string, any> | null; 
+  payload: Record<string, any> | null;
   rawPayload: Record<string, any> | null;
   deviceTypeInfo: TypedDeviceInfo;
   displayState?: DisplayState;
   rawEventType?: string; // Add optional rawEventType
+  bestShotUrlComponents?: {
+    pikoSystemId: string;
+    connectorId: string;
+    objectTrackId: string;
+    cameraId: string;
+  };
 }
 
 // GET handler to fetch events
@@ -55,6 +63,7 @@ export async function GET() {
       let payload: Record<string, any> | null = null;
       let rawPayload: Record<string, any> | null = null;
       let displayState: DisplayState | undefined = undefined;
+      let bestShotUrlComponents: ApiEnrichedEvent['bestShotUrlComponents'] | undefined = undefined;
       const connectorCategory = event.connectorCategory ?? 'unknown'; // Default if null from JOIN
 
       // Try to parse standardized payload
@@ -85,8 +94,46 @@ export async function GET() {
       // Derive displayState from parsed payload
       displayState = payload?.displayState;
       
+      // NEW: Check if this is a Piko analytics event with an objectTrackId
+      if (
+        connectorCategory === 'piko' &&
+        event.standardizedEventCategory === EventCategory.ANALYTICS && // Check category
+        payload?.objectTrackId && 
+        typeof payload.objectTrackId === 'string' &&
+        event.deviceId // Ensure we have the camera/device ID
+      ) {
+        // --- START: Parse Piko Config to get actual System ID ---
+        let actualPikoSystemId: string | undefined = undefined;
+        
+        if (event.connectorConfig) {
+            try {
+                const config = JSON.parse(event.connectorConfig) as PikoConfig;
+                if (config.type === 'cloud' && config.selectedSystem) {
+                    actualPikoSystemId = config.selectedSystem;
+                } else {
+                  console.warn(`Piko event ${event.eventUuid} has invalid or incomplete config in connector ${event.connectorId}`);
+                }
+            } catch (e) {
+                console.warn(`Failed to parse Piko config for connector ${event.connectorId} on event ${event.eventUuid}:`, e);
+            }
+        }
+        // --- END: Parse Piko Config ---
+
+        // Only create components if we successfully got the actual Piko System ID
+        if (actualPikoSystemId) {
+             bestShotUrlComponents = {
+                pikoSystemId: actualPikoSystemId, // USE ACTUAL PIKO SYSTEM ID
+                objectTrackId: payload.objectTrackId,
+                cameraId: event.deviceId, // The event's deviceId is the camera GUID
+                connectorId: event.connectorId // Pass our internal connector ID too (using correct name)
+             };
+        } else {
+             console.warn(`Could not determine actual Piko System ID for event ${event.eventUuid}, cannot create bestShotUrlComponents.`);
+        }
+      }
+
       // Assemble the final API event object
-      return {
+      const finalEventObject: ApiEnrichedEvent = {
         id: event.id,
         eventUuid: event.eventUuid,
         deviceId: event.deviceId,
@@ -102,7 +149,10 @@ export async function GET() {
         displayState: displayState,
         rawPayload: rawPayload,
         rawEventType: event.rawEventType ?? undefined, // Include rawEventType
-      } satisfies ApiEnrichedEvent; // Use satisfies for type checking
+        bestShotUrlComponents: bestShotUrlComponents,
+      }; // Removed 'satisfies ApiEnrichedEvent' here to simplify debugging if needed
+
+      return finalEventObject; // Return the constructed object
     });
 
     return NextResponse.json({ success: true, data: apiEvents });

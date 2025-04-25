@@ -27,7 +27,7 @@ export async function GET(request: Request) {
     const statuses = [];
     
     for (const connector of allConnectors) {
-      let statusPayload: Record<string, any> = { // Use a generic payload object
+      const statusPayload: Record<string, any> = { // Use a generic payload object
           connectorId: connector.id,
           name: connector.name,
           category: connector.category,

@@ -426,7 +426,7 @@ export async function processEvent(stdEvent: StandardizedEvent<any>): Promise<vo
                                 // Use type assertion for exhaustiveness check
                                 const _exhaustiveCheck: never = action;
                                 // Keeping 'as any' for runtime logging of unhandled cases
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                 
                                 console.warn(`[Rule ${rule.id}] Unknown or unhandled action type: ${(_exhaustiveCheck as any)?.type}`);
                         }
                     }; // End runAction definition
