@@ -46,7 +46,7 @@ export default function SystemLogsPage() {
   // Initialize connectionStatus based on initial isLiveEnabled
   useEffect(() => {
     setConnectionStatus(isLiveEnabled ? 'connecting' : 'paused');
-  }, []); // Run only once on mount
+  }, [isLiveEnabled]); // Add isLiveEnabled dependency
 
   useEffect(() => {
     if (!isLiveEnabled) {

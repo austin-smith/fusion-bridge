@@ -538,7 +538,7 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                          if (conn.client) { conn.client.terminate(); conn.client = null; }
                          connections.set(connectorId, conn);
                      }
-                     throw error; // Throw error instead
+                     resolve(false); 
                 }
             }); // End of new Promise
         } else {

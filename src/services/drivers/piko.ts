@@ -402,7 +402,6 @@ async function fetchPikoRelayData(
             console.warn(`Could not read text error response either for ${path}:`, textError);
         }
       }
-      console.error(`Failed Piko Relay request (${method} ${path}): ${errorInfo.message} (ID: ${errorInfo.errorId || 'N/A'})`);
       // Throw the custom error
       throw new PikoApiError(errorInfo.message, {
           statusCode: response.status,
@@ -649,7 +648,6 @@ async function _fetchPikoToken(
              console.warn(`Could not read text error response either for auth:`, textError);
         }
       }
-      console.error(`Piko authentication failed (scope: ${scope || 'general'}): ${errorInfo.message} (ID: ${errorInfo.errorId || 'N/A'})`);
       // Throw the custom error
       throw new PikoApiError(errorInfo.message, {
           statusCode: response.status,
@@ -877,7 +875,6 @@ export async function getPikoBestShotImageBlob(
       } catch (readError) {
         console.warn(`Could not read error response body for ${method} ${path}:`, readError);
       }
-      console.error(`Failed Piko Best Shot request: ${errorInfo.message} (ID: ${errorInfo.errorId || 'N/A'})`);
       // Throw custom error
        throw new PikoApiError(errorInfo.message, {
           statusCode: response.status,
@@ -1076,8 +1073,8 @@ export async function getPikoMediaStream(
       } catch (readError) {
         console.warn(`Could not read error response body for GET ${path}:`, readError);
       }
-      console.error(`Failed Piko Media Stream request: ${errorInfo.message} (ID: ${errorInfo.errorId || 'N/A'})`);
-      throw new PikoApiError(errorInfo.message, {
+      // Throw the custom error
+       throw new PikoApiError(errorInfo.message, {
           statusCode: response.status,
           errorId: errorInfo.errorId,
           errorString: errorInfo.errorString,
@@ -1168,7 +1165,6 @@ export async function getPikoHlsStream(
       } catch (readError) {
         console.warn(`Could not read error response body for ${method} ${path}:`, readError);
       }
-      console.error(`Failed Piko HLS Stream request: ${errorInfo.message} (ID: ${errorInfo.errorId || 'N/A'})`);
       // Throw custom error
        throw new PikoApiError(errorInfo.message, {
           statusCode: response.status,

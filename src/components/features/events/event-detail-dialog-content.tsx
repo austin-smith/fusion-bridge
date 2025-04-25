@@ -37,6 +37,7 @@ import type { PlyrInstance, PlyrSource, APITypes } from 'plyr-react';
 import type { PlyrEvent, Html5EventMap, StandardEventMap } from 'plyr';
 import "plyr-react/plyr.css";
 import Hls from 'hls.js';
+import Image from 'next/image';
 
 // Interface matching the event data structure passed from the events page
 // This should now match the structure from EventsPage
@@ -106,10 +107,12 @@ const EventMediaThumbnail: React.FC<{ src: string; onPlayClick: () => void }> = 
           <span>Could not load image</span>
         </div>
       )}
-      {/* Image Tag */}
-      <img
+      {/* Image Component */}
+      <Image
         src={src}
         alt="Event Media Thumbnail"
+        width={100}
+        height={100}
         className={cn(
           "absolute inset-0 w-full h-full object-contain transition-opacity duration-300",
           loading || error ? 'opacity-0' : 'opacity-100'
@@ -117,6 +120,7 @@ const EventMediaThumbnail: React.FC<{ src: string; onPlayClick: () => void }> = 
         style={{ display: loading || error ? 'none' : 'block' }}
         onLoad={handleLoad}
         onError={handleError}
+        unoptimized
       />
       {/* Play Button Overlay - Show only when image is loaded and not in error */} 
       {!loading && !error && (

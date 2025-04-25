@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/data/db';
 import { connectors } from '@/data/db/schema';
 import { sql, eq } from 'drizzle-orm';
@@ -40,10 +40,20 @@ function verifySignature(secret: string, body: Buffer | string, signatureHeader:
 }
 
 export async function POST(
-  request: Request,
-  context: { params: { webhookId: string } } 
+  request: NextRequest,
+  // Type params as a Promise containing the expected object
+  { params }: { params: Promise<{ webhookId: string }> } 
 ) {
-  const { webhookId } = context.params;
+  // Await the params Promise before destructuring
+  const { webhookId } = await params;
+  
+  /* 
+  // --- Remove the temporary code ---
+  console.log("Received webhook for ID:", webhookId);
+  return NextResponse.json({ success: true, message: "Webhook received" });
+  */
+
+  // --- Restore original body --- 
   const signatureHeader = request.headers.get(SIGNATURE_HEADER);
 
   if (!webhookId) {
@@ -51,10 +61,8 @@ export async function POST(
   }
 
   // --- 1. Read Raw Body --- 
-  // IMPORTANT: Must read raw body *before* request.json() is called elsewhere.
   let rawBodyBuffer: Buffer;
   try {
-    // Convert stream to buffer
     const chunks: Uint8Array[] = [];
     const reader = request.body?.getReader();
     if (!reader) throw new Error('Request body is not readable');
@@ -77,7 +85,7 @@ export async function POST(
         id: connectors.id,
         name: connectors.name,
         category: connectors.category,
-        config: connectors.cfg_enc // Fetch the raw config string
+        config: connectors.cfg_enc
     })
     .from(connectors)
     .where(sql`${connectors.cfg_enc}->>'webhookId' = ${webhookId}`)
@@ -94,7 +102,6 @@ export async function POST(
         category: connectorResult[0].category,
     };
 
-    // Parse config and get secret
     try {
       const config = JSON.parse(connectorResult[0].config || '{}');
       connectorSecret = config.webhookSecret;
@@ -115,15 +122,14 @@ export async function POST(
   // --- 3. Verify Signature --- 
   if (!verifySignature(connectorSecret, rawBodyBuffer, signatureHeader)) {
     console.warn(`Webhook ${webhookId}: Invalid signature received for connector ${connectorInfo.id}. Header: ${signatureHeader}`);
-    return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 }); // Use 401 Unauthorized
+    return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 });
   }
 
-  // --- 4. Parse JSON Body (Now that signature is verified) --- 
+  // --- 4. Parse JSON Body --- 
   let requestBody: any;
   try {
     requestBody = JSON.parse(rawBodyBuffer.toString('utf-8'));
   } catch (error) {
-    // This shouldn't happen often if signature passed, but good to handle.
     console.error(`Webhook ${webhookId}: Failed to parse JSON body after signature verification`, error);
     return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 });
   }
@@ -132,11 +138,6 @@ export async function POST(
   try {
     console.log(`Webhook received and verified for ${connectorInfo.category} connector '${connectorInfo.name}' (ID: ${connectorInfo.id}, WebhookID: ${webhookId})`);
     console.log('Webhook Body:', JSON.stringify(requestBody, null, 2));
-
-    // --- TODO: Add logic here to process the webhook data based on connector category ---
-    // Example: if (connectorInfo.category === 'netbox') { ... }
-    // For now, we just log it.
-
     return NextResponse.json({ success: true, message: 'Webhook received and verified' });
 
   } catch (error) {
@@ -144,4 +145,5 @@ export async function POST(
     const errorMessage = error instanceof Error ? error.message : 'Internal server error';
     return NextResponse.json({ success: false, error: `Failed to process webhook: ${errorMessage}` }, { status: 500 });
   }
+  // --- End of restored body ---
 } 

@@ -293,7 +293,7 @@ export default function ConnectorsPage() {
     } finally {
       setTogglingConnectorId(null); // Clear spinner state
     }
-  }, [setError, setMqttState, refreshConnectorsData]);
+  }, [setError, refreshConnectorsData]);
 
   // Function to handle toggle change for Piko WebSocket
   const handleWebSocketToggle = useCallback(async (connector: ConnectorWithConfig, currentCheckedState: boolean) => {
@@ -597,7 +597,7 @@ export default function ConnectorsPage() {
                               }
                             </span>
                           </PopoverTrigger>
-                          <PopoverContent className="w-80 max-h-[400px] overflow-y-auto">
+                          <PopoverContent className="w-[500px] max-h-[400px] overflow-y-auto">
                             <div className="text-sm font-semibold mb-2">Last Event Payload</div>
                             {getMqttState(connector.id).lastStandardizedPayload ? (
                               <div className="relative"> {/* Added relative container */}
@@ -646,7 +646,7 @@ export default function ConnectorsPage() {
                               }
                             </span>
                           </PopoverTrigger>
-                          <PopoverContent className="w-80 max-h-[400px] overflow-y-auto p-0"> {/* Remove padding */}
+                          <PopoverContent className="w-[600px] max-h-[600px] overflow-y-auto p-0"> {/* Remove padding */}
                              <div className="text-sm font-semibold mb-2 pt-3 px-3">Last Event</div> {/* Add padding here */}
                              {getPikoState(connector.id)?.lastStandardizedPayload ? (
                               <div className="relative"> {/* Added relative container */}

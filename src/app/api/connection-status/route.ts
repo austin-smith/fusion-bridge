@@ -61,7 +61,8 @@ export async function GET(request: Request) {
                   connectorId: connector.id, 
                   error: parseError ? 'Config parse error' : (homeId ? 'State not found in service map' : 'Missing homeId in config'), 
                   reconnecting: false, 
-                  disabled: !connector.eventsEnabled 
+                  disabled: !connector.eventsEnabled,
+                  lastStandardizedPayload: null
               };
           } else {
             // Ensure connectorId in state matches the one we are processing
@@ -87,7 +88,8 @@ export async function GET(request: Request) {
              pikoState = {
                  connectorId: connector.id, systemId: null, isConnected: false, 
                  isConnecting: false, error: 'State not found in service map', 
-                 reconnecting: false, disabled: !connector.eventsEnabled, lastActivity: null
+                 reconnecting: false, disabled: !connector.eventsEnabled, lastActivity: null,
+                 lastStandardizedPayload: null
              };
           }
           
