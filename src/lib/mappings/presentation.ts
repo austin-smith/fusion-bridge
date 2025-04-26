@@ -21,6 +21,7 @@ import {
 export const deviceTypeIcons: Record<DeviceType, LucideIcon> = {
     [DeviceType.Alarm]: Siren,
     [DeviceType.Camera]: Cctv,
+    [DeviceType.Door]: DoorClosed,
     [DeviceType.GarageDoor]: Warehouse,
     [DeviceType.Encoder]: Combine,
     [DeviceType.Hub]: Router,

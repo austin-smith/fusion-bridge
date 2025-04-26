@@ -1,6 +1,7 @@
 export enum DeviceType {
   Alarm = 'Alarm',
   Camera = 'Camera',
+  Door = 'Door',
   GarageDoor = 'Garage Door',
   Encoder = 'Encoder',
   Hub = 'Hub',
@@ -42,6 +43,7 @@ export enum DeviceSubtype {
 type SubtypeMap = {
   [DeviceType.Alarm]: DeviceSubtype.Siren;
   [DeviceType.Camera]: never;
+  [DeviceType.Door]: never;
   [DeviceType.GarageDoor]: never;
   [DeviceType.Encoder]: never;
   [DeviceType.Hub]: DeviceSubtype.Cellular | DeviceSubtype.Generic | DeviceSubtype.Speaker;
@@ -176,6 +178,9 @@ export type ValidDisplayStatesMap = {
 };
 
 export const validDisplayStatesMap: ValidDisplayStatesMap = {
+  [DeviceType.Door]: {
+    'null': [OPEN, CLOSED],
+  },
   [DeviceType.Lock]: {
     'null': [LOCKED, UNLOCKED],
   },
@@ -197,7 +202,7 @@ export const validDisplayStatesMap: ValidDisplayStatesMap = {
 };
 
 // --- CONNECTOR CATEGORIES ---
-export type ConnectorCategory = 'yolink' | 'piko';
+export type ConnectorCategory = 'yolink' | 'piko' | 'nexbox';
 
 // --- Intermediate State Enums ---
 // Used as a standardized, abstract representation of device states,
@@ -214,6 +219,10 @@ export enum EventType {
   // Device State Changes
   STATE_CHANGED = 'STATE_CHANGED',
   BATTERY_LEVEL_CHANGED = 'BATTERY_LEVEL_CHANGED',
+  DOOR_HELD_OPEN = 'DOOR_HELD_OPEN',
+  DOOR_FORCED_OPEN = 'DOOR_FORCED_OPEN',
+  ACCESS_GRANTED = 'ACCESS_GRANTED',
+  ACCESS_DENIED = 'ACCESS_DENIED',
   
   // Connectivity Status
   DEVICE_ONLINE = 'DEVICE_ONLINE',
@@ -246,6 +255,10 @@ export const GENERIC_ANALYTICS_DISPLAY = 'Generic Analytics';
 export const STATE_CHANGED_DISPLAY = 'State Changed';
 export const DEVICE_ONLINE_DISPLAY = 'Device Online';
 export const DEVICE_OFFLINE_DISPLAY = 'Device Offline';
+export const DOOR_HELD_OPEN_DISPLAY = 'Door Held Open';
+export const DOOR_FORCED_OPEN_DISPLAY = 'Door Forced Open';
+export const ACCESS_GRANTED_DISPLAY = 'Access Granted';
+export const ACCESS_DENIED_DISPLAY = 'Access Denied';
 
 // --- EVENT TYPE DISPLAY MAP ---
 export const EVENT_TYPE_DISPLAY_MAP = {
@@ -258,6 +271,10 @@ export const EVENT_TYPE_DISPLAY_MAP = {
   [EventType.ANALYTICS_EVENT]: GENERIC_ANALYTICS_DISPLAY,
   [EventType.STATE_CHANGED]: STATE_CHANGED_DISPLAY,
   [EventType.BATTERY_LEVEL_CHANGED]: 'Battery Level Changed',
+  [EventType.DOOR_HELD_OPEN]: DOOR_HELD_OPEN_DISPLAY,
+  [EventType.DOOR_FORCED_OPEN]: DOOR_FORCED_OPEN_DISPLAY,
+  [EventType.ACCESS_GRANTED]: ACCESS_GRANTED_DISPLAY,
+  [EventType.ACCESS_DENIED]: ACCESS_DENIED_DISPLAY,
   [EventType.DEVICE_ONLINE]: DEVICE_ONLINE_DISPLAY,
   [EventType.DEVICE_OFFLINE]: DEVICE_OFFLINE_DISPLAY,
   [EventType.UNKNOWN_EXTERNAL_EVENT]: 'Unknown Event',
