@@ -141,31 +141,33 @@ async function _fetchAndStoreDeviceMap(connection: PikoWebSocketConnection): Pro
         return;
     }
     try {
-        // --- Start Test Google Fetch ---
-        console.log(`[${connection.connectorId}] >>> TESTING FETCH to google.com`);
-        const testResponse = await fetch('https://google.com');
-        console.log(`[${connection.connectorId}] >>> TEST FETCH Status: ${testResponse.status}`);
-        if (!testResponse.ok) {
-            console.error(`[${connection.connectorId}] >>> TEST FETCH FAILED`);
-        } else {
-            console.log(`[${connection.connectorId}] >>> TEST FETCH SUCCEEDED`);
-        }
-        // --- End Test Google Fetch ---
+        // --- Revert Test Google Fetch ---
+        // console.log(`[${connection.connectorId}] >>> TESTING FETCH to google.com`);
+        // const testResponse = await fetch('https://google.com');
+        // console.log(`[${connection.connectorId}] >>> TEST FETCH Status: ${testResponse.status}`);
+        // if (!testResponse.ok) {
+        //     console.error(`[${connection.connectorId}] >>> TEST FETCH FAILED`);
+        // } else {
+        //     console.log(`[${connection.connectorId}] >>> TEST FETCH SUCCEEDED`);
+        // }
+        // --- End Revert ---
 
         console.log(`[${connection.connectorId}] Fetching system devices for ${connection.systemId}...`);
-        // Comment out original call for testing
-        // const devices = await getSystemDevices(connection.systemId, connection.tokenInfo.accessToken);
-        // connection.deviceGuidMap = new Map(devices.map(d => [d.id, d]));
-        // console.log(`[${connection.connectorId}] Stored device map with ${connection.deviceGuidMap.size} devices.`);
-        // connections.set(connection.connectorId, connection); // Update the global map
+        // Uncomment original call
+        const devices = await getSystemDevices(connection.systemId, connection.tokenInfo.accessToken);
+        connection.deviceGuidMap = new Map(devices.map(d => [d.id, d]));
+        console.log(`[${connection.connectorId}] Stored device map with ${connection.deviceGuidMap.size} devices.`);
+        connections.set(connection.connectorId, connection); // Update the global map
     } catch (error) {
-        console.error(`[${connection.connectorId}] Failed during _fetchAndStoreDeviceMap (Original or Test). Raw Error:`, error); // Updated log message 
+        // Revert log message
+        console.error(`[${connection.connectorId}] Failed to fetch or store Piko device map. Raw Error:`, error); 
         console.error(`[${connection.connectorId}] Error Name: ${error instanceof Error ? error.name : 'N/A'}, Message: ${error instanceof Error ? error.message : 'N/A'}`);
         if (error instanceof Error && error.stack) {
             console.error(`[${connection.connectorId}] Stack Trace:\n${error.stack}`);
         }
         
-        connection.connectionError = `Failed during fetch test or device fetch: ${error instanceof Error ? error.message : 'Unknown error'}`; // Updated error message
+        // Revert error message
+        connection.connectionError = `Failed to fetch devices: ${error instanceof Error ? error.message : 'Unknown error'}`;
         connections.set(connection.connectorId, connection);
     }
 }
@@ -370,7 +372,9 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
 
                         // Establish WebSocket connection for *this* attempt
                         attemptClient = new WebSocket(url, {
-                            headers: { 'Authorization': `Bearer ${accessToken}` }
+                            headers: { 'Authorization': `Bearer ${accessToken}` },
+                            // --- Explicitly disable compression for testing Ubuntu issue ---
+                            perMessageDeflate: false
                         });
 
                         // 'open' handler: Success case
