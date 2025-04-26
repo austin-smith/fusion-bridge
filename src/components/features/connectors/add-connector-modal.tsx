@@ -820,10 +820,10 @@ export function AddConnectorModal() {
                               <div className="flex items-center">
                                 <span>{system.name}</span>
                                 {system.health === 'online' && (
-                                  <span className="h-2 w-2 rounded-full bg-green-500" />
+                                  <span className="ml-2 h-2 w-2 rounded-full bg-green-500" />
                                 )}
                                 {system.health === 'offline' && (
-                                  <span className="h-2 w-2 rounded-full bg-red-500" />
+                                  <span className="ml-2 h-2 w-2 rounded-full bg-red-500" />
                                 )}
                               </div>
                             </SelectItem>
@@ -955,39 +955,50 @@ export function AddConnectorModal() {
                                 readOnly // Make the input read-only
                                 {...field}
                                 // Merged classNames
-                                className="pr-20 bg-muted" 
+                                className="pr-28 bg-muted"
                             />
                             <div className="absolute right-1 flex space-x-1">
                                  {/* Reset button with Tooltip only */}
-                                 <TooltipProvider>
                                   <Tooltip delayDuration={300}>
-                                    <TooltipTrigger> { /* Removed asChild */ }
-                                      {/* Removed Popover wrapper */}
-                                      <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                          // onClick directly generates secret and prevents default
-                                          onClick={(e) => { // Added event parameter 'e'
-                                            e.preventDefault(); // Prevent default form submission
-                                            const newSecret = crypto.randomBytes(32).toString('hex');
-                                            form.setValue('webhookSecret', newSecret, { shouldValidate: true });
-                                            setGeneratedWebhookSecret(newSecret);
-                                            toast.info("New secret generated. Click Update Connector to save.");
-                                            setShowSecret(true); // Automatically show the new secret
-                                          }}
-                                      >
-                                          <RefreshCcw className="h-4 w-4" />
-                                          <span className="sr-only">Reset Secret</span>
-                                      </Button>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                            onClick={(e) => { 
+                                              e.preventDefault(); 
+                                              const newSecret = crypto.randomBytes(32).toString('hex');
+                                              form.setValue('webhookSecret', newSecret, { shouldValidate: true });
+                                              setGeneratedWebhookSecret(newSecret);
+                                              toast.info("New secret generated. Click Update Connector to save.");
+                                              setShowSecret(true); 
+                                            }}
+                                        >
+                                            <RefreshCcw className="h-4 w-4" />
+                                            <span className="sr-only">Reset Secret</span>
+                                        </Button>
                                      </TooltipTrigger>
                                      <TooltipContent>
-                                       {/* Updated tooltip text */}
                                        <p>Generate a new secret.<br/>Click Update Connector to save.</p>
                                      </TooltipContent>
                                    </Tooltip>
-                                 </TooltipProvider>
+
+                                 {/* Copy button for Secret */}
+                                 <Button
+                                   type="button"
+                                   variant="ghost"
+                                   size="icon"
+                                   className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                   onClick={() => {
+                                     navigator.clipboard.writeText(form.getValues('webhookSecret') || '');
+                                     toast.success("Webhook Secret copied to clipboard!");
+                                   }}
+                                   title="Copy secret"
+                                 >
+                                   <Copy className="h-4 w-4" />
+                                   <span className="sr-only">Copy Secret</span>
+                                 </Button>
 
                                  {/* Show/Hide button */}
                                 <Button
