@@ -38,6 +38,7 @@ import type { PlyrEvent, Html5EventMap, StandardEventMap } from 'plyr';
 import "plyr-react/plyr.css";
 import Hls from 'hls.js';
 import Image from 'next/image';
+import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
 
 // Interface matching the event data structure passed from the events page
 // This should now match the structure from EventsPage
@@ -117,7 +118,6 @@ const EventMediaThumbnail: React.FC<{ src: string; onPlayClick: () => void }> = 
           "absolute inset-0 w-full h-full object-contain transition-opacity duration-300",
           loading || error ? 'opacity-0' : 'opacity-100'
         )}
-        style={{ display: loading || error ? 'none' : 'block' }}
         onLoad={handleLoad}
         onError={handleError}
         unoptimized
@@ -139,11 +139,7 @@ const EventMediaThumbnail: React.FC<{ src: string; onPlayClick: () => void }> = 
 export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> = ({ event }) => {
   const [isCopied, setIsCopied] = useState(false);
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
-  const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
-  const plyrRef = useRef<APITypes>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
-
+  
   const handleCopy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -183,101 +179,20 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
     }
   }
 
-  // NEW: Handle clicking the play button on the media thumbnail
+  // NEW: Handle clicking the play button - Now fetches media info first
   const handlePlayMediaClick = () => {
-    if (event.bestShotUrlComponents && event.timestamp) {
-      // Destructure all required IDs using the updated names
-      const { pikoSystemId, connectorId, cameraId } = event.bestShotUrlComponents;
-      const positionMs = event.timestamp; // Event timestamp is the starting point
-
-      // Check if all necessary IDs are present
-      if (pikoSystemId && connectorId && cameraId && positionMs) {
-        const apiUrl = new URL('/api/piko/media', window.location.origin);
-        // Append all required parameters with correct names
-        apiUrl.searchParams.append('pikoSystemId', pikoSystemId); 
-        apiUrl.searchParams.append('connectorId', connectorId);
-        apiUrl.searchParams.append('cameraId', cameraId);
-        apiUrl.searchParams.append('positionMs', String(positionMs));
-
-        const urlToPlay = apiUrl.toString(); // Store URL temporarily
-        setVideoStreamUrl(urlToPlay); 
-        // Log the URL being passed to the player
-        console.log('Setting video player URL:', urlToPlay);
-        setShowVideoPlayer(true);
-      } else {
-        console.error("Cannot play video: Missing pikoSystemId, connectorId, cameraId, or timestamp.");
-        toast.error("Could not load video: Missing required information.");
-      }
-    } else {
-      console.error("Cannot play video: Missing bestShotUrlComponents or timestamp.");
-      toast.error("Could not load video: Event data incomplete.");
-    }
+    setShowVideoPlayer(true); // Simply show the player area
   }
 
-  // Effect to setup hls.js if needed
-  useEffect(() => {
-    const videoElement = videoRef.current;
-
-    // Cleanup function to destroy HLS instance on unmount or URL change
-    const cleanupHls = () => {
-        if (hlsRef.current) {
-            console.log("Destroying previous HLS instance");
-            hlsRef.current.destroy();
-            hlsRef.current = null;
-        }
-    };
-
-    if (videoElement && videoStreamUrl) {
-        cleanupHls(); // Clean up any previous instance first
-
-        // Check if HLS.js is supported AND the URL is an HLS manifest
-        if (Hls.isSupported() && videoStreamUrl.includes('.m3u8')) {
-            console.log("HLS.js is supported and URL is .m3u8, attaching HLS.js...");
-            
-            const hls = new Hls({
-                 // debug: true, // Keep Hls.js debugging commented out unless needed
-            });
-
-            hls.loadSource(videoStreamUrl);
-            hls.attachMedia(videoElement);
-            
-            // Keep the essential error handler
-            hls.on(Hls.Events.ERROR, function(event, data) {
-                console.error('HLS.js Error:', event, data);
-                if (data.fatal) {
-                    switch(data.type) {
-                    case Hls.ErrorTypes.NETWORK_ERROR:
-                        console.error('HLS.js: Fatal network error encountered');
-                        break;
-                    case Hls.ErrorTypes.MEDIA_ERROR:
-                        console.error('HLS.js: Fatal media error encountered');
-                        break;
-                    default:
-                        console.error('HLS.js: Unrecoverable fatal error');
-                        cleanupHls(); 
-                        break;
-                    }
-                }
-                toast.error("Video playback error (HLS.js).");
-                setShowVideoPlayer(false);
-                setVideoStreamUrl(null);
-            });
-
-            hlsRef.current = hls; 
-
-        } else {
-             // Use native playback for non-HLS streams or browsers with native HLS support
-             console.log("Using native video element src for playback (WebM, MP4, or native HLS). URL:", videoStreamUrl);
-             videoElement.src = videoStreamUrl; // Set src directly
-             // No need for the HLS-specific native check here anymore, 
-             // as setting src handles both native HLS and other direct formats.
-        }
-    } 
-
-    // Return cleanup function
-    return cleanupHls;
-
-  }, [videoStreamUrl]); // Rerun effect when URL changes
+  // --- Prepare props for PikoVideoPlayer (handle potential undefined) ---
+  const pikoVideoProps = {
+      connectorId: event.connectorId,
+      pikoSystemId: event.bestShotUrlComponents?.pikoSystemId,
+      cameraId: event.bestShotUrlComponents?.cameraId,
+      positionMs: event.timestamp
+  };
+  // Check if all necessary props are available before attempting to render player
+  const canRenderPlayer = !!(pikoVideoProps.connectorId && pikoVideoProps.pikoSystemId && pikoVideoProps.cameraId && pikoVideoProps.positionMs !== undefined);
 
   return (
     <Dialog>
@@ -335,30 +250,17 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                     <span className="text-xs font-medium text-muted-foreground">MEDIA</span>
                     <div className="h-px grow bg-border"></div>
                   </div>
-                  {/* Conditionally render Video Player or Media Thumbnail */} 
-                  {showVideoPlayer && videoStreamUrl ? (
-                    <div className="aspect-video bg-black rounded-md overflow-hidden"> 
-                        {/* Native video element with ref */}
-                        <video
-                          ref={videoRef} // Attach ref
-                          // Remove src attribute initially, let useEffect handle it
-                          // src={videoStreamUrl} 
-                          controls
-                          autoPlay
-                          preload="auto"
-                          className="w-full h-full"
-                          // Keep basic video error handler for non-HLS issues
-                          onError={(e) => {
-                              // Avoid double-logging if HLS error already handled
-                              if (!hlsRef.current) { 
-                                console.error("Native video element error:", e);
-                                toast.error("Failed to load or play video stream.");
-                                setShowVideoPlayer(false);
-                                setVideoStreamUrl(null);
-                              }
-                          }}
-                        />
-                    </div>
+                  {/* Conditionally render Player or Thumbnail */}
+                  {showVideoPlayer ? (
+                    canRenderPlayer ? (
+                      <PikoVideoPlayer {...pikoVideoProps} />
+                    ) : (
+                      // Display error if essential props are missing
+                      <div className="aspect-video bg-muted rounded-md flex items-center justify-center text-destructive p-4 text-center">
+                         <AlertCircle className="h-8 w-8 mb-2" />
+                         <span className="text-sm">Cannot load video: Missing required event information (IDs or timestamp).</span>
+                      </div>
+                    )
                   ) : (
                      <EventMediaThumbnail src={mediaThumbnailUrl} onPlayClick={handlePlayMediaClick} />
                   )}

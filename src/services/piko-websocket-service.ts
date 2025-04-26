@@ -337,7 +337,6 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                          latestState.isAttemptingConnection = false; // Clear flag
                          latestState.connectionError = null;
                          latestState.reconnectAttempts = 0;
-                         latestState.lastActivity = new Date();
                          connections.set(connectorId, latestState);
 
                          // --- Attach Connection Event Listeners ---
@@ -464,21 +463,28 @@ async function _handlePikoMessage(connectorId: string, message: Message): Promis
         const messageString = message.utf8Data;
         try {
             const parsedMessage = JSON.parse(messageString);
-            state.lastActivity = new Date(); // Update activity on valid message
+            // state.lastActivity = new Date(); // <<< REMOVE THIS LINE (Update moved below)
 
             // Check if it's the event update message
             if (parsedMessage.method === 'rest.v3.servers.events.update' && parsedMessage.params?.eventParams) {
                 const rawEventParams = parsedMessage.params.eventParams;
                 const standardizedEvents = parsePikoEvent(connectorId, rawEventParams, state.deviceGuidMap);
 
-                for (const stdEvent of standardizedEvents) {
-                     console.log(`[${connectorId}] Processing Standardized Event:`, stdEvent.eventId, stdEvent.eventType); 
-                     try { await eventsRepository.storeStandardizedEvent(stdEvent); } catch (e) { console.error(`[${connectorId}] Store error for ${stdEvent.eventId}:`, e); continue; }
-                     try { useFusionStore.getState().processStandardizedEvent(stdEvent); } catch (e) { console.error(`[${connectorId}] Zustand error for ${stdEvent.eventId}:`, e); }
-                     processEvent(stdEvent).catch(err => { console.error(`[${connectorId}] Automation error for ${stdEvent.eventId}:`, err); });
+                // Check if any events were actually parsed before updating activity
+                if (standardizedEvents.length > 0) {
+                    state.lastActivity = new Date(); // <<< MOVE UPDATE HERE
+                    for (const stdEvent of standardizedEvents) {
+                        console.log(`[${connectorId}] Processing Standardized Event:`, stdEvent.eventId, stdEvent.eventType); 
+                        try { await eventsRepository.storeStandardizedEvent(stdEvent); } catch (e) { console.error(`[${connectorId}] Store error for ${stdEvent.eventId}:`, e); continue; }
+                        try { useFusionStore.getState().processStandardizedEvent(stdEvent); } catch (e) { console.error(`[${connectorId}] Zustand error for ${stdEvent.eventId}:`, e); }
+                        processEvent(stdEvent).catch(err => { console.error(`[${connectorId}] Automation error for ${stdEvent.eventId}:`, err); });
 
-                     state.lastStandardizedPayload = stdEvent.payload ?? null;
-                     connections.set(connectorId, state); // Update state after processing
+                        state.lastStandardizedPayload = stdEvent.payload ?? null;
+                        // connections.set(connectorId, state); // Update state after processing (moved below loop)
+                    }
+                    connections.set(connectorId, state); // Update state once after processing all events in the message
+                } else {
+                    // No events parsed, don't update lastActivity based on this message
                 }
             } else if (parsedMessage.error) {
                 console.error(`[${connectorId}] Received JSON-RPC Error:`, parsedMessage.error);
@@ -496,8 +502,8 @@ async function _handlePikoMessage(connectorId: string, message: Message): Promis
         }
     } else if (message.type === 'binary') {
         console.warn(`[${connectorId}] Received unexpected binary message.`);
-        state.lastActivity = new Date(); // Still update activity
-        connections.set(connectorId, state);
+        // state.lastActivity = new Date(); // <<< REMOVE THIS LINE
+        connections.set(connectorId, state); // Only update state if necessary, removed activity update
     }
 }
 
