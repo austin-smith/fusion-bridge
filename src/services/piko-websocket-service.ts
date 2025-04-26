@@ -475,43 +475,77 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                                     eventsOnly: true, _with: "eventParams"
                                 }
                             };
-                            try {
-                                const messageString = JSON.stringify(subscribeMsg);
-                                console.log(`[${conn.connectorId}] Sending subscribe request (ID: ${requestId})...`);
-
-                                // --- Check readyState before sending ---
-                                if (client.readyState !== WebSocket.OPEN) {
-                                    console.warn(`[${conn.connectorId}] Attempted to send subscribe message, but readyState was ${client.readyState}. Aborting send.`);
-                                    throw new Error(`WebSocket not open. ReadyState: ${client.readyState}`);
+                            
+                            // --- Add Delay Before Sending ---
+                            console.log(`[${conn.connectorId}] Waiting 100ms before sending subscribe...`);
+                            setTimeout(() => {
+                                try {
+                                    // Ensure client and connection still valid after delay
+                                    const currentConn = connections.get(connectorId);
+                                    if (!currentConn || !currentConn.client || currentConn.disabled) {
+                                         console.warn(`[${connectorId}][Send Delay] Connection state changed or disabled during delay. Aborting send.`);
+                                         return;
+                                    }
+                                    const delayedClient = currentConn.client;
+                                    
+                                    const messageString = JSON.stringify(subscribeMsg);
+                                    console.log(`[${connectorId}] Sending subscribe request after delay (ID: ${requestId})...`);
+    
+                                    // --- Check readyState before sending ---
+                                    if (delayedClient.readyState !== WebSocket.OPEN) {
+                                        console.warn(`[${connectorId}][Send Delay] Attempted to send subscribe message, but readyState was ${delayedClient.readyState}. Aborting send.`);
+                                        // Don't throw here, just log and return, as the main promise might have already resolved.
+                                        // If we need to signal failure, we'd need a different mechanism.
+                                        currentConn.connectionError = `Send failed after delay: WebSocket not open. ReadyState: ${delayedClient.readyState}`;
+                                        connections.set(connectorId, currentConn);
+                                        return; 
+                                    }
+                                    // --- End check ---
+    
+                                    delayedClient.send(messageString);
+                                    console.log(`[${connectorId}][Send Delay] Subscribe message sent successfully.`);
+                                    
+                                    // Now that send succeeded, initiate the fetch/refresh (if they weren't commented out)
+                                    // NOTE: This logic runs *after* the main initPikoWebSocket promise may have resolved.
+                                    console.log(`[${connectorId}][Send Delay] Initiating post-send operations...`);
+                                    // Ensure these lines are uncommented if the isolation test is reverted:
+                                    // await _fetchAndStoreDeviceMap(currentConn);
+                                    // _startPeriodicDeviceRefresh(currentConn);
+                                    
+                                } catch (sendError) {
+                                    // --- Logging for sendError (inside setTimeout) ---
+                                    const currentConn = connections.get(connectorId);
+                                    console.error(`[${connectorId}][Send Delay] Failed to send subscribe message. Raw Error:`, sendError);
+                                    // ... (keep existing detailed logging) ...
+                                    console.error(`[${connectorId}][Send Delay] SendError Name: ${sendError instanceof Error ? sendError.name : 'N/A'}`);
+                                    console.error(`[${connectorId}][Send Delay] SendError Message: ${sendError instanceof Error ? sendError.message : 'N/A'}`);
+                                    if (sendError && typeof sendError === 'object') {
+                                        console.error(`[${connectorId}][Send Delay] SendError Code:`, (sendError as any).code);
+                                        console.error(`[${connectorId}][Send Delay] SendError Errno:`, (sendError as any).errno);
+                                        console.error(`[${connectorId}][Send Delay] SendError Syscall:`, (sendError as any).syscall);
+                                    }
+                                     if (sendError instanceof Error && sendError.stack) {
+                                        console.error(`[${connectorId}][Send Delay] SendError Stack Trace:\n${sendError.stack}`);
+                                    }
+                                    // --- End Enhanced Logging ---
+                                    if(currentConn) { // Update connection state if possible
+                                         currentConn.connectionError = `Failed to send subscribe after delay: ${sendError instanceof Error ? sendError.message : 'Unknown send error'}`;
+                                         connections.set(connectorId, currentConn);
+                                         // Consider closing the client here too if send fails after delay
+                                         currentConn.client?.close();
+                                    }
+                                    // Cannot reject the main promise here as we are in a setTimeout
                                 }
-                                // --- End check ---
-
-                                client.send(messageString);
-                            } catch (sendError) {
-                                // --- Add Enhanced Logging --- 
-                                console.error(`[${conn.connectorId}] Failed to send subscribe message. Raw Error:`, sendError);
-                                console.error(`[${conn.connectorId}] SendError Name: ${sendError instanceof Error ? sendError.name : 'N/A'}`);
-                                console.error(`[${conn.connectorId}] SendError Message: ${sendError instanceof Error ? sendError.message : 'N/A'}`);
-                                // Try logging potentially relevant properties directly
-                                if (sendError && typeof sendError === 'object') {
-                                    console.error(`[${conn.connectorId}] SendError Code:`, (sendError as any).code);
-                                    console.error(`[${conn.connectorId}] SendError Errno:`, (sendError as any).errno);
-                                    console.error(`[${conn.connectorId}] SendError Syscall:`, (sendError as any).syscall);
-                                }
-                                if (sendError instanceof Error && sendError.stack) {
-                                    console.error(`[${conn.connectorId}] SendError Stack Trace:\n${sendError.stack}`);
-                                }
-                                // --- End Enhanced Logging ---
-
-                                conn.connectionError = `Failed to send subscribe: ${sendError instanceof Error ? sendError.message : 'Unknown send error'}`; // Slightly improved fallback
-                                connections.set(conn.connectorId, conn);
-                                if (client) { client.close(); } // Close client on send failure
-                                reject(false); // Reject the main init promise
-                                return;
-                            }
-
-                            // Fetch initial device map & Start periodic refresh
-                            // --- ISOLATION STEP: Comment out post-send async work ---
+                            }, 100); // 100ms delay
+                            // --- End Delay ---
+                            
+                            // --- Original direct send logic (now inside setTimeout) ---
+                            /* 
+                            try { ... } catch (sendError) { ... } 
+                            */
+                            // --- End original direct send logic ---
+                            
+                            // --- ISOLATION STEP: Keep post-send async work commented out for now ---
                             console.log(`[${conn.connectorId}] Skipping _fetchAndStoreDeviceMap and _startPeriodicDeviceRefresh for isolation testing.`);
                             // await _fetchAndStoreDeviceMap(conn);
                             // _startPeriodicDeviceRefresh(conn);
