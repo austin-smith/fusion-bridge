@@ -109,7 +109,12 @@ async function _fetchAndStoreDeviceMap(connection: PikoWebSocketConnection): Pro
         console.log(`[${connection.connectorId}] Stored device map with ${connection.deviceGuidMap.size} devices.`);
         connections.set(connection.connectorId, connection); // Update the global map
     } catch (error) {
-        console.error(`[${connection.connectorId}] Failed to fetch or store Piko device map:`, error);
+        console.error(`[${connection.connectorId}] Failed to fetch or store Piko device map. Raw Error:`, error); 
+        console.error(`[${connection.connectorId}] Error Name: ${error instanceof Error ? error.name : 'N/A'}, Message: ${error instanceof Error ? error.message : 'N/A'}`);
+        if (error instanceof Error && error.stack) {
+            console.error(`[${connection.connectorId}] Stack Trace:\n${error.stack}`);
+        }
+        
         // Keep the old map if fetching fails?
         connection.connectionError = `Failed to fetch devices: ${error instanceof Error ? error.message : 'Unknown error'}`;
         connections.set(connection.connectorId, connection);
@@ -135,7 +140,13 @@ function _startPeriodicDeviceRefresh(connection: PikoWebSocketConnection): void 
             return;
         }
         // TODO: Add token refresh logic if needed before fetching devices
-        await _fetchAndStoreDeviceMap(currentConnection);
+        try {
+          await _fetchAndStoreDeviceMap(currentConnection);
+        } catch (refreshError) {
+          console.error(`[${connection.connectorId}][Periodic Refresh] Error during _fetchAndStoreDeviceMap:`, refreshError);
+          // The error should already be logged in detail by _fetchAndStoreDeviceMap's catch block
+          // We might want to update connection.connectionError here too, or rely on the existing logic
+        }
     }, DEVICE_REFRESH_INTERVAL_MS);
     connections.set(connection.connectorId, connection); // Update state with timer ID
 }
