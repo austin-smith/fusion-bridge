@@ -1,5 +1,43 @@
 import 'server-only';
 
+// --- Add Global Error Handlers for Debugging ---
+if (typeof process !== 'undefined') { // Check if process exists (server-side)
+    // Flag to prevent duplicate logging if both handlers catch the same error
+    let errorHandled = false;
+    process.on('uncaughtException', (err, origin) => {
+        if (errorHandled) return;
+        errorHandled = true;
+        console.error('<<<<< GLOBAL UNCAUGHT EXCEPTION >>>>>');
+        console.error('Origin:', origin);
+        console.error('Error Object:', err);
+        console.error('Error Name:', err?.name);
+        console.error('Error Message:', err?.message);
+        console.error('Stack Trace:\n', err?.stack);
+        console.error('<<<<< END GLOBAL UNCAUGHT EXCEPTION >>>>>');
+        // IMPORTANT: Let Next.js handle the process exit for uncaught exceptions
+        // process.exit(1); // Avoid calling this directly unless necessary
+    });
+
+    process.on('unhandledRejection', (reason, promise) => {
+        if (errorHandled) return;
+        // Note: Unhandled rejections might also trigger uncaughtException later
+        // depending on Node version and circumstances, hence the flag.
+        console.warn('<<<<< GLOBAL UNHANDLED REJECTION >>>>>');
+        console.warn('Reason:', reason);
+        // console.warn('Promise:', promise); // Promise object can be large, log cautiously
+        if (reason instanceof Error) {
+            console.warn('Error Name:', reason.name);
+            console.warn('Error Message:', reason.message);
+            console.warn('Stack Trace:\n', reason.stack);
+        }
+        console.warn('<<<<< END GLOBAL UNHANDLED REJECTION >>>>>');
+        // Let the application decide how to handle unhandled rejections
+    });
+} else {
+    console.warn('[Piko WS Service] Could not attach global error handlers (process object not found).');
+}
+// --- End Global Error Handlers ---
+
 import WebSocket from 'ws'; // Using 'ws' library for robust WebSocket handling
 import { db } from '@/data/db';
 import { connectors } from '@/data/db/schema';
