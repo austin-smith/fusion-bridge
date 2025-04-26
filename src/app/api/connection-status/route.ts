@@ -55,7 +55,9 @@ export async function GET(request: Request) {
           
           // Create a default/error state if needed
           if (!mqttState) {
-              console.warn(`[Connection Status API][YoLink] No MQTT state found for connector ${connector.id} (HomeID: ${homeId}). Reporting default.`);
+              if (connector.eventsEnabled) {
+                  console.debug(`[Connection Status API][YoLink] No MQTT state found for connector ${connector.id} (HomeID: ${homeId}). Reporting default.`);
+              }
               mqttState = {
                   connected: false, lastEvent: null, homeId: homeId ?? null, 
                   connectorId: connector.id, 
@@ -102,7 +104,9 @@ export async function GET(request: Request) {
 
       } else {
           // Handle other/unknown connector categories
-          console.warn(`[Connection Status API] Unhandled connector category: ${connector.category} for ${connector.id}`);
+          if (connector.eventsEnabled) {
+            console.warn(`[Connection Status API] Unhandled connector category: ${connector.category} for ${connector.id}`);
+          }
           statusPayload.connectionType = 'unknown';
           statusPayload.state = { error: `Unsupported category: ${connector.category}` };
       }

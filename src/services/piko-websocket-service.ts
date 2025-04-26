@@ -606,13 +606,15 @@ async function _handlePikoMessage(connectorId: string, messageData: WebSocket.Da
                  connection.lastActivity = new Date();
                  connections.set(connectorId, connection);
             }
-        } else if (message.result !== undefined || message.error !== undefined) {
-            // Handle responses to our requests (like the initial subscribe)
-            console.log(`[${connectorId}] Received JSON-RPC response/error:`, message);
-             if(message.error) {
-                 connection.connectionError = `RPC Error: ${message.error.message || 'Unknown'}`;
-                 connections.set(connectorId, connection);
-             }
+        } else if (message.error) {
+            // Handle JSON-RPC Errors explicitly
+            console.error(`[${connectorId}] Received JSON-RPC Error:`, message.error);
+            connection.connectionError = `RPC Error: ${message.error.message || 'Unknown RPC error'}`;
+            connections.set(connectorId, connection);
+            // Consider if this error should trigger disconnect/reconnect
+        } else if (message.result !== undefined) {
+            // Handle JSON-RPC Successful Responses explicitly
+            console.log(`[${connectorId}] Received JSON-RPC Result (ID: ${message.id}):`, message.result);
         } else {
              console.warn(`[${connectorId}] Received unknown message format:`, message);
         }

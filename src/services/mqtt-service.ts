@@ -539,9 +539,14 @@ export async function disableMqttConnection(connectorId: string): Promise<void> 
 
     if (homeId && connections.has(homeId)) {
         // Ensure we only disconnect if this connection belongs to the connector being disabled
-        if (connections.get(homeId)?.connectorId === connectorId) {
+        const connection = connections.get(homeId); // <<< Get the connection object
+        if (connection?.connectorId === connectorId) {
             // console.log(`[disableMqttConnection][${connectorId}] Found active connection for home ${homeId}. Disconnecting.`);
-            await disconnectMqtt(homeId); // This also updates the connection state map (disabled, isConnected=false, etc.)
+            // Update the state map immediately
+            connection.disabled = true;
+            connection.isConnected = false; // Also mark as not connected
+            connections.set(homeId, connection); // Save the updated state
+            await disconnectMqtt(homeId); // This also updates the connection state map (disabled, isConnected=false, etc.) // <<< COMMENT IS INCORRECT
         } else {
             // console.log(`[disableMqttConnection][${connectorId}] Found connection for home ${homeId}, but it belongs to a different connector (${connections.get(homeId)?.connectorId}). Skipping disconnect.`);
         }
