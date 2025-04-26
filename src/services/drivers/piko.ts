@@ -375,6 +375,7 @@ async function fetchPikoRelayData(
       requestOptions.body = JSON.stringify(body);
     }
 
+    // console.log(`>>> Making fetch request to: ${url.toString()}`); // <<< REVERTED LOG
     const response = await fetch(url.toString(), requestOptions); 
 
     console.log(`Piko Relay fetch response status (${path}):`, response.status);
