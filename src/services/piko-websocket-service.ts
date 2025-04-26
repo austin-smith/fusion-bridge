@@ -449,7 +449,7 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                          });
                         // --- End Persistent Handlers --- 
                         
-                        // Send subscribe message with delay (Keep logic from previous step)
+                        // Send subscribe message with delay
                         const requestId = crypto.randomUUID();
                         const subscribeMsg: PikoJsonRpcSubscribeRequest = {
                             jsonrpc: "2.0", id: requestId,
@@ -461,28 +461,62 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                         };
                         console.log(`[${conn.connectorId}] Waiting 5s before sending subscribe...`);
                         setTimeout(() => { 
-                            console.log(`[${connectorId}][Send Delay] TIMEOUT FIRED. Entering callback.`);
                             try {
-                                // Ensure client and connection still valid after delay
+                                console.log(`[${connectorId}][Send Delay] TIMEOUT FIRED. Entering callback.`);
+
                                 const currentConn = connections.get(connectorId);
-                                if (!currentConn || currentConn.disabled || !currentConn.isConnected) {
-                                    console.warn(`[${connectorId}] Skipping subscribe: Connection not active or disabled.`);
-                                    return;
+                                if (!currentConn || !currentConn.client || currentConn.disabled) {
+                                     console.warn(`[${connectorId}][Send Delay] Connection state invalid. Aborting send.`);
+                                     return; 
                                 }
-                                // ... (rest of try block as before)
+                                const delayedClient = currentConn.client;
+                                
+                                const messageString = JSON.stringify(subscribeMsg); 
+                                
+                                // --- Keep logging the string --- 
+                                console.log(`[${connectorId}][Send Delay] Stringified Message:`, messageString); 
+                                
+                                if (delayedClient.readyState !== WebSocket.OPEN) { 
+                                    console.warn(`[${connectorId}][Send Delay] readyState is ${delayedClient.readyState}. Aborting send.`);
+                                    return; 
+                                }
+
+                                console.log(`[${connectorId}][Send Delay] Sending subscribe request after delay (ID: ${requestId})...`);
+                                delayedClient.send(messageString); // Send messageString directly
+                                console.log(`[${connectorId}][Send Delay] Subscribe message sent successfully.`);
+                                
+                                // --- Restore post-send operations --- 
+                                console.log(`[${connectorId}][Send Delay] Initiating post-send operations...`);
+                                _fetchAndStoreDeviceMap(currentConn); // Re-enable
+                                _startPeriodicDeviceRefresh(currentConn); // Re-enable
+                                // --- End Restore --- 
+                                
                             } catch (sendError) {
-                                // ... (catch block as before)
+                                const currentConn = connections.get(connectorId);
+                                console.error(`[${connectorId}][Send Delay] Failed to send subscribe message. Raw Error:`, sendError);
+                                console.error(`[${connectorId}][Send Delay] SendError Name: ${sendError instanceof Error ? sendError.name : 'N/A'}`);
+                                console.error(`[${connectorId}][Send Delay] SendError Message: ${sendError instanceof Error ? sendError.message : 'N/A'}`);
+                                if (sendError && typeof sendError === 'object') {
+                                    console.error(`[${connectorId}][Send Delay] SendError Code:`, (sendError as any).code);
+                                    console.error(`[${connectorId}][Send Delay] SendError Errno:`, (sendError as any).errno);
+                                    console.error(`[${connectorId}][Send Delay] SendError Syscall:`, (sendError as any).syscall);
+                                }
+                                 if (sendError instanceof Error && sendError.stack) {
+                                    console.error(`[${connectorId}][Send Delay] SendError Stack Trace:\n${sendError.stack}`);
+                                }
+                                if(currentConn) { 
+                                     currentConn.connectionError = `Failed to send subscribe after delay: ${sendError instanceof Error ? sendError.message : 'Unknown send error'}`;
+                                     connections.set(connectorId, currentConn);
+                                     currentConn.client?.close();
+                                }
                             }
                         }, 5000);
 
                         // Resolve the main promise
                         promiseSettled = true;
                         resolve(true);
-                        // --- Add Log After Resolve --- 
                         console.log(`[${conn.connectorId}][open] Promise resolved. Handler finished.`);
-                        // --- End Log After Resolve --- 
                     });
-                    
                 } catch (initialSetupError) { // Catches errors from token fetch or WS constructor
                     if (promiseSettled) return;
                     console.error(`[${connectorId}] Error during initial WebSocket setup:`, initialSetupError);
