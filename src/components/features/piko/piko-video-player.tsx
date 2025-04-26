@@ -218,10 +218,10 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
                     console.error("PikoVideoPlayer: Native video element error:", e);
                     const videoElement = e.target as HTMLVideoElement;
                     // Use a more generic message as we cannot access backend error details here.
-                    let errorMsg = "Error loading video"; 
+                    const errorMsg = "Error loading video";
                     
                     // Display the generic message
-                    toast.error(errorMsg); 
+                    toast.error(errorMsg);
                     setMediaInfoError(errorMsg); // Show the generic error in the player UI
                     setStreamUrl(null); // Prevent retry loops
                     setMediaType(null);

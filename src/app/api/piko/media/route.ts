@@ -168,7 +168,7 @@ export async function GET(request: NextRequest) {
         // --- Stream Piko Response Back ---
         if (!pikoResponse.ok || !pikoResponse.body) {
             console.error(`Piko media request [getStream]: Failed to get valid media stream from Piko API (Status: ${pikoResponse.status}). Body is null: ${!pikoResponse.body}`);
-            let errorMessage = 'Failed to get media stream from Piko';
+            const errorMessage = 'Failed to get media stream from Piko';
             let errorDetails = `Piko API returned status ${pikoResponse.status}`;
             try { 
                 const errorText = await pikoResponse.text();
