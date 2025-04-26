@@ -424,52 +424,44 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                          });
                          // --- End Connection Listeners ---
 
-                         // Send subscribe message with delay
-                         const requestId = crypto.randomUUID();
-                         const subscribeMsg: PikoJsonRpcSubscribeRequest = {
-                             jsonrpc: "2.0", id: requestId,
-                             method: "rest.v3.servers.events.subscribe",
-                             params: {
-                                 startTimeMs: Date.now(), 
-                                 eventType: "analyticsSdkEvent",
-                                 eventsOnly: true, 
-                                 _with: "eventParams"
-                             }
-                         };
-                         
-                         console.log(`[${connectorId}] Waiting 5s before sending subscribe...`);
-                         setTimeout(() => {
-                             try {
-                                 console.log(`[${connectorId}][Send Delay] TIMEOUT FIRED. Entering callback.`);
-                                 const currentConnState = connections.get(connectorId);
-                                 // Check connection validity again before sending
-                                 if (!currentConnState?.connection?.connected) {
-                                      console.warn(`[${connectorId}][Send Delay] Connection no longer valid. Aborting send.`);
-                                      return; 
+                         // --- Fetch devices and start refresh IMMEDIATELY --- 
+                         console.log(`[${connectorId}] Connection established. Fetching devices and starting refresh...`);
+                         _fetchAndStoreDeviceMap(latestState); 
+                         _startPeriodicDeviceRefresh(latestState);
+                         // --- End Fetch/Refresh ---
+
+                         // --- Send subscribe message immediately (No Delay) ---
+                         try {
+                             const requestId = crypto.randomUUID();
+                             const subscribeMsg: PikoJsonRpcSubscribeRequest = { 
+                                 jsonrpc: "2.0", id: requestId,
+                                 method: "rest.v3.servers.events.subscribe",
+                                 params: {
+                                     startTimeMs: Date.now(), 
+                                     eventType: "analyticsSdkEvent",
+                                     eventsOnly: true, 
+                                     _with: "eventParams"
                                  }
-                                 
-                                 const messageString = JSON.stringify(subscribeMsg); 
-                                 console.log(`[${connectorId}][Send Delay] Stringified Message:`, messageString); 
-                                 console.log(`[${connectorId}][Send Delay] Sending subscribe request after delay (ID: ${requestId})...`);
-                                 currentConnState.connection.sendUTF(messageString); // Use sendUTF
-                                 console.log(`[${connectorId}][Send Delay] Subscribe message sent successfully.`);
-                                 
-                                 // Restore post-send operations
-                                 console.log(`[${connectorId}][Send Delay] Initiating post-send operations...`);
-                                 // Ensure state is passed correctly
-                                 _fetchAndStoreDeviceMap(currentConnState); 
-                                 _startPeriodicDeviceRefresh(currentConnState);
-                                 
-                             } catch (sendError) {
-                                 const currentConnState = connections.get(connectorId);
-                                 console.error(`[${connectorId}][Send Delay] Failed to send subscribe message.`, sendError);
-                                 if(currentConnState) { 
-                                      currentConnState.connectionError = `Failed to send subscribe after delay: ${sendError instanceof Error ? sendError.message : 'Unknown send error'}`;
-                                      connections.set(connectorId, currentConnState);
-                                      currentConnState.connection?.close(); // Close connection on send error
-                                 }
+                             }; 
+                             const messageString = JSON.stringify(subscribeMsg); 
+                             // console.log(`[${connectorId}] Stringified Message:`, messageString); // Remove diagnostic log
+                             console.log(`[${connectorId}] Sending subscribe request (ID: ${requestId})...`);
+                             // Ensure connection is still valid before sending
+                             if (!latestState.connection?.connected) { 
+                                 console.warn(`[${connectorId}] Connection closed before sending subscribe. Aborting.`);
+                                 return;
                              }
-                         }, 5000); 
+                             latestState.connection.sendUTF(messageString); // Use sendUTF
+                             console.log(`[${connectorId}] Subscribe message sent successfully.`);
+                         } catch (sendError) {
+                             console.error(`[${connectorId}] Failed to send subscribe message.`, sendError);
+                             if(latestState) { // Check latestState exists
+                                  latestState.connectionError = `Failed to send subscribe: ${sendError instanceof Error ? sendError.message : 'Unknown send error'}`;
+                                  connections.set(connectorId, latestState);
+                                  latestState.connection?.close(); // Close connection on send error
+                             }
+                         }
+                         // --- End Send Subscribe --- 
 
                          resolve(true); // Connection successful
                      });
