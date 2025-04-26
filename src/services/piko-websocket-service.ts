@@ -324,7 +324,7 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                                 localPromiseSettled = true;
                                 attemptClient?.close(); 
                                 cleanupAttempt();
-                                resolve(false); // Resolve main promise as false (didn't connect *this* time)
+                                reject(false); // Reject main promise as false (didn't connect *this* time)
                                 return;
                             }
                             if (conn.client !== null && conn.client !== attemptClient) {
@@ -332,23 +332,74 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                                 localPromiseSettled = true;
                                 attemptClient?.close();
                                 cleanupAttempt();
-                                resolve(false); // Resolve main promise as false
+                                reject(false); // Reject main promise as false
                                 return;
                             }
                             
                             // --- SUCCESS ---
                             localPromiseSettled = true;
                             conn.client = attemptClient; // Assign this client as the active one
-                            const client = conn.client; 
+                            const client = conn.client;
                             console.log(`[${conn.connectorId}] WebSocket connection established to ${url}.`);
                             conn.isConnected = true;
                             conn.isConnecting = false;
                             conn.connectionError = null;
                             conn.reconnectAttempts = 0;
-                            conn.lastActivity = new Date();
                             conn.lastStandardizedPayload = null;
-                            connections.set(conn.connectorId, conn); 
-                            cleanupAttempt(); 
+                            connections.set(conn.connectorId, conn);
+                            cleanupAttempt();
+
+                            // --- Attach Persistent Listeners HERE ---
+                            if (client) { // Null check for type safety
+                                client.on('message', (data) => {
+                                    const currentConn = connections.get(connectorId);
+                                    // Check if connection state is still valid and enabled
+                                    if(currentConn && !currentConn.disabled) {
+                                        _handlePikoMessage(connectorId, data);
+                                    }
+                                });
+
+                                client.on('close', (code, reason) => {
+                                     const currentConn = connections.get(connectorId);
+                                     // Check if connection state still exists for this listener
+                                     if (!currentConn) {
+                                         console.warn(`[${connectorId}][close] Received close event but connection state no longer exists. Ignoring.`);
+                                         return;
+                                     }
+                                     // Check if the closed client matches the one in the current state (sanity check)
+                                     if (currentConn.client !== null && currentConn.client !== client) {
+                                        console.warn(`[${connectorId}][close] Received close for a client instance that doesn't match the current active client. Ignoring.`);
+                                        return;
+                                     }
+
+                                     const reasonStr = reason.toString();
+                                     console.log(`[${currentConn.connectorId}][close] WebSocket connection closed. Code: ${code}, Reason: ${reasonStr}`); // Simplified log
+                                     currentConn.isConnected = false;
+                                     currentConn.isConnecting = false;
+                                     currentConn.client = null; // Clear the client reference in the main state
+                                     _stopPeriodicDeviceRefresh(currentConn);
+
+                                     const wasUnexpected = code !== 1000;
+                                     if (!currentConn.disabled && wasUnexpected) {
+                                         currentConn.connectionError = currentConn.connectionError || `Connection closed unexpectedly (Code: ${code}, Reason: ${reasonStr || 'Unknown'})`;
+                                         console.log(`[${currentConn.connectorId}] Scheduling reconnect due to unexpected close from ${url}.`);
+                                         connections.set(connectorId, currentConn);
+                                         scheduleReconnect(connectorId); // Schedule async
+                                     } else {
+                                         currentConn.connectionError = null;
+                                         currentConn.reconnectAttempts = 0;
+                                         currentConn.lastStandardizedPayload = null;
+                                         connections.set(connectorId, currentConn);
+                                     }
+                                     // No promise settlement logic here, as it's handled by the outer scope
+                                });
+                            } else {
+                                // This case should technically not happen. Log critical error.
+                                console.error(`[${conn.connectorId}] Critical error: Client became null immediately after assignment in 'open' handler. Cannot attach listeners.`);
+                                reject(new Error("Client became null unexpectedly during listener attachment"));
+                                return; // Stop further execution in the 'open' handler
+                            }
+                            // --- End Listener Attachment ---
 
                             // Send subscribe message (moved from original spot)
                             const requestId = crypto.randomUUID();
@@ -361,17 +412,16 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                                 }
                             };
                             try {
+                                const messageString = JSON.stringify(subscribeMsg); // Stringify once
                                 console.log(`[${conn.connectorId}] Sending subscribe request (ID: ${requestId})...`);
-                                if (!client) {
-                                    throw new Error("WebSocket client became null unexpectedly before sending subscribe.");
-                                }
-                                client.send(JSON.stringify(subscribeMsg));
+                                // No need for !client check here due to the guard above
+                                client.send(messageString); // Send the stringified message
                             } catch (sendError) {
                                 console.error(`[${conn.connectorId}] Failed to send subscribe message:`, sendError);
-                                conn.connectionError = `Failed to send subscribe: ${sendError instanceof Error ? sendError.message : 'Unknown'}`;
+                                conn.connectionError = `Failed to send subscribe: ${sendError instanceof Error ? sendError.message : String(sendError)}`; // Capture message
                                 connections.set(conn.connectorId, conn);
-                                if (client) { client.close(); } 
-                                resolve(false); // Main promise fails
+                                if (client) { client.close(); }
+                                reject(false); // Main promise fails
                                 return;
                             }
 
@@ -382,18 +432,6 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                             resolve(true); // Resolve the main promise with true
                         });
 
-                        // 'message' handler (Persistent, attached once client is confirmed)
-                        // Note: Moved attachment to *after* 'open' to ensure client is stable
-                        // This might need review if messages can arrive before 'open' fully processes.
-                        // Let's keep it here for now, similar to original logic placement.
-                        // Attach *persistent* handlers to the client stored in the connection state *after* 'open'
-                        attemptClient.on('message', (data) => {
-                            const currentConn = connections.get(connectorId);
-                            if(currentConn && currentConn.client === attemptClient && !currentConn.disabled) {
-                                _handlePikoMessage(connectorId, data);
-                            } 
-                        });
-
                         // 'error' handler (specific to this attempt initially)
                         attemptClient.once('error', (err) => {
                              if (localPromiseSettled) return;
@@ -401,57 +439,25 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                              const conn = connections.get(connectorId);
                              // Check if error belongs to the client currently connecting
                              if (conn && (conn.client === attemptClient || conn.isConnecting)) {
-                                 console.error(`[${connectorId}][error] WebSocket error during connection phase to ${url}:`, err);
-                                 conn.isConnecting = false; 
-                                 conn.isConnected = false; 
+                                 console.error(`[${connectorId}][error] WebSocket error during connection phase to ${url}:`, err); // Log full error
+                                 conn.isConnecting = false;
+                                 conn.isConnected = false;
                                  conn.connectionError = `WebSocket error: ${err.message}`;
-                                 if (conn.client === attemptClient) conn.client = null; 
+                                 if (conn.client === attemptClient) conn.client = null;
                                  connections.set(connectorId, conn);
                                  cleanupAttempt();
-                                 throw err; // Throw error instead
+                                 reject(err); // Reject main promise with the error
                              } else {
                                  console.warn(`[${connectorId}][error] Received error for outdated/settled client attempt to ${url}:`, err.message);
-                                 // Still reject main promise if this was the *initial* attempt's error
                                  cleanupAttempt();
-                                 throw err; // Throw error instead
+                                 // Avoid rejecting main promise if error is from an old attempt and connection succeeded/failed otherwise
                              }
                         });
 
                         // 'close' handler (Persistent, attached once client is confirmed)
-                        attemptClient.on('close', (code, reason) => {
-                             const conn = connections.get(connectorId);
-                             // Only process if it's the active client
-                             if (!conn || conn.client !== attemptClient) return; 
+                         // --- REMOVE 'close' handler from here ---
+                        // attemptClient.on('close', (code, reason) => { ... });
 
-                             const reasonStr = reason.toString();
-                             console.log(`[${conn.connectorId}][close] WebSocket connection closed from ${url}. Code: ${code}, Reason: ${reasonStr}`);
-                             conn.isConnected = false;
-                             conn.isConnecting = false; 
-                             conn.client = null; 
-                             _stopPeriodicDeviceRefresh(conn); 
-
-                             const wasUnexpected = code !== 1000; 
-                             if (!conn.disabled && wasUnexpected) {
-                                 conn.connectionError = conn.connectionError || `Connection closed unexpectedly (Code: ${code}, Reason: ${reasonStr || 'Unknown'})`;
-                                 console.log(`[${conn.connectorId}] Scheduling reconnect due to unexpected close from ${url}.`);
-                                 connections.set(connectorId, conn);
-                                 scheduleReconnect(connectorId); // Schedule async
-                             } else {
-                                 conn.connectionError = null;
-                                 conn.reconnectAttempts = 0;
-                                 conn.lastStandardizedPayload = null;
-                                 connections.set(connectorId, conn);
-                             }
-
-                             // If closed before main promise settled (e.g., immediate closure without open/error/redirect)
-                             if (!localPromiseSettled && !resolve && !reject) { // Checking resolve/reject directly might be tricky due to scope
-                                 console.warn(`[${connectorId}][close] Connection closed from ${url} before promise settled.`);
-                                 localPromiseSettled = true;
-                                 cleanupAttempt();
-                                 throw new Error(`Connection closed unexpectedly during setup (Code: ${code})`); // Throw error instead
-                             }
-                        });
-                        
                         // --- Add Redirect Handler ---
                         attemptClient.once('unexpected-response', (req, res) => {
                             if (localPromiseSettled) return; // Ignore if already handled
@@ -508,12 +514,12 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                         cleanupAttempt();
                         // Ensure state is cleaned up if error occurs before client creation/listeners attach
                         const conn = connections.get(connectorId);
-                        if(conn && conn.isConnecting) { 
-                             conn.isConnecting = false; 
+                        if(conn && conn.isConnecting) {
+                             conn.isConnecting = false;
                              conn.connectionError = `Setup error: ${innerSetupError instanceof Error ? innerSetupError.message : String(innerSetupError)}`;
                              connections.set(connectorId, conn);
                          }
-                        throw innerSetupError; // Throw error instead
+                        reject(innerSetupError); // Reject main promise with the error
                     }
                 }; // --- End _connectWithRedirects ---
 
@@ -529,7 +535,7 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                     await _connectWithRedirects(initialWsUrl, MAX_REDIRECTS);
                 } catch (error) {
                      // Catch errors from the initial call or deep within _connectWithRedirects
-                     console.error(`[initPikoWebSocket][${connectorId}] Final connection error after handling redirects:`, error);
+                     console.error(`[initPikoWebSocket][${connectorId}] Final connection error after handling redirects:`, error); // Log full error
                      const conn = connections.get(connectorId);
                      if(conn) { // Ensure state reflects failure
                          conn.isConnecting = false;
@@ -564,10 +570,9 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
 
 async function _handlePikoMessage(connectorId: string, messageData: WebSocket.Data): Promise<void> {
     const connection = connections.get(connectorId);
-    if (!connection || connection.disabled) return; // Ignore if disabled or no state
-
-    connection.lastActivity = new Date(); // Update activity timestamp
-    connections.set(connectorId, connection);
+    if (!connection || connection.disabled) {
+        return; // Ignore if disabled or no state
+    }
 
     let messageString: string;
     if (Buffer.isBuffer(messageData)) {
@@ -579,25 +584,27 @@ async function _handlePikoMessage(connectorId: string, messageData: WebSocket.Da
         return;
     }
 
-    console.log(`[${connectorId}] Received message:`, messageString.substring(0, 200) + (messageString.length > 200 ? '...' : ''));
-
     try {
         const message = JSON.parse(messageString);
 
         // Check if it's the event update message
         if (message.method === 'rest.v3.servers.events.update' && message.params?.eventParams) {
             const rawEventParams = message.params.eventParams;
-            // console.log(`[${connectorId}] Parsed analytics event:`, rawEventParams);
 
             const standardizedEvents = parsePikoEvent(connectorId, rawEventParams, connection.deviceGuidMap);
 
             for (const stdEvent of standardizedEvents) {
-                // TODO: Pass through full pipeline (store, Zustand, automation)
-                // console.log(`[${connectorId}] Processing Standardized Event:`, stdEvent.eventId, stdEvent.eventType);
+                 console.log(`[${connectorId}] Processing Standardized Event:`, stdEvent.eventId, stdEvent.eventType); // Keep this log
                  try { await eventsRepository.storeStandardizedEvent(stdEvent); } catch (e) { console.error(`[${connectorId}] Store error for ${stdEvent.eventId}:`, e); continue; }
                  try { useFusionStore.getState().processStandardizedEvent(stdEvent); } catch (e) { console.error(`[${connectorId}] Zustand error for ${stdEvent.eventId}:`, e); }
                  processEvent(stdEvent).catch(err => { console.error(`[${connectorId}] Automation error for ${stdEvent.eventId}:`, err); });
+
+                 // Update lastStandardizedPayload *after* successful processing of this specific event
                  connection.lastStandardizedPayload = stdEvent.payload ?? null;
+                 
+                 // << ADD lastActivity UPDATE HERE >>
+                 connection.lastActivity = new Date();
+                 connections.set(connectorId, connection);
             }
         } else if (message.result !== undefined || message.error !== undefined) {
             // Handle responses to our requests (like the initial subscribe)
@@ -605,13 +612,12 @@ async function _handlePikoMessage(connectorId: string, messageData: WebSocket.Da
              if(message.error) {
                  connection.connectionError = `RPC Error: ${message.error.message || 'Unknown'}`;
                  connections.set(connectorId, connection);
-                 // Consider if this error should trigger disconnect/reconnect
              }
         } else {
              console.warn(`[${connectorId}] Received unknown message format:`, message);
         }
     } catch (err) {
-        console.error(`[${connectorId}] Failed to parse or handle message:`, messageString, err);
+        console.error(`[${connectorId}] Failed to parse or handle message:`, err);
         connection.connectionError = `Failed to parse message: ${err instanceof Error ? err.message : String(err)}`;
         connections.set(connectorId, connection);
     }
