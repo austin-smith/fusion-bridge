@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 interface MediaInfoResponse {
   mediaType: 'hls' | 'webm';
   streamUrl: string;
+  // resolution?: string; // Remove resolution field
 }
 
 interface PikoVideoPlayerProps {
@@ -211,7 +212,8 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
             controls
             autoPlay
             preload="auto"
-            className={`absolute inset-0 w-full h-full z-0 bg-black ${isLoadingMediaInfo || mediaInfoError ? 'opacity-0' : 'opacity-100'}`}
+            // Revert back to object-contain as it accurately displays the source frame
+            className={`absolute inset-0 w-full h-full z-0 bg-black object-contain ${isLoadingMediaInfo || mediaInfoError ? 'opacity-0' : 'opacity-100'}`}
             onError={(e) => {
                 // Native error (e.g., WebM fails, or native HLS fails)
                 if (!hlsRef.current) { // Don't log if HLS.js might be handling it

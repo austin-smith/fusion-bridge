@@ -32,11 +32,6 @@ import {
 import { cn, formatConnectorCategory } from "@/lib/utils";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 import { Skeleton } from "@/components/ui/skeleton";
-import Plyr from "plyr-react";
-import type { PlyrInstance, PlyrSource, APITypes } from 'plyr-react';
-import type { PlyrEvent, Html5EventMap, StandardEventMap } from 'plyr';
-import "plyr-react/plyr.css";
-import Hls from 'hls.js';
 import Image from 'next/image';
 import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
 

@@ -81,13 +81,19 @@ export async function GET(request: NextRequest) {
 
     // --- 4. Determine Transport Type (HLS vs WebM) ---
     let useHls = false;
+    // let reportedResolution: string | undefined = undefined; // Remove resolution variable
+
     if (deviceDetails.mediaStreams && Array.isArray(deviceDetails.mediaStreams)) {
-        useHls = deviceDetails.mediaStreams.some(stream => 
-            stream.transports?.includes('hls')
-        );
-        console.log(`Piko media request: HLS available for ${cameraId}: ${useHls}`); 
+        // Find the first stream configuration (or apply more specific logic if needed)
+        const streamConfig = deviceDetails.mediaStreams[0]; 
+        if (streamConfig) {
+            useHls = streamConfig.transports?.includes('hls') ?? false;
+            // reportedResolution = streamConfig.resolution; // Remove resolution extraction
+        }
+        // console.log(`Piko media request: HLS available: ${useHls}, Reported Resolution: ${reportedResolution}`); // Update log 
+        console.log(`Piko media request: HLS available: ${useHls}`); 
     } else {
-        console.warn(`Piko media request: mediaStreams data missing or invalid for camera ${cameraId}. Cannot determine HLS support. Defaulting to WebM.`);
+        console.warn(`Piko media request: mediaStreams data missing or invalid for camera ${cameraId}. Defaulting to WebM.`);
     }
     const determinedMediaType = useHls ? 'hls' : 'webm';
 
@@ -95,15 +101,19 @@ export async function GET(request: NextRequest) {
     // --- 5. Execute Action ---
     if (action === 'getInfo') {
         // --- Action: getInfo ---
+        // console.log(`Piko media request [getInfo]: Determined type: ${determinedMediaType}, Resolution: ${reportedResolution}`); // Update log
         console.log(`Piko media request [getInfo]: Determined type: ${determinedMediaType}`);
-
+        
+        // REMOVED Pre-flight check for WebM ticket creation
+        
         // Construct the URL for the getStream action
         const streamUrl = new URL(request.url);
         streamUrl.searchParams.set('action', 'getStream'); 
         
         return NextResponse.json({ 
             mediaType: determinedMediaType, 
-            streamUrl: streamUrl.pathname + streamUrl.search // Return relative path + params
+            streamUrl: streamUrl.pathname + streamUrl.search, // Return relative path + params
+            // resolution: reportedResolution // Remove resolution from the response
         });
 
     } else if (action === 'getStream') {
