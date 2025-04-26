@@ -358,7 +358,8 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                     // 3. Create WebSocket Instance
                     client = new WebSocket(wsUrl, {
                         headers: { 'Authorization': `Bearer ${accessToken}` },
-                        perMessageDeflate: false
+                        perMessageDeflate: false,
+                        skipUTF8Validation: true
                     });
                     
                     // --- Linter Fix: Check client before attaching listeners ---
