@@ -38,6 +38,7 @@
     "@types/minimatch": "^5.1.2",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/uuid": "^10.0.0",
+    "@types/websocket": "^1.0.10",
     "better-sqlite3": "^9.4.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -71,7 +72,7 @@
     "tailwindcss-animate": "^1.0.7",
     "use-debounce": "^10.0.4",
     "uuid": "^11.1.0",
-    "ws": "^8.18.1",
+    "websocket": "^1.0.35",
     "zod": "^3.24.3",
     "zustand": "^4.4.7"
   },
