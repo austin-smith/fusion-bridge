@@ -718,6 +718,7 @@ export async function enablePikoConnection(connectorId: string): Promise<boolean
         console.log(`[enablePikoConnection][${connectorId}] Calling and awaiting initPikoWebSocket...`);
         const success = await initPikoWebSocket(connectorId);
         console.log(`[enablePikoConnection][${connectorId}] initPikoWebSocket completed. Result: ${success}`);
+        console.log(`[enablePikoConnection][${connectorId}] FINISHED enablePikoConnection function.`); 
         return success;
 
     } catch (err) {
@@ -746,9 +747,14 @@ export async function initializePikoConnections(): Promise<void> {
 
          // 1. Initialize/Update connections based on DB state
          for (const connector of allDbPikoConnectors) {
+             console.log(`[initializePikoConnections] Processing connector: ${connector.id}`); // Add log before check
              if (connector.eventsEnabled) {
                  console.log(`[initializePikoConnections] Initializing enabled connector: ${connector.id} (${connector.name})`);
-                 try { await initPikoWebSocket(connector.id); } catch (err) { /* init logs errors */ }
+                 try { 
+                     console.log(`[initializePikoConnections] BEFORE await initPikoWebSocket for ${connector.id}`);
+                     await initPikoWebSocket(connector.id);
+                     console.log(`[initializePikoConnections] AFTER await initPikoWebSocket for ${connector.id}`);
+                 } catch (err) { /* init logs errors */ }
              } else {
                  // Ensure any existing connection for a disabled connector is stopped
                  console.log(`[initializePikoConnections] Ensuring disabled connector is stopped: ${connector.id} (${connector.name})`);
@@ -757,7 +763,7 @@ export async function initializePikoConnections(): Promise<void> {
          }
 
          // 2. Cleanup: Remove connections from map if their connector was deleted from DB
-         for (const [connectorId, connection] of currentConnectionsMap.entries()) {
+         for (const [connectorId] of currentConnectionsMap.entries()) { // Simplified loop var
              if (!dbConnectorMap.has(connectorId)) {
                  console.warn(`[initializePikoConnections] Connector ${connectorId} not found in DB. Removing connection state and disconnecting.`);
                  await disconnectPikoWebSocket(connectorId);
@@ -765,7 +771,7 @@ export async function initializePikoConnections(): Promise<void> {
              }
          }
 
-         console.log('[initializePikoConnections] Scan finished.');
+         console.log('[initializePikoConnections] FINISHED initializePikoConnections function.');
      } catch (err) {
          console.error('[initializePikoConnections] Error during scan:', err);
      }
