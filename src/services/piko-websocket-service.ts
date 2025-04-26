@@ -464,6 +464,9 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                         // Resolve the main promise
                         promiseSettled = true;
                         resolve(true);
+                        // --- Add Log After Resolve --- 
+                        console.log(`[${conn.connectorId}][open] Promise resolved. Handler finished.`);
+                        // --- End Log After Resolve --- 
                     });
                     
                 } catch (initialSetupError) { // Catches errors from token fetch or WS constructor
