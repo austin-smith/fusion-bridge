@@ -460,7 +460,20 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                             }
                         };
                         console.log(`[${conn.connectorId}] Waiting 5s before sending subscribe...`);
-                        setTimeout(() => { /* ... setTimeout logic for sending subscribeMsg ... */ }, 5000);
+                        setTimeout(() => { 
+                            console.log(`[${connectorId}][Send Delay] TIMEOUT FIRED. Entering callback.`);
+                            try {
+                                // Ensure client and connection still valid after delay
+                                const currentConn = connections.get(connectorId);
+                                if (!currentConn || currentConn.disabled || !currentConn.isConnected) {
+                                    console.warn(`[${connectorId}] Skipping subscribe: Connection not active or disabled.`);
+                                    return;
+                                }
+                                // ... (rest of try block as before)
+                            } catch (sendError) {
+                                // ... (catch block as before)
+                            }
+                        }, 5000);
 
                         // Resolve the main promise
                         promiseSettled = true;
