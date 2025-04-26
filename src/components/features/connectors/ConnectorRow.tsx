@@ -113,7 +113,7 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
   let lastEventTime: number | null = null;
   let lastPayload: Record<string, any> | null = null;
   let copyIdSuffix: string = 'unknown';
-  let popoverWidthClass: string = 'w-[600px]'; // Default width
+  const popoverWidthClass: string = 'w-[600px]'; // Default width
 
   if (connector.category === 'yolink') {
     lastEventTime = mqttState.lastEventTime;
