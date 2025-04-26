@@ -398,7 +398,7 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                                  method: "rest.v3.servers.events.subscribe",
                                  params: {
                                      startTimeMs: Date.now(), 
-                                     eventType: "analyticsSdkEvent",
+                                     eventType: ["analyticsSdkEvent", "analyticsSdkObjectDetected"], // Subscribe to both events
                                      eventsOnly: true, 
                                      _with: "eventParams"
                                  }

@@ -14,7 +14,7 @@ enableMapSet();
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown' | 'reconnecting' | 'error';
 
 // MQTT state for a specific connector
-interface ConnectorMqttState {
+export interface ConnectorMqttState {
   status: ConnectionStatus; // Use shared type
   error: string | null;
   lastEventTime: number | null; 
@@ -23,7 +23,7 @@ interface ConnectorMqttState {
 }
 
 // Piko WebSocket state for a specific connector
-interface ConnectorPikoState {
+export interface ConnectorPikoState {
   status: ConnectionStatus; // Use shared type
   error: string | null;
   lastEventTime: number | null;

@@ -921,7 +921,7 @@ export async function getPikoBestShotImageBlob(
  */
 export interface PikoJsonRpcSubscribeParams {
     startTimeMs: number; // Typically Date.now()
-    eventType: "analyticsSdkEvent"; // Currently only supporting this type
+    eventType: ("analyticsSdkEvent" | "analyticsSdkObjectDetected")[]; // Only allow array of known event types
     eventsOnly: boolean; // Set to true
     _with: "eventParams"; // Include detailed event parameters
     // Potential future params: serverId, deviceId, etc.

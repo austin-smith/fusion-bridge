@@ -40,6 +40,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'; // <<< Ad
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'; // <<< Added style
 import { Check, Copy } from "lucide-react"; // <<< Added icons for copy button
 import { toast } from 'sonner'; // <<< Added for copy toast
+import { ConnectorRow } from '@/components/features/connectors/ConnectorRow'; // <<< Import ConnectorRow
 
 // Define structure for fetched YoLink MQTT state from API
 interface FetchedMqttState {
@@ -349,93 +350,6 @@ export default function ConnectorsPage() {
   // Find the connector being deleted to display its name in the dialog
   const connectorToDelete = connectors.find(c => c.id === connectorIdToDelete);
 
-  // Get status color class based on MQTT status
-  const getStatusColorClass = (connectorId: string) => {
-    const mqttState = getMqttState(connectorId);
-    // Find connector from the list obtained from store selector
-    const connector = connectors.find(c => c.id === connectorId);
-    const eventsEnabled = connector?.eventsEnabled === true;
-    
-    // If events are explicitly disabled by the user, show gray
-    if (!eventsEnabled) {
-      return 'bg-slate-300/20 text-slate-500 border border-slate-300/20';
-    }
-    
-    // Use mqttStatus from Zustand store
-    switch (mqttState.status) {
-      case 'connected': return 'bg-green-500/20 text-green-600 border border-green-500/20';
-      case 'reconnecting': return 'bg-yellow-500/20 text-yellow-600 border border-yellow-500/20';
-      case 'disconnected': return 'bg-red-500/25 text-red-600 border border-red-500/30';
-      case 'error': return 'bg-red-500/25 text-red-600 border border-red-500/30';
-      case 'unknown': return 'bg-slate-300/20 text-slate-500 border border-slate-300/20';
-      default: return 'bg-muted text-muted-foreground border border-muted-foreground/20';
-    }
-  };
-  
-  // Get status text based on MQTT status
-  const getMqttStatusText = (connectorId: string) => {
-    const mqttState = getMqttState(connectorId);
-    const connector = connectors.find(c => c.id === connectorId);
-    const eventsEnabled = connector?.eventsEnabled === true;
-    
-    // If events are explicitly disabled by the user, show "Disabled"
-    if (!eventsEnabled) {
-      return 'Disabled';
-    }
-    
-    // Use mqttStatus from Zustand store
-    switch (mqttState.status) {
-      case 'connected': return 'Connected';
-      case 'reconnecting': return 'Reconnecting';
-      case 'disconnected': return 'Disconnected';
-      case 'error': return 'Disconnected'; // Treat any error as Disconnected for display
-      case 'unknown': return 'Unknown';
-      default: return 'Unknown';
-    }
-  };
-
-  // --- Piko Status Helpers (ASSUMING getPikoState exists in store) ---
-
-  // Get status color class based on Piko WebSocket status 
-  const getPikoStatusColorClass = (connectorId: string) => {
-    const pikoState = getPikoState(connectorId); // Assume this exists
-    const connector = connectors.find(c => c.id === connectorId);
-    const eventsEnabled = connector?.eventsEnabled === true;
-    
-    if (!eventsEnabled) {
-      return 'bg-slate-300/20 text-slate-500 border border-slate-300/20';
-    }
-    
-    switch (pikoState?.status) { // Use optional chaining as state might not exist yet
-      case 'connected': return 'bg-green-500/20 text-green-600 border border-green-500/20';
-      case 'reconnecting': return 'bg-yellow-500/20 text-yellow-600 border border-yellow-500/20';
-      case 'disconnected': return 'bg-red-500/25 text-red-600 border border-red-500/30';
-      case 'error': return 'bg-red-500/25 text-red-600 border border-red-500/30';
-      case 'unknown': return 'bg-slate-300/20 text-slate-500 border border-slate-300/20';
-      default: return 'bg-muted text-muted-foreground border border-muted-foreground/20';
-    }
-  };
-  
-  // Get status text based on Piko WebSocket status
-  const getPikoStatusText = (connectorId: string) => {
-    const pikoState = getPikoState(connectorId); // Assume this exists
-    const connector = connectors.find(c => c.id === connectorId);
-    const eventsEnabled = connector?.eventsEnabled === true;
-    
-    if (!eventsEnabled) {
-      return 'Disabled';
-    }
-    
-    switch (pikoState?.status) { // Use optional chaining
-      case 'connected': return 'Connected';
-      case 'reconnecting': return 'Reconnecting';
-      case 'disconnected': return 'Disconnected';
-      case 'error': return pikoState.error ? `Error: ${pikoState.error}` : 'Error';
-      case 'unknown': return 'Unknown';
-      default: return 'Unknown';
-    }
-  };
-
   return (
     <TooltipProvider> {/* Wrap page content */}
       <div className="container py-6">
@@ -509,215 +423,35 @@ export default function ConnectorsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {connectors.map((connector: ConnectorWithConfig) => (
-                  <TableRow key={connector.id}>
-                    <TableCell className="font-medium">{connector.name}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                        <ConnectorIcon connectorCategory={connector.category} size={12} />
-                        <span className="text-xs">{formatConnectorCategory(connector.category)}</span>
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {(connector.category === 'yolink' || connector.category === 'piko') ? (
-                        <div className="flex items-center">
-                          <Switch 
-                            checked={connector.eventsEnabled === true}
-                            onCheckedChange={() => {
-                                if (connector.category === 'yolink') {
-                                    handleMqttToggle(connector, connector.eventsEnabled === true);
-                                } else if (connector.category === 'piko') {
-                                    handleWebSocketToggle(connector, connector.eventsEnabled === true);
-                                }
-                            }}
-                            disabled={togglingConnectorId === connector.id}
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {togglingConnectorId === connector.id ? (
-                        // Common Loader for both types while toggling
-                        <div className="flex items-center justify-start px-2.5 py-1">
-                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                        </div>
-                      ) : connector.category === 'yolink' ? (
-                        // YoLink MQTT Status
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(connector.id)}`}>
-                              <SiMqtt className="h-3.5 w-3.5" />
-                              <span>{getMqttStatusText(connector.id)}</span>
-                              {getMqttState(connector.id).status === 'reconnecting' && (
-                                <Loader2 className="h-3 w-3 animate-spin ml-1" />
-                              )}
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {getMqttState(connector.id).status === 'error' ? 
-                              `Error: ${getMqttState(connector.id).error || 'Unknown error'}` : 
-                              getMqttStatusText(connector.id)
-                            }
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : connector.category === 'piko' ? (
-                        // Piko WebSocket Status
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getPikoStatusColorClass(connector.id)}`}>
-                              <LuArrowRightLeft className="h-3.5 w-3.5" /> {/* WebSocket Icon */}
-                              <span>{getPikoStatusText(connector.id)}</span>
-                              {getPikoState(connector.id)?.status === 'reconnecting' && (
-                                <Loader2 className="h-3 w-3 animate-spin ml-1" />
-                              )}
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {getPikoState(connector.id)?.status === 'error' ? 
-                              `Error: ${getPikoState(connector.id)?.error || 'Unknown error'}` :
-                               getPikoStatusText(connector.id)
-                            }
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        // Default for other types (or if state not ready)
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {connector.category === 'yolink' ? (
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <span className="cursor-pointer hover:text-foreground underline decoration-dashed underline-offset-2 decoration-muted-foreground/50 hover:decoration-foreground/50">
-                              {getMqttState(connector.id).lastEventTime ? 
-                                formatDistanceToNow(new Date(getMqttState(connector.id).lastEventTime!), { addSuffix: true }) : 
-                                '-' 
-                              }
-                            </span>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-[500px] max-h-[400px] overflow-y-auto">
-                            <div className="text-sm font-semibold mb-2">Last Event Payload</div>
-                            {getMqttState(connector.id).lastStandardizedPayload ? (
-                              <div className="relative"> {/* Added relative container */}
-                                 <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    className="absolute top-1 right-1 h-7 w-7 z-50 bg-slate-800/70 hover:bg-slate-700/80" // Style copy button
-                                    onClick={() => handleCopy(JSON.stringify(getMqttState(connector.id).lastStandardizedPayload, null, 2), `${connector.id}-mqtt`)}
-                                    disabled={copiedPayloadId === `${connector.id}-mqtt`}
-                                  >
-                                    {copiedPayloadId === `${connector.id}-mqtt` ?
-                                      <Check className="h-4 w-4 text-green-400" /> :
-                                      <Copy className="h-4 w-4 text-neutral-400" />
-                                    }
-                                    <span className="sr-only">{copiedPayloadId === `${connector.id}-mqtt` ? 'Copied' : 'Copy JSON'}</span>
-                                  </Button>
-                                <SyntaxHighlighter
-                                  language="json"
-                                  style={atomDark}
-                                  customStyle={{
-                                    maxHeight: '20rem', // Adjusted max height
-                                    overflowY: 'auto',
-                                    borderRadius: '0px', // Remove border radius to fit PopoverContent
-                                    fontSize: '13px',
-                                    whiteSpace: 'pre-wrap',
-                                    wordBreak: 'break-all',
-                                    margin: '0', // Remove margin
-                                    padding: '12px' // Add padding
-                                  }}
-                                >
-                                  {JSON.stringify(getMqttState(connector.id).lastStandardizedPayload, null, 2)}
-                                </SyntaxHighlighter>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-muted-foreground px-3 pb-3">No event data available.</p> 
-                            )}
-                          </PopoverContent>
-                        </Popover>
-                      ) : connector.category === 'piko' ? (
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <span className="cursor-pointer hover:text-foreground underline decoration-dashed underline-offset-2 decoration-muted-foreground/50 hover:decoration-foreground/50">
-                              {getPikoState(connector.id)?.lastEventTime ? 
-                                formatDistanceToNow(new Date(getPikoState(connector.id).lastEventTime!), { addSuffix: true }) : 
-                                '-'
-                              }
-                            </span>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-[600px] max-h-[600px] overflow-y-auto p-0"> {/* Remove padding */}
-                             <div className="text-sm font-semibold mb-2 pt-3 px-3">Last Event</div> {/* Add padding here */}
-                             {getPikoState(connector.id)?.lastStandardizedPayload ? (
-                              <div className="relative"> {/* Added relative container */}
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="absolute top-1 right-1 h-7 w-7 z-50 bg-slate-800/70 hover:bg-slate-700/80" // Style copy button
-                                  onClick={() => handleCopy(JSON.stringify(getPikoState(connector.id).lastStandardizedPayload, null, 2), `${connector.id}-piko`)}
-                                  disabled={copiedPayloadId === `${connector.id}-piko`}
-                                >
-                                  {copiedPayloadId === `${connector.id}-piko` ?
-                                    <Check className="h-4 w-4 text-green-400" /> :
-                                    <Copy className="h-4 w-4 text-neutral-400" />
-                                  }
-                                  <span className="sr-only">{copiedPayloadId === `${connector.id}-piko` ? 'Copied' : 'Copy JSON'}</span>
-                                </Button>
-                                <SyntaxHighlighter
-                                  language="json"
-                                  style={atomDark}
-                                  customStyle={{
-                                    maxHeight: '20rem', // Adjusted max height
-                                    overflowY: 'auto',
-                                    borderRadius: '0px', // Remove border radius to fit PopoverContent
-                                    fontSize: '13px',
-                                    whiteSpace: 'pre-wrap',
-                                    wordBreak: 'break-all',
-                                    margin: '0', // Remove margin
-                                    padding: '12px' // Add padding
-                                  }}
-                                >
-                                  {JSON.stringify(getPikoState(connector.id).lastStandardizedPayload, null, 2)}
-                                </SyntaxHighlighter>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-muted-foreground px-3 pb-3">No event data available.</p>
-                            )}
-                          </PopoverContent>
-                        </Popover>
-                      ) : (
-                        '-' // Keep '-' for other types
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end space-x-2">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                             <Button variant="ghost" size="icon" onClick={() => handleEditClick(connector)}>
-                               <Pencil className="h-4 w-4" />
-                               <span className="sr-only">Edit connector</span>
-                             </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Edit connector</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => handleDeleteClick(connector.id)}
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              <span className="sr-only">Delete connector</span>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Delete connector</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {connectors.map((connector: ConnectorWithConfig) => {
+                  // <<< Get relevant state for the current row >>>
+                  const mqttState = getMqttState(connector.id);
+                  const pikoState = getPikoState(connector.id);
+                  const isToggling = togglingConnectorId === connector.id;
+                  // Construct the copy ID dynamically based on category for comparison
+                  const currentCopiedPayloadId = connector.category === 'yolink' 
+                    ? `${connector.id}-mqtt` 
+                    : connector.category === 'piko' 
+                      ? `${connector.id}-piko` 
+                      : null;
+
+                  return (
+                    // <<< Render ConnectorRow component >>>
+                    <ConnectorRow
+                      key={connector.id}
+                      connector={connector}
+                      mqttState={mqttState}
+                      pikoState={pikoState}
+                      isToggling={isToggling}
+                      copiedPayloadId={copiedPayloadId}
+                      onMqttToggle={handleMqttToggle}
+                      onWebSocketToggle={handleWebSocketToggle}
+                      onEdit={handleEditClick}
+                      onDelete={handleDeleteClick}
+                      onCopy={handleCopy}
+                    />
+                  );
+                })}
               </TableBody>
             </Table>
           </Card>

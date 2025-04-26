@@ -183,7 +183,7 @@ export function parseYoLinkEvent(
             eventCategory: EventCategory.UNKNOWN, // Use the dedicated UNKNOWN category
             eventType: EventType.UNKNOWN_EXTERNAL_EVENT,
             payload: payload,
-            // rawEventPayload: event, // Redundant as it's in the payload
+            rawEventPayload: event,
         }];
     }
 
