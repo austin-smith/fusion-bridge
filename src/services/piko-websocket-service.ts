@@ -292,402 +292,206 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
 
         // --- Start Connection Attempt --- 
         if (!connection.client && !connection.disabled) {
-            console.log(`[initPikoWebSocket][${connectorId}] Attempting WebSocket connection to system ${systemId}...`);
-            connection.isConnecting = true;
-            connection.connectionError = null;
-            connections.set(connectorId, connection);
+            // --- Pre-Promise Validation (kept from previous) --- 
+            if (!connection || !connection.config || !connection.systemId) {
+                console.error(`[${connectorId}] Invalid connection state before starting promise. Aborting init.`);
+                connection.connectionError = "Internal state error before connection attempt.";
+                connection.isConnecting = false;
+                connections.set(connectorId, connection);
+                return Promise.resolve(false); 
+            }
+            const validConnection = connection; 
+            const wsUrl = `wss://${validConnection.systemId}.relay.vmsproxy.com/jsonrpc`;
+            // --- End Pre-Promise Validation ---
+
+            console.log(`[${connectorId}] Attempting WebSocket connection to system ${validConnection.systemId}...`);
+            validConnection.isConnecting = true;
+            validConnection.connectionError = null;
+            connections.set(connectorId, validConnection);
             
-            // Return a promise that resolves/rejects based on the connection attempt
             return new Promise<boolean>(async (resolve, reject) => {
-                
-                // --- Add Connect Helper ---
-                const _connectWithRedirects = async (url: string, redirectsRemaining: number): Promise<void> => {
-                    console.log(`[${connectorId}][_connectWithRedirects] Attempting connection to ${url}. Redirects left: ${redirectsRemaining}`);
-                    
-                    // --- Add Check --- 
-                    const conn = connections.get(connectorId); // Get current state inside the helper
-                    if (!conn || !conn.config || !conn.systemId) {
-                        // This really shouldn't happen if initial checks in initPikoWebSocket pass, but satisfies linter
-                        throw new Error(`[${connectorId}][_connectWithRedirects] Internal state error: connection, config, or systemId missing.`);
-                    }
-                    // --- End Check ---
-                    
-                    if (redirectsRemaining < 0) {
-                        throw new Error("Too many redirects.");
-                    }
+                let client: WebSocket | null = null;
+                let connectTimeoutId: NodeJS.Timeout | null = null;
+                let promiseSettled = false; 
 
-                    let connectTimeoutId: NodeJS.Timeout | null = null;
-                    let attemptClient: WebSocket | null = null;
-                    let localPromiseSettled = false; // Track settlement *within* this redirect attempt
+                const cleanupAndSetError = (errorMsg: string, shouldReject: boolean = false) => {
+                    if (promiseSettled && shouldReject) return; // Avoid double rejection
+                    if (connectTimeoutId) clearTimeout(connectTimeoutId);
+                    client?.removeAllListeners(); // Remove listeners specific to this attempt
+                    client?.terminate();
 
-                    const cleanupAttempt = () => {
-                        if (connectTimeoutId) clearTimeout(connectTimeoutId);
-                        connectTimeoutId = null;
-                        // Detach temporary listeners specific to this attempt
-                        attemptClient?.removeAllListeners('open');
-                        attemptClient?.removeAllListeners('error');
-                        attemptClient?.removeAllListeners('close');
-                        attemptClient?.removeAllListeners('unexpected-response'); // Also clean up redirect listener
+                    const conn = connections.get(connectorId);
+                    if (conn) {
+                        conn.isConnecting = false; 
+                        conn.isConnected = false;
+                        conn.connectionError = conn.connectionError || errorMsg; // Preserve existing error if any
+                        if (conn.client === client) conn.client = null;
+                        connections.set(connectorId, conn);
+                    }
+                    if (shouldReject) {
+                         promiseSettled = true;
+                         reject(new Error(errorMsg));
+                    }
+                };
+
+                try {
+                    // --- Simplified Connection Attempt --- 
+                    // 1. Get Token
+                    let currentToken = validConnection.tokenInfo?.accessToken;
+                    if (!currentToken) {
+                        console.log(`[${connectorId}] Fetching new system-scoped token...`);
+                        // Assert config/password are non-null due to pre-check
+                        validConnection.tokenInfo = await getSystemScopedAccessToken(validConnection.config!.username, validConnection.config!.password, validConnection.systemId!);
+                        currentToken = validConnection.tokenInfo.accessToken;
+                        connections.set(connectorId, validConnection); 
+                        console.log(`[${connectorId}] Token obtained.`);
+                    }
+                    const accessToken = currentToken;
+                    if (!accessToken) throw new Error("Failed to obtain valid access token.");
+
+                    // 2. Start Timeout
+                    console.log(`[${connectorId}] Connecting directly to: ${wsUrl}`);
+                    connectTimeoutId = setTimeout(() => {
+                        cleanupAndSetError('Connection Timeout', true); // Reject on timeout
+                    }, CONNECTION_TIMEOUT_MS);
+
+                    // 3. Create WebSocket Instance
+                    client = new WebSocket(wsUrl, {
+                        headers: { 'Authorization': `Bearer ${accessToken}` },
+                        perMessageDeflate: false
+                    });
+                    
+                    // --- Linter Fix: Check client before attaching listeners ---
+                    if (!client) {
+                        // This should technically be unreachable if constructor doesn't throw
+                        throw new Error("WebSocket client creation failed silently.");
+                    }
+                    // --- End Linter Fix ---
+
+                    // 4. Attach Temporary Event Listeners 
+                    const temporaryErrorHandler = (err: Error) => {
+                        if (promiseSettled) return;
+                        console.error(`[${connectorId}][error] WebSocket connection error:`, err);
+                        cleanupAndSetError(`Connection error: ${err.message}`, true);
+                    };
+                    const temporaryCloseHandler = (code: number, reason: Buffer) => {
+                         if (promiseSettled) return;
+                         console.log(`[${connectorId}][close] WebSocket closed during connection attempt. Code: ${code}, Reason: ${reason.toString()}`);
+                         cleanupAndSetError(`Connection closed prematurely (Code: ${code})`, true);
                     };
 
-                    try {
-                        // Token Fetch (moved outside loop, assuming token remains valid during redirects)
-                        let currentToken = conn.tokenInfo?.accessToken; // Use conn from check
-                        const tokenNeedsRefresh = !currentToken; 
+                    // --- Linter Fix: Use non-null assertion --- 
+                    client!.once('error', temporaryErrorHandler); 
+                    client!.once('close', temporaryCloseHandler);
+
+                    client!.on('open', () => {
+                        if (promiseSettled) return;
+                        if (connectTimeoutId) clearTimeout(connectTimeoutId);
+                        connectTimeoutId = null;
                         
-                        if (tokenNeedsRefresh) {
-                            console.log(`[initPikoWebSocket][${connectorId}] Fetching new system-scoped token...`);
-                            // Use conn.config and conn.systemId from check
-                            if (!conn.config.username || !conn.config.password || !conn.systemId) {
-                                throw new Error("Missing credentials or systemId for token fetch.");
-                            }
-                            conn.tokenInfo = await getSystemScopedAccessToken(conn.config.username, conn.config.password, conn.systemId);
-                            currentToken = conn.tokenInfo.accessToken;
-                            connections.set(connectorId, conn); // Save new token info
-                            console.log(`[initPikoWebSocket][${connectorId}] Token obtained.`);
-                        } else {
-                            console.log(`[initPikoWebSocket][${connectorId}] Using existing token.`);
-                        }
-                        const accessToken = currentToken;
-                        if (!accessToken) {
-                            throw new Error("Failed to obtain valid access token.");
-                        }
-
-                        // Start connection timeout for *this* attempt
-                        connectTimeoutId = setTimeout(() => {
-                            if (localPromiseSettled) return;
-                            localPromiseSettled = true;
-                            console.error(`[${connectorId}] Connection attempt to ${url} timed out after ${CONNECTION_TIMEOUT_MS}ms.`);
-                            cleanupAttempt();
-                            const conn = connections.get(connectorId);
-                            if(conn) {
-                                conn.connectionError = 'Connection Timeout';
-                                conn.isConnecting = false;
-                                conn.isConnected = false; 
-                                if (conn.client === attemptClient) conn.client = null; // Only clear if it's this client
-                                connections.set(connectorId, conn);
-                            }
-                            throw new Error('Connection Timeout'); // Throw error instead
-                        }, CONNECTION_TIMEOUT_MS);
-
-                        // Establish WebSocket connection for *this* attempt
-                        attemptClient = new WebSocket(url, {
-                            headers: { 'Authorization': `Bearer ${accessToken}` },
-                            // --- Explicitly disable compression for testing Ubuntu issue ---
-                            perMessageDeflate: false
-                        });
-
-                        // 'open' handler: Success case
-                        attemptClient.on('open', async () => {
-                            if (localPromiseSettled) return; // Avoid processing if already timed out/errored
-                            const conn = connections.get(connectorId);
-                            
-                            // Refined Checks (similar to before)
-                            if (!conn || conn.disabled || !conn.isConnecting) {
-                                console.warn(`[${connectorId}][open] WS open event for an invalid/disabled/not-connecting state on ${url}. Aborting open handler. State:`, conn);
-                                localPromiseSettled = true;
-                                attemptClient?.close(); 
-                                cleanupAttempt();
-                                reject(false); // Reject main promise as false (didn't connect *this* time)
-                                return;
-                            }
-                            if (conn.client !== null && conn.client !== attemptClient) {
-                                console.warn(`[${connectorId}][open] WS open event detected on ${url}, but another client instance is already active. Closing this redundant connection.`);
-                                localPromiseSettled = true;
-                                attemptClient?.close();
-                                cleanupAttempt();
-                                reject(false); // Reject main promise as false
-                                return;
-                            }
-                            
-                            // --- SUCCESS ---
-                            localPromiseSettled = true;
-                            conn.client = attemptClient; // Assign this client as the active one
-                            const client = conn.client;
-                            console.log(`[${conn.connectorId}] WebSocket connection established to ${url}.`);
-                            conn.isConnected = true;
-                            conn.isConnecting = false;
-                            conn.connectionError = null;
-                            conn.reconnectAttempts = 0;
-                            conn.lastStandardizedPayload = null;
-                            connections.set(conn.connectorId, conn);
-                            cleanupAttempt();
-
-                            // --- Attach Persistent Listeners HERE ---
-                            if (client) { // Null check for type safety
-                                client.on('message', (data) => {
-                                    const currentConn = connections.get(connectorId);
-                                    // Check if connection state is still valid and enabled
-                                    if(currentConn && !currentConn.disabled) {
-                                        _handlePikoMessage(connectorId, data);
-                                    }
-                                });
-
-                                client.on('close', (code, reason) => {
-                                     const currentConn = connections.get(connectorId);
-                                     // Check if connection state still exists for this listener
-                                     if (!currentConn) {
-                                         console.warn(`[${connectorId}][close] Received close event but connection state no longer exists. Ignoring.`);
-                                         return;
-                                     }
-                                     // Check if the closed client matches the one in the current state (sanity check)
-                                     if (currentConn.client !== null && currentConn.client !== client) {
-                                        console.warn(`[${connectorId}][close] Received close for a client instance that doesn't match the current active client. Ignoring.`);
-                                        return;
-                                     }
-
-                                     const reasonStr = reason.toString();
-                                     console.log(`[${currentConn.connectorId}][close] WebSocket connection closed. Code: ${code}, Reason: ${reasonStr}`); // Simplified log
-                                     currentConn.isConnected = false;
-                                     currentConn.isConnecting = false;
-                                     currentConn.client = null; // Clear the client reference in the main state
-                                     _stopPeriodicDeviceRefresh(currentConn);
-
-                                     const wasUnexpected = code !== 1000;
-                                     if (!currentConn.disabled && wasUnexpected) {
-                                         currentConn.connectionError = currentConn.connectionError || `Connection closed unexpectedly (Code: ${code}, Reason: ${reasonStr || 'Unknown'})`;
-                                         console.log(`[${currentConn.connectorId}] Scheduling reconnect due to unexpected close from ${url}.`);
-                                         connections.set(connectorId, currentConn);
-                                         scheduleReconnect(connectorId); // Schedule async
-                                     } else {
-                                         currentConn.connectionError = null;
-                                         currentConn.reconnectAttempts = 0;
-                                         currentConn.lastStandardizedPayload = null;
-                                         connections.set(connectorId, currentConn);
-                                     }
-                                     // No promise settlement logic here, as it's handled by the outer scope
-                                });
-                            } else {
-                                // This case should technically not happen. Log critical error.
-                                console.error(`[${conn.connectorId}] Critical error: Client became null immediately after assignment in 'open' handler. Cannot attach listeners.`);
-                                reject(new Error("Client became null unexpectedly during listener attachment"));
-                                return; // Stop further execution in the 'open' handler
-                            }
-                            // --- End Listener Attachment ---
-
-                            // Send subscribe message (moved from original spot)
-                            const requestId = crypto.randomUUID();
-                            const subscribeMsg: PikoJsonRpcSubscribeRequest = {
-                                jsonrpc: "2.0", id: requestId,
-                                method: "rest.v3.servers.events.subscribe",
-                                params: {
-                                    startTimeMs: Date.now(), eventType: "analyticsSdkEvent",
-                                    eventsOnly: true, _with: "eventParams"
-                                }
-                            };
-                            
-                            // --- Add Delay Before Sending ---
-                            console.log(`[${conn.connectorId}] Waiting 100ms before sending subscribe...`);
-                            setTimeout(() => {
-                                try {
-                                    // Ensure client and connection still valid after delay
-                                    const currentConn = connections.get(connectorId);
-                                    if (!currentConn || !currentConn.client || currentConn.disabled) {
-                                         console.warn(`[${connectorId}][Send Delay] Connection state changed or disabled during delay. Aborting send.`);
-                                         return;
-                                    }
-                                    const delayedClient = currentConn.client;
-                                    
-                                    const messageString = JSON.stringify(subscribeMsg);
-                                    console.log(`[${connectorId}] Sending subscribe request after delay (ID: ${requestId})...`);
-    
-                                    // --- Check readyState before sending ---
-                                    if (delayedClient.readyState !== WebSocket.OPEN) {
-                                        console.warn(`[${connectorId}][Send Delay] Attempted to send subscribe message, but readyState was ${delayedClient.readyState}. Aborting send.`);
-                                        // Don't throw here, just log and return, as the main promise might have already resolved.
-                                        // If we need to signal failure, we'd need a different mechanism.
-                                        currentConn.connectionError = `Send failed after delay: WebSocket not open. ReadyState: ${delayedClient.readyState}`;
-                                        connections.set(connectorId, currentConn);
-                                        return; 
-                                    }
-                                    // --- End check ---
-    
-                                    delayedClient.send(messageString);
-                                    console.log(`[${connectorId}][Send Delay] Subscribe message sent successfully.`);
-                                    
-                                    // Now that send succeeded, initiate the fetch/refresh (if they weren't commented out)
-                                    // NOTE: This logic runs *after* the main initPikoWebSocket promise may have resolved.
-                                    console.log(`[${connectorId}][Send Delay] Initiating post-send operations...`);
-                                    // Ensure these lines are uncommented if the isolation test is reverted:
-                                    // await _fetchAndStoreDeviceMap(currentConn);
-                                    // _startPeriodicDeviceRefresh(currentConn);
-                                    
-                                } catch (sendError) {
-                                    // --- Logging for sendError (inside setTimeout) ---
-                                    const currentConn = connections.get(connectorId);
-                                    console.error(`[${connectorId}][Send Delay] Failed to send subscribe message. Raw Error:`, sendError);
-                                    // ... (keep existing detailed logging) ...
-                                    console.error(`[${connectorId}][Send Delay] SendError Name: ${sendError instanceof Error ? sendError.name : 'N/A'}`);
-                                    console.error(`[${connectorId}][Send Delay] SendError Message: ${sendError instanceof Error ? sendError.message : 'N/A'}`);
-                                    if (sendError && typeof sendError === 'object') {
-                                        console.error(`[${connectorId}][Send Delay] SendError Code:`, (sendError as any).code);
-                                        console.error(`[${connectorId}][Send Delay] SendError Errno:`, (sendError as any).errno);
-                                        console.error(`[${connectorId}][Send Delay] SendError Syscall:`, (sendError as any).syscall);
-                                    }
-                                     if (sendError instanceof Error && sendError.stack) {
-                                        console.error(`[${connectorId}][Send Delay] SendError Stack Trace:\n${sendError.stack}`);
-                                    }
-                                    // --- End Enhanced Logging ---
-                                    if(currentConn) { // Update connection state if possible
-                                         currentConn.connectionError = `Failed to send subscribe after delay: ${sendError instanceof Error ? sendError.message : 'Unknown send error'}`;
-                                         connections.set(connectorId, currentConn);
-                                         // Consider closing the client here too if send fails after delay
-                                         currentConn.client?.close();
-                                    }
-                                    // Cannot reject the main promise here as we are in a setTimeout
-                                }
-                            }, 100); // 100ms delay
-                            // --- End Delay ---
-                            
-                            // --- Original direct send logic (now inside setTimeout) ---
-                            /* 
-                            try { ... } catch (sendError) { ... } 
-                            */
-                            // --- End original direct send logic ---
-                            
-                            // --- ISOLATION STEP: Keep post-send async work commented out for now ---
-                            console.log(`[${conn.connectorId}] Skipping _fetchAndStoreDeviceMap and _startPeriodicDeviceRefresh for isolation testing.`);
-                            // await _fetchAndStoreDeviceMap(conn);
-                            // _startPeriodicDeviceRefresh(conn);
-                            // --- END ISOLATION STEP ---
-
-                            resolve(true); // Resolve the main promise with true
-                        });
-
-                        // 'error' handler (specific to this attempt initially)
-                        attemptClient.once('error', (err) => {
-                             if (localPromiseSettled) return;
-                             localPromiseSettled = true;
-                             const conn = connections.get(connectorId);
-                             // Check if error belongs to the client currently connecting
-                             if (conn && (conn.client === attemptClient || conn.isConnecting)) {
-                                 console.error(`[${connectorId}][error] WebSocket error during connection phase to ${url}:`, err); // Log full error
-                                 conn.isConnecting = false;
-                                 conn.isConnected = false;
-                                 conn.connectionError = `WebSocket error: ${err.message}`;
-                                 if (conn.client === attemptClient) conn.client = null;
-                                 connections.set(connectorId, conn);
-                                 cleanupAttempt();
-                                 reject(err); // Reject main promise with the error
-                             } else {
-                                 console.warn(`[${connectorId}][error] Received error for outdated/settled client attempt to ${url}:`, err.message);
-                                 cleanupAttempt();
-                                 // Avoid rejecting main promise if error is from an old attempt and connection succeeded/failed otherwise
-                             }
-                        });
-
-                        // 'close' handler (Persistent, attached once client is confirmed)
-                         // --- REMOVE 'close' handler from here ---
-                        // attemptClient.on('close', (code, reason) => { ... });
-
-                        // --- Add Redirect Handler ---
-                        attemptClient.once('unexpected-response', (req, res) => {
-                            if (localPromiseSettled) return; // Ignore if already handled
-
-                            if (res.statusCode === 307 || res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 308) { // Handle common redirect codes
-                                const location = res.headers.location;
-                                console.log(`[${connectorId}] Received redirect (${res.statusCode}) to: ${location} from ${url}`);
-
-                                if (!location) {
-                                    localPromiseSettled = true;
-                                    cleanupAttempt();
-                                    attemptClient?.terminate(); // Clean up this attempt
-                                    throw new Error(`Redirect response ${res.statusCode} missing Location header.`); // Throw error instead
-                                }
-
-                                try {
-                                    // Validate the new URL
-                                    const newUrl = new URL(location, url).toString(); // Resolve relative URLs
-                                    if (!newUrl.startsWith('wss:') && !newUrl.startsWith('ws:')) {
-                                        throw new Error(`Invalid redirect protocol: ${newUrl}`);
-                                    }
-                                     
-                                    localPromiseSettled = true; // Mark this attempt as handled (redirecting)
-                                    cleanupAttempt();
-                                    attemptClient?.terminate(); // Clean up this attempt
-                                    
-                                    // Recursively call with the new URL and decremented redirect count
-                                    // Use setImmediate to avoid potential stack overflow on rapid redirects
-                                    setImmediate(() => {
-                                        _connectWithRedirects(newUrl, redirectsRemaining - 1)
-                                            .catch(reject); // If deeper redirects fail, reject the main promise
-                                    });
-
-                                } catch (urlError) {
-                                    localPromiseSettled = true;
-                                    cleanupAttempt();
-                                    attemptClient?.terminate(); 
-                                    throw new Error(`Invalid redirect location: ${location}. Error: ${urlError instanceof Error ? urlError.message : urlError}`); // Throw error instead
-                                }
-                            } else {
-                                // Unexpected response that isn't a redirect
-                                localPromiseSettled = true;
-                                console.error(`[${connectorId}] Unexpected WebSocket response from ${url}: ${res.statusCode}`);
-                                cleanupAttempt();
-                                attemptClient?.terminate(); 
-                                throw new Error(`Unexpected server response: ${res.statusCode}`); // Throw error instead
-                            }
-                        });
-                        // --- End Redirect Handler ---
-
-                    } catch (innerSetupError) {
-                        if (localPromiseSettled) return;
-                        localPromiseSettled = true;
-                        cleanupAttempt();
-                        // Ensure state is cleaned up if error occurs before client creation/listeners attach
                         const conn = connections.get(connectorId);
-                        if(conn && conn.isConnecting) {
-                             conn.isConnecting = false;
-                             conn.connectionError = `Setup error: ${innerSetupError instanceof Error ? innerSetupError.message : String(innerSetupError)}`;
-                             connections.set(connectorId, conn);
-                         }
-                        reject(innerSetupError); // Reject main promise with the error
-                    }
-                }; // --- End _connectWithRedirects ---
+                        // Final checks before declaring success (same as before)
+                        if (!conn || conn.disabled || !conn.isConnecting || (conn.client !== null && conn.client !== client)) {
+                            console.warn(`[${connectorId}][open] Invalid state or redundant client on open. Aborting.`);
+                            cleanupAndSetError("Invalid state or redundant client on open", false);
+                            return;
+                        }
+                        
+                        // --- SUCCESS --- 
+                        console.log(`[${conn.connectorId}] WebSocket connection established.`);
+                        conn.client = client; // Assign the active client
+                        conn.isConnected = true;
+                        conn.isConnecting = false;
+                        conn.connectionError = null;
+                        conn.reconnectAttempts = 0;
+                        conn.lastStandardizedPayload = null;
+                        connections.set(conn.connectorId, conn);
+                        
+                        // --- Attach Persistent Handlers --- 
+                        client!.removeListener('error', temporaryErrorHandler); 
+                        client!.removeListener('close', temporaryCloseHandler);
+                        
+                        client!.on('message', (data) => _handlePikoMessage(connectorId, data));
+                        client!.on('close', (code, reason) => {
+                            const currentConn = connections.get(connectorId);
+                            if (!currentConn || currentConn.client !== client) return; // Ignore if not relevant
+                            
+                            const reasonStr = reason.toString();
+                            console.log(`[${connectorId}][close] WebSocket connection closed. Code: ${code}, Reason: ${reasonStr}`);
+                            currentConn.isConnected = false;
+                            currentConn.isConnecting = false;
+                            currentConn.client = null;
+                            _stopPeriodicDeviceRefresh(currentConn);
 
+                            const wasUnexpected = code !== 1000;
+                            if (!currentConn.disabled && wasUnexpected) {
+                                currentConn.connectionError = currentConn.connectionError || `Connection closed unexpectedly (Code: ${code}, Reason: ${reasonStr || 'Unknown'})`;
+                                console.log(`[${connectorId}] Scheduling reconnect due to unexpected close.`);
+                                connections.set(connectorId, currentConn);
+                                scheduleReconnect(connectorId); // Schedule async
+                            } else {
+                                currentConn.connectionError = null;
+                                currentConn.reconnectAttempts = 0;
+                                currentConn.lastStandardizedPayload = null;
+                                connections.set(connectorId, currentConn);
+                            }
+                        });
+                         client!.on('error', (err) => {
+                            // Handle errors AFTER connection is established
+                            const currentConn = connections.get(connectorId);
+                             console.error(`[${connectorId}][error] WebSocket error after connection:`, err);
+                             if (currentConn && currentConn.client === client) {
+                                currentConn.connectionError = `WebSocket error: ${err.message}`;
+                                connections.set(connectorId, currentConn);
+                                // The 'close' event should follow and trigger reconnect if needed
+                             }
+                         });
+                        // --- End Persistent Handlers --- 
+                        
+                        // Send subscribe message with delay (Keep logic from previous step)
+                        const requestId = crypto.randomUUID();
+                        const subscribeMsg: PikoJsonRpcSubscribeRequest = {
+                            jsonrpc: "2.0", id: requestId,
+                            method: "rest.v3.servers.events.subscribe",
+                            params: {
+                                startTimeMs: Date.now(), eventType: "analyticsSdkEvent",
+                                eventsOnly: true, _with: "eventParams"
+                            }
+                        };
+                        console.log(`[${conn.connectorId}] Waiting 5s before sending subscribe...`);
+                        setTimeout(() => { /* ... setTimeout logic for sending subscribeMsg ... */ }, 5000);
 
-                // Initial connection attempt
-                try {
-                    // Check initial state *before* calling the recursive helper
-                    const initialConnection = connections.get(connectorId);
-                    if (!initialConnection || !initialConnection.config || !initialConnection.systemId) {
-                        throw new Error("Initial state check failed before starting connection attempts.");
-                    }
-                    const initialWsUrl = `wss://${initialConnection.systemId}.relay.vmsproxy.com/jsonrpc`;
-                    await _connectWithRedirects(initialWsUrl, MAX_REDIRECTS);
-                } catch (error) {
-                     // Catch errors from the initial call or deep within _connectWithRedirects
-                     console.error(`[initPikoWebSocket][${connectorId}] Final connection error after handling redirects:`, error); // Log full error
-                     const conn = connections.get(connectorId);
-                     if(conn) { // Ensure state reflects failure
-                         conn.isConnecting = false;
-                         conn.isConnected = false;
-                         conn.connectionError = `Connection failed: ${error instanceof Error ? error.message : String(error)}`;
-                         if (conn.client) { conn.client.terminate(); conn.client = null; }
-                         connections.set(connectorId, conn);
-                     }
-                     resolve(false); 
+                        // Resolve the main promise
+                        promiseSettled = true;
+                        resolve(true);
+                    });
+                    
+                } catch (initialSetupError) { // Catches errors from token fetch or WS constructor
+                    if (promiseSettled) return;
+                    console.error(`[${connectorId}] Error during initial WebSocket setup:`, initialSetupError);
+                    cleanupAndSetError(initialSetupError instanceof Error ? initialSetupError.message : String(initialSetupError), true);
                 }
             }); // End of new Promise
         } else {
             // Client exists but is disconnected, or connection is disabled
-            console.log(`[initPikoWebSocket][${connectorId}] Client exists but not connecting (Connected: ${connection.isConnected}, Disabled: ${connection.disabled}). State should be handled by previous checks or reconnect logic.`);
+            console.log(`[initPikoWebSocket][${connectorId}] No connection attempt needed (Already connected, disabled, or reconnecting).`);
             return Promise.resolve(connection.isConnected); // Return current connected status
         }
 
     } catch (error) {
-        console.error(`[initPikoWebSocket][${connectorId}] General initialization error:`, error);
-        const conn = connections.get(connectorId);
-        if (conn) {
-            conn.isConnected = false;
-            conn.isConnecting = false;
-            conn.connectionError = `Initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-            if (conn.client) { await disconnectPikoWebSocket(connectorId); } // Ensure cleanup
-            connections.set(connectorId, conn);
-        }
-        // Propagate the error
-        throw error; // Throw error instead
-    }
+         console.error(`[initPikoWebSocket][${connectorId}] General initialization error:`, error);
+         const conn = connections.get(connectorId);
+         if (conn) {
+             conn.isConnected = false;
+             conn.isConnecting = false;
+             conn.connectionError = `Initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+             connections.set(connectorId, conn);
+             // Don't disconnect here, as the promise might have already rejected
+         }
+         // Rethrow or return false based on desired behavior for top-level errors
+         return Promise.resolve(false); // Indicate failure
+         // throw error; // Or rethrow if callers need to handle it
+     }
 }
 
 async function _handlePikoMessage(connectorId: string, messageData: WebSocket.Data): Promise<void> {
