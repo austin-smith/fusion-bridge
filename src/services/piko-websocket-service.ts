@@ -476,16 +476,37 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                                 }
                             };
                             try {
-                                const messageString = JSON.stringify(subscribeMsg); // Stringify once
+                                const messageString = JSON.stringify(subscribeMsg);
                                 console.log(`[${conn.connectorId}] Sending subscribe request (ID: ${requestId})...`);
-                                // No need for !client check here due to the guard above
-                                client.send(messageString); // Send the stringified message
+
+                                // --- Check readyState before sending ---
+                                if (client.readyState !== WebSocket.OPEN) {
+                                    console.warn(`[${conn.connectorId}] Attempted to send subscribe message, but readyState was ${client.readyState}. Aborting send.`);
+                                    throw new Error(`WebSocket not open. ReadyState: ${client.readyState}`);
+                                }
+                                // --- End check ---
+
+                                client.send(messageString);
                             } catch (sendError) {
-                                console.error(`[${conn.connectorId}] Failed to send subscribe message:`, sendError);
-                                conn.connectionError = `Failed to send subscribe: ${sendError instanceof Error ? sendError.message : String(sendError)}`; // Capture message
+                                // --- Add Enhanced Logging --- 
+                                console.error(`[${conn.connectorId}] Failed to send subscribe message. Raw Error:`, sendError);
+                                console.error(`[${conn.connectorId}] SendError Name: ${sendError instanceof Error ? sendError.name : 'N/A'}`);
+                                console.error(`[${conn.connectorId}] SendError Message: ${sendError instanceof Error ? sendError.message : 'N/A'}`);
+                                // Try logging potentially relevant properties directly
+                                if (sendError && typeof sendError === 'object') {
+                                    console.error(`[${conn.connectorId}] SendError Code:`, (sendError as any).code);
+                                    console.error(`[${conn.connectorId}] SendError Errno:`, (sendError as any).errno);
+                                    console.error(`[${conn.connectorId}] SendError Syscall:`, (sendError as any).syscall);
+                                }
+                                if (sendError instanceof Error && sendError.stack) {
+                                    console.error(`[${conn.connectorId}] SendError Stack Trace:\n${sendError.stack}`);
+                                }
+                                // --- End Enhanced Logging ---
+
+                                conn.connectionError = `Failed to send subscribe: ${sendError instanceof Error ? sendError.message : 'Unknown send error'}`; // Slightly improved fallback
                                 connections.set(conn.connectorId, conn);
-                                if (client) { client.close(); }
-                                reject(false); // Main promise fails
+                                if (client) { client.close(); } // Close client on send failure
+                                reject(false); // Reject the main init promise
                                 return;
                             }
 
