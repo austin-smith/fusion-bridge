@@ -1060,7 +1060,18 @@ export function AddConnectorModal() {
                      </div>
                    </FormControl>
                    <FormDescription className="mt-2 text-xs">
-                      Configure <strong>{formatConnectorCategory(selectedCategory)}</strong> to subscribe to events and deliver them to this webhook URL.
+                    {selectedCategory === 'genea' ? (
+                        <>
+                            Configure <strong>{formatConnectorCategory(selectedCategory)}</strong> to deliver events to this URL. <a href="https://help.getgenea.com/en/articles/1292571-genea-events-webhook#how-to-configure-webhooks-with-your-genea-dashboard" target="_blank" rel="noopener noreferrer" className="underline">Learn more</a>.
+                        </>
+                    ) : selectedCategory === 'netbox' ? (
+                        <>
+                            Configure <strong>Fusion Agent</strong> to subscribe to <strong>{formatConnectorCategory(selectedCategory)}</strong> events and deliver them to this webhook URL.
+                        </>
+                    ) : (
+                        // Fallback should ideally not be reached if category is always netbox or genea here
+                        `Configure ${formatConnectorCategory(selectedCategory)} to use this webhook URL.`
+                    )}
                    </FormDescription>
                  </FormItem>
 
@@ -1147,10 +1158,16 @@ export function AddConnectorModal() {
                               </div>
                               </div>
                           </FormControl>
+                          {/* Add description for NetBox */}
+                          {selectedCategory === 'netbox' && (
+                              <FormDescription className="mt-2 text-xs">
+                                  Used to verify the signature of incoming webhook requests from <strong>Fusion Agent</strong>.
+                              </FormDescription>
+                          )}
                           {/* Add description with link for Genea */}
                           {selectedCategory === 'genea' && (
                               <FormDescription className="mt-2 text-xs">
-                                  Used to verify the signature of incoming webhook requests from <strong>Genea</strong>. <a href="https://help.getgenea.com/en/articles/1292571-genea-events-webhook" target="_blank" rel="noopener noreferrer" className="underline">Learn more</a>.
+                                  Used to verify the signature of incoming webhook requests from <strong>{formatConnectorCategory(selectedCategory)}</strong>. <a href="https://help.getgenea.com/en/articles/1292571-genea-events-webhook#webhook-security-with-payload-signature" target="_blank" rel="noopener noreferrer" className="underline">Learn more</a>.
                               </FormDescription>
                           )}
                           </FormItem>
@@ -1180,7 +1197,7 @@ export function AddConnectorModal() {
                         </FormControl>
                         {/* Add description with link for Genea API Key */}
                         <FormDescription className="mt-2 text-xs">
-                           Used to authenticate API requests to <strong>Genea</strong>. <a href="https://help.getgenea.com/en/articles/5366419-global-overview-api-keys" target="_blank" rel="noopener noreferrer" className="underline">Learn more</a>.
+                           Used to authenticate API requests to <strong>{formatConnectorCategory(selectedCategory)}</strong>. <a href="https://help.getgenea.com/en/articles/5366419-global-overview-api-keys" target="_blank" rel="noopener noreferrer" className="underline">Learn more</a>.
                         </FormDescription>
                         </FormItem>
                     )}
