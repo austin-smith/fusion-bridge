@@ -7,18 +7,18 @@ export function cn(...inputs: ClassValue[]) {
 
 // Define known connector categories
 export enum ConnectorCategory {
+  Genea = 'Genea',
+  NetBox = 'netbox',
   YoLink = 'yolink',
   Piko = 'piko',
-  NetBox = 'netbox',
-  // Add other known categories here
 }
 
 // Mapping from category enum/string to display name
 const categoryDisplayNames: Record<string, string> = {
-  [ConnectorCategory.YoLink]: 'YoLink',
-  [ConnectorCategory.Piko]: 'Piko',
-  [ConnectorCategory.NetBox]: 'NetBox',
-  // Add other display names corresponding to the enum
+  [ConnectorCategory.Genea.toLowerCase()]: 'Genea',
+  [ConnectorCategory.NetBox.toLowerCase()]: 'NetBox',
+  [ConnectorCategory.YoLink.toLowerCase()]: 'YoLink',
+  [ConnectorCategory.Piko.toLowerCase()]: 'Piko',
 };
 
 /**

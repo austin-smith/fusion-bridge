@@ -4,25 +4,130 @@ import { connectors } from '@/data/db/schema';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { ConnectorWithConfig } from '@/types';
-import { getAccessToken, getHomeInfo } from '@/services/drivers/yolink';
 import crypto from 'crypto'; // Import crypto
+import { NextRequest } from 'next/server';
 
-// Schema for connector creation
-const createConnectorSchema = z.object({
-  category: z.enum(['yolink', 'piko', 'netbox']),
-  name: z.string().optional(),
-  config: z.record(z.any()).optional(),
+// Define specific config schemas
+const YoLinkConfigSchema = z.object({
+  uaid: z.string(),
+  clientSecret: z.string(),
+  homeId: z.string().optional(), // Home ID can be optional initially
 });
 
-// Schema for YoLink config within the main config object
-const yoLinkConfigSchema = z.object({
-  uaid: z.string().min(1, "UAID is required"),
-  clientSecret: z.string().min(1, "Client Secret is required"),
-  homeId: z.string().optional(),
-}).passthrough(); // Allow other potential fields in config
+const PikoConfigSchema = z.object({
+  type: z.literal('cloud'),
+  username: z.string(),
+  password: z.string(),
+  selectedSystem: z.string(),
+  token: z.object({ // Store the whole token object
+    accessToken: z.string(),
+    refreshToken: z.string(),
+    expiresAt: z.string(), // Store as ISO string
+  }).optional(), // Token might not be present initially if just saving creds
+});
+
+const NetBoxConfigSchema = z.object({
+  webhookId: z.string().uuid(),
+  webhookSecret: z.string().optional(), // Secret is optional
+});
+
+// Add Genea config schema
+const GeneaConfigSchema = z.object({
+  webhookId: z.string().uuid(),
+  apiKey: z.string().min(1, "API Key is required"), // Add min(1)
+});
+
+// Combined schema for the request body for POST
+const createConnectorSchema = z.object({
+  name: z.string().optional(),
+  category: z.enum(['yolink', 'piko', 'netbox', 'genea']), // Added genea
+  config: z.record(z.string(), z.any()).optional(), // Use record for initial parse, refine later
+}).superRefine((data, ctx) => {
+  const { category, config, name } = data;
+
+  // Add check for name for NetBox/Genea
+  if ((category === 'netbox' || category === 'genea') && (!name || name.trim() === '')) {
+      ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Connector Name is required for NetBox and Genea connectors",
+          path: ['name'],
+      });
+  }
+
+  if (!config) {
+    // Config is generally required unless specific categories allow it (none currently)
+    // If a category *needs* config, add the error here.
+    // For now, let's assume config *should* be present based on frontend logic.
+    if (category === 'yolink' || category === 'piko' || category === 'genea' || category === 'netbox') {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Configuration is required for this connector type.",
+            path: ['config'],
+        });
+        // Return early if config is missing but required
+        return;
+    }
+  }
+
+  // If config *is* present, validate its contents based on category
+  if (config) {
+      if (category === 'yolink') {
+          const parsed = YoLinkConfigSchema.safeParse(config);
+          if (!parsed.success) {
+              parsed.error.errors.forEach((err) => {
+                  ctx.addIssue({ ...err, path: ['config', ...(err.path)] });
+              });
+          }
+      } else if (category === 'piko') {
+          const parsed = PikoConfigSchema.safeParse(config);
+          if (!parsed.success) {
+              parsed.error.errors.forEach((err) => {
+                  ctx.addIssue({ ...err, path: ['config', ...(err.path)] });
+              });
+          }
+      } else if (category === 'netbox') {
+          const parsed = NetBoxConfigSchema.safeParse(config);
+          if (!parsed.success) {
+              parsed.error.errors.forEach((err) => {
+                  ctx.addIssue({ ...err, path: ['config', ...(err.path)] });
+              });
+          }
+      } else if (category === 'genea') {
+          const parsed = GeneaConfigSchema.safeParse(config);
+          if (!parsed.success) {
+              // Add specific message for API key if it's the missing field
+              const apiKeyError = parsed.error.errors.find(e => e.path.includes('apiKey'));
+              if (apiKeyError && apiKeyError.code === 'too_small') {
+                  ctx.addIssue({
+                      code: z.ZodIssueCode.custom,
+                      message: "API Key is required for Genea connectors",
+                      path: ['config', 'apiKey']
+                  });
+              } else {
+                // Add other errors generically
+                parsed.error.errors.forEach((err) => {
+                    ctx.addIssue({ ...err, path: ['config', ...(err.path)] });
+                });
+              }
+          }
+      }
+  }
+});
+
+// Combined schema for the request body for PUT (subset, config is partial)
+const updateConnectorSchema = z.object({
+  name: z.string().optional(),
+  // Category cannot be updated
+  config: z.union([
+    YoLinkConfigSchema.partial(),
+    PikoConfigSchema.partial(),
+    NetBoxConfigSchema.partial().omit({ webhookId: true }), // webhookId cannot be updated
+    GeneaConfigSchema.partial().omit({ webhookId: true }), // webhookId cannot be updated
+  ]).optional(),
+});
 
 // GET /api/connectors - Fetches all connectors
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const allConnectorsRaw = await db.select().from(connectors);
 
@@ -57,125 +162,97 @@ export async function GET() {
 }
 
 // POST /api/connectors - Creates a new connector
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json();
-    
-    // Validate input using renamed schema
-    const result = createConnectorSchema.safeParse(body);
-    if (!result.success) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid connector data', details: result.error.format() },
-        { status: 400 }
-      );
-    }
-    
-    const { category, config } = result.data;
-    let { name } = result.data;
-    
-    if (!name) {
-      name = `${category}-${Date.now()}`;
+    const body = await req.json();
+    const validation = createConnectorSchema.safeParse(body);
+
+    if (!validation.success) {
+      console.error("Validation Error (POST):", validation.error.errors);
+      return NextResponse.json({ success: false, error: 'Invalid input', details: validation.error.errors }, { status: 400 });
     }
 
-    const safeConfig = config && typeof config === 'object' ? config : {};
-    const finalConfig = { ...safeConfig }; // Create a mutable copy to potentially add homeId
-    
-    const id = uuidv4();
-    
-    // If it's a YoLink connector, validate credentials and fetch/store Home ID IN the config
-    if (category === 'yolink') {
-      console.log("Creating a YoLink connector, validating and fetching Home ID...");
-      // Validate YoLink specific config
-      const yoLinkConfigResult = yoLinkConfigSchema.safeParse(safeConfig);
-      if (!yoLinkConfigResult.success) {
-        console.error("Invalid YoLink config:", yoLinkConfigResult.error.format());
-        return NextResponse.json(
-          { success: false, error: 'Invalid YoLink credentials provided', details: yoLinkConfigResult.error.format() },
-          { status: 400 }
-        );
-      }
-      
-      try {
-        const { uaid, clientSecret } = yoLinkConfigResult.data;
-        console.log("Fetching YoLink access token...");
-        const accessToken = await getAccessToken({ uaid, clientSecret });
-        console.log("Access token retrieved, fetching Home Info...");
-        const yolinkHomeId = await getHomeInfo(accessToken);
-        console.log("YoLink Home ID fetched:", yolinkHomeId);
-        
-        // Add the fetched homeId TO THE CONFIG OBJECT
-        finalConfig.homeId = yolinkHomeId;
+    const { name, category, config } = validation.data;
 
-      } catch (yolinkError) {
-        console.error('Error fetching YoLink Home ID:', yolinkError);
-        const errorMessage = yolinkError instanceof Error ? yolinkError.message : 'Failed to connect to YoLink API to get Home ID';
-        return NextResponse.json(
-          { success: false, error: `YoLink API Error: ${errorMessage}` },
-          { status: 400 }
-        );
-      }
+    // Generate a default name if not provided
+    const connectorName = name || `${category.charAt(0).toUpperCase() + category.slice(1)} Connector`;
+
+    // Config is now guaranteed to be valid for the category by superRefine
+    let finalConfig = config || {}; // Keep fallback just in case, though refine should prevent invalid states
+    let webhookId: string | undefined = undefined;
+    const connectorId = uuidv4(); // Generate ID for the new connector
+
+    // Assign webhookId if it exists in the validated config (for NetBox/Genea)
+    if ((category === 'netbox' || category === 'genea') && finalConfig.webhookId) {
+        webhookId = finalConfig.webhookId as string;
+        // No need to generate one here anymore, schema ensures it exists if required
     }
-    
-    // --- Add NetBox specific logic ---
-    else if (category === 'netbox') {
-      console.log("Creating a NetBox connector...");
-      // Ensure webhookId exists (use client-provided or generate)
-      if (!finalConfig.webhookId || typeof finalConfig.webhookId !== 'string') {
-        const serverGeneratedWebhookId = uuidv4();
-        console.log("Client did not provide a valid webhookId, generating one server-side:", serverGeneratedWebhookId);
-        finalConfig.webhookId = serverGeneratedWebhookId; 
-      } else {
-        console.log("Using client-provided webhook ID:", finalConfig.webhookId);
-      }
-      // Ensure webhookSecret exists (use client-provided or generate)
-      if (!finalConfig.webhookSecret || typeof finalConfig.webhookSecret !== 'string') {
-        const serverGeneratedSecret = crypto.randomBytes(32).toString('hex');
-        console.log("Client did not provide webhookSecret, generating one server-side.");
-        finalConfig.webhookSecret = serverGeneratedSecret;
-      } else {
-        // Optionally add validation here if needed
-        console.log("Using client-provided webhook secret."); 
-      }
-    }
-    // -------------------------------
-    
-    // Stringify the potentially updated config
+
+    // Stringify the final config for storage
     const configString = JSON.stringify(finalConfig);
 
-    // Insert into database (use connectors table, no yolinkHomeId column)
+    // Create connector in DB using Drizzle
     const newConnectorResult = await db.insert(connectors).values({
-      id,
-      category,
-      name,
-      cfg_enc: configString, // Store config JSON (potentially including homeId)
-      createdAt: new Date(),
-    }).returning();
+        id: connectorId, // Use generated UUID
+        name: connectorName,
+        category,
+        cfg_enc: configString, // Store the stringified config (which includes webhookId for relevant types)
+        eventsEnabled: (category === 'yolink' || category === 'piko'), // Default enable events for MQTT/WS
+        createdAt: new Date(), // Set creation timestamp
+      }).returning(); // Return the inserted row
 
     if (!newConnectorResult || newConnectorResult.length === 0) {
-        throw new Error("Failed to create connector or return result.");
+      throw new Error("Failed to create connector in database or return result.");
     }
-    
-    const newConnector = newConnectorResult[0];
+    const newConnectorDb = newConnectorResult[0];
 
-    // Return the newly created connector with parsed config
-    const returnConnector: ConnectorWithConfig = {
-      id: newConnector.id,
-      category: newConnector.category,
-      name: newConnector.name,
-      createdAt: newConnector.createdAt,
-      eventsEnabled: newConnector.eventsEnabled,
-      config: finalConfig, // Return the config object used for insertion
+    // Construct the response object matching ConnectorWithConfig
+    const responseData: ConnectorWithConfig = {
+      id: newConnectorDb.id,
+      category: newConnectorDb.category,
+      name: newConnectorDb.name,
+      createdAt: newConnectorDb.createdAt,
+      eventsEnabled: newConnectorDb.eventsEnabled,
+      config: finalConfig, // Return the parsed config object used for creation
+      // webhookId: newConnectorDb.webhookId, // Optionally include if needed in response
+      // lastEventTimestamp: null, // Initialize derived fields if needed by client immediately
+      // status: 'unknown',      // Initialize derived fields if needed by client immediately
     };
-    
-    return NextResponse.json({ success: true, data: returnConnector });
+
+    return NextResponse.json({ success: true, data: responseData });
 
   } catch (error) {
-    console.error('Error creating connector:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to create connector';
-    const clientErrorMessage = errorMessage.startsWith('YoLink API Error:') ? errorMessage : 'Internal server error creating connector';
-    return NextResponse.json(
-      { success: false, error: clientErrorMessage },
-      { status: 500 }
-    );
+    console.error("Error creating connector:", error);
+    // Handle potential Zod errors or others
+    let errorMessage = 'Failed to create connector';
+    if (error instanceof z.ZodError) {
+        errorMessage = 'Invalid data format.'; // Should be caught by validation earlier
+    } else if (error instanceof Error) {
+        // Could check for specific DB error codes if needed (e.g., unique constraint)
+        errorMessage = error.message;
+    }
+    return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });
   }
+}
+
+// Helper function (consider moving to utils)
+// This function might need adjustment based on how GET uses it and Drizzle's output
+function formatConnectorData(connector: any): ConnectorWithConfig {
+  let config = {};
+  try {
+    // Assuming GET uses the raw db output which has cfg_enc
+    config = connector.cfg_enc ? JSON.parse(connector.cfg_enc) : {};
+  } catch (e) {
+    console.error(`Failed to parse config for connector ${connector.id} in formatConnectorData:`, e);
+  }
+  return {
+    id: connector.id,
+    category: connector.category,
+    name: connector.name,
+    createdAt: connector.createdAt,
+    eventsEnabled: connector.eventsEnabled,
+    config: config, // Use the parsed config
+    // lastEventTimestamp: null, // Add derived/client-side fields if needed
+    // status: 'unknown',        // Add derived/client-side fields if needed
+  };
 } 

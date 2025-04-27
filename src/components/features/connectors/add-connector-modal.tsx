@@ -8,6 +8,7 @@ import { ConnectorWithConfig } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto'; // Import Node crypto for secret generation
 import { formatConnectorCategory } from '@/lib/utils'; // Import formatConnectorCategory
+import { cn } from '@/lib/utils'; // Import cn utility
 
 import {
   Dialog,
@@ -59,6 +60,7 @@ const connectorOptions = [
   { value: 'netbox', label: 'NetBox', mechanism: 'Webhook' },
   { value: 'piko', label: 'Piko', mechanism: 'WebSockets' },
   { value: 'yolink', label: 'YoLink', mechanism: 'MQTT' },
+  { value: 'genea', label: 'Genea', mechanism: 'Webhook' },
 ];
 
 // Sort options alphabetically by label
@@ -89,7 +91,13 @@ interface NetBoxConfig {
   webhookSecret?: string; // Added webhookSecret
 }
 
-type ConnectorConfig = YoLinkConfig | PikoConfig | NetBoxConfig; // Added NetBoxConfig
+// Add Genea config type
+interface GeneaConfig {
+  webhookId: string;
+  apiKey: string; // Added apiKey
+}
+
+type ConnectorConfig = YoLinkConfig | PikoConfig | NetBoxConfig | GeneaConfig; // Added GeneaConfig
 
 // Form schema
 const formSchema = z.object({
@@ -104,26 +112,66 @@ const formSchema = z.object({
   type: z.enum(['cloud']).optional(),
   username: z.string().optional(),
   password: z.string().optional(),
-  selectedSystem: z.string().optional(),
+  selectedSystem: z.string().optional(), // Keep optional here, validation done in onSubmit/wizard logic
 
   // NetBox fields
-  webhookSecret: z.string().optional(), // Added secret field to form schema
-}).refine((data) => {
-  // Simple, single validation check based on category
+  webhookSecret: z.string().optional(), // Secret generation/validation handled separately
+
+  // Genea fields
+  apiKey: z.string().optional(), // Added API Key field
+}).superRefine((data, ctx) => {
+  // Use superRefine to add errors to specific field paths
   if (data.category === 'yolink') {
-    return !!data.uaid && !!data.clientSecret;
+    if (!data.uaid) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'UAID is required',
+        path: ['uaid'],
+      });
+    }
+    if (!data.clientSecret) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Client Secret is required',
+        path: ['clientSecret'],
+      });
+    }
+  } else if (data.category === 'piko') {
+    // Validate credential fields for Piko (system selection is handled in onSubmit/wizard logic)
+    if (!data.username) {
+       ctx.addIssue({
+         code: z.ZodIssueCode.custom,
+         message: 'Username is required',
+         path: ['username'],
+       });
+     }
+     if (!data.password) {
+       ctx.addIssue({
+         code: z.ZodIssueCode.custom,
+         message: 'Password is required',
+         path: ['password'],
+       });
+     }
+  } else if (data.category === 'genea') {
+    if (!data.apiKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'API Key is required',
+        path: ['apiKey'],
+      });
+    }
   }
-  if (data.category === 'piko') {
-    return !!data.username && !!data.password;
+  // NetBox has no client-side required fields in this form currently.
+  // selectedSystem for Piko is validated during the wizard flow/onSubmit, not here.
+
+  // Add validation for Name field for NetBox and Genea
+  if ((data.category === 'netbox' || data.category === 'genea') && !data.name) {
+    ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Connector Name is required',
+        path: ['name'],
+    });
   }
-  // No specific client-side validation needed for netbox initially
-  if (data.category === 'netbox') {
-    return true; 
-  }
-  return true;
-}, {
-  message: "Required fields missing for the selected connector type",
-  path: ["category"], // Show error on category field
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -170,6 +218,7 @@ export function AddConnectorModal() {
       password: '',
       selectedSystem: '',
       webhookSecret: '',
+      apiKey: '',
     },
   });
 
@@ -189,6 +238,7 @@ export function AddConnectorModal() {
       password: '',
       selectedSystem: '',
       webhookSecret: '',
+      apiKey: '',
     });
     setTestResult(null);
     setTestedYoLinkHomeId(null);
@@ -217,6 +267,11 @@ export function AddConnectorModal() {
         const netboxConfig = editingConnector.config as NetBoxConfig;
         configValues = {
           webhookSecret: netboxConfig.webhookSecret || '',
+        };
+      } else if (editingConnector.category === 'genea' && editingConnector.config) {
+        const geneaConfig = editingConnector.config as GeneaConfig;
+        configValues = {
+          apiKey: geneaConfig.apiKey || '',
         };
       }
 
@@ -247,18 +302,26 @@ export function AddConnectorModal() {
 
   const selectedCategory = form.watch('category');
 
-  // Effect to generate webhookId AND secret when NetBox is selected for a NEW connector
+  // Effect to generate webhookId when NetBox or Genea is selected for a NEW connector
   useEffect(() => {
-    if (!isEditMode && selectedCategory === 'netbox') {
+    if (!isEditMode && (selectedCategory === 'netbox' || selectedCategory === 'genea')) {
       setGeneratedWebhookId(uuidv4());
-      const newSecret = crypto.randomBytes(32).toString('hex');
-      setGeneratedWebhookSecret(newSecret);
-      form.setValue('webhookSecret', newSecret); // Set initial generated secret in form
+      // Only generate/set secret for NetBox
+      if (selectedCategory === 'netbox') {
+        const newSecret = crypto.randomBytes(32).toString('hex');
+        setGeneratedWebhookSecret(newSecret);
+        form.setValue('webhookSecret', newSecret); // Set initial generated secret in form
+      } else {
+        // Clear secret state/form value if Genea is selected
+        setGeneratedWebhookSecret(null);
+        form.setValue('webhookSecret', '');
+      }
     } else if (!isEditMode) {
-      // Reset if category changes away from netbox or on initial load in add mode
+      // Reset if category changes away from webhook types or on initial load in add mode
       setGeneratedWebhookId(null);
       setGeneratedWebhookSecret(null);
       form.setValue('webhookSecret', ''); // Clear secret in form
+      form.setValue('apiKey', ''); // Clear API key in form
     }
     // Intentionally only run when isEditMode or selectedCategory changes
   }, [isEditMode, selectedCategory, form]); // Added form dependency for setValue
@@ -272,6 +335,13 @@ export function AddConnectorModal() {
   }, [currentOpenState]);
 
   const isPiko = selectedCategory === 'piko';
+
+  // Determine if the Copy button for webhook URL should be shown
+  const shouldShowCopyButton = 
+    (isEditMode && 
+      ((editingConnector?.config as NetBoxConfig | GeneaConfig)?.webhookId))
+    || 
+    (!isEditMode && generatedWebhookId);
 
   // Function to fetch available Piko systems
   const fetchPikoSystems = async () => {
@@ -367,6 +437,11 @@ export function AddConnectorModal() {
           webhookId: isEditMode ? undefined : generatedWebhookId ?? undefined, 
           webhookSecret: values.webhookSecret || undefined, 
         };
+      } else if (values.category === 'genea') {
+        config = {
+          webhookId: isEditMode ? undefined : generatedWebhookId ?? undefined,
+          apiKey: values.apiKey || '',
+        };
       }
 
       const apiPayload: { name: string; category: string; config?: Partial<ConnectorConfig> } = {
@@ -374,8 +449,9 @@ export function AddConnectorModal() {
         category: values.category,
       };
 
-      if ( (values.category !== 'netbox' || isEditMode) || 
-           (values.category === 'netbox' && !isEditMode && generatedWebhookId) ) {
+      if ( (values.category !== 'netbox' && values.category !== 'genea') || // If not a webhook type
+           isEditMode || // Or if editing any type
+           (!isEditMode && generatedWebhookId) ) { // Or if adding a new webhook type and ID is generated
         apiPayload.config = config || {}; 
       }
 
@@ -478,18 +554,23 @@ export function AddConnectorModal() {
         }
       }
       
-      // Handle YoLink testing
-      let testConfig: YoLinkConfig | undefined;
+      // Prepare config for the specific driver test
+      let testApiConfig: Partial<ConnectorConfig> = {}; // Use Partial<ConnectorConfig>
       
       if (driver === 'yolink') {
-        testConfig = {
+        testApiConfig = {
           uaid: values.uaid || '',
           clientSecret: values.clientSecret || '',
         };
-        
         console.log('Testing YoLink connection with:',  
           { uaid: values.uaid?.substring(0, 3) + '***', clientSecret: '***' });
+      } else if (driver === 'genea') { // Add Genea case
+        testApiConfig = {
+          apiKey: values.apiKey || '',
+        };
+         console.log('Testing Genea connection...');
       }
+      // Piko test is handled separately above by fetching systems
 
       // Test the connection via backend
       toast.loading('Testing connection...', { id: 'connection-test' });
@@ -500,7 +581,7 @@ export function AddConnectorModal() {
         },
         body: JSON.stringify({
           driver,
-          config: testConfig,
+          config: testApiConfig, // Send the prepared config
         }),
       });
 
@@ -567,7 +648,9 @@ export function AddConnectorModal() {
                   : 'Add Piko Connector - Step 2'
                 : selectedCategory === 'netbox' // Add title for NetBox
                   ? 'NetBox Configuration'
-                  : 'Add New Connector'
+                  : selectedCategory === 'genea' // Add title for Genea
+                    ? 'Genea Configuration'
+                    : 'Add New Connector'
             }
           </DialogTitle>
           <DialogDescription>
@@ -579,7 +662,9 @@ export function AddConnectorModal() {
                   : 'Select your Piko system.'
                 : selectedCategory === 'netbox' // Add description for NetBox
                   ? 'Configure a webhook endpoint for NetBox integration.'
-                  : 'Set up a new integration to connect with external systems or services.'}
+                  : selectedCategory === 'genea' // Add description for Genea
+                    ? 'Configure a webhook endpoint and API key for Genea.'
+                    : 'Set up a new integration to connect with external systems or services.'}
           </DialogDescription>
         </DialogHeader>
         
@@ -650,7 +735,7 @@ export function AddConnectorModal() {
                   <FormField
                     control={form.control}
                     name="name"
-                    render={({ field }) => (
+                    render={({ field, fieldState }) => (
                       <FormItem>
                         <FormLabel>Connector Name</FormLabel>
                         <FormControl>
@@ -659,20 +744,21 @@ export function AddConnectorModal() {
                               selectedCategory === 'yolink' ? "e.g., My YoLink Hub" :
                               selectedCategory === 'piko' ? "e.g., Main Piko System" :
                               selectedCategory === 'netbox' ? "e.g., NetBox Webhook" : // Placeholder for NetBox
+                              selectedCategory === 'genea' ? "e.g., Genea Webhook" : // Placeholder for Genea
                               "Connector Name"
                             } 
                             {...field} 
+                            className={cn(fieldState.invalid && 'border-destructive')}
                           />
                         </FormControl>
-                        <FormMessage />
                       </FormItem>
                     )}
                   />
                 )}
               </div>
             
-            {/* Divider - only if we had previous fields and not NetBox */}
-            {(!isPiko || isEditMode) && selectedCategory !== 'netbox' && <div className="h-px bg-border" />}
+            {/* Divider - only if we had previous fields and not NetBox/Genea */}
+            {(!isPiko || isEditMode) && selectedCategory !== 'netbox' && selectedCategory !== 'genea' && <div className="h-px bg-border" />}
             
             {/* YoLink Settings Section */}
             {selectedCategory === 'yolink' && (
@@ -680,16 +766,36 @@ export function AddConnectorModal() {
                 <FormField
                   control={form.control}
                   name="uaid"
-                  render={({ field }) => (
-                    <FormItem><FormLabel>UAID</FormLabel><FormControl><Input type="text" autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>
+                  render={({ field, fieldState }) => (
+                    <FormItem>
+                      <FormLabel>UAID</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="text" 
+                          autoComplete="new-password" 
+                          {...field} 
+                          className={cn(fieldState.invalid && 'border-destructive')}
+                        />
+                      </FormControl>
+                    </FormItem>
                   )}
                 />
                 
                 <FormField
                   control={form.control}
                   name="clientSecret"
-                  render={({ field }) => (
-                     <FormItem><FormLabel>Client Secret</FormLabel><FormControl><Input type="password" autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>
+                  render={({ field, fieldState }) => (
+                     <FormItem>
+                      <FormLabel>Client Secret</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="password" 
+                          autoComplete="new-password" 
+                          {...field} 
+                          className={cn(fieldState.invalid && 'border-destructive')}
+                        />
+                      </FormControl>
+                    </FormItem>
                   )}
                 />
                 
@@ -734,13 +840,14 @@ export function AddConnectorModal() {
                 <FormField
                   control={form.control}
                   name="username"
-                  render={({ field }) => (
+                  render={({ field, fieldState }) => (
                     <FormItem>
                       <FormLabel>Username</FormLabel>
                       <FormControl>
                         <Input 
                           autoComplete="new-password" 
                           {...field} 
+                          className={cn(fieldState.invalid && 'border-destructive')}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
@@ -752,7 +859,6 @@ export function AddConnectorModal() {
                           }}
                         />
                       </FormControl>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -760,7 +866,7 @@ export function AddConnectorModal() {
                 <FormField
                   control={form.control}
                   name="password"
-                  render={({ field }) => (
+                  render={({ field, fieldState }) => (
                     <FormItem>
                       <FormLabel>Password</FormLabel>
                       <FormControl>
@@ -768,6 +874,7 @@ export function AddConnectorModal() {
                           type="password" 
                           autoComplete="new-password" 
                           {...field} 
+                          className={cn(fieldState.invalid && 'border-destructive')}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
@@ -779,7 +886,6 @@ export function AddConnectorModal() {
                           }}
                         />
                       </FormControl>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -891,8 +997,8 @@ export function AddConnectorModal() {
               </div>
             )}
             
-            {/* NetBox Settings Section */}
-            {selectedCategory === 'netbox' && (
+            {/* NetBox or Genea Settings Section */}
+            {(selectedCategory === 'netbox' || selectedCategory === 'genea') && (
               <div className="space-y-4">
                  <FormItem>
                    <FormLabel>Webhook URL</FormLabel>
@@ -903,8 +1009,8 @@ export function AddConnectorModal() {
                          type="text"
                          readOnly
                          value={
-                           isEditMode && (editingConnector?.config as NetBoxConfig)?.webhookId 
-                             ? `${window.location.origin}/api/webhooks/${(editingConnector?.config as NetBoxConfig).webhookId}` 
+                           isEditMode && ((editingConnector?.config as NetBoxConfig)?.webhookId || (editingConnector?.config as GeneaConfig)?.webhookId)
+                             ? `${window.location.origin}/api/webhooks/${(editingConnector?.config as NetBoxConfig | GeneaConfig).webhookId}` 
                              : !isEditMode && generatedWebhookId
                                ? `${window.location.origin}/api/webhooks/${generatedWebhookId}`
                                : "Generating ID..." // Show temporary text while ID generates
@@ -913,7 +1019,7 @@ export function AddConnectorModal() {
                          className="pr-12 bg-muted text-muted-foreground read-only:focus:ring-0 read-only:focus:ring-offset-0"
                        />
                        {/* Show copy button in edit mode OR add mode once ID is generated */}
-                       {(isEditMode && (editingConnector?.config as NetBoxConfig)?.webhookId) || (!isEditMode && generatedWebhookId) ? (
+                       {shouldShowCopyButton ? (
                          <Button
                            type="button"
                            variant="ghost"
@@ -921,10 +1027,11 @@ export function AddConnectorModal() {
                            // Position button inside the input area
                            className="absolute right-1 h-7 w-7 text-muted-foreground hover:text-foreground"
                            onClick={() => {
+                             const webhookId = isEditMode 
+                               ? (editingConnector?.config as NetBoxConfig | GeneaConfig).webhookId 
+                               : generatedWebhookId;
                              navigator.clipboard.writeText(
-                               isEditMode
-                               ? `${window.location.origin}/api/webhooks/${(editingConnector?.config as NetBoxConfig)?.webhookId}`
-                               : `${window.location.origin}/api/webhooks/${generatedWebhookId}`
+                               `${window.location.origin}/api/webhooks/${webhookId}`
                              );
                              toast.success("Webhook URL copied to clipboard!");
                            }}
@@ -932,93 +1039,115 @@ export function AddConnectorModal() {
                            <Copy className="h-4 w-4" />
                            <span className="sr-only">Copy URL</span>
                          </Button>
-                       ) : null} { /* Hide button otherwise */ }
+                       ) : null}
                      </div>
                    </FormControl>
                    <FormDescription className="mt-2 text-xs">
-                      Configure <strong>Fusion Agent</strong> to subscribe to NetBox events and deliver them to this webhook URL.
+                      Configure <strong>{formatConnectorCategory(selectedCategory)}</strong> to subscribe to events and deliver them to this webhook URL.
                    </FormDescription>
                  </FormItem>
 
-                 {/* Webhook Secret Field */}
-                 <FormField
+                 {/* Webhook Secret Field - Only for NetBox */}
+                 {selectedCategory === 'netbox' && (
+                   <FormField
+                      control={form.control}
+                      name="webhookSecret"
+                      render={({ field }) => (
+                          <FormItem>
+                          <FormLabel>Webhook Secret</FormLabel>
+                          <FormControl>
+                              <div className="relative flex items-center">
+                              <Input
+                                  type={showSecret ? 'text' : 'password'}
+                                  readOnly // Make the input read-only
+                                  {...field}
+                                  className="pr-28 bg-muted"
+                              />
+                              <div className="absolute right-1 flex space-x-1">
+                                  {/* Reset button with Tooltip only */}
+                                    <Tooltip delayDuration={300}>
+                                      <TooltipTrigger asChild>
+                                          <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                              onClick={(e) => { 
+                                                e.preventDefault(); 
+                                                const newSecret = crypto.randomBytes(32).toString('hex');
+                                                form.setValue('webhookSecret', newSecret, { shouldValidate: true });
+                                                setGeneratedWebhookSecret(newSecret);
+                                                toast.info("New secret generated. Click Update Connector to save.");
+                                                setShowSecret(true); 
+                                              }}
+                                          >
+                                              <RefreshCcw className="h-4 w-4" />
+                                              <span className="sr-only">Reset Secret</span>
+                                          </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Generate a new secret.<br/>Click Update Connector to save.</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+
+                                  {/* Copy button for Secret */}
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(form.getValues('webhookSecret') || '');
+                                      toast.success("Webhook Secret copied to clipboard!");
+                                    }}
+                                    title="Copy secret"
+                                  >
+                                    <Copy className="h-4 w-4" />
+                                    <span className="sr-only">Copy Secret</span>
+                                  </Button>
+
+                                  {/* Show/Hide button */}
+                                  <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  onClick={() => setShowSecret(!showSecret)}
+                                  title={showSecret ? 'Hide secret' : 'Show secret'}
+                                  >
+                                  {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                  <span className="sr-only">{showSecret ? 'Hide' : 'Show'} Secret</span>
+                                  </Button>
+                              </div>
+                              </div>
+                          </FormControl>
+                          <FormMessage />
+                          </FormItem>
+                      )}
+                      />
+                 )}
+
+                 {/* API Key Field - Only for Genea */}
+                 {selectedCategory === 'genea' && (
+                   <FormField
                     control={form.control}
-                    name="webhookSecret"
-                    render={({ field }) => (
+                    name="apiKey"
+                    render={({ field, fieldState }) => (
                         <FormItem>
-                        <FormLabel>Webhook Secret</FormLabel>
+                        <FormLabel>API Key</FormLabel>
                         <FormControl>
-                            <div className="relative flex items-center">
                             <Input
-                                type={showSecret ? 'text' : 'password'}
-                                // placeholder="Enter or generate a secret"
-                                readOnly // Make the input read-only
+                                type="password" // Use password type for masking
+                                placeholder="Enter your Genea API Key"
+                                autoComplete="new-password"
                                 {...field}
-                                // Merged classNames
-                                className="pr-28 bg-muted"
+                                className={cn(fieldState.invalid && 'border-destructive')}
                             />
-                            <div className="absolute right-1 flex space-x-1">
-                                 {/* Reset button with Tooltip only */}
-                                  <Tooltip delayDuration={300}>
-                                    <TooltipTrigger asChild>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                            onClick={(e) => { 
-                                              e.preventDefault(); 
-                                              const newSecret = crypto.randomBytes(32).toString('hex');
-                                              form.setValue('webhookSecret', newSecret, { shouldValidate: true });
-                                              setGeneratedWebhookSecret(newSecret);
-                                              toast.info("New secret generated. Click Update Connector to save.");
-                                              setShowSecret(true); 
-                                            }}
-                                        >
-                                            <RefreshCcw className="h-4 w-4" />
-                                            <span className="sr-only">Reset Secret</span>
-                                        </Button>
-                                     </TooltipTrigger>
-                                     <TooltipContent>
-                                       <p>Generate a new secret.<br/>Click Update Connector to save.</p>
-                                     </TooltipContent>
-                                   </Tooltip>
-
-                                 {/* Copy button for Secret */}
-                                 <Button
-                                   type="button"
-                                   variant="ghost"
-                                   size="icon"
-                                   className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                   onClick={() => {
-                                     navigator.clipboard.writeText(form.getValues('webhookSecret') || '');
-                                     toast.success("Webhook Secret copied to clipboard!");
-                                   }}
-                                   title="Copy secret"
-                                 >
-                                   <Copy className="h-4 w-4" />
-                                   <span className="sr-only">Copy Secret</span>
-                                 </Button>
-
-                                 {/* Show/Hide button */}
-                                <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                onClick={() => setShowSecret(!showSecret)}
-                                title={showSecret ? 'Hide secret' : 'Show secret'}
-                                >
-                                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                <span className="sr-only">{showSecret ? 'Hide' : 'Show'} Secret</span>
-                                </Button>
-                            </div>
-                            </div>
                         </FormControl>
-                        <FormMessage />
                         </FormItem>
                     )}
                     />
+                 )}
 
                </div>
             )}
@@ -1036,76 +1165,85 @@ export function AddConnectorModal() {
             
             {/* Actions Section */}
             <div className="pt-2">
-              <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
+              <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0 justify-end">
                 {/* Show different buttons based on category and step */}
                 {selectedCategory && (
-                  <>
-                    {/* Back button for Piko wizard steps */}
-                    {isPiko && (
-                      <>
-                        {pikoWizardStep === 'credentials' && (
+                  <div className="flex flex-col sm:flex-row gap-2 w-full justify-between">
+                    {/* Back button always on the left if applicable */}
+                    <div className="flex-initial">
+                        {isPiko && (
+                          <>
+                            {pikoWizardStep === 'credentials' && (
+                              <Button 
+                                type="button" 
+                                variant="outline" 
+                                onClick={() => {
+                                  form.setValue('category', '');
+                                  setTestResult(null);
+                                }}
+                                className="w-full sm:w-auto"
+                              >
+                                Back
+                              </Button>
+                            )}
+                            {pikoWizardStep === 'system-selection' && (
+                              <Button 
+                                type="button" 
+                                variant="outline" 
+                                onClick={() => {
+                                  setPikoWizardStep('credentials');
+                                  setTestResult(null);
+                                }}
+                                className="w-full sm:w-auto"
+                              >
+                                Back
+                              </Button>
+                            )}
+                          </>
+                        )}
+                        {/* Add Back button for NetBox/Genea to go back to category selection? */} 
+                        {/* Consider if needed - for now, only Piko has a clear back step */}
+                    </div>
+
+                    {/* Right-aligned action buttons */}                    
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        {/* Test/Next button - Show for YoLink, Piko (Credentials), Genea */}
+                        {(selectedCategory === 'yolink' || selectedCategory === 'genea' || (selectedCategory === 'piko' && pikoWizardStep === 'credentials')) && (
                           <Button 
-                            type="button" 
-                            variant="outline" 
-                            onClick={() => {
-                              form.setValue('category', '');
-                              setTestResult(null);
-                            }}
-                            className="w-full sm:w-auto mr-auto"
+                            type="button"
+                            variant="outline"
+                            onClick={testConnection}
+                            disabled={
+                              isTestingConnection || 
+                              isFetchingSystems || 
+                              (selectedCategory === 'yolink' && (!form.getValues('uaid') || !form.getValues('clientSecret'))) ||
+                              (selectedCategory === 'genea' && !form.getValues('apiKey')) ||
+                              (isPiko && 
+                               pikoWizardStep === 'credentials' && 
+                               (!form.getValues('username') || !form.getValues('password')))
+                            }
+                            className="w-full sm:w-auto"
                           >
-                            Back
+                            {isTestingConnection || isFetchingSystems ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : null }
+                            {isPiko ? 'Next' : 'Test Connection'}
                           </Button>
                         )}
-                        {pikoWizardStep === 'system-selection' && (
+                        
+                        {/* Submit Button - Show for NetBox (directly), YoLink, Genea, Piko (System Selection) */}
+                        {(selectedCategory === 'netbox' || selectedCategory === 'yolink' || selectedCategory === 'genea' || (selectedCategory === 'piko' && pikoWizardStep === 'system-selection')) && (
                           <Button 
-                            type="button" 
-                            variant="outline" 
-                            onClick={() => {
-                              setPikoWizardStep('credentials');
-                              setTestResult(null);
-                            }}
-                            className="w-full sm:w-auto mr-auto"
+                            type="submit" 
+                            className="w-full sm:w-auto" 
+                            disabled={isLoading}
                           >
-                            Back
+                            {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                            {isEditMode ? 'Update Connector' : 'Add Connector'}
                           </Button>
                         )}
-                      </>
-                    )}
-                    
-                    {/* Next/Test button - Hidden for NetBox */}
-                    {(selectedCategory === 'yolink' || (selectedCategory === 'piko' && pikoWizardStep === 'credentials')) && (
-                      <Button 
-                        type="button"
-                        variant="outline"
-                        onClick={testConnection}
-                        disabled={
-                          isTestingConnection || 
-                          isFetchingSystems || 
-                          (isPiko && 
-                           pikoWizardStep === 'credentials' && 
-                           (!form.getValues('username') || !form.getValues('password')))
-                        }
-                        className="w-full sm:w-auto"
-                      >
-                        {isTestingConnection || isFetchingSystems ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : null}
-                        {isPiko ? 'Next' : 'Test Connection'}
-                      </Button>
-                    )}
-                    
-                    {/* Submit Button - Shown for all types (NetBox always uses this directly) */}
-                    {(selectedCategory === 'netbox' || selectedCategory === 'yolink' || (selectedCategory === 'piko' && pikoWizardStep === 'system-selection')) && (
-                      <Button 
-                        type="submit" 
-                        className="w-full sm:w-auto" 
-                        disabled={isLoading}
-                      >
-                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        {isEditMode ? 'Update Connector' : 'Add Connector'}
-                      </Button>
-                    )}
-                  </>
+                    </div>
+                  </div>
                 )}
               </DialogFooter>
             </div>
@@ -1114,4 +1252,4 @@ export function AddConnectorModal() {
       </DialogContent>
     </Dialog>
   );
-} 
+}

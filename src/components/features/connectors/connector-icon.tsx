@@ -12,6 +12,7 @@ const connectorIconMap: Record<string, { src: string; name: string }> = {
   yolink: { src: '/yolink.png', name: 'YoLink' },
   piko: { src: '/piko.png', name: 'Piko' },
   netbox: { src: '/lenel-s2.png', name: 'NetBox' },
+  genea: { src: '/genea.png', name: 'Genea' },
   // Add more connectors here as needed
 };
 
