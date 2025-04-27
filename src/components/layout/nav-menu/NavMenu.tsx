@@ -55,11 +55,11 @@ const NavMenu: React.FC<NavMenuProps> = ({ isCollapsed, toggleCollapse }) => {
         </div>
 
         {/* Menu List */}
-        <div className="flex flex-col gap-1 overflow-auto py-2">
+        <div className="flex flex-1 flex-col items-start gap-1 overflow-y-auto overflow-x-hidden py-2">
           {navItems.map((item) => {
             const Icon = item.icon;
             const linkContent = (
-              <Link href={item.href} className="flex items-center w-full h-full">
+              <Link href={item.href} className="flex items-center w-full">
                 <Icon className={cn('h-5 w-5 flex-shrink-0', isCollapsed ? 'mx-auto' : 'mr-3')} />
                 <span className={cn('truncate', isCollapsed ? 'sr-only' : '')}>{item.label}</span>
               </Link>
