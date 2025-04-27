@@ -178,7 +178,7 @@ export async function POST(req: NextRequest) {
     const connectorName = name || `${category.charAt(0).toUpperCase() + category.slice(1)} Connector`;
 
     // Config is now guaranteed to be valid for the category by superRefine
-    let finalConfig = config || {}; // Keep fallback just in case, though refine should prevent invalid states
+    const finalConfig = config || {}; // Keep fallback just in case, though refine should prevent invalid states
     let webhookId: string | undefined = undefined;
     const connectorId = uuidv4(); // Generate ID for the new connector
 
