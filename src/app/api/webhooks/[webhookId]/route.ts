@@ -1,9 +1,10 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/data/db';
-import { connectors } from '@/data/db/schema';
+import { connectors, devices } from '@/data/db/schema';
 import { sql, eq } from 'drizzle-orm';
 import crypto from 'crypto'; // Import crypto
 import { Buffer } from 'buffer'; // Needed for raw body handling
+import type { NetBoxWebhookPayload, NetBoxDeviceWebhookPayload } from '@/types/netbox'; // Import the types
 
 // Header names
 const NETBOX_SIGNATURE_HEADER = 'x-hub-signature-256'; 
@@ -72,30 +73,26 @@ function verifySignature(
 
 export async function POST(
   request: NextRequest,
-  // Type params as a Promise containing the expected object
-  { params }: { params: Promise<{ webhookId: string }> } 
+  { params }: { params: Promise<{ webhookId: string }> }
 ) {
-  // Await the params Promise before destructuring
   const { webhookId } = await params;
   
-  if (!webhookId) {
-    return NextResponse.json({ success: false, error: 'Webhook ID missing' }, { status: 400 });
-  }
+  console.log(`[Webhook ${webhookId}] Received request`);
 
   // --- 1. Read Raw Body --- 
   let rawBodyBuffer: Buffer;
   try {
-    // Efficiently get the raw body as a buffer
     rawBodyBuffer = Buffer.from(await request.arrayBuffer()); 
   } catch (error) {
     console.error(`Webhook ${webhookId}: Failed to read raw request body`, error);
     return NextResponse.json({ success: false, error: 'Failed to read request body' }, { status: 500 });
   }
   
-  // --- 2. Fetch Connector, Config, and Secret --- 
+  // --- 2. Fetch Connector, Config, and Secret (using the webhookId from the config) --- 
   let connectorSecret: string | undefined;
   let connectorInfo: { id: string; name: string; category: string } | undefined;
   let parsedConfig: Record<string, any> | undefined;
+  let connectorId: string;
 
   try {
     const connectorResult = await db.select({
@@ -105,19 +102,17 @@ export async function POST(
         config: connectors.cfg_enc
     })
     .from(connectors)
-    // Use the webhookId directly from the path parameters
-    // Updated query to correctly use JSON operator ->>
     .where(sql`${connectors.cfg_enc}->>'webhookId' = ${webhookId}`)
     .limit(1);
 
     if (!connectorResult || connectorResult.length === 0) {
-      console.warn(`Webhook received for unknown ID: ${webhookId}`);
-      // Don't reveal if ID exists, standard 401 for security
+      console.warn(`Webhook received for unknown or mismatched webhook ID: ${webhookId}`);
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    connectorId = connectorResult[0].id; 
     connectorInfo = {
-        id: connectorResult[0].id,
+        id: connectorId,
         name: connectorResult[0].name,
         category: connectorResult[0].category,
     };
@@ -125,10 +120,8 @@ export async function POST(
     try {
       parsedConfig = JSON.parse(connectorResult[0].config || '{}');
       connectorSecret = parsedConfig?.webhookSecret;
-      // Secret is required for both NetBox and Genea webhook validation
       if (!connectorSecret || typeof connectorSecret !== 'string') {
         console.error(`Webhook ${webhookId}: Missing or invalid secret in config for connector ${connectorInfo.id}`);
-        // Treat missing internal config as an authentication failure from the client's perspective
         return NextResponse.json({ success: false, error: 'Unauthorized: Configuration error' }, { status: 401 });
       }
     } catch(e) {
@@ -144,37 +137,81 @@ export async function POST(
   // --- 3. Verify Signature (using category-specific header) --- 
   const signatureHeader = connectorInfo.category === 'genea' 
     ? request.headers.get(GENEA_SIGNATURE_HEADER)
-    : request.headers.get(NETBOX_SIGNATURE_HEADER); // Default or NetBox
+    : request.headers.get(NETBOX_SIGNATURE_HEADER); 
 
   if (!verifySignature(connectorSecret, rawBodyBuffer, signatureHeader, connectorInfo.category)) {
     console.warn(`Webhook ${webhookId}: Invalid signature received for connector ${connectorInfo.id}. Header: ${signatureHeader}`);
     return NextResponse.json({ success: false, error: 'Unauthorized: Invalid signature' }, { status: 401 });
   }
 
-  // --- 4. Parse JSON Body (Now that signature is verified) --- 
-  let requestBody: any;
+  // --- Signature is Verified --- 
+  console.log(`Webhook received and verified for ${connectorInfo.category} connector '${connectorInfo.name}' (ID: ${connectorInfo.id}, WebhookID: ${webhookId})`);
+
+  // Variable to hold the parsed payload
+  let payload: NetBoxWebhookPayload; 
+
+  // --- Parse JSON Body (Only after signature is verified) --- 
   try {
-    requestBody = JSON.parse(rawBodyBuffer.toString('utf-8'));
+    const rawBody = rawBodyBuffer.toString('utf-8'); 
+    payload = JSON.parse(rawBody) as NetBoxWebhookPayload; 
+    console.log(`[Webhook ${connectorId}] Parsed payload type: ${payload.Type}`);
+
   } catch (error) {
-    console.error(`Webhook ${webhookId}: Failed to parse JSON body after signature verification`, error);
-    return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 });
+    console.error(`[Webhook ${connectorId}] Error parsing JSON payload:`, error);
+    return NextResponse.json({ success: false, error: 'Invalid JSON payload' }, { status: 400 });
   }
 
-  // --- 5. Process Verified Request --- 
+  // --- Process Payload based on Type --- 
   try {
-    console.log(`Webhook received and verified for ${connectorInfo.category} connector '${connectorInfo.name}' (ID: ${connectorInfo.id}, WebhookID: ${webhookId})`);
-    console.log('Webhook Body:', JSON.stringify(requestBody, null, 2));
+    if (payload.Type === 'Device' && connectorInfo.category === 'netbox') {
+      const devicePayload = payload as NetBoxDeviceWebhookPayload;
+      const devicesToUpsert: (typeof devices.$inferInsert)[] = [];
 
-    // ---------
-    // TODO: Add actual event processing logic here based on connectorInfo.category and requestBody
-    // Example: if (connectorInfo.category === 'genea') { handleGeneaEvent(requestBody); }
-    // ---------
+      console.log(`[Webhook ${connectorId}] Processing NetBox 'Device' type payload.`);
 
-    return NextResponse.json({ success: true, message: 'Webhook received and verified' });
+      for (const portal of devicePayload.Portals) {
+        for (const reader of portal.Readers) {
+          devicesToUpsert.push({
+            deviceId: reader.ReaderKey.toString(),
+            connectorId: connectorId, 
+            name: reader.Name,
+            type: 'NetBoxReader',
+            vendor: 'NetBox',
+            model: 'Reader',
+            status: 'Unknown',
+            updatedAt: new Date(),
+          });
+        }
+      }
 
+      if (devicesToUpsert.length > 0) {
+        console.log(`[Webhook ${connectorId}] Upserting ${devicesToUpsert.length} NetBox readers.`);
+        await db.insert(devices)
+          .values(devicesToUpsert)
+          .onConflictDoUpdate({
+            target: [devices.connectorId, devices.deviceId],
+            set: {
+              name: sql`excluded.name`,
+              type: sql`excluded.type`,
+              vendor: sql`excluded.vendor`,
+              model: sql`excluded.model`,
+              status: sql`excluded.status`,
+              updatedAt: new Date(),
+            }
+          });
+        console.log(`[Webhook ${connectorId}] Upsert complete.`);
+      } else {
+        console.log(`[Webhook ${connectorId}] No readers found in NetBox 'Device' payload to upsert.`);
+      }
+      return NextResponse.json({ success: true, message: 'NetBox Device webhook processed' }, { status: 200 });
+
+    } else {
+      console.warn(`[Webhook ${connectorId}] Received unhandled payload type '${payload.Type}' or category '${connectorInfo.category}'.`);
+      return NextResponse.json({ success: true, message: 'Webhook received but not processed' }, { status: 200 });
+    }
   } catch (error) {
-    console.error(`Webhook ${webhookId}: Error processing verified webhook:`, error);
-    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
-    return NextResponse.json({ success: false, error: `Failed to process webhook: ${errorMessage}` }, { status: 500 });
+      console.error(`[Webhook ${connectorId}] Error processing webhook payload:`, error);
+      const message = error instanceof Error ? error.message : 'Unknown processing error';
+      return NextResponse.json({ success: false, error: `Failed to process webhook: ${message}` }, { status: 500 });
   }
 } 

@@ -39,10 +39,9 @@ export const deviceIdentifierMap: Partial<Record<ConnectorCategory, Record<strin
     'MultisensorCamera': { type: DeviceType.Camera },
     // Add more known Piko deviceType strings here as needed
   },
-  nexbox: { // Added NexBox category
-    'Portal': { type: DeviceType.Door }, // Added Portal mapping to Door
+  netbox: {
+    'NetBoxReader': { type: DeviceType.Door },
   },
-  // Add other connector categories as needed
 };
 
 // Define the default "Unmapped" type info explicitly

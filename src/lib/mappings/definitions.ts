@@ -202,7 +202,7 @@ export const validDisplayStatesMap: ValidDisplayStatesMap = {
 };
 
 // --- CONNECTOR CATEGORIES ---
-export type ConnectorCategory = 'yolink' | 'piko' | 'nexbox';
+export type ConnectorCategory = 'yolink' | 'piko' | 'netbox';
 
 // --- Intermediate State Enums ---
 // Used as a standardized, abstract representation of device states,
