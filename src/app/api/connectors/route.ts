@@ -34,7 +34,8 @@ const NetBoxConfigSchema = z.object({
 // Add Genea config schema
 const GeneaConfigSchema = z.object({
   webhookId: z.string().uuid(),
-  apiKey: z.string().min(1, "API Key is required"), // Add min(1)
+  apiKey: z.string().min(1, "API Key is required"), 
+  webhookSecret: z.string().min(1, "Webhook Secret is required"), // Add webhookSecret as required
 });
 
 // Combined schema for the request body for POST
@@ -122,7 +123,7 @@ const updateConnectorSchema = z.object({
     YoLinkConfigSchema.partial(),
     PikoConfigSchema.partial(),
     NetBoxConfigSchema.partial().omit({ webhookId: true }), // webhookId cannot be updated
-    GeneaConfigSchema.partial().omit({ webhookId: true }), // webhookId cannot be updated
+    GeneaConfigSchema.partial().omit({ webhookId: true }), // webhookId cannot be updated, secret/apiKey can
   ]).optional(),
 });
 

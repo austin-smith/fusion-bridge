@@ -95,6 +95,7 @@ interface NetBoxConfig {
 interface GeneaConfig {
   webhookId: string;
   apiKey: string; // Added apiKey
+  webhookSecret: string; // Added webhookSecret
 }
 
 type ConnectorConfig = YoLinkConfig | PikoConfig | NetBoxConfig | GeneaConfig; // Added GeneaConfig
@@ -115,7 +116,7 @@ const formSchema = z.object({
   selectedSystem: z.string().optional(), // Keep optional here, validation done in onSubmit/wizard logic
 
   // NetBox fields
-  webhookSecret: z.string().optional(), // Secret generation/validation handled separately
+  webhookSecret: z.string().optional(), // Optional globally, required specifically for Genea via refine
 
   // Genea fields
   apiKey: z.string().optional(), // Added API Key field
@@ -159,6 +160,14 @@ const formSchema = z.object({
         message: 'API Key is required',
         path: ['apiKey'],
       });
+    }
+    // Require webhookSecret for Genea
+    if (!data.webhookSecret) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Webhook Secret is required for Genea',
+            path: ['webhookSecret'],
+        });
     }
   }
   // NetBox has no client-side required fields in this form currently.
@@ -272,6 +281,7 @@ export function AddConnectorModal() {
         const geneaConfig = editingConnector.config as GeneaConfig;
         configValues = {
           apiKey: geneaConfig.apiKey || '',
+          webhookSecret: geneaConfig.webhookSecret || '',
         };
       }
 
@@ -441,6 +451,7 @@ export function AddConnectorModal() {
         config = {
           webhookId: isEditMode ? undefined : generatedWebhookId ?? undefined,
           apiKey: values.apiKey || '',
+          webhookSecret: values.webhookSecret || undefined, // Include webhookSecret
         };
       }
 
@@ -755,10 +766,13 @@ export function AddConnectorModal() {
                     )}
                   />
                 )}
+
+                {/* Divider for NetBox/Genea after Name field */}
+                {(selectedCategory === 'netbox' || selectedCategory === 'genea') && <div className="h-px bg-border my-4" />}
               </div>
             
-            {/* Divider - only if we had previous fields and not NetBox/Genea */}
-            {(!isPiko || isEditMode) && selectedCategory !== 'netbox' && selectedCategory !== 'genea' && <div className="h-px bg-border" />}
+            {/* Divider only before YoLink section */}
+            {selectedCategory === 'yolink' && <div className="h-px bg-border my-4" />}
             
             {/* YoLink Settings Section */}
             {selectedCategory === 'yolink' && (
@@ -805,6 +819,9 @@ export function AddConnectorModal() {
               </div>
             )}
             
+            {/* Add Divider specifically for Piko Step 1 */}
+            {selectedCategory === 'piko' && pikoWizardStep === 'credentials' && <div className="h-px bg-border my-4" />}
+            
             {/* Piko Settings Section - Credentials Step */}
             {isPiko && pikoWizardStep === 'credentials' && (
               <div className="space-y-4">
@@ -820,7 +837,7 @@ export function AddConnectorModal() {
                           setTestResult(null);
                         }}
                         defaultValue={field.value}
-                        disabled={true} // Always disabled as we only support cloud for now
+                        disabled={true}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -1047,24 +1064,30 @@ export function AddConnectorModal() {
                    </FormDescription>
                  </FormItem>
 
-                 {/* Webhook Secret Field - Only for NetBox */}
-                 {selectedCategory === 'netbox' && (
+                 {/* Webhook Secret Field - Common for NetBox & Genea */}
+                 {(selectedCategory === 'netbox' || selectedCategory === 'genea') && (
                    <FormField
                       control={form.control}
                       name="webhookSecret"
-                      render={({ field }) => (
+                      render={({ field, fieldState }) => (
                           <FormItem>
                           <FormLabel>Webhook Secret</FormLabel>
                           <FormControl>
                               <div className="relative flex items-center">
                               <Input
                                   type={showSecret ? 'text' : 'password'}
-                                  readOnly // Make the input read-only
+                                  placeholder={selectedCategory === 'genea' ? "Enter Genea webhook secret" : ""}
+                                  readOnly={selectedCategory === 'netbox'}
                                   {...field}
-                                  className="pr-28 bg-muted"
+                                  className={cn(
+                                      "peer",
+                                      selectedCategory === 'netbox' ? "pr-28 bg-muted" : "pr-16",
+                                      fieldState.invalid && 'border-destructive'
+                                  )}
                               />
                               <div className="absolute right-1 flex space-x-1">
-                                  {/* Reset button with Tooltip only */}
+                                  {/* Regenerate button - Only for NetBox */}
+                                  {selectedCategory === 'netbox' && (
                                     <Tooltip delayDuration={300}>
                                       <TooltipTrigger asChild>
                                           <Button
@@ -1089,43 +1112,54 @@ export function AddConnectorModal() {
                                         <p>Generate a new secret.<br/>Click Update Connector to save.</p>
                                       </TooltipContent>
                                     </Tooltip>
-
-                                  {/* Copy button for Secret */}
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(form.getValues('webhookSecret') || '');
-                                      toast.success("Webhook Secret copied to clipboard!");
-                                    }}
-                                    title="Copy secret"
-                                  >
-                                    <Copy className="h-4 w-4" />
-                                    <span className="sr-only">Copy Secret</span>
-                                  </Button>
-
-                                  {/* Show/Hide button */}
-                                  <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                  onClick={() => setShowSecret(!showSecret)}
-                                  title={showSecret ? 'Hide secret' : 'Show secret'}
-                                  >
-                                  {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                  <span className="sr-only">{showSecret ? 'Hide' : 'Show'} Secret</span>
-                                  </Button>
+                                  )}
+                                  {/* Copy button - If value exists */} 
+                                  {field.value && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(field.value || '');
+                                          toast.success("Webhook Secret copied to clipboard!");
+                                        }}
+                                        title="Copy secret"
+                                      >
+                                        <Copy className="h-4 w-4" />
+                                        <span className="sr-only">Copy Secret</span>
+                                      </Button>
+                                  )}
+                                  {/* Show/Hide button - If value exists */} 
+                                  {field.value && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                        onClick={() => setShowSecret(!showSecret)}
+                                        title={showSecret ? 'Hide secret' : 'Show secret'}
+                                      >
+                                        {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                        <span className="sr-only">{showSecret ? 'Hide' : 'Show'} Secret</span>
+                                      </Button>
+                                  )}
                               </div>
                               </div>
                           </FormControl>
-                          <FormMessage />
+                          {/* Add description with link for Genea */}
+                          {selectedCategory === 'genea' && (
+                              <FormDescription className="mt-2 text-xs">
+                                  Used to verify the signature of incoming webhook requests from <strong>Genea</strong>. <a href="https://help.getgenea.com/en/articles/1292571-genea-events-webhook" target="_blank" rel="noopener noreferrer" className="underline">Learn more</a>.
+                              </FormDescription>
+                          )}
                           </FormItem>
                       )}
-                      />
+                    />
                  )}
+
+                 {/* Add separator before API Key only for Genea */}
+                 {selectedCategory === 'genea' && <div className="h-px bg-border my-4" />}
 
                  {/* API Key Field - Only for Genea */}
                  {selectedCategory === 'genea' && (
@@ -1144,6 +1178,10 @@ export function AddConnectorModal() {
                                 className={cn(fieldState.invalid && 'border-destructive')}
                             />
                         </FormControl>
+                        {/* Add description with link for Genea API Key */}
+                        <FormDescription className="mt-2 text-xs">
+                           Used to authenticate API requests to <strong>Genea</strong>. <a href="https://help.getgenea.com/en/articles/5366419-global-overview-api-keys" target="_blank" rel="noopener noreferrer" className="underline">Learn more</a>.
+                        </FormDescription>
                         </FormItem>
                     )}
                     />
