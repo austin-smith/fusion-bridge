@@ -32,7 +32,7 @@ export interface DeviceStatusPayload {
 export interface UnknownEventPayload {
   originalEventType?: string; // e.g., "Device.Report" from YoLink, or the main 'event' field
   message: string; // e.g., "Unknown YoLink event structure"
-  rawEventPayload: Record<string, any>; // The original raw event
+  rawEventPayload?: Record<string, any>; // <--- Make optional - The original raw event
 }
 
 // Payload for Piko analytics events
@@ -44,7 +44,7 @@ export interface AnalyticsEventPayload {
   eventResourceId?: string;
   objectTrackId?: string;
   // Include the full raw Piko params for detailed access
-  rawPikoEventParams: PikoJsonRpcEventParams;
+  rawPikoEventParams?: PikoJsonRpcEventParams; // <--- Make optional
 }
 
 // Union type for all possible standardized payloads from external systems
@@ -70,5 +70,5 @@ export interface StandardizedEvent<T extends StandardEventTypeEnum = StandardEve
   eventType: T;
   payload: StandardizedEventPayload<T>;
   rawEventType?: string; // Connector-specific raw event type string
-  rawEventPayload?: Record<string, any>; // Original, unparsed event payload (optional here as it's required in UnknownEventPayload & AnalyticsEventPayload)
+  rawEventPayload: Record<string, any>; // <--- Make REQUIRED - Original, unparsed event payload
 } 

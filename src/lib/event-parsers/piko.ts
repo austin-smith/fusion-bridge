@@ -79,10 +79,8 @@ export function parsePikoEvent(
         description: rawEventParams.description,
         rawTimestampUsec: rawEventParams.eventTimestampUsec,
         analyticsEngineId: rawEventParams.analyticsEngineId,
-        eventResourceId: rawEventParams.eventResourceId, // Keep original GUID here too
+        eventResourceId: rawEventParams.eventResourceId,
         objectTrackId: rawEventParams.objectTrackId,
-        // Store the original params object for full details
-        rawPikoEventParams: rawEventParams, 
     };
 
     // --- Determine Specific Event Type ---

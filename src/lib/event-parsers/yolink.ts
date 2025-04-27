@@ -172,7 +172,6 @@ export function parseYoLinkEvent(
         const payload: UnknownEventPayload = {
             originalEventType: event.event,
             message: `Unknown or unhandled YoLink event: ${event.event}`,
-            rawEventPayload: event, // Store the original event here
         };
         return [{
             eventId: crypto.randomUUID(),
