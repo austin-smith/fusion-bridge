@@ -58,6 +58,7 @@ import { DeviceDetailDialogContent } from "@/components/features/devices/device-
 import { DeviceMappingDialogContent } from "@/components/features/devices/device-mapping-dialog-content"; 
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon"; 
 import { Badge } from "@/components/ui/badge";
+import { formatConnectorCategory } from '@/lib/utils';
 
 // Define the shape of data expected by the table, combining store data
 interface DisplayedDevice extends Omit<DeviceWithConnector, 'status' | 'type' | 'pikoServerDetails'> { 
@@ -517,9 +518,26 @@ export default function DevicesPage() {
   useEffect(() => {
     const serverColumn = table.getColumn('serverName');
     if (serverColumn) {
-      serverColumn.toggleVisibility(categoryFilter !== 'yolink');
+      // Show server column for Piko and NetBox, hide for YoLink
+      // For 'all' category, show the column
+      const shouldShowServerColumn = 
+        categoryFilter === 'all' || 
+        ['piko', 'netbox'].includes(categoryFilter);
+      
+      serverColumn.toggleVisibility(shouldShowServerColumn);
     }
   }, [categoryFilter, table]);
+
+  // Extract unique connector categories from connectors state
+  const connectorCategories = useMemo(() => {
+    const categorySet = new Set<string>();
+    connectors.forEach(connector => {
+      if (connector.category) {
+        categorySet.add(connector.category);
+      }
+    });
+    return Array.from(categorySet).sort();
+  }, [connectors]);
 
   return (
     <div className="flex flex-col h-full p-4 md:p-6"> 
@@ -538,45 +556,31 @@ export default function DevicesPage() {
           </div>
           <div className="flex-grow"></div>
           <div className="flex items-center gap-2">
-            <ToggleGroup
-              type="single"
+            <Select
               defaultValue="all"
-              variant="outline"
-              size="sm"
-              onValueChange={(value) => {
-                if (value) {
-                  setCategoryFilter(value);
-                }
-              }}
-              aria-label="Filter by connector type"
+              value={categoryFilter}
+              onValueChange={(value) => setCategoryFilter(value)}
             >
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ToggleGroupItem value="all" aria-label="All types">
-                      All
-                    </ToggleGroupItem>
-                  </TooltipTrigger>
-                  <TooltipContent>All Connectors</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ToggleGroupItem value="yolink" aria-label="YoLink type" className="p-1.5 data-[state=on]:bg-accent">
-                      <ConnectorIcon connectorCategory="yolink" size={16} />
-                    </ToggleGroupItem>
-                  </TooltipTrigger>
-                  <TooltipContent>YoLink</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ToggleGroupItem value="piko" aria-label="Piko type" className="p-1.5 data-[state=on]:bg-accent">
-                      <ConnectorIcon connectorCategory="piko" size={16} />
-                    </ToggleGroupItem>
-                  </TooltipTrigger>
-                  <TooltipContent>Piko</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </ToggleGroup>
+              <SelectTrigger className="w-[180px] h-9">
+                <SelectValue placeholder="Filter by connector" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <div className="flex items-center gap-2">
+                    <span>All Connectors</span>
+                  </div>
+                </SelectItem>
+                
+                {connectorCategories.map(category => (
+                  <SelectItem key={category} value={category}>
+                    <div className="flex items-center gap-2">
+                      <ConnectorIcon connectorCategory={category} size={16} />
+                      <span>{formatConnectorCategory(category)}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
             <Dialog>
               <TooltipProvider>

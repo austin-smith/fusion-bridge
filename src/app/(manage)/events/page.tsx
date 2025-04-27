@@ -70,7 +70,8 @@ import { formatConnectorCategory } from "@/lib/utils";
 import { toast } from 'sonner';
 import { DeviceDetailDialogContent } from '@/components/features/devices/device-detail-dialog-content';
 import { type DeviceDetailProps } from '@/components/features/devices/device-detail-dialog-content';
-import { DeviceWithConnector } from '@/types';
+import { DeviceWithConnector, ConnectorWithConfig } from '@/types';
+import { useFusionStore } from '@/stores/store';
 
 // Update the event interface
 interface EnrichedEvent {
@@ -185,11 +186,51 @@ export default function EventsPage() {
     pageSize: 50,
   });
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const connectors = useFusionStore(state => state.connectors); // Get connectors from store
+  const setConnectors = useFusionStore(state => state.setConnectors); // Get setter from store
+  
+  // Extract unique connector categories from connectors state
+  const connectorCategories = useMemo(() => {
+    const categorySet = new Set<string>();
+    connectors.forEach(connector => {
+      if (connector.category) {
+        categorySet.add(connector.category);
+      }
+    });
+    return Array.from(categorySet).sort();
+  }, [connectors]);
 
   // State for device detail dialog
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [selectedDeviceForDialog, setSelectedDeviceForDialog] = useState<DeviceDetailProps | null>(null);
   const [isLoadingDeviceDetail, setIsLoadingDeviceDetail] = useState(false);
+
+  // Add useEffect to fetch connectors if not present
+  useEffect(() => {
+    const fetchConnectorsIfNeeded = async () => {
+      if (connectors.length === 0) {
+        console.log('[EventsPage] Connectors store is empty, fetching...');
+        try {
+          const response = await fetch('/api/connectors');
+          const data = await response.json();
+          if (!response.ok || !data.success) {
+            console.error('[EventsPage] Failed to fetch initial connectors:', data.error || 'Unknown error');
+            setConnectors([]); // Ensure store is set to empty array on failure
+          } else if (data.data && Array.isArray(data.data)) {
+            setConnectors(data.data as ConnectorWithConfig<any>[]); // Use setConnectors from store
+            console.log('[EventsPage] Initial connectors loaded into store.');
+          } else {
+            setConnectors([]); // Set empty if data is missing or not an array
+          }
+        } catch (err) {
+          console.error('[EventsPage] Error fetching initial connectors:', err);
+          setConnectors([]); // Ensure store is reset on fetch error
+        }
+      }
+    };
+
+    fetchConnectorsIfNeeded();
+  }, [connectors.length, setConnectors]); // Rerun if connectors array length changes or setConnectors changes
 
   // Set page title
   useEffect(() => {
@@ -677,39 +718,31 @@ export default function EventsPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ToggleGroup
-              type="single"
+            <Select
               defaultValue="all"
-              variant="outline"
-              size="sm"
-              onValueChange={(value) => { if (value) setCategoryFilter(value); }}
-              aria-label="Filter by connector type"
+              value={categoryFilter}
+              onValueChange={(value) => setCategoryFilter(value)}
             >
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ToggleGroupItem value="all" aria-label="All types">All</ToggleGroupItem>
-                  </TooltipTrigger>
-                  <TooltipContent>All Connectors</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ToggleGroupItem value="yolink" aria-label="YoLink type" className="p-1.5 data-[state=on]:bg-accent">
-                      <ConnectorIcon connectorCategory="yolink" size={16} />
-                    </ToggleGroupItem>
-                  </TooltipTrigger>
-                  <TooltipContent>YoLink</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ToggleGroupItem value="piko" aria-label="Piko type" className="p-1.5 data-[state=on]:bg-accent">
-                      <ConnectorIcon connectorCategory="piko" size={16} />
-                    </ToggleGroupItem>
-                  </TooltipTrigger>
-                  <TooltipContent>Piko</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </ToggleGroup>
+              <SelectTrigger className="w-[180px] h-9">
+                <SelectValue placeholder="Filter by connector" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <div className="flex items-center gap-2">
+                    <span>All Connectors</span>
+                  </div>
+                </SelectItem>
+                
+                {connectorCategories.map(category => (
+                  <SelectItem key={category} value={category}>
+                    <div className="flex items-center gap-2">
+                      <ConnectorIcon connectorCategory={category} size={16} />
+                      <span>{formatConnectorCategory(category)}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <TooltipProvider delayDuration={100}>
               <Tooltip>
                 <TooltipTrigger asChild>
