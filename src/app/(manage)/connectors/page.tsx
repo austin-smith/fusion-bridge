@@ -110,12 +110,13 @@ const translatePikoStatus = (
 
 export default function ConnectorsPage() {
   // Select state
-  const { connectors, isLoading, getMqttState, getPikoState, error } = useFusionStore((state) => ({
+  const { connectors, isLoading, getMqttState, getPikoState, getWebhookState, error } = useFusionStore((state) => ({
     connectors: state.connectors,
     isLoading: state.isLoading,
     getMqttState: state.getMqttState,
-    getPikoState: state.getPikoState, // Now should work
-    error: state.error, // <<< Get error state
+    getPikoState: state.getPikoState,
+    getWebhookState: state.getWebhookState,
+    error: state.error,
   }));
   
   // Get stable action references
@@ -127,8 +128,9 @@ export default function ConnectorsPage() {
     setEditConnectorOpen,
     setEditingConnector, 
     deleteConnector, 
-    setMqttState, // Get MQTT action
-    setPikoState // <<< Get Piko action
+    setMqttState,
+    setPikoState,
+    setWebhookState
   } = useFusionStore(); 
 
   // State for modals and delete confirmation
@@ -182,10 +184,10 @@ export default function ConnectorsPage() {
             setMqttState(connectorId, { 
               status: storeStatus, 
               error: mqttState.error,
-              // Extract time/count from lastEvent object if it exists
               lastEventTime: mqttState.lastEvent?.time ?? null, 
               eventCount: mqttState.lastEvent?.count ?? null,
-              lastStandardizedPayload: mqttState.lastStandardizedPayload ?? null
+              lastStandardizedPayload: mqttState.lastStandardizedPayload ?? null,
+              lastActivity: statusPayload.lastActivity ?? mqttState.lastEvent?.time ?? null
             });
           } else if (statusPayload.connectionType === 'websocket' && statusPayload.state) {
             const pikoState: FetchedPikoState = statusPayload.state;
@@ -193,9 +195,15 @@ export default function ConnectorsPage() {
             setPikoState(connectorId, { 
               status: storeStatus, 
               error: pikoState.error,
-              lastEventTime: pikoState.lastActivity, // Map lastActivity to lastEventTime
-              eventCount: null, // Piko state doesn't seem to track event count in this structure
-              lastStandardizedPayload: pikoState.lastStandardizedPayload ?? null
+              lastEventTime: pikoState.lastActivity, 
+              eventCount: null, 
+              lastStandardizedPayload: pikoState.lastStandardizedPayload ?? null,
+              lastActivity: statusPayload.lastActivity ?? pikoState.lastActivity ?? null
+            });
+          } else if (statusPayload.connectionType === 'webhook') {
+            const webhookState = statusPayload.state || {}; 
+            setWebhookState(connectorId, { 
+              lastActivity: statusPayload.lastActivity ?? webhookState.lastActivity ?? null
             });
           } else if (statusPayload.connectionType !== 'unknown') {
             console.warn(`[ConnectorsPage] Received status for connector ${connectorId} with unknown state or connection type:`, statusPayload);
@@ -206,12 +214,11 @@ export default function ConnectorsPage() {
       }
     } catch (error) {
       console.error('[ConnectorsPage] Error refreshing data:', error);
-      if (isInitialLoad) { setError('Failed to load page data'); }
+      if (isInitialLoad) setError('Failed to load page data');
     } finally {
       if (isInitialLoad) { setLoading(false); }
     }
-    // Include setPikoState in dependencies
-  }, [setLoading, setConnectors, setError, setMqttState, setPikoState]);
+  }, [setLoading, setConnectors, setError, setMqttState, setPikoState, setWebhookState]);
 
   // Fetch initial data and set up polling
   useEffect(() => {
@@ -427,6 +434,7 @@ export default function ConnectorsPage() {
                   // <<< Get relevant state for the current row >>>
                   const mqttState = getMqttState(connector.id);
                   const pikoState = getPikoState(connector.id);
+                  const webhookState = getWebhookState(connector.id);
                   const isToggling = togglingConnectorId === connector.id;
                   // Construct the copy ID dynamically based on category for comparison
                   const currentCopiedPayloadId = connector.category === 'yolink' 
@@ -442,6 +450,7 @@ export default function ConnectorsPage() {
                       connector={connector}
                       mqttState={mqttState}
                       pikoState={pikoState}
+                      webhookState={webhookState}
                       isToggling={isToggling}
                       copiedPayloadId={copiedPayloadId}
                       onMqttToggle={handleMqttToggle}

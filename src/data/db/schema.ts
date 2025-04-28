@@ -3,7 +3,7 @@ import { relations, sql } from "drizzle-orm";
 import type { AutomationConfig } from "@/lib/automation-schemas"; // Import the config type
 
 export const connectors = sqliteTable("connectors", {
-  id: text("id").primaryKey(),
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   category: text("category").notNull(),
   name: text("name").notNull(),
   cfg_enc: text("cfg_enc").notNull(), // Stores config as JSON string

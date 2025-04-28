@@ -1,6 +1,6 @@
 import React from 'react';
 import { ConnectorWithConfig } from '@/types';
-import { ConnectorMqttState, ConnectorPikoState } from '@/stores/store'; // Assuming types exported from store
+import { ConnectorMqttState, ConnectorPikoState, ConnectorWebhookState } from '@/stores/store'; // Assuming types exported from store
 import { Badge } from "@/components/ui/badge";
 import { Button } from '@/components/ui/button';
 import { Loader2, Pencil, Trash2, Check, Copy } from "lucide-react";
@@ -24,6 +24,7 @@ interface ConnectorRowProps {
   connector: ConnectorWithConfig;
   mqttState: ConnectorMqttState;
   pikoState: ConnectorPikoState;
+  webhookState: ConnectorWebhookState;
   isToggling: boolean;
   copiedPayloadId: string | null;
   onMqttToggle: (connector: ConnectorWithConfig, currentCheckedState: boolean) => void;
@@ -37,6 +38,7 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
   connector,
   mqttState,
   pikoState,
+  webhookState,
   isToggling,
   copiedPayloadId,
   onMqttToggle,
@@ -110,22 +112,31 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
   };
 
   // --- Popover Data Logic ---
-  let lastEventTime: number | null = null;
+  let lastActivityTime: number | null = null;
   let lastPayload: Record<string, any> | null = null;
   let copyIdSuffix: string = 'unknown';
   const popoverWidthClass: string = 'w-[600px]'; // Default width
 
   if (connector.category === 'yolink') {
-    lastEventTime = mqttState.lastEventTime;
+    lastActivityTime = mqttState.lastActivity;
     lastPayload = mqttState.lastStandardizedPayload;
     copyIdSuffix = 'mqtt';
   } else if (connector.category === 'piko') {
-    lastEventTime = pikoState?.lastEventTime; // Use optional chaining
-    lastPayload = pikoState?.lastStandardizedPayload; // Use optional chaining
+    lastActivityTime = pikoState?.lastActivity;
+    lastPayload = pikoState?.lastStandardizedPayload;
     copyIdSuffix = 'piko';
+  } else if (connector.category === 'netbox' || connector.category === 'genea') {
+    lastActivityTime = webhookState.lastActivity;
+    lastPayload = null; // No standardized payload stored for simple webhook activity yet
+    copyIdSuffix = 'webhook'; // Could use this if needed
   }
+  // NetBox connectors don't use MQTT/WebSocket state for last activity in this context.
+  const isNetBox = connector.category === 'netbox'; // <-- Check if NetBox
+
   const eventsEnabled = connector.eventsEnabled === true;
 
+  // Log the connector prop just before rendering the row
+  console.log(`[ConnectorRow] Rendering row for Connector ID: ${connector.id}, Category: ${connector.category}`, connector);
 
   // --- Render ---
   return (
@@ -206,19 +217,18 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
         )}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
-        {(connector.category === 'yolink' || connector.category === 'piko') ? (
+        {/* Display lastActivityTime consistently */} 
+        {lastActivityTime ? (
           <Popover>
             <PopoverTrigger asChild>
               <span className="cursor-pointer hover:text-foreground underline decoration-dashed underline-offset-2 decoration-muted-foreground/50 hover:decoration-foreground/50">
-                {lastEventTime ?
-                  formatDistanceToNow(new Date(lastEventTime), { addSuffix: true }) :
-                  '-'
-                }
+                  {formatDistanceToNow(new Date(lastActivityTime), { addSuffix: true })}
               </span>
             </PopoverTrigger>
-            <PopoverContent className={`${popoverWidthClass} max-h-[600px] overflow-y-auto p-0`}>
-              <div className="text-sm font-semibold mb-2 pt-3 px-3">Last Event Payload</div> {/* Standardized Heading */}
-              {lastPayload ? (
+            {/* Keep Popover only if there might be payload data */}
+            {(connector.category === 'yolink' || connector.category === 'piko') && lastPayload && (
+              <PopoverContent className={`${popoverWidthClass} max-h-[600px] overflow-y-auto p-0`}>
+                <div className="text-sm font-semibold mb-2 pt-3 px-3">Last Event Payload</div> {/* Standardized Heading */}
                 <div className="relative">
                   <Button
                     size="icon"
@@ -250,13 +260,20 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
                     {JSON.stringify(lastPayload, null, 2)}
                   </SyntaxHighlighter>
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground px-3 pb-3">No event data available.</p>
-              )}
-            </PopoverContent>
+              </PopoverContent>
+            )}
+            {/* Add simple tooltip for webhook timestamps */} 
+            {(connector.category === 'netbox' || connector.category === 'genea') && (
+                <Tooltip>
+                  <TooltipTrigger asChild><span></span></TooltipTrigger> {/* Dummy trigger */} 
+                  <TooltipContent>
+                    Last Webhook: {new Date(lastActivityTime).toLocaleString()}
+                  </TooltipContent>
+                </Tooltip>
+            )}
           </Popover>
         ) : (
-          '-' // Keep '-' for other types
+          '-' // Display dash if no activity time
         )}
       </TableCell>
       <TableCell className="text-right">

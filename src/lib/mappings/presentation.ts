@@ -6,14 +6,17 @@ import {
     DisplayState,
     CANONICAL_STATE_MAP,
     // Import state constants for icon mapping
-    LOCKED, UNLOCKED, ON, OFF, OPEN, CLOSED, LEAK_DETECTED, DRY, MOTION_DETECTED, NO_MOTION, VIBRATION_DETECTED, NO_VIBRATION
+    LOCKED, UNLOCKED, ON, OFF, OPEN, CLOSED, LEAK_DETECTED, DRY, MOTION_DETECTED, NO_MOTION, VIBRATION_DETECTED, NO_VIBRATION,
+    EventCategory
 } from './definitions';
 import type { LucideIcon } from 'lucide-react';
 import {
     // Device type icons
     Siren, Cctv, Warehouse, Combine, Router, Cable, Lock, Power, Radio, Droplets, ToggleLeft, Thermometer, HelpCircle,
     // State-specific icons
-    Unlock, PowerOff, DoorOpen, DoorClosed, AlertTriangle, ShieldCheck, Activity
+    Unlock, PowerOff, DoorOpen, DoorClosed, AlertTriangle, ShieldCheck, Activity,
+    // Event category icons
+    KeyRound, PersonStanding
 } from 'lucide-react';
 
 
@@ -63,6 +66,23 @@ export function getDisplayStateIcon(state: DisplayState | undefined): LucideIcon
         return HelpCircle; // Icon for undefined/null state
     }
     return displayStateIconMap[state] || Activity; // Return mapped icon or Activity as fallback
+}
+
+
+// --- Event Category Icon Mapping ---
+const eventCategoryIcons: Record<EventCategory, LucideIcon> = {
+    [EventCategory.DEVICE_STATE]: Activity,
+    [EventCategory.ACCESS_CONTROL]: KeyRound,
+    [EventCategory.ANALYTICS]: PersonStanding,
+    [EventCategory.UNKNOWN]: HelpCircle,
+};
+
+// Helper function to get event category icon component
+export function getEventCategoryIcon(category: EventCategory | undefined): LucideIcon {
+    if (!category) {
+        return HelpCircle; // Default icon for undefined category
+    }
+    return eventCategoryIcons[category] || HelpCircle; // Fallback to Unknown icon
 }
 
 

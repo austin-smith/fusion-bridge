@@ -7,17 +7,18 @@ import {
     ContactState,
     SensorAlertState,
     LockStatus,
-    DeviceSubtype // Keep subtype for mapping keys
+    DeviceSubtype, // Keep subtype for mapping keys
+    EventCategory, // <-- Import from definitions
+    EventType      // <-- Import from definitions
 } from '@/lib/mappings/definitions';
 import {
     StandardizedEvent,
-    EventCategory,
-    EventType, // Need this for UNKNOWN_EXTERNAL_EVENT
     StateChangedPayload,
     UnknownEventPayload // Import the new payload type
 } from '@/types/events';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
+import crypto from 'crypto'; // Import crypto for UUID generation
 
 // --- YoLink Intermediate State Mapping (Internal to this parser) ---
 // This map is based on the previous translation logic and is necessary
@@ -90,7 +91,7 @@ interface RawYoLinkEventPayload {
 export function parseYoLinkEvent(
     connectorId: string, 
     rawEvent: unknown
-): StandardizedEvent<EventType>[] {
+): StandardizedEvent[] {
 
     // --- Basic Validation ---
     if (
@@ -132,24 +133,20 @@ export function parseYoLinkEvent(
             const displayState = intermediateStateToDisplayString(intermediateState, deviceInfo);
             if (displayState) {
                 const payload: StateChangedPayload = {
-                    newState: intermediateState,
+                    intermediateState: intermediateState,
                     displayState: displayState,
-                    rawStateValue: rawState,
-                    rawEventPayload: event.data || {}
                 };
-                // If state parsed correctly, return ONLY the STATE_CHANGED event
                 successfullyParsed = true;
                 return [{
                     eventId: crypto.randomUUID(),
-                    timestamp: timestamp, // Use primary event time
+                    timestamp: timestamp,
                     connectorId: connectorId,
                     deviceId: event.deviceId,
                     deviceInfo: deviceInfo,
-                    eventCategory: EventCategory.DEVICE_STATE,
-                    eventType: EventType.STATE_CHANGED,
+                    category: EventCategory.DEVICE_STATE,
+                    type: EventType.STATE_CHANGED,
                     payload: payload,
-                    rawEventType: event.event,
-                    rawEventPayload: event, // Store the full original event
+                    originalEvent: event,
                 }];
             } else {
                 console.warn(`[YoLink Parser][${connectorId}] Could not map intermediate state '${intermediateState}' to display state for device ${event.deviceId}`);
@@ -172,17 +169,18 @@ export function parseYoLinkEvent(
         const payload: UnknownEventPayload = {
             originalEventType: event.event,
             message: `Unknown or unhandled YoLink event: ${event.event}`,
+            rawEventPayload: event.data
         };
         return [{
             eventId: crypto.randomUUID(),
             timestamp: timestamp,
             connectorId: connectorId,
             deviceId: event.deviceId, 
-            deviceInfo: deviceInfo, // Include deviceInfo even if unknown, might be helpful
-            eventCategory: EventCategory.UNKNOWN, // Use the dedicated UNKNOWN category
-            eventType: EventType.UNKNOWN_EXTERNAL_EVENT,
+            deviceInfo: deviceInfo,
+            category: EventCategory.UNKNOWN,
+            type: EventType.UNKNOWN_EXTERNAL_EVENT,
             payload: payload,
-            rawEventPayload: event,
+            originalEvent: event,
         }];
     }
 

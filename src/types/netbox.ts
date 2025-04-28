@@ -21,11 +21,31 @@ export interface NetBoxDeviceWebhookPayload extends NetBoxWebhookBasePayload {
   Portals: NetBoxPortal[];
 }
 
-// Example of how you might add other types later
-// export interface NetBoxEventWebhookPayload extends NetBoxWebhookBasePayload {
-//   Type: "Event";
-//   // ... other event properties
-// }
+// --- Payload for Event type ---
+export interface NetBoxEventWebhookPayload extends NetBoxWebhookBasePayload {
+  Type: "Event"; // Use literal type for discrimination
+  RawXmlBase64: string;
+  Activityid: string;
+  Descname: string;
+  Cdt: string;
+  Partname?: string;
+  Personid?: number;
+  Personname?: string;
+  Portalkey?: number;
+  Portalname?: string;
+  Rdrname?: string;
+  Readerkey?: number;
+  Reader2key?: number;
+  Acname?: string;
+  Acnum?: number;
+  Nodename?: string;
+  Nodeunique?: string;
+  Nodeaddress?: string;
+  Ndt?: string;
+  Timestamp: string;
+}
 
 // Union type for all possible NetBox payloads
-export type NetBoxWebhookPayload = NetBoxDeviceWebhookPayload; // | NetBoxEventWebhookPayload; // Add others here 
+export type NetBoxWebhookPayload =
+  | NetBoxDeviceWebhookPayload
+  | NetBoxEventWebhookPayload; // Add Event type to the union 

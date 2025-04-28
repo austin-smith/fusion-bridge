@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { produce, Draft, enableMapSet } from 'immer';
 import { PikoServer } from '@/types';
-import type { StandardizedEvent, StateChangedPayload } from '@/types/events';
-import { DisplayState, TypedDeviceInfo, EventType, EventCategory } from '@/lib/mappings/definitions';
+import type { StandardizedEvent } from '@/types/events';
+import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype } from '@/lib/mappings/definitions';
 import type { DeviceWithConnector, ConnectorWithConfig } from '@/types';
 import { YoLinkConfig } from '@/services/drivers/yolink';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
@@ -20,6 +20,7 @@ export interface ConnectorMqttState {
   lastEventTime: number | null; 
   eventCount: number | null;
   lastStandardizedPayload: Record<string, any> | null;
+  lastActivity: number | null; // <-- Add consistent lastActivity
 }
 
 // Piko WebSocket state for a specific connector
@@ -29,6 +30,13 @@ export interface ConnectorPikoState {
   lastEventTime: number | null;
   eventCount: number | null;
   lastStandardizedPayload: Record<string, any> | null;
+  lastActivity: number | null; // <-- Add consistent lastActivity
+}
+
+// Webhook state (NEW)
+export interface ConnectorWebhookState {
+    lastActivity: number | null; // Timestamp of last received webhook
+    // Add other webhook-specific status fields if needed later
 }
 
 interface DeviceStateInfo {
@@ -36,8 +44,8 @@ interface DeviceStateInfo {
   deviceId: string; // Connector-specific ID
   deviceInfo: TypedDeviceInfo;
   displayState?: DisplayState;
-  lastStateEvent?: StandardizedEvent<EventType.STATE_CHANGED>;
-  lastStatusEvent?: StandardizedEvent<EventType.DEVICE_ONLINE | EventType.DEVICE_OFFLINE>;
+  lastStateEvent?: StandardizedEvent;
+  lastStatusEvent?: StandardizedEvent;
   lastSeen?: Date;
   name?: string;
   model?: string;
@@ -74,6 +82,9 @@ interface FusionState {
   // Piko WebSocket Status States by connector ID
   pikoStates: Map<string, ConnectorPikoState>; 
 
+  // Webhook states by connector ID
+  webhookStates: Map<string, ConnectorWebhookState>;
+
   // Device state map: key = `${connectorId}:${deviceId}`
   deviceStates: Map<string, DeviceStateInfo>;
   
@@ -94,11 +105,17 @@ interface FusionState {
   // Piko Status Actions
   setPikoState: (connectorId: string, state: Partial<ConnectorPikoState>) => void; 
 
+  // Webhook Actions
+  setWebhookState: (connectorId: string, state: Partial<ConnectorWebhookState>) => void;
+
   // Get MQTT state for a specific connector
   getMqttState: (connectorId: string) => ConnectorMqttState;
 
   // Get Piko state for a specific connector
   getPikoState: (connectorId: string) => ConnectorPikoState; 
+
+  // Get Webhook state for a specific connector
+  getWebhookState: (connectorId: string) => ConnectorWebhookState;
 
   processStandardizedEvent: (evt: StandardizedEvent) => void;
 
@@ -114,6 +131,7 @@ const initialMqttState: ConnectorMqttState = {
   lastEventTime: null,
   eventCount: null,
   lastStandardizedPayload: null,
+  lastActivity: null, // <-- Initialize
 };
 
 // Initial state for Piko WebSocket (default)
@@ -123,6 +141,12 @@ const initialPikoState: ConnectorPikoState = {
   lastEventTime: null,
   eventCount: null,
   lastStandardizedPayload: null,
+  lastActivity: null, // <-- Initialize
+};
+
+// Initial state for Webhook (default)
+const initialWebhookState: ConnectorWebhookState = { // <-- Add initial webhook state
+  lastActivity: null,
 };
 
 export const useFusionStore = create<FusionState>((set, get) => ({
@@ -138,6 +162,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   
   // Initial Piko WebSocket Status State
   pikoStates: new Map<string, ConnectorPikoState>(),
+
+  // Initial Webhook Status State
+  webhookStates: new Map<string, ConnectorWebhookState>(),
 
   // Initial Device State map
   deviceStates: new Map<string, DeviceStateInfo>(),
@@ -156,6 +183,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       connectors: state.connectors.filter((connector) => connector.id !== id),
       mqttStates: produce(state.mqttStates, (draft: Draft<Map<string, ConnectorMqttState>>) => { draft.delete(id); }),
       pikoStates: produce(state.pikoStates, (draft: Draft<Map<string, ConnectorPikoState>>) => { draft.delete(id); }),
+      webhookStates: produce(state.webhookStates, (draft: Draft<Map<string, ConnectorWebhookState>>) => { draft.delete(id); }),
       deviceStates: produce(state.deviceStates, (draft: Draft<Map<string, DeviceStateInfo>>) => {
         for (const key of draft.keys()) {
           if (key.startsWith(`${id}:`)) {
@@ -188,6 +216,15 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       }),
     })),
 
+  // Webhook Actions
+  setWebhookState: (connectorId, stateUpdate) =>
+    set((state) => ({
+      webhookStates: produce(state.webhookStates, (draft: Draft<Map<string, ConnectorWebhookState>>) => {
+        const currentState = draft.get(connectorId) || { ...initialWebhookState };
+        draft.set(connectorId, { ...currentState, ...stateUpdate });
+      }),
+    })),
+
   // Get MQTT state for a specific connector with fallback to default state
   getMqttState: (connectorId) => {
     return get().mqttStates.get(connectorId) || { ...initialMqttState };
@@ -198,11 +235,15 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     return get().pikoStates.get(connectorId) || { ...initialPikoState };
   },
 
+  // Get Webhook state for a specific connector with fallback to default state
+  getWebhookState: (connectorId) => {
+    return get().webhookStates.get(connectorId) || { ...initialWebhookState };
+  },
+
   processStandardizedEvent: (evt: StandardizedEvent) =>
     set((state) => {
       const key = `${evt.connectorId}:${evt.deviceId}`;
       
-      // Find connector category 
       const connector = state.connectors.find(c => c.id === evt.connectorId);
       const connectorCategory = connector?.category ?? 'unknown';
 
@@ -210,40 +251,27 @@ export const useFusionStore = create<FusionState>((set, get) => ({
           ...defaultDeviceStateInfo, 
           connectorId: evt.connectorId, 
           deviceId: evt.deviceId,
-          // Initialize deviceInfo using the event's info or fallback
           deviceInfo: evt.deviceInfo ?? getDeviceTypeInfo(connectorCategory, 'unknown') 
       }; 
 
-      // Determine the rawType to use for recalculation. Prioritize existing state.
-      const rawTypeForRecalc = existing.rawType ?? 'unknown'; // Use stored rawType if available
-
-      // Extract potential originalEventType from payload (used for UNKNOWN events primarily)
-      const originalEventTypeFromPayload = (evt.payload && typeof evt.payload === 'object' && 'originalEventType' in evt.payload) 
-                                           ? evt.payload.originalEventType as string 
-                                           : undefined;
-
-      // Base update preserves existing static fields
+      const rawTypeForRecalc = existing.rawType ?? 'unknown';
+      
+      // Update logic to use direct category/type/subtype properties
       const updated: DeviceStateInfo = {
         ...existing,
         connectorId: evt.connectorId,
         deviceId: evt.deviceId,
-        // Recalculate deviceInfo using the determined rawType
         deviceInfo: getDeviceTypeInfo(connectorCategory, rawTypeForRecalc), 
-        lastSeen: new Date(evt.timestamp.getTime()), // Convert number to Date
-        // Update displayState safely
+        lastSeen: new Date(evt.timestamp.getTime()),
         displayState: evt.payload && typeof evt.payload === 'object' && 'displayState' in evt.payload 
                       ? evt.payload.displayState as DisplayState 
                       : existing.displayState,
-        // Store the relevant event type conditionally with type assertion using enums
-        lastStatusEvent: (evt.eventCategory === EventCategory.DEVICE_CONNECTIVITY) && 
-                         (evt.eventType === EventType.DEVICE_ONLINE || evt.eventType === EventType.DEVICE_OFFLINE)
-          ? evt as StandardizedEvent<EventType.DEVICE_ONLINE | EventType.DEVICE_OFFLINE>
-          : existing.lastStatusEvent,
-        lastStateEvent: evt.eventType === EventType.STATE_CHANGED
-          ? evt as StandardizedEvent<EventType.STATE_CHANGED>
-          : existing.lastStateEvent,
-        // Update rawType: Use from payload if available, otherwise keep existing.
-        rawType: originalEventTypeFromPayload ?? existing.rawType, 
+        // Store lastStateEvent if type matches STATE_CHANGED
+        lastStateEvent: evt.type === EventType.STATE_CHANGED ? evt : existing.lastStateEvent,
+        // rawType logic might need adjustment depending on how UNKNOWN_EXTERNAL_EVENT is handled
+        rawType: (evt.type === EventType.UNKNOWN_EXTERNAL_EVENT && evt.payload?.originalEventType) 
+                 ? evt.payload.originalEventType as string 
+                 : existing.rawType, 
       };
 
       return {

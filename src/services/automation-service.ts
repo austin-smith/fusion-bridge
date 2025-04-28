@@ -15,14 +15,14 @@ import type { SendHttpRequestActionParamsSchema } from '@/lib/automation-schemas
 import { z } from 'zod'; // Add Zod import
 
 /**
- * Processes an incoming StandardizedEvent and triggers matching automations.
- * 
+ * Processes a standardized event, checks against triggers, and executes actions.
  * @param stdEvent The incoming StandardizedEvent object.
  */
-export async function processEvent(stdEvent: StandardizedEvent<any>): Promise<void> { // <-- Updated Signature
+export async function processEvent(stdEvent: StandardizedEvent): Promise<void> { // <-- Remove <any>
     console.log(`[Automation Service] ENTERED processEvent for event: ${stdEvent.eventId}`);
 
-    console.log(`[Automation Service] Processing event: ${stdEvent.eventType} (${stdEvent.eventCategory}) for device ${stdEvent.deviceId} from connector ${stdEvent.connectorId}`);
+    // Use the direct properties from the refactored StandardizedEvent
+    console.log(`[Automation Service] Processing event: ${stdEvent.type} (${stdEvent.category}) for device ${stdEvent.deviceId} from connector ${stdEvent.connectorId}`);
 
     try {
         // 1. Find the source connector using connectorId from the event
@@ -51,10 +51,10 @@ export async function processEvent(stdEvent: StandardizedEvent<any>): Promise<vo
         });
 
         // Log reflects the result *after* DB filtering by event type AND connector
-        console.log(`[Automation Service] Found ${candidateAutomations.length} enabled automation(s) for connector ${sourceConnectorId} matching eventType '${stdEvent.eventType}'`);
+        console.log(`[Automation Service] Found ${candidateAutomations.length} enabled automation(s) for connector ${sourceConnectorId} matching eventType '${stdEvent.type}'`);
 
         if (candidateAutomations.length === 0) {
-            // console.log(`[Automation Service] Exiting: No enabled automations found for connector ${sourceConnectorId} matching eventType '${stdEvent.eventType}'.`);
+            // console.log(`[Automation Service] Exiting: No enabled automations found for connector ${sourceConnectorId} matching eventType '${stdEvent.type}'.`);
             return; // No rules matching this specific event type and connector
         }
 
@@ -77,8 +77,8 @@ export async function processEvent(stdEvent: StandardizedEvent<any>): Promise<vo
                 // --- UPDATED FILTERING --- 
                 // Check 1: Event Type Filter (Using Standardized Event Type)
                 if (ruleConfig.eventTypeFilter && ruleConfig.eventTypeFilter.trim() !== '') {
-                    if (!minimatch(stdEvent.eventType, ruleConfig.eventTypeFilter)) { 
-                        // console.log(`[Rule ${rule.id}] Skipping: Standardized event type ${stdEvent.eventType} does not match filter ${ruleConfig.eventTypeFilter}`);
+                    if (!minimatch(stdEvent.type, ruleConfig.eventTypeFilter)) { 
+                        // console.log(`[Rule ${rule.id}] Skipping: Standardized event type ${stdEvent.type} does not match filter ${ruleConfig.eventTypeFilter}`);
                         continue;
                     }
                      console.log(`[Automation Service] Rule ID ${rule.id}: Event type filter PASSED.`); // Log pass
@@ -462,7 +462,7 @@ export async function processEvent(stdEvent: StandardizedEvent<any>): Promise<vo
  */
 function resolveTokens(
     params: Record<string, unknown> | null | undefined, 
-    stdEvent: StandardizedEvent<any>, // <-- Updated parameter type
+    stdEvent: StandardizedEvent, // <-- Updated parameter type
     deviceContext: Record<string, unknown> | null | undefined 
 ): Record<string, unknown> | null | undefined { 
     
@@ -475,8 +475,8 @@ function resolveTokens(
         // Event-related tokens
         event: {
             id: stdEvent.eventId,
-            category: stdEvent.eventCategory,
-            type: stdEvent.eventType,
+            category: stdEvent.category,
+            type: stdEvent.type,
             timestamp: stdEvent.timestamp.toISOString(), // Keep ISO string format
             timestampMs: stdEvent.timestamp.getTime(), // Add epoch ms
             deviceId: stdEvent.deviceId,

@@ -4,7 +4,11 @@ import { connectors, devices } from '@/data/db/schema';
 import { sql, eq } from 'drizzle-orm';
 import crypto from 'crypto'; // Import crypto
 import { Buffer } from 'buffer'; // Needed for raw body handling
-import type { NetBoxWebhookPayload, NetBoxDeviceWebhookPayload } from '@/types/netbox'; // Import the types
+import type { NetBoxWebhookPayload, NetBoxDeviceWebhookPayload, NetBoxEventWebhookPayload } from '@/types/netbox'; // Import the types
+import { parseNetboxEvent } from '@/lib/event-parsers/netbox'; // Import the NetBox parser
+import { storeStandardizedEvent } from '@/data/repositories/events'; // Import the event storage function
+import { useFusionStore } from '@/stores/store'; // Import Zustand store if needed for real-time updates
+import { recordWebhookActivity } from '@/services/webhook-service'; // <-- Import the new function
 
 // Header names
 const NETBOX_SIGNATURE_HEADER = 'x-hub-signature-256'; 
@@ -154,16 +158,19 @@ export async function POST(
   console.log(`Webhook received and verified for ${connectorInfo.category} connector '${connectorInfo.name}' (ID: ${connectorInfo.id}, WebhookID: ${webhookId})`);
 
   // Variable to hold the parsed payload
-  let payload: NetBoxWebhookPayload; 
+  let payload: NetBoxWebhookPayload | Record<string, any>; // Allow generic for non-NetBox parsing attempt
+  let rawBodyString: string;
 
   // --- Parse JSON Body (Only after signature is verified) --- 
   try {
-    const rawBody = rawBodyBuffer.toString('utf-8'); 
-    payload = JSON.parse(rawBody) as NetBoxWebhookPayload; 
-    console.log(`[Webhook ${connectorId}] Parsed payload type: ${payload.Type}`);
+    rawBodyString = rawBodyBuffer.toString('utf-8'); 
+    payload = JSON.parse(rawBodyString) as NetBoxWebhookPayload; 
+    console.log(`[Webhook ${connectorId}] Parsed payload for ${connectorInfo.category}. Type field: ${payload?.Type}`);
 
   } catch (error) {
     console.error(`[Webhook ${connectorId}] Error parsing JSON payload:`, error);
+    // Still record activity even if JSON parsing fails but signature was okay?
+    // Let's record *after* successful processing instead.
     return NextResponse.json({ success: false, error: 'Invalid JSON payload' }, { status: 400 });
   }
 
@@ -209,7 +216,36 @@ export async function POST(
       } else {
         console.log(`[Webhook ${connectorId}] No readers found in NetBox 'Device' payload to upsert.`);
       }
+      
+      // Record activity after successful processing
+      recordWebhookActivity(connectorId);
       return NextResponse.json({ success: true, message: 'NetBox Device webhook processed' }, { status: 200 });
+
+    } else if (payload.Type === 'Event' && connectorInfo.category === 'netbox') {
+      // Handle NetBox Event payload
+      const eventPayload = payload as NetBoxEventWebhookPayload; // Type assertion
+      console.log(`[Webhook ${connectorId}] Received NetBox 'Event' type payload: ${eventPayload.Descname} (ID: ${eventPayload.Activityid})`);
+      
+      // Parse the NetBox event
+      const standardizedEvent = parseNetboxEvent(eventPayload, connectorId);
+
+      if (standardizedEvent) {
+        console.log(`[Webhook ${connectorId}] Parsed NetBox event into StandardizedEvent: ${standardizedEvent.eventId}`);
+        
+        // Store the standardized event in the database
+        await storeStandardizedEvent(standardizedEvent);
+        
+        // Optional: Notify frontend via Zustand store (uncomment if needed)
+        // useFusionStore.getState().processStandardizedEvent(standardizedEvent);
+
+        // Record activity after successful processing
+        recordWebhookActivity(connectorId);
+        return NextResponse.json({ success: true, message: 'NetBox Event processed' }, { status: 200 });
+      } else {
+        // Parser returned null (e.g., unmapped Descname we decided to ignore)
+        console.log(`[Webhook ${connectorId}] NetBox event not processed (parser returned null). Descname: ${eventPayload.Descname}`);
+        return NextResponse.json({ success: true, message: 'NetBox Event received but not processed (unmapped/irrelevant)' }, { status: 200 });
+      }
 
     } else {
       console.warn(`[Webhook ${connectorId}] Received unhandled payload type '${payload.Type}' or category '${connectorInfo.category}'.`);

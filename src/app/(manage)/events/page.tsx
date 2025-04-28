@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Play, Loader2 } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Play, Loader2, ListTree } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -44,8 +44,10 @@ import {
   DisplayState, 
   EventType, 
   EventCategory, 
+  EventSubtype,
   EVENT_TYPE_DISPLAY_MAP, 
-  EVENT_CATEGORY_DISPLAY_MAP 
+  EVENT_CATEGORY_DISPLAY_MAP, 
+  EVENT_SUBTYPE_DISPLAY_MAP
 } from '@/lib/mappings/definitions';
 import {
   Tooltip,
@@ -72,6 +74,7 @@ import { DeviceDetailDialogContent } from '@/components/features/devices/device-
 import { type DeviceDetailProps } from '@/components/features/devices/device-detail-dialog-content';
 import { DeviceWithConnector, ConnectorWithConfig } from '@/types';
 import { useFusionStore } from '@/stores/store';
+import { EventHierarchyViewer } from '@/components/features/events/EventHierarchyViewer';
 
 // Update the event interface
 interface EnrichedEvent {
@@ -88,6 +91,7 @@ interface EnrichedEvent {
   connectorId: string; // Added from API response
   eventCategory: string; // Added from API response
   eventType: string; // Added from API response
+  eventSubtype?: EventSubtype; // <-- Add optional subtype field
   rawEventType?: string; // Add optional rawEventType from API
   displayState?: DisplayState | undefined;
   thumbnailUrl?: string; // KEEP For single video placeholder FOR NOW
@@ -204,6 +208,9 @@ export default function EventsPage() {
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [selectedDeviceForDialog, setSelectedDeviceForDialog] = useState<DeviceDetailProps | null>(null);
   const [isLoadingDeviceDetail, setIsLoadingDeviceDetail] = useState(false);
+
+  // State for hierarchy dialog
+  const [isHierarchyDialogOpen, setIsHierarchyDialogOpen] = useState(false);
 
   // Add useEffect to fetch connectors if not present
   useEffect(() => {
@@ -367,24 +374,40 @@ export default function EventsPage() {
       enableSorting: true,
       enableColumnFilter: true,
       cell: ({ row }) => {
-        const deviceId = row.original.deviceId;
-        const deviceName = row.original.deviceName || deviceId || 'Unknown Device';
+        const event = row.original; // Easier reference
+        let displayValue = event.deviceName || event.deviceId || 'Unknown Device'; // Default
 
-        // Render as button only if deviceId is present
-        if (deviceId) {
+        // Check if it's a NetBox event and if payload has portal/reader names
+        if (event.connectorCategory === 'netbox' && event.payload) {
+            const portalName = event.payload.portalName as string | undefined;
+            const readerName = event.payload.readerName as string | undefined;
+            
+            if (portalName && readerName) {
+                displayValue = `${portalName} / ${readerName}`;
+            } else if (portalName) {
+                displayValue = portalName;
+            } else if (readerName) {
+                displayValue = readerName;
+            } 
+            // If neither portalName nor readerName exists in payload, 
+            // default displayValue (Nodeunique/Nodename) will be used.
+        }
+
+        // Render as button only if deviceId exists and it's *not* a NetBox event 
+        // (since the name is composite and doesn't map to a single device record for the dialog)
+        if (event.deviceId && event.connectorCategory !== 'netbox') {
           return (
-            // Using a button styled as a link for better accessibility and clear interaction
             <Button
               variant="link"
               className="p-0 h-auto text-left whitespace-normal text-foreground"
-              onClick={() => fetchDeviceDetails(deviceId)}
+              onClick={() => fetchDeviceDetails(event.deviceId)}
             >
-              {deviceName}
+              {displayValue}
             </Button>
           );
         }
-        // Fallback for system events or events without a deviceId
-        return <span>{deviceName}</span>;
+        // Otherwise, just render the text (covers NetBox events and events without deviceId)
+        return <span>{displayValue}</span>;
       },
     },
     {
@@ -436,11 +459,25 @@ export default function EventsPage() {
       header: "Event Type",
       enableSorting: true,
       enableColumnFilter: true,
-      cell: ({ row }) => (
-        <Badge variant="outline">
-          {EVENT_TYPE_DISPLAY_MAP[row.original.eventType as EventType] || row.original.eventType}
-        </Badge>
-      ),
+      cell: ({ row }) => {
+        const eventType = row.original.eventType as EventType;
+        const eventSubtype = row.original.eventSubtype;
+        const typeDisplayName = EVENT_TYPE_DISPLAY_MAP[eventType] || eventType;
+        const subtypeDisplayName = eventSubtype ? EVENT_SUBTYPE_DISPLAY_MAP[eventSubtype] : null;
+
+        return (
+          <div className="flex flex-col items-start gap-1">
+            <Badge variant="outline">
+              {typeDisplayName}
+            </Badge>
+            {subtypeDisplayName && (
+              <Badge variant="secondary" className="font-normal">
+                {subtypeDisplayName}
+              </Badge>
+            )}
+          </div>
+        );
+      },
     },
     {
       id: 'state',
@@ -765,6 +802,32 @@ export default function EventsPage() {
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            <Dialog open={isHierarchyDialogOpen} onOpenChange={setIsHierarchyDialogOpen}>
+              <TooltipProvider delayDuration={100}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="icon" className="h-8 w-8">
+                        <ListTree className="h-4 w-4" />
+                        <span className="sr-only">View Event Hierarchy</span>
+                      </Button>
+                    </DialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>View Event Hierarchy</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Event Hierarchy</DialogTitle>
+                  <DialogDescription>
+                    Defined event categories, types, and subtypes.
+                  </DialogDescription>
+                </DialogHeader>
+                <EventHierarchyViewer />
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 

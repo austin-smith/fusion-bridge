@@ -11,21 +11,21 @@ const MAX_EVENTS = 1000;
  * Stores a StandardizedEvent in the database.
  * Replaces the old storeEvent function.
  */
-export async function storeStandardizedEvent(stdEvent: StandardizedEvent<any>) {
+export async function storeStandardizedEvent(stdEvent: StandardizedEvent) {
   try {
     // Use the rawEventType provided by the parser (if any)
-    const rawEventType = stdEvent.rawEventType ?? null;
+    const rawEventType = (stdEvent as any).rawEventType ?? null;
 
     await db.insert(events).values({
       eventUuid: stdEvent.eventId,
       timestamp: stdEvent.timestamp,
       connectorId: stdEvent.connectorId,
       deviceId: stdEvent.deviceId,
-      standardizedEventCategory: stdEvent.eventCategory ?? EventCategory.UNKNOWN,
-      standardizedEventType: stdEvent.eventType,
+      standardizedEventCategory: stdEvent.category,
+      standardizedEventType: stdEvent.type,
       standardizedPayload: JSON.stringify(stdEvent.payload), // Store the structured payload as JSON
       rawEventType: rawEventType,
-      rawPayload: JSON.stringify(stdEvent.rawEventPayload ?? {}), // Store the original raw payload as JSON
+      rawPayload: JSON.stringify(stdEvent.originalEvent ?? {}), // Store the original raw payload as JSON
     });
 
     // Clean up old events (keeping this logic)

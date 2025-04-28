@@ -132,13 +132,19 @@ export async function GET(req: NextRequest) {
   try {
     const allConnectorsRaw = await db.select().from(connectors);
 
-    // Parse cfg_enc for the client
     const allConnectors: ConnectorWithConfig[] = allConnectorsRaw.map(connector => {
       let config = {};
       try {
-        config = connector.cfg_enc ? JSON.parse(connector.cfg_enc) : {};
+        // Explicitly check if cfg_enc is a non-null string before parsing
+        if (connector.cfg_enc) { 
+          config = JSON.parse(connector.cfg_enc);
+        } else {
+          // Handle null or empty case explicitly if needed, otherwise config remains {}
+          // console.warn(`Connector ${connector.id} has null or empty cfg_enc`);
+        }
       } catch (e) {
         console.error(`Failed to parse config for connector ${connector.id}:`, e);
+        // config remains {} on error
       }
       return {
         id: connector.id,
@@ -146,7 +152,7 @@ export async function GET(req: NextRequest) {
         name: connector.name,
         createdAt: connector.createdAt, 
         eventsEnabled: connector.eventsEnabled,
-        config: config, // Parsed config
+        config: config, // Parsed config or empty object
       };
     });
 

@@ -392,7 +392,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
           </TabsContent>
 
           <TabsContent value="raw" className="mt-4">
-             <div className="relative">
+             <div className="relative overflow-hidden">
               <Button
                 size="icon"
                 variant="ghost"
@@ -409,6 +409,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
               <SyntaxHighlighter
                 language="json"
                 style={atomDark}
+                wrapLongLines={true}
                 customStyle={{
                   maxHeight: '24rem',
                   overflowY: 'auto',

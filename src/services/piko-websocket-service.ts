@@ -10,7 +10,8 @@ import { parsePikoEvent } from '@/lib/event-parsers/piko';
 import * as eventsRepository from '@/data/repositories/events';
 import { useFusionStore } from '@/stores/store';
 import { processEvent } from '@/services/automation-service';
-import { StandardizedEvent, EventCategory, EventType } from '@/types/events'; // Removed AnalyticsEventPayload as it's not used directly here
+import { StandardizedEvent } from '@/types/events';
+import { ConnectorCategory, EventCategory, EventType } from '@/lib/mappings/definitions';
 
 // Define connection timeout (e.g., 30 seconds) - Applies to client.connect timeout
 const CONNECTION_TIMEOUT_MS = 30000; 
@@ -474,7 +475,7 @@ async function _handlePikoMessage(connectorId: string, message: Message): Promis
                 if (standardizedEvents.length > 0) {
                     state.lastActivity = new Date(); // <<< MOVE UPDATE HERE
                     for (const stdEvent of standardizedEvents) {
-                        console.log(`[${connectorId}] Processing Standardized Event:`, stdEvent.eventId, stdEvent.eventType); 
+                        console.log(`[${connectorId}] Processing Standardized Event:`, stdEvent.eventId, stdEvent.type);
                         try { await eventsRepository.storeStandardizedEvent(stdEvent); } catch (e) { console.error(`[${connectorId}] Store error for ${stdEvent.eventId}:`, e); continue; }
                         try { useFusionStore.getState().processStandardizedEvent(stdEvent); } catch (e) { console.error(`[${connectorId}] Zustand error for ${stdEvent.eventId}:`, e); }
                         processEvent(stdEvent).catch(err => { console.error(`[${connectorId}] Automation error for ${stdEvent.eventId}:`, err); });

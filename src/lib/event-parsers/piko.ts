@@ -1,7 +1,8 @@
-import { StandardizedEvent, EventCategory, EventType, AnalyticsEventPayload } from '@/types/events';
+import { StandardizedEvent } from '@/types/events';
+import { EventCategory, EventType, EventSubtype, DeviceType } from '@/lib/mappings/definitions';
 import { PikoJsonRpcEventParams, PikoDeviceRaw } from '@/services/drivers/piko';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
-import { DeviceType } from '../mappings/definitions';
+import crypto from 'crypto';
 
 // Define the possible EventTypes this parser can return
 type ParsedPikoEventType = EventType.ANALYTICS_EVENT 
@@ -26,7 +27,7 @@ export function parsePikoEvent(
     connectorId: string, 
     rawEventParams: PikoJsonRpcEventParams | undefined | null,
     deviceGuidMap: Map<string, PikoDeviceRaw> | null // Added map parameter
-): StandardizedEvent<ParsedPikoEventType>[] { 
+): StandardizedEvent[] { 
 
     // --- Basic Validation ---
     if (!rawEventParams) {
@@ -69,12 +70,12 @@ export function parsePikoEvent(
     // Handle cases where the Piko device type wasn't found or isn't mapped
     if (deviceInfo.type === DeviceType.Unmapped) {
         console.warn(`[Piko Parser][${connectorId}] Could not map Piko device type string '${pikoDeviceTypeString}' for GUID ${deviceId}. Event source type is unknown.`);
-        // Decide if we should still create an event with Unmapped type, or return []
+        // Decide if we should still create an event with Unmapped type, or return null
         // Let's proceed with Unmapped for now, the event still occurred.
     }
 
     // --- Construct Payload --- 
-    const payload: AnalyticsEventPayload = {
+    const payload: Record<string, any> = {
         caption: rawEventParams.caption,
         description: rawEventParams.description,
         rawTimestampUsec: rawEventParams.eventTimestampUsec,
@@ -105,17 +106,16 @@ export function parsePikoEvent(
 
     // --- Create Standardized Event ---
     // Use the determined specificEventType
-    const standardizedEvent: StandardizedEvent<typeof specificEventType> = {
+    const standardizedEvent: StandardizedEvent = {
         eventId: crypto.randomUUID(),
         timestamp: timestamp,
         connectorId: connectorId,
-        deviceId: deviceId, // The GUID
-        deviceInfo: deviceInfo, // Mapped type (or Unmapped)
-        eventCategory: EventCategory.ANALYTICS,
-        eventType: specificEventType, // Use the determined type
+        deviceId: deviceId,
+        category: EventCategory.ANALYTICS,
+        type: specificEventType,
+        deviceInfo: deviceInfo,
         payload: payload,
-        rawEventType: rawEventParams?.inputPortId, // Extract inputPortId here
-        rawEventPayload: rawEventParams, // Assign original params here!
+        originalEvent: rawEventParams,
     };
 
     // console.log(`[Piko Parser][${connectorId}] Successfully parsed event:`, standardizedEvent.eventId);
