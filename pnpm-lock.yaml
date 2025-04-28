@@ -105,7 +105,7 @@ importers:
         specifier: ^4.1.0
         version: 4.1.0
       drizzle-orm:
-        specifier: ^0.29.3
+        specifier: ^0.29.5
         version: 0.29.5(@libsql/client@0.15.4(bufferutil@4.0.9)(utf-8-validate@5.0.10))(@types/better-sqlite3@7.6.13)(@types/react@18.3.20)(better-sqlite3@9.6.0)(react@18.3.1)
       hls.js:
         specifier: ^1.6.2
@@ -217,7 +217,7 @@ importers:
         specifier: ^8.0.0
         version: 8.0.0
       drizzle-kit:
-        specifier: ^0.20.13
+        specifier: ^0.20.18
         version: 0.20.18
       eslint:
         specifier: ^9.0.0

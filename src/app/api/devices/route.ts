@@ -113,6 +113,7 @@ export async function GET(request: NextRequest) {
 
         return {
           // original device fields
+          id: deviceRow.id,
           deviceId: deviceRow.deviceId,
           connectorId: deviceRow.connectorId,
           name: deviceRow.name,
@@ -121,6 +122,8 @@ export async function GET(request: NextRequest) {
           model: deviceRow.model ?? undefined, // Convert null to undefined for type compatibility
           vendor: deviceRow.vendor ?? undefined, // Ensure vendor is included
           url: deviceRow.url ?? undefined,       // Ensure url is included
+          createdAt: deviceRow.createdAt,
+          updatedAt: deviceRow.updatedAt,
           // enriched
           connectorName,
           connectorCategory,
@@ -264,6 +267,7 @@ export async function POST() {
 
         return {
           // original device fields
+          id: deviceRow.id,
           deviceId: deviceRow.deviceId,
           connectorId: deviceRow.connectorId,
           name: deviceRow.name,
@@ -272,6 +276,8 @@ export async function POST() {
           model: deviceRow.model ?? undefined, // Convert null to undefined for type compatibility
           vendor: deviceRow.vendor ?? undefined, // Ensure vendor is included
           url: deviceRow.url ?? undefined,       // Ensure url is included
+          createdAt: deviceRow.createdAt,
+          updatedAt: deviceRow.updatedAt,
           // enriched
           connectorName,
           connectorCategory,

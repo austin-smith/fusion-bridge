@@ -22,6 +22,7 @@ const updateArmedStateSchema = z.object({
 
 // Update the armed state of an area
 export async function PUT(request: Request, { params }: RouteParams) {
+  // Revert id access back to destructuring
   const { id } = params;
 
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {

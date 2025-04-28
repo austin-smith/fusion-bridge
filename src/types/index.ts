@@ -49,18 +49,21 @@ export type DeviceWithConnector = {
   deviceId: string;       // External ID from the connector
   connectorId: string;
   connectorCategory: string; // Using string for now, can refine later
+  connectorName?: string; // <<< ADD Optional connector name
   name: string;
   type: string;           // Original type string from source
   status?: string | null;
   vendor?: string | null;
   model?: string | null;
   url?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date;        // <<< MAKE REQUIRED
+  updatedAt: Date;        // <<< MAKE REQUIRED
   serverId?: string | null;      // Optional: Piko server ID
   serverName?: string | null;    // Optional: Piko server name (denormalized)
   pikoServerDetails?: any | null; // Using any for now for PikoServer
   areaIds?: string[]; // <-- NEW: Optional list of Area IDs this device belongs to
+  associationCount?: number | null; // <<< ADD Optional association count
+  deviceTypeInfo?: TypedDeviceInfo;  // <<< ADD Optional mapped type info
 };
 
 // Interface for Piko Server details (based on DB schema)

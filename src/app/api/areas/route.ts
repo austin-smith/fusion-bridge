@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/data/db';
-import { areas, locations } from '@/data/db/schema';
+import { areas, locations, areaDevices } from '@/data/db/schema';
 import type { Area } from '@/types/index';
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 
 // --- Validation Schema ---
 const createAreaSchema = z.object({
@@ -27,8 +27,35 @@ export async function GET(request: Request) {
       }
     } 
 
-    const allAreas: Area[] = await query.orderBy(areas.name);
-    return NextResponse.json({ success: true, data: allAreas });
+    const allAreasResult: Area[] = await query.orderBy(areas.name);
+
+    // Fetching device IDs
+    if (allAreasResult.length > 0) {
+      const areaIds = allAreasResult.map(a => a.id);
+      const deviceAssignments = await db
+        .select({
+          areaId: areaDevices.areaId,
+          deviceId: areaDevices.deviceId,
+        })
+        .from(areaDevices)
+        .where(inArray(areaDevices.areaId, areaIds));
+
+      // Create a map for quick lookup
+      const devicesByArea = deviceAssignments.reduce<Record<string, string[]>>((acc, assignment) => {
+        if (!acc[assignment.areaId]) {
+          acc[assignment.areaId] = [];
+        }
+        acc[assignment.areaId].push(assignment.deviceId);
+        return acc;
+      }, {});
+
+      // Add deviceIds to each area object
+      allAreasResult.forEach(area => {
+        area.deviceIds = devicesByArea[area.id] || [];
+      });
+    }
+
+    return NextResponse.json({ success: true, data: allAreasResult });
 
   } catch (error) {
     console.error("Error fetching areas:", error);

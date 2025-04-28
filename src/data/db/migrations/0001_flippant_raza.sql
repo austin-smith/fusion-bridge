@@ -27,13 +27,6 @@ CREATE TABLE `locations` (
 	FOREIGN KEY (`parent_id`) REFERENCES `locations`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-/*
- SQLite does not support "Dropping foreign key" out of the box, we do not generate automatic migration for that, so it has to be done manually
- Please refer to: https://www.techonthenet.com/sqlite/tables/alter_table.php
-                  https://www.sqlite.org/lang_altertable.html
-
- Due to that we don't generate migration automatically and it has to be done manually
-*/--> statement-breakpoint
 CREATE INDEX `area_devices_device_idx` ON `area_devices` (`device_id`);--> statement-breakpoint
 CREATE INDEX `area_devices_area_idx` ON `area_devices` (`area_id`);--> statement-breakpoint
 CREATE INDEX `areas_location_idx` ON `areas` (`location_id`);--> statement-breakpoint
@@ -43,11 +36,3 @@ CREATE INDEX `automations_source_connector_idx` ON `automations` (`source_connec
 CREATE INDEX `camera_assoc_piko_idx` ON `camera_associations` (`piko_camera_id`);--> statement-breakpoint
 CREATE INDEX `camera_assoc_device_idx` ON `camera_associations` (`device_id`);--> statement-breakpoint
 CREATE INDEX `devices_server_id_idx` ON `devices` (`server_id`);--> statement-breakpoint
-CREATE INDEX `piko_servers_connector_idx` ON `piko_servers` (`connector_id`);--> statement-breakpoint
-/*
- SQLite does not support "Creating foreign key on existing column" out of the box, we do not generate automatic migration for that, so it has to be done manually
- Please refer to: https://www.techonthenet.com/sqlite/tables/alter_table.php
-                  https://www.sqlite.org/lang_altertable.html
-
- Due to that we don't generate migration automatically and it has to be done manually
-*/

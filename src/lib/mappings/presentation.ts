@@ -7,7 +7,8 @@ import {
     CANONICAL_STATE_MAP,
     // Import state constants for icon mapping
     LOCKED, UNLOCKED, ON, OFF, OPEN, CLOSED, LEAK_DETECTED, DRY, MOTION_DETECTED, NO_MOTION, VIBRATION_DETECTED, NO_VIBRATION,
-    EventCategory
+    EventCategory,
+    ArmedState
 } from './definitions';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -16,7 +17,9 @@ import {
     // State-specific icons
     Unlock, PowerOff, DoorOpen, DoorClosed, AlertTriangle, ShieldCheck, Activity,
     // Event category icons
-    KeyRound, PersonStanding
+    KeyRound, PersonStanding,
+    // ADD: Armed State Icons
+    ShieldOff, ShieldAlert
 } from 'lucide-react';
 
 
@@ -66,6 +69,23 @@ export function getDisplayStateIcon(state: DisplayState | undefined): LucideIcon
         return HelpCircle; // Icon for undefined/null state
     }
     return displayStateIconMap[state] || Activity; // Return mapped icon or Activity as fallback
+}
+
+
+// --- NEW: Armed State Icon Mapping ---
+const armedStateIconMap: Record<ArmedState, LucideIcon> = {
+  [ArmedState.DISARMED]: ShieldOff,
+  [ArmedState.ARMED_AWAY]: ShieldCheck,
+  [ArmedState.ARMED_STAY]: ShieldCheck,
+  [ArmedState.TRIGGERED]: ShieldAlert, // Using ShieldAlert for consistency
+};
+
+// Helper function to get armed state icon component
+export function getArmedStateIcon(state: ArmedState | undefined): LucideIcon {
+    if (!state) {
+        return HelpCircle; // Icon for undefined/null state
+    }
+    return armedStateIconMap[state] || HelpCircle; // Return mapped icon or HelpCircle as fallback
 }
 
 

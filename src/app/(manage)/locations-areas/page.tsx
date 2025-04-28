@@ -1,15 +1,12 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Terminal, Loader2, Plus, MoreHorizontal } from 'lucide-react';
-import { LocationTree } from '@/components/features/locations/location-tree';
+import { Terminal, Loader2, Plus, MoreHorizontal, ChevronDown, ChevronRight, ArrowUpDown, ArrowDown, ArrowUp, Building, MapPin, Settings, Link, ShieldCheck, ShieldOff, ShieldAlert, Trash2, Shield, Pencil } from 'lucide-react';
 import { LocationEditDialog } from '@/components/features/locations/location-edit-dialog';
 import { AreaEditDialog } from '@/components/features/areas/area-edit-dialog';
 import { AreaDeviceAssignmentDialog } from '@/components/features/areas/area-device-assignment-dialog';
-import { DataTable } from "@/components/ui/data-table";
-import { type ColumnDef } from "@tanstack/react-table";
 import type { Area, Location, DeviceWithConnector } from "@/types/index";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,9 +14,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuGroup,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
@@ -33,95 +33,21 @@ import {
   AlertDialogTrigger
 } from "@/components/ui/alert-dialog";
 import { toast } from 'sonner';
-import { ArmedState } from "@/lib/mappings/definitions";
-
-const getAreaColumns = (
-    locations: Location[], 
-    onEdit: (area: Area) => void, 
-    onDelete: (area: Area) => void,
-    onAssignDevices: (area: Area) => void,
-    onArmAction: (area: Area, state: ArmedState) => void
-): ColumnDef<Area>[] => [
-  {
-    accessorKey: "name",
-    header: "Name",
-    cell: ({ row }) => <div className="font-medium">{row.getValue("name")}</div>,
-  },
-  {
-    accessorKey: "locationId",
-    header: "Location",
-    cell: ({ row }) => {
-      const locationId = row.getValue("locationId") as string | null;
-      const location = locations.find(loc => loc.id === locationId);
-      return location ? location.name : <span className="text-muted-foreground">-\-</span>;
-    },
-  },
-  {
-    accessorKey: "armedState",
-    header: "State",
-    cell: ({ row }) => {
-      const state = row.getValue("armedState") as ArmedState;
-      let badgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
-      if (state === ArmedState.ARMED_AWAY || state === ArmedState.ARMED_STAY) {
-        badgeVariant = "default";
-      } else if (state === ArmedState.TRIGGERED) {
-        badgeVariant = "destructive";
-      }
-      return <Badge variant={badgeVariant}>{state}</Badge>;
-    },
-  },
-  {
-    id: "actions",
-    cell: ({ row }) => {
-      const area = row.original;
-      const currentState = area.armedState;
-
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open menu</span>
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => onEdit(area)}>Edit Details</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onAssignDevices(area)}>Assign Devices</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem 
-              onClick={() => onArmAction(area, ArmedState.ARMED_AWAY)} 
-              disabled={currentState === ArmedState.ARMED_AWAY}
-            >
-              Arm Away
-            </DropdownMenuItem>
-            <DropdownMenuItem 
-              onClick={() => onArmAction(area, ArmedState.ARMED_STAY)} 
-              disabled={currentState === ArmedState.ARMED_STAY}
-            >
-              Arm Stay
-            </DropdownMenuItem>
-            <DropdownMenuItem 
-              onClick={() => onArmAction(area, ArmedState.DISARMED)} 
-              disabled={currentState === ArmedState.DISARMED}
-            >
-              Disarm
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem 
-              className="text-destructive focus:text-destructive focus:bg-destructive/10" 
-              onClick={() => onDelete(area)}
-            >
-              Delete Area
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      );
-    },
-  },
-];
+import { ArmedState, ArmedStateDisplayNames } from "@/lib/mappings/definitions";
+import { AreaDevicesSubRow } from '@/components/features/areas/AreaDevicesSubRow';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { cn } from '@/lib/utils';
+import { type Row } from "@tanstack/react-table";
+import { getArmedStateIcon } from '@/lib/mappings/presentation';
 
 export default function LocationsAreasPage() {
+
+  // Set page title
+  useEffect(() => {
+    document.title = 'Locations & Areas // Fusion Bridge';
+  }, []);
+
   const { 
     locations, 
     isLoadingLocations, 
@@ -178,6 +104,7 @@ export default function LocationsAreasPage() {
   const [areaToDelete, setAreaToDelete] = useState<Area | null>(null);
   const [isAssignDevicesDialogOpen, setIsAssignDevicesDialogOpen] = useState(false);
   const [areaToAssignDevices, setAreaToAssignDevices] = useState<Area | null>(null);
+  const [expandedAreaDevices, setExpandedAreaDevices] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     fetchLocations();
@@ -231,15 +158,25 @@ export default function LocationsAreasPage() {
     setIsLocationDeleteDialogOpen(false);
   };
 
-  const handleOpenAreaDialog = (area: Area | null) => {
-    setEditingArea(area);
+  const handleOpenAreaDialog = (area: Area | null, defaultLocationId?: string) => {
+    setEditingArea(area ? 
+        { ...area } : 
+        { 
+            id: '', 
+            name: '', 
+            locationId: defaultLocationId ?? '',
+            armedState: ArmedState.DISARMED, 
+            deviceIds: [],
+            createdAt: new Date(),
+            updatedAt: new Date()
+        });
     setIsAreaDialogOpen(true);
   };
 
   const handleAreaDialogSubmit = async (formData: { name: string; locationId?: string | null }, areaId?: string): Promise<boolean> => {
     let success = false;
     try {
-      if (areaId) {
+      if (areaId && areaId !== '') {
         const result = await updateArea(areaId, formData);
         if (!result) throw new Error("Update failed in store");
         toast.success("Area updated successfully!");
@@ -292,6 +229,10 @@ export default function LocationsAreasPage() {
     setIsAssignDevicesDialogOpen(true);
   };
 
+  const toggleAreaDevices = (areaId: string) => {
+    setExpandedAreaDevices(prev => ({ ...prev, [areaId]: !prev[areaId] }));
+  };
+
   const renderLoading = () => (
     <div className="flex justify-center items-center p-8">
       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -308,53 +249,249 @@ export default function LocationsAreasPage() {
       </Alert>
   );
 
-  const areaColumns = useMemo(() => getAreaColumns(
-    locations, 
-    handleOpenAreaDialog,          
-    handleOpenAreaDeleteDialog,  
-    handleOpenAssignDevicesDialog, 
-    handleArmAction                 
-  ), [locations, handleOpenAreaDialog, handleOpenAreaDeleteDialog, handleOpenAssignDevicesDialog, handleArmAction]);
+  const areasByLocation = useMemo(() => {
+    const grouped: Record<string, Area[]> = {};
+    areas.forEach(area => {
+        const locId = area.locationId ?? 'unassigned';
+        if (!grouped[locId]) {
+            grouped[locId] = [];
+        }
+        grouped[locId].push(area);
+    });
+    Object.values(grouped).forEach(areaGroup => {
+        areaGroup.sort((a, b) => a.name.localeCompare(b.name));
+    });
+    return grouped;
+  }, [areas]);
+
+  const sortedLocations = useMemo(() => {
+      return [...locations].sort((a, b) => a.name.localeCompare(b.name));
+  }, [locations]);
+
+  const renderAreaCard = (area: Area) => {
+    const state = area.armedState;
+    let badgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
+    if (state === ArmedState.ARMED_AWAY || state === ArmedState.ARMED_STAY) {
+      badgeVariant = "default";
+    } else if (state === ArmedState.TRIGGERED) {
+      badgeVariant = "destructive";
+    }
+    const deviceCount = area.deviceIds?.length ?? 0;
+    const isDevicesExpanded = expandedAreaDevices[area.id] ?? false;
+
+    return (
+        <Card key={area.id} className="mb-3">
+            <CardHeader 
+              className={cn(
+                "flex flex-row items-center justify-between py-3 px-4",
+                "cursor-pointer hover:bg-muted/50 transition-colors"
+              )} 
+              onClick={() => toggleAreaDevices(area.id)}
+              title={isDevicesExpanded ? "Collapse details" : "Expand details"}
+            >
+                <div 
+                  className="flex items-center gap-2 min-w-0"
+                >
+                   {isDevicesExpanded ? 
+                       <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" /> : 
+                       <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                   }
+                  <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <CardTitle className="text-base font-medium truncate" title={area.name}>{area.name}</CardTitle>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <Badge variant={badgeVariant} className="inline-flex items-center gap-1.5"> 
+                    {React.createElement(getArmedStateIcon(state), { className: "h-3.5 w-3.5" })} 
+                    <span>{ArmedStateDisplayNames[state] ?? state}</span> 
+                  </Badge>
+                  <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs">
+                    {deviceCount} {deviceCount === 1 ? 'Device' : 'Devices'}
+                  </Badge>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                        <span className="sr-only">Area Actions</span>
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleOpenAreaDialog(area)}>
+                        <Pencil className="h-4 w-4" />
+                        Edit Details
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleOpenAssignDevicesDialog(area)}>
+                        <Link className="h-4 w-4" />
+                        Assign Devices
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuGroup>
+                        <DropdownMenuSub>
+                            <DropdownMenuSubTrigger onClick={(e) => e.stopPropagation()}>
+                                <Shield className="h-4 w-4" />
+                                Arm / Disarm
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent>
+                                <DropdownMenuItem
+                                    onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        handleArmAction(area, ArmedState.ARMED_AWAY); 
+                                    }}
+                                    disabled={state === ArmedState.ARMED_AWAY}
+                                >
+                                    <ShieldCheck className="h-4 w-4" />
+                                    Arm Away
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleArmAction(area, ArmedState.ARMED_STAY);
+                                    }}
+                                    disabled={state === ArmedState.ARMED_STAY}
+                                >
+                                    <ShieldCheck className="h-4 w-4" />
+                                    Arm Stay
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleArmAction(area, ArmedState.DISARMED);
+                                    }}
+                                    disabled={state === ArmedState.DISARMED}
+                                >
+                                    <ShieldOff className="h-4 w-4" />
+                                    Disarm
+                                </DropdownMenuItem>
+                            </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      </DropdownMenuGroup>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenAreaDeleteDialog(area);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete Area
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+            </CardHeader>
+            {/* --- DEBUG LOGGING --- */}
+            {(() => {
+                console.log(`[renderAreaCard] Area: ${area.id}, isDevicesExpanded: ${isDevicesExpanded}, expandedState:`, expandedAreaDevices);
+                return null; // Don't render anything visually
+            })()}
+            {isDevicesExpanded && (
+                <CardContent className="p-0">
+                    <AreaDevicesSubRow row={{ original: area } as Row<Area>} allDevices={allDevices} />
+                </CardContent>
+            )}
+        </Card>
+    );
+  };
 
   return (
     <div className="container mx-auto p-4 md:p-6 lg:p-8">
-      <h1 className="text-2xl font-semibold mb-6">Manage Locations & Areas</h1>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <section>
-          <h2 className="text-xl font-medium mb-4">Locations</h2>
-          {isLoadingLocations && renderLoading()}
-          {errorLocations && renderError(errorLocations, 'Locations')}
-          {!isLoadingLocations && !errorLocations && (
-            <div className="p-4 border rounded-md bg-card text-card-foreground min-h-[200px]">
-              <LocationTree 
-                locations={locations} 
-                onAdd={handleOpenLocationDialog}
-                onEdit={handleOpenLocationDialog}
-                onDelete={handleOpenLocationDeleteDialog}
-              />
+      <div className="flex justify-between items-center mb-6 gap-4 flex-shrink-0">
+          <div className="flex items-center gap-4">
+            <Building className="h-6 w-6 text-muted-foreground flex-shrink-0" />
+            <div>
+              <h1 className="text-2xl font-semibold text-foreground">
+                Locations & Areas
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Organize devices by physical location and logical areas.
+              </p>
             </div>
-          )}
-        </section>
-
-        <section>
-           <div className="flex justify-between items-center mb-4">
-             <h2 className="text-xl font-medium">Areas</h2>
-             <Button variant="outline" size="sm" onClick={() => handleOpenAreaDialog(null)}>
-               <Plus className="mr-2 h-4 w-4" /> Add Area
-             </Button>
-           </div>
-          {isLoadingAreas && renderLoading()}
-          {errorAreas && renderError(errorAreas, 'Areas')}
-          {!isLoadingAreas && !errorAreas && (
-             <div className="border rounded-md">
-                <DataTable columns={areaColumns} data={areas} />
-             </div>
-          )}
-          {isLoadingAllDevices && <div className="text-sm text-muted-foreground mt-2">Loading device list...</div>}
-          {errorAllDevices && renderError(errorAllDevices, 'All Devices')}
-        </section>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => handleOpenLocationDialog(null)}>
+                <Plus className="h-4 w-4 mr-2" /> Add Location
+            </Button>
+          </div>
       </div>
+
+      {(isLoadingLocations || isLoadingAreas) && renderLoading()}
+      {errorLocations && renderError(errorLocations, 'Locations')}
+      {errorAreas && renderError(errorAreas, 'Areas')}
+      
+      {!isLoadingLocations && !isLoadingAreas && !errorLocations && !errorAreas && (
+          <div className="space-y-6">
+              {sortedLocations.map(location => {
+                  const locationAreas = areasByLocation[location.id] || [];
+                  return (
+                      <Card key={location.id}>
+                          <CardHeader className="flex flex-row items-center justify-between pb-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Building className="h-5 w-5 flex-shrink-0" />
+                                <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
+                              </div>
+                              <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                                          <span className="sr-only">Location Actions</span>
+                                          <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                      <DropdownMenuItem onClick={() => handleOpenLocationDialog(location)}>
+                                        <Pencil className="h-4 w-4" />
+                                        Edit Location
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleOpenAreaDialog(null, location.id)}>
+                                        <Plus className=" h-4 w-4" />
+                                        Add Area
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                          className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                                          onClick={() => handleOpenLocationDeleteDialog(location)}
+                                      >
+                                          <Trash2 className="h-4 w-4" />
+                                          Delete Location
+                                      </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                              </DropdownMenu>
+                          </CardHeader>
+                          <CardContent className="pt-0">
+                              {locationAreas.length > 0 ? (
+                                  locationAreas.map(area => renderAreaCard(area))
+                              ) : (
+                                  <p className="text-sm text-muted-foreground px-4 py-2">
+                                      No areas assigned to this location. 
+                                      <Button variant="link" size="sm" className="p-0 h-auto ml-1" onClick={() => handleOpenAreaDialog(null, location.id)}>Add one?</Button>
+                                  </p>
+                              )}
+                          </CardContent>
+                      </Card>
+                  );
+              })}
+
+              {(areasByLocation['unassigned'] && areasByLocation['unassigned'].length > 0) && (
+                  <Card>
+                      <CardHeader>
+                          <CardTitle>Unassigned Areas</CardTitle>
+                          <CardDescription>These areas are not linked to any specific location.</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                          {areasByLocation['unassigned'].map(area => renderAreaCard(area))}
+                      </CardContent>
+                  </Card>
+              )}
+
+              {sortedLocations.length === 0 && (!areasByLocation['unassigned'] || areasByLocation['unassigned'].length === 0) && (
+                   <Card>
+                       <CardContent className="p-6 text-center text-muted-foreground">
+                           No locations or areas found. Start by adding a location.
+                       </CardContent>
+                   </Card>
+              )}
+          </div>
+      )}
 
       <LocationEditDialog
         isOpen={isLocationDialogOpen}
@@ -371,7 +508,7 @@ export default function LocationsAreasPage() {
             <AlertDialogDescription>
               This action cannot be undone. This will permanently delete the location 
               <strong className="px-1">{locationToDelete?.name}</strong> 
-              and all of its child locations.
+              and all of its child locations and associated areas.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -414,6 +551,9 @@ export default function LocationsAreasPage() {
         assignDeviceAction={assignDeviceToArea}
         removeDeviceAction={removeDeviceFromArea}
       />
+
+      {isLoadingAllDevices && <div className="text-sm text-muted-foreground mt-4 text-center">Loading device list...</div>}
+      {errorAllDevices && renderError(errorAllDevices, 'All Devices')}
     </div>
   );
 } 

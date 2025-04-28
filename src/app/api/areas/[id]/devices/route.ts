@@ -18,7 +18,8 @@ const assignDeviceSchema = z.object({
 
 // Fetch device IDs assigned to an area
 export async function GET(request: Request, { params }: RouteParams) {
-  const { id: areaId } = params;
+  // Access params.id directly
+  const areaId = params.id; 
 
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(areaId)) {
     return NextResponse.json({ success: false, error: "Invalid Area ID format" }, { status: 400 });

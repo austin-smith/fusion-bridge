@@ -551,11 +551,26 @@ export const useFusionStore = create<FusionState>((set, get) => ({
        if (!response.ok || !data.success || !data.data) {
         throw new Error(data.error || 'Failed to update armed state');
       }
-       const updatedArea = data.data;
-      set((state) => ({ 
-        areas: state.areas.map(area => area.id === id ? updatedArea : area),
+       // Assuming data.data contains at least { id: string, armedState: ArmedState }
+       const partialUpdatedArea = data.data;
+       
+      // Use produce for safe immutable update
+      set(produce((draft: Draft<FusionState>) => {
+          const areaIndex = draft.areas.findIndex(area => area.id === id);
+          if (areaIndex !== -1) {
+              // Merge the new armedState into the existing area object
+              draft.areas[areaIndex] = { 
+                  ...draft.areas[areaIndex], // Keep existing properties (like deviceIds)
+                  armedState: partialUpdatedArea.armedState // Update only the armed state
+              };
+          }
       }));
-      return updatedArea;
+      
+      // Return the updated area from the store for consistency, if needed elsewhere
+      // Note: The API response (partialUpdatedArea) might not be the full Area object now
+      const finalUpdatedArea = get().areas.find(area => area.id === id);
+      return finalUpdatedArea || null; 
+
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
        console.error(`Error updating armed state for ${id}:`, message);
@@ -606,11 +621,19 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     try {
       const response = await fetch('/api/devices'); // Assuming this is the endpoint
       const data: ApiResponse<DeviceWithConnector[]> = await response.json();
+      
+      // <<< START DEBUG LOGGING >>>
+      console.log('[fetchAllDevices Store Action] Raw API response data:', data);
+      if (data.success && data.data) {
+          console.log('[fetchAllDevices Store Action] First device from API:', data.data[0]);
+      }
+      // <<< END DEBUG LOGGING >>>
+
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to fetch devices');
       }
       set({ allDevices: data.data || [], isLoadingAllDevices: false });
-      console.log('[FusionStore] All devices loaded:', data.data?.length);
+      console.log('[FusionStore] All devices loaded into state:', data.data?.length);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error("Error fetching all devices:", message);

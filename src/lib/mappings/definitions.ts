@@ -281,6 +281,14 @@ export enum EventSubtype {
   // Add other subtypes here, grouped by the EventType they primarily relate to
 }
 
+// --- NEW: Armed State Display Name Mapping ---
+export const ArmedStateDisplayNames: Record<ArmedState, string> = {
+  [ArmedState.DISARMED]: "Disarmed",
+  [ArmedState.ARMED_AWAY]: "Armed - Away",
+  [ArmedState.ARMED_STAY]: "Armed - Stay",
+  [ArmedState.TRIGGERED]: "Triggered",
+};
+
 // --- EVENT SUBTYPE DISPLAY MAP --- 
 // Provides user-friendly names for subtypes
 export const EVENT_SUBTYPE_DISPLAY_MAP: Record<EventSubtype, string> = {

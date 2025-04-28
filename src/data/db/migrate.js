@@ -73,7 +73,8 @@ async function runMigrations() {
       const sqlitePath = getDbPath_Migrate(); // Use local helper
       console.log(`Using SQLite driver. Connecting to: ${sqlitePath}`);
       ensureDbDir_Migrate(); // Use local helper
-      client = new Database(sqlitePath);
+      // Enable verbose logging for better-sqlite3
+      client = new Database(sqlitePath, { verbose: console.log }); 
       db = drizzle(client);
       migrateFn = migrateSqlite;
       console.log('SQLite client created.');

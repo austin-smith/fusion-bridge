@@ -49,7 +49,7 @@ export interface DeviceDetailProps {
   name: string;
   connectorName: string;
   connectorCategory: string;
-  deviceTypeInfo: TypedDeviceInfo;
+  deviceTypeInfo?: TypedDeviceInfo;
   displayState?: DisplayState;
   lastSeen?: Date;
   associationCount?: number | null;
