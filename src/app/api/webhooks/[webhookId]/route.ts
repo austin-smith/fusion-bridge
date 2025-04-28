@@ -135,6 +135,12 @@ export async function POST(
   }
 
   // --- 3. Verify Signature (using category-specific header) --- 
+
+  // >>> Add Debug Logging START
+  // Log raw body for all webhook requests
+  console.log(`[Webhook ${webhookId}] Raw request body:`, rawBodyBuffer.toString('utf-8'));
+  // >>> Add Debug Logging END
+
   const signatureHeader = connectorInfo.category === 'genea' 
     ? request.headers.get(GENEA_SIGNATURE_HEADER)
     : request.headers.get(NETBOX_SIGNATURE_HEADER); 
