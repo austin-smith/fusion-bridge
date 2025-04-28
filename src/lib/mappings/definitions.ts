@@ -37,6 +37,14 @@ export enum DeviceSubtype {
   Toggle = 'Toggle',
 }
 
+// --- NEW: Armed State Enum ---
+export enum ArmedState {
+  DISARMED = 'DISARMED',
+  ARMED_AWAY = 'ARMED_AWAY',
+  ARMED_STAY = 'ARMED_STAY',
+  TRIGGERED = 'TRIGGERED',
+}
+
 // --- Mapped Type Approach ---
 
 // 1. Define the valid relationships between Type and Subtype

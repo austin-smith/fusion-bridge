@@ -392,7 +392,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
           </TabsContent>
 
           <TabsContent value="raw" className="mt-4">
-             <div className="relative overflow-hidden">
+             <div className="relative">
               <Button
                 size="icon"
                 variant="ghost"
@@ -410,13 +410,17 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                 language="json"
                 style={atomDark}
                 wrapLongLines={true}
+                codeTagProps={{
+                  style: {
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all',
+                  }
+                }}
                 customStyle={{
                   maxHeight: '24rem',
                   overflowY: 'auto',
                   borderRadius: '6px',
                   fontSize: '13px',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all'
                 }}
               >
                 {jsonString}

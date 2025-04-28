@@ -1,6 +1,7 @@
-import { sqliteTable, text, integer, primaryKey, uniqueIndex, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, primaryKey, uniqueIndex, index, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { relations, sql } from "drizzle-orm";
 import type { AutomationConfig } from "@/lib/automation-schemas"; // Import the config type
+import { ArmedState } from '@/lib/mappings/definitions'; // <-- Import the enum
 
 export const connectors = sqliteTable("connectors", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -11,6 +12,14 @@ export const connectors = sqliteTable("connectors", {
   eventsEnabled: integer("events_enabled", { mode: "boolean" }).notNull().default(false),
 });
 
+// Relation for connectors (if needed later for areas/locations, though less direct)
+export const connectorsRelations = relations(connectors, ({ many }) => ({
+	devices: many(devices),
+  pikoServers: many(pikoServers),
+  automations: many(automations, { relationName: 'sourceAutomations' }),
+  events: many(events),
+}));
+
 // --- NEW events table schema ---
 export const events = sqliteTable("events", {
   // Core identifiers
@@ -20,7 +29,7 @@ export const events = sqliteTable("events", {
   // Timing and Source
   timestamp: integer("timestamp", { mode: "timestamp" }).notNull(), // StandardizedEvent.timestamp
   connectorId: text("connector_id").notNull().references(() => connectors.id, { onDelete: 'cascade' }), // StandardizedEvent.connectorId - Set null if connector deleted
-  deviceId: text("device_id").notNull(), // StandardizedEvent.deviceId (connector-specific)
+  deviceId: text("device_id").notNull(), // StandardizedEvent.deviceId (connector-specific) - NOTE: This is the *external* ID, not our internal devices.id UUID
 
   // Standardized Classification
   standardizedEventCategory: text("standardized_event_category").notNull(), // StandardizedEvent.eventCategory
@@ -37,29 +46,55 @@ export const events = sqliteTable("events", {
     connectorDeviceIdx: index("events_connector_device_idx").on(table.connectorId, table.deviceId),
 }));
 
+// Relation for events linking back to connector
+export const eventsRelations = relations(events, ({ one }) => ({
+  connector: one(connectors, {
+    fields: [events.connectorId],
+    references: [connectors.id],
+  }),
+  // Note: We don't directly link events to devices table here as event.deviceId is the external ID
+}));
+
 // Table for storing devices from all connectors
 export const devices = sqliteTable("devices", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()), // Add default UUID generation
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()), // Internal UUID for our system
   deviceId: text("device_id").notNull(), // External device ID from the connector
   connectorId: text("connector_id").notNull().references(() => connectors.id, { onDelete: 'cascade' }),
   name: text("name").notNull(),
   type: text("type").notNull(), // Device type/model
   status: text("status"), // Device status (nullable)
-  serverId: text("server_id").references(() => pikoServers.serverId), // FK to pikoServers table
-  vendor: text("vendor"), 
-  model: text("model"), 
-  url: text("url"), 
+  serverId: text("server_id").references(() => pikoServers.serverId, { onDelete: 'set null' }), // FK to pikoServers table, SET NULL on piko server delete
+  vendor: text("vendor"),
+  model: text("model"),
+  url: text("url"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
-  // Keep existing unique index for devices
+  // Keep existing unique index for devices (external ID + connector)
   connectorDeviceUniqueIdx: uniqueIndex("devices_connector_device_unique_idx")
     .on(table.connectorId, table.deviceId),
+  // Index on internal ID is implicit (PK)
+  serverIdIdx: index("devices_server_id_idx").on(table.serverId),
+}));
+
+// Relation for devices linking back to connector and server
+export const devicesRelations = relations(devices, ({ one, many }) => ({
+  connector: one(connectors, {
+    fields: [devices.connectorId],
+    references: [connectors.id],
+  }),
+  pikoServer: one(pikoServers, {
+    fields: [devices.serverId],
+    references: [pikoServers.serverId]
+  }),
+  cameraAssociationsSource: many(cameraAssociations, { relationName: 'sourceDevice' }), // Associations where this device is the source (e.g., YoLink)
+  cameraAssociationsTarget: many(cameraAssociations, { relationName: 'targetCamera' }), // Associations where this device is the target (e.g., Piko Camera)
+  areaDevices: many(areaDevices), // Relation to the junction table
 }));
 
 // Table for storing Piko server information
 export const pikoServers = sqliteTable("piko_servers", {
-  serverId: text("id").primaryKey(), // Piko server ID (e.g., "{45645270...}")
+  serverId: text("id").primaryKey(), // Piko server ID (e.g., "{45645270...}") - Note: Using standard 'id' name now
   connectorId: text("connector_id").notNull().references(() => connectors.id, { onDelete: 'cascade' }),
   name: text("name").notNull(),
   status: text("status"), // e.g., "Online"
@@ -69,16 +104,45 @@ export const pikoServers = sqliteTable("piko_servers", {
   url: text("url"), // Server URL
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  // Index on connector ID might be useful
+  connectorIdx: index("piko_servers_connector_idx").on(table.connectorId),
+}));
+
+// Relation for Piko servers linking back to connector and devices
+export const pikoServersRelations = relations(pikoServers, ({ one, many }) => ({
+  connector: one(connectors, {
+    fields: [pikoServers.connectorId],
+    references: [connectors.id],
+  }),
+  devices: many(devices),
+}));
 
 // Junction table for camera associations (renamed from deviceAssociations)
 export const cameraAssociations = sqliteTable('camera_associations', { // Renamed table
-  deviceId: text('device_id').references(() => devices.id, { onDelete: 'cascade' }).notNull(), // Renamed from yolinkDeviceId
-  pikoCameraId: text('piko_camera_id').references(() => devices.id, { onDelete: 'cascade' }).notNull(), // Kept as is
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()), 
-}, (table) => ({ 
+  deviceId: text('device_id').references(() => devices.id, { onDelete: 'cascade' }).notNull(), // FK to our internal devices.id
+  pikoCameraId: text('piko_camera_id').references(() => devices.id, { onDelete: 'cascade' }).notNull(), // FK to our internal devices.id
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
   // Updated primary key columns
-  pk: primaryKey({ columns: [table.deviceId, table.pikoCameraId] }), 
+  pk: primaryKey({ columns: [table.deviceId, table.pikoCameraId] }),
+  // Indexes for individual foreign keys can be helpful
+  pikoCameraIdx: index("camera_assoc_piko_idx").on(table.pikoCameraId),
+  deviceIdx: index("camera_assoc_device_idx").on(table.deviceId),
+}));
+
+// Relations for the junction table linking back to the devices table twice
+export const cameraAssociationsRelations = relations(cameraAssociations, ({ one }) => ({
+  sourceDevice: one(devices, {
+    fields: [cameraAssociations.deviceId],
+    references: [devices.id],
+    relationName: 'sourceDevice', // Use for distinguishing the relations
+  }),
+  targetCamera: one(devices, {
+    fields: [cameraAssociations.pikoCameraId],
+    references: [devices.id],
+    relationName: 'targetCamera', // Use for distinguishing the relations
+  }),
 }));
 
 // Table for storing automation configurations
@@ -87,10 +151,13 @@ export const automations = sqliteTable("automations", {
   name: text("name").notNull(),
   sourceConnectorId: text("source_connector_id").notNull().references(() => connectors.id, { onDelete: 'cascade' }), // Renamed field
   enabled: integer("enabled", { mode: "boolean" }).default(true).notNull(),
-  configJson: text("config_json", { mode: "json" }).notNull().$type<AutomationConfig>(), 
+  configJson: text("config_json", { mode: "json" }).notNull().$type<AutomationConfig>(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
-});
+}, (table) => ({
+  // Index on source connector might be useful
+  sourceConnectorIdx: index("automations_source_connector_idx").on(table.sourceConnectorId),
+}));
 
 // Define relations for automations (linking back to connectors)
 export const automationsRelations = relations(automations, ({ one }) => ({
@@ -98,5 +165,78 @@ export const automationsRelations = relations(automations, ({ one }) => ({
     fields: [automations.sourceConnectorId], // Use the corrected field name here
     references: [connectors.id],
     relationName: 'sourceAutomations',
+  }),
+}));
+
+// --- NEW: Locations Table ---
+export const locations = sqliteTable("locations", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  parentId: text("parent_id").references((): AnySQLiteColumn => locations.id, { onDelete: 'cascade' }), // Self-referencing FK - Type is correct now
+  name: text("name").notNull(),
+  path: text("path").notNull(), // Materialized path (e.g., "rootId.childId.grandchildId")
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+    // Indexes
+    parentIdx: index("locations_parent_idx").on(table.parentId),
+    pathIdx: index("locations_path_idx").on(table.path), // Index for path-based queries
+}));
+
+// Relations for Locations (Self-referencing and to Areas)
+export const locationsRelations = relations(locations, ({ one, many }) => ({
+  parent: one(locations, { // Relation to parent location
+    fields: [locations.parentId],
+    references: [locations.id],
+    relationName: 'parentLocation',
+  }),
+  children: many(locations, { // Relation to child locations
+    relationName: 'parentLocation', // Must match the parent's relationName
+  }),
+  areas: many(areas), // Relation to Areas located within this Location
+}));
+
+// --- NEW: Areas Table ---
+export const areas = sqliteTable("areas", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  locationId: text("location_id").references(() => locations.id, { onDelete: 'cascade' }).notNull(),
+  name: text("name").notNull(),
+  armedState: text("armed_state").$type<ArmedState>().notNull().default(ArmedState.DISARMED),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+    locationIdx: index("areas_location_idx").on(table.locationId),
+}));
+
+// Relations for Areas (to Location and AreaDevices junction)
+export const areasRelations = relations(areas, ({ one, many }) => ({
+  location: one(locations, { // Relation back to the Location
+    fields: [areas.locationId],
+    references: [locations.id],
+  }),
+  areaDevices: many(areaDevices), // Relation to the junction table
+}));
+
+// --- NEW: AreaDevices Junction Table ---
+export const areaDevices = sqliteTable('area_devices', {
+  areaId: text('area_id').references(() => areas.id, { onDelete: 'cascade' }).notNull(),
+  deviceId: text('device_id').references(() => devices.id, { onDelete: 'cascade' }).notNull(), // FK to our internal devices.id
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  // Composite primary key
+  pk: primaryKey({ columns: [table.areaId, table.deviceId] }),
+  // Indexes for individual FKs can improve performance for certain queries
+  deviceIdx: index("area_devices_device_idx").on(table.deviceId),
+  areaIdx: index("area_devices_area_idx").on(table.areaId),
+}));
+
+// Relations for the AreaDevices junction table linking back to Areas and Devices
+export const areaDevicesRelations = relations(areaDevices, ({ one }) => ({
+  area: one(areas, {
+    fields: [areaDevices.areaId],
+    references: [areas.id],
+  }),
+  device: one(devices, {
+    fields: [areaDevices.deviceId],
+    references: [devices.id],
   }),
 }));

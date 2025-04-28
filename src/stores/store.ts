@@ -2,8 +2,8 @@ import { create } from 'zustand';
 import { produce, Draft, enableMapSet } from 'immer';
 import { PikoServer } from '@/types';
 import type { StandardizedEvent } from '@/types/events';
-import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype } from '@/lib/mappings/definitions';
-import type { DeviceWithConnector, ConnectorWithConfig } from '@/types';
+import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, ArmedState } from '@/lib/mappings/definitions';
+import type { DeviceWithConnector, ConnectorWithConfig, Location, Area, ApiResponse } from '@/types/index';
 import { YoLinkConfig } from '@/services/drivers/yolink';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 
@@ -88,6 +88,21 @@ interface FusionState {
   // Device state map: key = `${connectorId}:${deviceId}`
   deviceStates: Map<string, DeviceStateInfo>;
   
+  // All Devices List (NEW)
+  allDevices: DeviceWithConnector[];
+  isLoadingAllDevices: boolean;
+  errorAllDevices: string | null;
+
+  // --- NEW: Locations State ---
+  locations: Location[];
+  isLoadingLocations: boolean;
+  errorLocations: string | null;
+
+  // --- NEW: Areas State ---
+  areas: Area[];
+  isLoadingAreas: boolean;
+  errorAreas: string | null;
+  
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
   addConnector: (connector: ConnectorWithConfig) => void;
@@ -122,6 +137,24 @@ interface FusionState {
   // Action to bulk update device states after a sync operation
   setDeviceStatesFromSync: (syncedDevices: DeviceWithConnector[]) => void;
   fetchConnectors: () => Promise<void>;
+
+  // --- NEW: Location Actions ---
+  fetchLocations: () => Promise<void>;
+  addLocation: (data: { name: string; parentId?: string | null }) => Promise<Location | null>;
+  updateLocation: (id: string, data: { name?: string; parentId?: string | null }) => Promise<Location | null>;
+  deleteLocation: (id: string) => Promise<boolean>;
+
+  // --- NEW: Area Actions ---
+  fetchAreas: (locationId?: string | null) => Promise<void>;
+  addArea: (data: { name: string; locationId?: string | null }) => Promise<Area | null>;
+  updateArea: (id: string, data: { name?: string; locationId?: string | null }) => Promise<Area | null>;
+  deleteArea: (id: string) => Promise<boolean>;
+  updateAreaArmedState: (id: string, armedState: ArmedState) => Promise<Area | null>;
+  assignDeviceToArea: (areaId: string, deviceId: string) => Promise<boolean>;
+  removeDeviceFromArea: (areaId: string, deviceId: string) => Promise<boolean>;
+
+  // NEW: Fetch all devices 
+  fetchAllDevices: () => Promise<void>;
 }
 
 // Initial state for MQTT (default)
@@ -168,6 +201,21 @@ export const useFusionStore = create<FusionState>((set, get) => ({
 
   // Initial Device State map
   deviceStates: new Map<string, DeviceStateInfo>(),
+  
+  // NEW: All Devices State
+  allDevices: [], 
+  isLoadingAllDevices: false,
+  errorAllDevices: null,
+
+  // NEW: Location State
+  locations: [],
+  isLoadingLocations: false,
+  errorLocations: null,
+
+  // NEW: Area State
+  areas: [],
+  isLoadingAreas: false,
+  errorAreas: null,
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -311,23 +359,262 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   }),
 
   fetchConnectors: async () => {
-    set({ isLoading: true });
-    console.log('[FusionStore] Fetching connectors...');
+    set({ isLoading: true, error: null });
     try {
       const response = await fetch('/api/connectors');
-      const data = await response.json();
+        const data: ApiResponse<ConnectorWithConfig[]> = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Failed to fetch connectors');
+        }
+        set({ connectors: data.data || [], isLoading: false });
+        console.log('[FusionStore] Connectors loaded:', data.data);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        console.error('[FusionStore] Error fetching connectors:', message);
+        set({ error: message, isLoading: false, connectors: [] });
+    }
+  },
+
+  // --- NEW: Location Actions ---
+  fetchLocations: async () => {
+    set({ isLoadingLocations: true, errorLocations: null });
+    try {
+      const response = await fetch('/api/locations');
+      const data: ApiResponse<Location[]> = await response.json();
       if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to fetch connectors');
+        throw new Error(data.error || 'Failed to fetch locations');
       }
-      if (data.data && Array.isArray(data.data)) {
-        set({ connectors: data.data as ConnectorWithConfig[], isLoading: false });
-        console.log('[FusionStore] Connectors loaded into store:', data.data);
+      set({ locations: data.data || [], isLoadingLocations: false });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error("Error fetching locations:", message);
+      set({ isLoadingLocations: false, errorLocations: message });
+    }
+  },
+  addLocation: async (locationData) => {
+    // No loading state change here, component can handle it
+    try {
+      const response = await fetch('/api/locations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(locationData)
+      });
+      const data: ApiResponse<Location> = await response.json();
+      if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || 'Failed to create location');
+      }
+      const newLocation = data.data;
+      set((state) => ({ 
+        locations: [...state.locations, newLocation].sort((a, b) => a.path.localeCompare(b.path)),
+      }));
+      return newLocation;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error("Error adding location:", message);
+      set({ errorLocations: message }); // Set error state
+      return null;
+    }
+  },
+  updateLocation: async (id, locationData) => {
+     try {
+      const response = await fetch(`/api/locations/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(locationData)
+      });
+      const data: ApiResponse<Location> = await response.json();
+       if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || 'Failed to update location');
+      }
+      const updatedLocation = data.data;
+       // If parentId changed, paths of descendants might have changed too, refetch all
+      if (locationData.parentId !== undefined) {
+        await get().fetchLocations(); // Trigger refetch
       } else {
-        set({ connectors: [], isLoading: false });
-        console.warn('[FusionStore] Connector fetch returned no data.');
+         set((state) => ({ 
+            locations: state.locations.map(loc => loc.id === id ? updatedLocation : loc).sort((a, b) => a.path.localeCompare(b.path)),
+          }));
       }
-    } catch (error) {      console.error('[FusionStore] Error fetching connectors:', error);
-      set({ error: error instanceof Error ? error.message : 'Unknown error fetching connectors', connectors: [], isLoading: false });
+      return updatedLocation;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error updating location ${id}:`, message);
+      set({ errorLocations: message });
+      return null;
+    }
+  },
+   deleteLocation: async (id) => {
+    try {
+      const response = await fetch(`/api/locations/${id}`, { method: 'DELETE' });
+      const data: ApiResponse<{ id: string }> = await response.json();
+       if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to delete location');
+      }
+      // Refetch all locations after delete to reflect changes (including cascades)
+      await get().fetchLocations(); 
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error deleting location ${id}:`, message);
+      set({ errorLocations: message });
+      return false;
+    }
+  },
+
+  // --- NEW: Area Actions ---
+  fetchAreas: async (locationId) => {
+    set({ isLoadingAreas: true, errorAreas: null });
+    try {
+      const url = locationId ? `/api/areas?locationId=${locationId}` : '/api/areas';
+      const response = await fetch(url);
+      const data: ApiResponse<Area[]> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch areas');
+      }
+      set({ areas: data.data || [], isLoadingAreas: false });
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error("Error fetching areas:", message);
+       set({ isLoadingAreas: false, errorAreas: message });
+    }
+  },
+  addArea: async (areaData) => {
+     try {
+      const response = await fetch('/api/areas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(areaData)
+      });
+      const data: ApiResponse<Area> = await response.json();
+      if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || 'Failed to create area');
+      }
+       const newArea = data.data;
+      set((state) => ({ areas: [...state.areas, newArea].sort((a, b) => a.name.localeCompare(b.name)) }));
+      return newArea;
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error("Error adding area:", message);
+       set({ errorAreas: message });
+       return null;
+    }
+  },
+  updateArea: async (id, areaData) => {
+    try {
+      const response = await fetch(`/api/areas/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(areaData)
+      });
+      const data: ApiResponse<Area> = await response.json();
+       if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || 'Failed to update area');
+      }
+      const updatedArea = data.data;
+      set((state) => ({ 
+        areas: state.areas.map(area => area.id === id ? updatedArea : area).sort((a, b) => a.name.localeCompare(b.name)),
+      }));
+      return updatedArea;
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error(`Error updating area ${id}:`, message);
+       set({ errorAreas: message });
+       return null;
+    }
+  },
+  deleteArea: async (id) => {
+     try {
+      const response = await fetch(`/api/areas/${id}`, { method: 'DELETE' });
+      const data: ApiResponse<{ id: string }> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to delete area');
+      }
+      set((state) => ({ 
+        areas: state.areas.filter(area => area.id !== id),
+      }));
+      return true;
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error(`Error deleting area ${id}:`, message);
+       set({ errorAreas: message });
+       return false;
+    }
+  },
+  updateAreaArmedState: async (id, armedState) => {
+    try {
+      const response = await fetch(`/api/areas/${id}/arm-state`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ armedState })
+      });
+      const data: ApiResponse<Area> = await response.json();
+       if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || 'Failed to update armed state');
+      }
+       const updatedArea = data.data;
+      set((state) => ({ 
+        areas: state.areas.map(area => area.id === id ? updatedArea : area),
+      }));
+      return updatedArea;
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error(`Error updating armed state for ${id}:`, message);
+       set({ errorAreas: message });
+       return null;
+    }
+  },
+  assignDeviceToArea: async (areaId, deviceId) => {
+     try {
+        const response = await fetch(`/api/areas/${areaId}/devices`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId })
+        });
+        const data: ApiResponse<{ areaId: string, deviceId: string }> = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Failed to assign device');
+        }
+        // Optionally update device/area state if needed, or trigger refetch in component
+        return true;
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error(`Error assigning device ${deviceId} to area ${areaId}:`, message);
+       // Set specific error state?
+       return false;
+    }
+  },
+  removeDeviceFromArea: async (areaId, deviceId) => {
+    try {
+         const response = await fetch(`/api/areas/${areaId}/devices/${deviceId}`, { method: 'DELETE' });
+        const data: ApiResponse<{ areaId: string, deviceId: string }> = await response.json();
+         if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Failed to remove device');
+        }
+         // Optionally update device/area state if needed, or trigger refetch in component
+        return true;
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error(`Error removing device ${deviceId} from area ${areaId}:`, message);
+        // Set specific error state?
+       return false;
+    }
+  },
+
+  // NEW: Fetch all devices 
+  fetchAllDevices: async () => {
+    set({ isLoadingAllDevices: true, errorAllDevices: null });
+    try {
+      const response = await fetch('/api/devices'); // Assuming this is the endpoint
+      const data: ApiResponse<DeviceWithConnector[]> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch devices');
+      }
+      set({ allDevices: data.data || [], isLoadingAllDevices: false });
+      console.log('[FusionStore] All devices loaded:', data.data?.length);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error("Error fetching all devices:", message);
+      set({ isLoadingAllDevices: false, errorAllDevices: message, allDevices: [] });
     }
   },
 })); 
