@@ -135,8 +135,8 @@ importers:
         specifier: ^10.0.1
         version: 10.0.1
       mqtt:
-        specifier: ^5.11.0
-        version: 5.11.1(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+        specifier: ^5.12.0
+        version: 5.12.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       next:
         specifier: ^15.0.0
         version: 15.3.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -165,8 +165,8 @@ importers:
         specifier: ^2.1.7
         version: 2.1.9(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react-router-dom:
-        specifier: ^7.5.1
-        version: 7.5.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: ^7.5.3
+        version: 7.5.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react-syntax-highlighter:
         specifier: ^15.6.1
         version: 15.6.1(react@18.3.1)
@@ -2838,8 +2838,8 @@ packages:
   mqtt-packet@9.0.2:
     resolution: {integrity: sha512-MvIY0B8/qjq7bKxdN1eD+nrljoeaai+qjLJgfRn3TiMuz0pamsIWY2bFODPZMSNmabsLANXsLl4EMoWvlaTZWA==}
 
-  mqtt@5.11.1:
-    resolution: {integrity: sha512-GHDhnWW/npS6KTnmfcbmfIC9GNkNt7bx7AL6M4TUAIPbBNA454LTYXyp09P0OcaDuSrWS9U0XXicuRgBslbdhA==}
+  mqtt@5.12.0:
+    resolution: {integrity: sha512-IKx8q4/0P0VfM/skx03CPMBMBgT9BZoVIMTev9rpauJUm36dW2/Mo3xFBZNt3kaS/4wX/Fsn6x/tbofDRpXiLw==}
     engines: {node: '>=16.0.0'}
     hasBin: true
 
@@ -3185,15 +3185,15 @@ packages:
       react: ^16.14.0 || ^17.0.0 || ^18.0.0 || ^19.0.0 || ^19.0.0-rc
       react-dom: ^16.14.0 || ^17.0.0 || ^18.0.0 || ^19.0.0 || ^19.0.0-rc
 
-  react-router-dom@7.5.2:
-    resolution: {integrity: sha512-yk1XW8Fj7gK7flpYBXF3yzd2NbX6P7Kxjvs2b5nu1M04rb5pg/Zc4fGdBNTeT4eDYL2bvzWNyKaIMJX/RKHTTg==}
+  react-router-dom@7.5.3:
+    resolution: {integrity: sha512-cK0jSaTyW4jV9SRKAItMIQfWZ/D6WEZafgHuuCb9g+SjhLolY78qc+De4w/Cz9ybjvLzShAmaIMEXt8iF1Cm+A==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       react: '>=18'
       react-dom: '>=18'
 
-  react-router@7.5.2:
-    resolution: {integrity: sha512-9Rw8r199klMnlGZ8VAsV/I8WrIF6IyJ90JQUdboupx1cdkgYqwnrYjH+I/nY/7cA1X5zia4mDJqH36npP7sxGQ==}
+  react-router@7.5.3:
+    resolution: {integrity: sha512-3iUDM4/fZCQ89SXlDa+Ph3MevBrozBAI655OAfWQlTm9nBR0IKlrmNwFow5lPHttbwvITZfkeeeZFP6zt3F7pw==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       react: '>=18'
@@ -6318,7 +6318,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  mqtt@5.11.1(bufferutil@4.0.9)(utf-8-validate@5.0.10):
+  mqtt@5.12.0(bufferutil@4.0.9)(utf-8-validate@5.0.10):
     dependencies:
       commist: 3.2.0
       concat-stream: 2.0.0
@@ -6676,13 +6676,13 @@ snapshots:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
 
-  react-router-dom@7.5.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  react-router-dom@7.5.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-      react-router: 7.5.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      react-router: 7.5.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
 
-  react-router@7.5.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  react-router@7.5.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       cookie: 1.0.2
       react: 18.3.1
