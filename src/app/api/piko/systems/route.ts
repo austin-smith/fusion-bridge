@@ -2,14 +2,12 @@ import { NextResponse } from 'next/server';
 import {
     getAccessToken,
     getSystems,
-    // testLocalPikoConnection, // Import the (planned) local test function
+    testLocalPikoConnection, // Import the function directly
     PikoApiError,
     PikoConfig,
     PikoTokenResponse
 } from '@/services/drivers/piko';
-// Temp import for planned function type
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import type { testLocalPikoConnection as testLocalPikoConnectionTypeDefinition } from '@/services/drivers/piko';
+// REMOVED temporary type import
 import { mapPikoErrorResponse } from '@/lib/api-utils'; // Import the shared helper
 
 /**
@@ -77,12 +75,8 @@ export async function POST(request: Request) {
         console.log(`[Piko API /systems] Processing LOCAL request for host: ${host}:${port}`);
         const config: PikoConfig = { type: 'local', username, password, host: host!, port: port!, ignoreTlsErrors: ignoreTlsErrors || false }; // Include TLS flag
 
-        // Call the driver function to test local connection and get token
-        // TODO: Remove type assertion when testLocalPikoConnection is implemented
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { testLocalPikoConnection } = require('@/services/drivers/piko'); // Temporary require
-        const testLocalPikoConnectionFn = testLocalPikoConnection as unknown as typeof testLocalPikoConnectionTypeDefinition;
-        const testResult = await testLocalPikoConnectionFn(config);
+        // Call the driver function directly
+        const testResult = await testLocalPikoConnection(config);
 
         // testLocalPikoConnection should return { connected: boolean, message?: string, token?: PikoTokenResponse }
         if (testResult.connected && testResult.token) {

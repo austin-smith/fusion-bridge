@@ -892,7 +892,7 @@ export default function LocationsAreasPage() {
                                 <CardDescription>These areas are not linked to any specific location.</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                {areasByLocation['unassigned'].map(area => renderAreaCard(area))} // Use ORIGINAL areas
+                                {areasByLocation['unassigned'].map(area => renderAreaCard(area))}
                             </CardContent>
                         </Card>
                     )}
@@ -913,9 +913,10 @@ export default function LocationsAreasPage() {
                                  }
                                </CardTitle>
                                <CardDescription className="mb-6 max-w-md">
-                                 {hasOriginalData && searchTerm !== '' 
+                                 {hasOriginalData && searchTerm !== ''
                                   ? "No locations match your search term. Try adjusting your filter."
-                                  : <>Locations represent physical buildings or sites... {/* rest of original message */}
+                                  : // Locations represent physical buildings or sites...
+                                    <>
                                      <br/>Use them to organize your devices and control security by zone.
                                    </>
                                  }

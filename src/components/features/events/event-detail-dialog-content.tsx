@@ -198,10 +198,6 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
       cameraId: event.bestShotUrlComponents?.cameraId,
       positionMs: event.timestamp
   };
-  // Check if all necessary props are available before attempting to render player
-  // For local, pikoSystemId is intentionally undefined, which is okay for the player if it handles it
-  // *** ADD CHECK FOR cameraId ***
-  const canRenderPlayer = !!(pikoVideoProps.connectorId && pikoVideoProps.cameraId && pikoVideoProps.positionMs !== undefined);
 
   return (
     <Dialog>
@@ -261,10 +257,17 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                   </div>
                   {/* Conditionally render Player or Thumbnail */}
                   {showVideoPlayer ? (
-                    canRenderPlayer ? (
-                      <PikoVideoPlayer {...pikoVideoProps} />
+                    pikoVideoProps.connectorId &&
+                    event.bestShotUrlComponents &&
+                    event.bestShotUrlComponents.cameraId &&
+                    pikoVideoProps.positionMs !== undefined ? (
+                      <PikoVideoPlayer 
+                        connectorId={pikoVideoProps.connectorId}
+                        pikoSystemId={pikoVideoProps.pikoSystemId}
+                        cameraId={event.bestShotUrlComponents.cameraId} 
+                        positionMs={pikoVideoProps.positionMs}
+                      />
                     ) : (
-                      // Display error if essential props are missing
                       <div className="aspect-video bg-muted rounded-md flex items-center justify-center text-destructive p-4 text-center">
                          <AlertCircle className="h-8 w-8 mb-2" />
                          <span className="text-sm">Cannot load video: Missing required event information (IDs or timestamp).</span>

@@ -1,5 +1,14 @@
 import { Readable } from 'stream';
 
+// --- Dynamically import https for optional TLS ignore --- 
+let httpsModule: typeof import('https') | undefined;
+import('https').then(mod => {
+    httpsModule = mod;
+}).catch(e => {
+    console.warn("Failed to dynamically import 'https' module. TLS verification cannot be disabled.", e);
+});
+// --- End dynamic import --- 
+
 // Base URL for Piko Cloud API
 const PIKO_CLOUD_URL = 'https://cloud.pikovms.com';
 
@@ -149,14 +158,6 @@ export class PikoApiError extends Error {
       Error.captureStackTrace(this, PikoApiError);
     }
   }
-}
-
-// Load https module conditionally
-let https: typeof import('https') | undefined;
-try {
-    https = require('https');
-} catch (e) {
-    console.warn("Could not import https module. TLS verification cannot be disabled.");
 }
 
 /**
@@ -441,10 +442,10 @@ async function fetchPikoApiData(
   }
   
   // --- Conditional Execution: Use https.request for local+ignoreTlsErrors --- 
-  if (config.type === 'local' && config.ignoreTlsErrors && https && config.host && config.port) {
+  if (config.type === 'local' && config.ignoreTlsErrors && httpsModule && config.host && config.port) {
     console.warn(`[Piko Driver] Using https.request (TLS ignored) for: ${method} ${url.toString()}`);
     
-    const agent = new https.Agent({ rejectUnauthorized: false });
+    const agent = new httpsModule.Agent({ rejectUnauthorized: false });
     const requestBody = (body && (method === 'POST' || method === 'PUT')) ? JSON.stringify(body) : '';
     
     const options: import('https').RequestOptions = {
@@ -465,7 +466,7 @@ async function fetchPikoApiData(
     };
 
     return new Promise((resolve, reject) => {
-      const req = https!.request(options, (res) => {
+      const req = httpsModule!.request(options, (res) => {
         let responseBody = '';
         const statusCode = res.statusCode ?? 0;
 
@@ -542,16 +543,12 @@ async function fetchPikoApiData(
      // --- Original Execution: Use fetch for cloud or local without ignoreTlsErrors --- 
      console.log(`[Piko Driver] Using fetch for: ${method} ${url.toString()}`);
      
-     // Create custom agent only if ignoreTlsErrors is true and https module is available
-     // THIS BLOCK IS NOW ONLY THEORETICALLY REACHED IF https MODULE IS *NOT* AVAILABLE
-     // OR if ignoreTlsErrors is false. fetch should handle valid certs fine.
      let agent: import('https').Agent | undefined = undefined;
-     if (config.type === 'local' && config.ignoreTlsErrors && https) {
+     if (config.type === 'local' && config.ignoreTlsErrors && httpsModule) {
          console.warn(`[Piko Driver] Disabling TLS certificate validation for local API request to ${config.host}:${config.port} (via fetch agent)`);
-         agent = new https.Agent({ rejectUnauthorized: false });
-     } else if (config.type === 'local' && config.ignoreTlsErrors && !https) {
+         agent = new httpsModule.Agent({ rejectUnauthorized: false });
+     } else if (config.type === 'local' && config.ignoreTlsErrors && !httpsModule) {
          console.error("[Piko Driver] Cannot ignore TLS errors via fetch: https module not available.");
-         // Consider throwing an error here if strict TLS ignoring is required but impossible
      }
 
      try {
@@ -1025,13 +1022,13 @@ async function _fetchPikoLocalToken(
 ): Promise<PikoTokenResponse> {
   const { host, port, username, password, ignoreTlsErrors } = config;
   console.log(`_fetchPikoLocalToken using https.request for local host: ${host}:${port}`);
-  if (!https || !host || !port || !username || !password) throw new PikoApiError('...');
+  if (!httpsModule || !host || !port || !username || !password) throw new PikoApiError('Missing required parameters or https module for local token fetch.', { statusCode: 500 });
   const url = `https://${host}:${port}/rest/v3/login/sessions`;
   const requestBody = JSON.stringify({ username, password });
   let agent: import('https').Agent | undefined = undefined;
-  if (ignoreTlsErrors && https) {
+  if (ignoreTlsErrors && httpsModule) {
       console.warn(`[Piko Driver] Disabling TLS certificate validation for local connection to ${host}:${port}`);
-      agent = new https.Agent({ rejectUnauthorized: false });
+      agent = new httpsModule.Agent({ rejectUnauthorized: false });
   }
   const options: import('https').RequestOptions = {
     hostname: host, port: port, path: '/rest/v3/login/sessions', method: 'POST',
@@ -1039,7 +1036,7 @@ async function _fetchPikoLocalToken(
     agent: agent, 
   };
   return new Promise((resolve, reject) => { 
-    const req = https!.request(options, (res) => { /* ... response handling ... */ 
+    const req = httpsModule!.request(options, (res) => { /* ... response handling ... */ 
          let responseBody = '';
          const statusCode = res.statusCode ?? 0;
          res.setEncoding('utf8');
@@ -1255,10 +1252,10 @@ async function _makePikoRequest(
   // --- End Header Preparation ---
 
   // --- Conditional Execution: Use https.request for local+ignoreTlsErrors --- 
-  if (config.type === 'local' && config.ignoreTlsErrors && https && config.host && config.port) {
+  if (config.type === 'local' && config.ignoreTlsErrors && httpsModule && config.host && config.port) {
     console.warn(`${logPrefix} Using https.request (TLS ignored) for: ${method} ${url.toString()}`);
     
-    const agent = new https.Agent({ rejectUnauthorized: false });
+    const agent = new httpsModule.Agent({ rejectUnauthorized: false });
     
     // Prepare OutgoingHttpHeaders from headersToUse
     const outgoingHeaders: import('http').OutgoingHttpHeaders = {};
@@ -1282,7 +1279,7 @@ async function _makePikoRequest(
     };
 
     return new Promise((resolve, reject) => {
-        const req = https!.request(options, (res) => {
+        const req = httpsModule!.request(options, (res) => {
             const statusCode = res.statusCode ?? 0;
             const contentType = res.headers['content-type'];
             console.log(`${logPrefix} https.request response status: ${statusCode}`);
