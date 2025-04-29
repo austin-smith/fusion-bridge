@@ -3,12 +3,57 @@ import { z } from 'zod';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import * as pikoDriver from '@/services/drivers/piko';
 import * as geneaDriver from '@/services/drivers/genea';
+import type { PikoConfig } from '@/services/drivers/piko';
+import type { YoLinkConfig } from '@/services/drivers/yolink';
 
-// Schema for test connection request
-const testConnectionSchema = z.object({
-  driver: z.enum(['yolink', 'piko', 'genea']),
-  config: z.record(z.any()),
+// Define specific config schemas required for testing
+const TestYoLinkConfigSchema = z.object({
+  uaid: z.string().min(1, "UAID is required"),
+  clientSecret: z.string().min(1, "Client Secret is required"),
 });
+
+const TestPikoCloudConfigSchema = z.object({
+  type: z.literal('cloud').optional(), // Optional on input, will default if missing
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+});
+
+const TestPikoLocalConfigSchema = z.object({
+  type: z.literal('local'),
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+  host: z.string().min(1, "Host is required"),
+  port: z.number().int().min(1).max(65535, "Invalid port number"),
+  ignoreTlsErrors: z.boolean().optional(), // Add TLS ignore flag for testing
+});
+
+// Discriminated union for Piko test config
+const TestPikoConfigSchema = z.discriminatedUnion("type", [
+  TestPikoCloudConfigSchema,
+  TestPikoLocalConfigSchema
+]);
+
+const TestGeneaConfigSchema = z.object({
+  apiKey: z.string().min(1, "API Key is required"),
+});
+
+// Schema for the overall test connection request using discriminated union based on driver
+const testConnectionSchema = z.discriminatedUnion("driver", [
+  z.object({
+    driver: z.literal('yolink'),
+    config: TestYoLinkConfigSchema,
+  }),
+  z.object({
+    driver: z.literal('piko'),
+    // We need to handle the case where 'type' might be missing or incorrect before passing to Piko union
+    // Use a preprocess step or a refinement later
+    config: z.record(z.any()), // Keep as record for now, refine inside route
+  }),
+  z.object({
+    driver: z.literal('genea'),
+    config: TestGeneaConfigSchema,
+  }),
+]);
 
 export async function POST(request: Request) {
   try {
@@ -23,10 +68,15 @@ export async function POST(request: Request) {
       );
     }
     
-    const { driver, config } = result.data;
+    // Type assertion needed because Piko config parsing is handled separately below
+    const { driver, config } = result.data as { 
+        driver: 'yolink' | 'piko' | 'genea'; 
+        config: any; // Use any here, specific parsing happens below
+    };
     let success = false;
     let message: string | null = null;
     let errorMessage: string | null = null;
+    let validatedPikoConfig: PikoConfig | null = null; // To store validated Piko config
     
     // Dispatch to the appropriate driver
     try {
@@ -37,26 +87,43 @@ export async function POST(request: Request) {
           clientSecret: config.clientSecret ? '[REDACTED]' : 'missing'
         });
         
-        // Validate the YoLink config
-        if (!config.uaid || !config.clientSecret) {
-          console.error('Missing YoLink credentials');
-          errorMessage = 'Missing YoLink credentials (UAID or Client Secret)';
-          success = false;
-        } else {
-          // Test the connection - we no longer fetch home ID here
-          success = await yolinkDriver.testConnection(config as yolinkDriver.YoLinkConfig);
-          if (success) message = "YoLink connection successful!";
-        }
+        // Validation is done by Zod schema now
+        const validatedConfig = config as z.infer<typeof TestYoLinkConfigSchema>;
+        // Test the connection
+        success = await yolinkDriver.testConnection(validatedConfig as YoLinkConfig);
+        if (success) message = "YoLink connection successful!";
       } else if (driver === 'piko') {
         console.log('Testing Piko connection with config type:', config.type);
-        const pikoResult = await pikoDriver.testConnection(config as pikoDriver.PikoConfig);
-        success = pikoResult.connected;
-        if (success) message = "Piko connection successful!";
-        // Piko test doesn't return a detailed error message currently
+        
+        // Manually parse/validate Piko config because the type field dictates the schema
+        const pikoConfigParse = TestPikoConfigSchema.safeParse({
+            // Ensure 'type' is present for discriminated union, default to cloud if missing
+            type: config?.type === 'local' ? 'local' : 'cloud',
+            ...config 
+        });
+
+        if (!pikoConfigParse.success) {
+            // Aggregate Zod errors into a single message
+            errorMessage = pikoConfigParse.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('; ');
+            success = false;
+            console.error('Piko Config Validation Error:', errorMessage);
+        } else {
+            validatedPikoConfig = pikoConfigParse.data as PikoConfig; // Use validated data
+            const pikoResult = await pikoDriver.testConnection(validatedPikoConfig);
+            success = pikoResult.connected;
+            // Use the message returned by the driver
+            if (success) {
+                message = pikoResult.message || 'Piko connection successful!';
+            } else {
+                errorMessage = pikoResult.message || 'Piko connection failed.';
+            }
+        }
 
       } else if (driver === 'genea') {
         console.log('Testing Genea connection...');
-        const geneaResult = await geneaDriver.testGeneaConnection(config);
+        // Validation done by Zod schema
+        const validatedConfig = config as z.infer<typeof TestGeneaConfigSchema>;
+        const geneaResult = await geneaDriver.testGeneaConnection(validatedConfig);
         success = geneaResult.success;
         if (success) {
           message = geneaResult.message || 'Genea connection successful!';

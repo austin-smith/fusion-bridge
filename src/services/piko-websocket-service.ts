@@ -5,7 +5,7 @@ import { db } from '@/data/db';
 import { connectors } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import { Connector } from '@/types';
-import { PikoConfig, PikoTokenResponse, getSystemScopedAccessToken, PikoDeviceRaw, getSystemDevices, PikoJsonRpcSubscribeRequest } from '@/services/drivers/piko';
+import { PikoConfig, PikoTokenResponse, getToken, PikoDeviceRaw, getSystemDevices, PikoJsonRpcSubscribeRequest } from '@/services/drivers/piko';
 import { parsePikoEvent } from '@/lib/event-parsers/piko';
 import * as eventsRepository from '@/data/repositories/events';
 import { useFusionStore } from '@/stores/store';
@@ -106,13 +106,13 @@ export function getAllPikoWebSocketStates(): Map<string, PikoWebSocketState> {
 
 /** Fetches Piko devices and updates the connection state map */
 async function _fetchAndStoreDeviceMap(state: PikoWebSocketConnection): Promise<void> {
-    if (!state.systemId || !state.tokenInfo?.accessToken) {
-        console.error(`[${state.connectorId}][_fetchAndStoreDeviceMap] Missing systemId or access token.`);
+    if (!state.config || !state.tokenInfo?.accessToken) {
+        console.error(`[${state.connectorId}][_fetchAndStoreDeviceMap] Missing config or access token.`);
         return;
     }
     try {
-        console.log(`[${state.connectorId}] Fetching system devices for ${state.systemId}...`);
-        const devices = await getSystemDevices(state.systemId, state.tokenInfo.accessToken);
+        console.log(`[${state.connectorId}] Fetching system devices (${state.config.type})...`);
+        const devices = await getSystemDevices(state.config, state.tokenInfo.accessToken);
         state.deviceGuidMap = new Map(devices.map(d => [d.id, d]));
         console.log(`[${state.connectorId}] Stored device map with ${state.deviceGuidMap.size} devices.`);
         connections.set(state.connectorId, state); // Update the global map
@@ -131,8 +131,8 @@ ${error.stack}`);
 function _startPeriodicDeviceRefresh(state: PikoWebSocketConnection): void {
     _stopPeriodicDeviceRefresh(state); 
 
-    if (!state.systemId) {
-        console.error(`[${state.connectorId}][_startPeriodicDeviceRefresh] Cannot start refresh without systemId.`);
+    if (!state.config) {
+        console.error(`[${state.connectorId}][_startPeriodicDeviceRefresh] Cannot start refresh without config.`);
         return;
     }
 
@@ -194,7 +194,6 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
 
     let dbConnector: Connector | undefined;
     let pikoConfig: PikoConfig | undefined;
-    let systemId: string | undefined;
 
     try {
         // 1. Fetch connector from DB
@@ -211,17 +210,21 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
 
         try {
             pikoConfig = JSON.parse(dbConnector.cfg_enc);
-            if (!pikoConfig?.username || !pikoConfig?.password || !pikoConfig?.selectedSystem) {
-                throw new Error('Missing username, password, or selectedSystem in config');
+            if (!pikoConfig?.type || !pikoConfig?.username || !pikoConfig?.password) {
+                throw new Error('Invalid or incomplete Piko configuration (missing type, username, or password)');
             }
-            systemId = pikoConfig.selectedSystem;
+            if (pikoConfig.type === 'cloud' && !pikoConfig.selectedSystem) {
+                throw new Error('Missing selectedSystem in Piko cloud config');
+            } else if (pikoConfig.type === 'local' && (!pikoConfig.host || !pikoConfig.port)) {
+                throw new Error('Missing host or port in Piko local config');
+            }
         } catch (e) {
-            throw new Error(`Failed to parse config or missing required fields: ${e instanceof Error ? e.message : String(e)}`);
+            throw new Error(`Failed to parse Piko config or missing required fields: ${e instanceof Error ? e.message : String(e)}`);
         }
 
         // Update state with latest DB info
         state.config = pikoConfig;
-        state.systemId = systemId;
+        state.systemId = pikoConfig.type === 'cloud' ? pikoConfig.selectedSystem ?? null : null;
         state.disabled = !dbConnector.eventsEnabled;
         connections.set(connectorId, state);
         
@@ -233,9 +236,16 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
         }
 
         // 5. Manage existing connection state 
-        // Disconnect if already connected but system ID changed, or if connection object is missing but client exists
-        if (state.connection?.connected && state.systemId !== systemId) {
-             console.log(`[initPikoWebSocket][${connectorId}] System ID changed. Reconnecting.`);
+        let configChanged = false;
+        if (state.connection?.connected && state.config) {
+            if (state.config.type !== pikoConfig.type) configChanged = true;
+            else if (state.config.type === 'cloud' && state.config.selectedSystem !== pikoConfig.selectedSystem) configChanged = true;
+            else if (state.config.type === 'local' && (state.config.host !== pikoConfig.host || state.config.port !== pikoConfig.port)) configChanged = true;
+            else if (state.config.username !== pikoConfig.username || state.config.password !== pikoConfig.password) configChanged = true;
+        }
+
+        if (state.connection?.connected && configChanged) {
+             console.log(`[initPikoWebSocket][${connectorId}] Piko configuration changed. Reconnecting.`);
              await disconnectPikoWebSocket(connectorId); 
              state = connections.get(connectorId)!; // Get potentially updated state
         } else if (!state.connection && state.client) {
@@ -247,14 +257,14 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
         }
 
         // If already connected and config matches, do nothing
-        if (state.connection?.connected && state.systemId === systemId) {
-             console.log(`[initPikoWebSocket][${connectorId}] Already connected to the correct system.`);
+        if (state.connection?.connected && !configChanged) {
+             console.log(`[initPikoWebSocket][${connectorId}] Already connected with matching configuration.`);
              return true;
         }
 
         // --- Start Connection Attempt --- 
         if (!state.connection && !state.disabled && !state.isAttemptingConnection) {
-            console.log(`[initPikoWebSocket][${connectorId}] Attempting WebSocket connection to system ${systemId}...`);
+            console.log(`[initPikoWebSocket][${connectorId}] Attempting WebSocket connection (${state.config?.type})...`);
             state.isAttemptingConnection = true; // Set flag
             state.connectionError = null;
             connections.set(connectorId, state);
@@ -280,11 +290,11 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                     // 1. Get Token
                     let currentToken = currentState.tokenInfo?.accessToken;
                     if (!currentToken) {
-                        console.log(`[${connectorId}] Fetching new system-scoped token...`);
-                        if (!currentState.config?.username || !currentState.config?.password || !currentState.systemId) {
-                            throw new Error("Missing credentials or systemId for token fetch.");
+                        console.log(`[${connectorId}] Fetching new Piko token (${currentState.config?.type})...`);
+                        if (!currentState.config) {
+                            throw new Error("Piko config missing in state during token fetch.");
                         }
-                        currentState.tokenInfo = await getSystemScopedAccessToken(currentState.config.username, currentState.config.password, currentState.systemId);
+                        currentState.tokenInfo = await getToken(currentState.config);
                         currentToken = currentState.tokenInfo.accessToken;
                         connections.set(connectorId, currentState); 
                         console.log(`[${connectorId}] Token obtained.`);
@@ -292,17 +302,31 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                     const accessToken = currentToken;
                     if (!accessToken) throw new Error("Failed to obtain valid access token.");
 
-                    // 2. Construct URL and Headers
-                    const wsUrl = `wss://${currentState.systemId}.relay.vmsproxy.com/jsonrpc`;
+                    // 2. Construct URL, Headers, Origin, and potentially TLS Options
+                    let wsUrl: string;
+                    if (currentState.config?.type === 'local') {
+                        wsUrl = `wss://${currentState.config.host}:${currentState.config.port}/jsonrpc`; // Assuming WSS
+                    } else if (currentState.config?.type === 'cloud' && currentState.config.selectedSystem) {
+                        wsUrl = `wss://${currentState.config.selectedSystem}.relay.vmsproxy.com/jsonrpc`;
+                    } else {
+                        throw new Error("Cannot determine WebSocket URL: Invalid config state.");
+                    }
                     const headers = { 'Authorization': `Bearer ${accessToken}` };
+                    // Explicitly set origin based on the wsUrl
+                    const origin = new URL(wsUrl).origin;
+
+                    // Prepare TLS options ONLY if ignoring errors AND it's a local connection
+                    let tlsOptions: any | undefined = undefined;
+                    if (currentState.config?.type === 'local' && currentState.config?.ignoreTlsErrors) {
+                        console.warn(`[${connectorId}] Configuring WebSocket client to ignore TLS certificate validation for local connection.`);
+                        tlsOptions = { rejectUnauthorized: false };
+                    } else if (currentState.config?.type === 'cloud' && currentState.config?.ignoreTlsErrors) {
+                        // Log a warning if ignoreTlsErrors is true for a cloud connection, but DO NOT set tlsOptions
+                        console.warn(`[${connectorId}] WARNING: ignoreTlsErrors is set to true for a cloud connection, but TLS validation will NOT be disabled.`);
+                    }
 
                     // 3. Create Client Instance (if needed)
-                    // Reuse existing client if available and not connected? No, create new for clean attempt.
-                    currentState.client = new WebSocketClient({
-                        // Options for the client itself (e.g., timeouts)
-                        // assembleFragments: true, // Default is true
-                        // fragmentOutgoingMessages: true, // Default is true
-                    });
+                    currentState.client = new WebSocketClient(); 
                     const client = currentState.client; // Local reference
 
                     // 4. Start Connection Timeout
@@ -325,16 +349,16 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                          if (connectTimeoutId) clearTimeout(connectTimeoutId);
                          
                          const latestState = connections.get(connectorId);
-                         // Check if state is still valid for this connection
-                         if (!latestState || latestState.disabled || !latestState.isAttemptingConnection || latestState.connection) {
-                             console.warn(`[${connectorId}][connect] Connection established but state is invalid or already connected. Closing this connection.`);
-                             connection.close(); // Close the redundant connection
-                             // Don't reject, let the existing state prevail
-                             return; 
+                         // Check if state is valid, not disabled, and connection slot is free
+                         if (!latestState || latestState.disabled || latestState.connection) {
+                              console.warn(`[${connectorId}][connect] Connection established but state is invalid or already connected. Closing this connection.`);
+                              connection.close(); // Close the redundant connection
+                              // Don't reject, let the existing state prevail
+                              return; 
                          }
 
                          console.log(`[${connectorId}] WebSocket connection established.`);
-                         latestState.connection = connection; // Store the active connection
+                         latestState.connection = connection; // Store the active connection NOW
                          latestState.isAttemptingConnection = false; // Clear flag
                          latestState.connectionError = null;
                          latestState.reconnectAttempts = 0;
@@ -428,13 +452,22 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                      });
 
                     // 6. Initiate Connection
-                    // Origin and protocol are often optional for wss
-                    client.connect(wsUrl, undefined, undefined, headers); 
+                    // Origin and protocol are often optional for wss, but trying explicit origin
+                    // Construct requestOptions, including tlsOptions if applicable
+                    const requestOptions = { ...tlsOptions }; // Start with tlsOptions (which might be undefined or { rejectUnauthorized: false })
+
+                    client.connect(wsUrl, undefined, origin, headers, requestOptions); // Pass constructed requestOptions
 
                 } catch (initialSetupError) {
                     console.error(`[${connectorId}] Error during initial WebSocket setup:`, initialSetupError);
+                    // Enhanced logging:
+                    const errorDetails = initialSetupError instanceof Error
+                        ? initialSetupError.message + (initialSetupError.stack ? `\\nStack: ${initialSetupError.stack}` : '')
+                        : String(initialSetupError);
+                    console.error(`[${connectorId}] Detailed Setup Error: ${errorDetails}`);
+                    // --- End Enhanced Logging ---
                     cleanupAttempt(initialSetupError instanceof Error ? initialSetupError.message : String(initialSetupError));
-                    reject(initialSetupError); 
+                    reject(initialSetupError); // Still reject with the original error for promise chain
                 }
             }); 
         } else {
@@ -445,10 +478,16 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
 
     } catch (error) {
          console.error(`[initPikoWebSocket][${connectorId}] General initialization error:`, error);
+         // Enhanced logging:
+         const generalErrorDetails = error instanceof Error
+            ? error.message + (error.stack ? `\\nStack: ${error.stack}` : '')
+            : String(error);
+         console.error(`[initPikoWebSocket][${connectorId}] Detailed General Error: ${generalErrorDetails}`);
+         // --- End Enhanced Logging ---
          const connState = connections.get(connectorId);
          if (connState) {
              connState.isAttemptingConnection = false;
-             connState.connectionError = `Initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+             connState.connectionError = `Initialization failed: ${error instanceof Error ? error.message : String(error)}`; // Use captured details
              connections.set(connectorId, connState);
          }
          return Promise.resolve(false); // Indicate failure
@@ -644,7 +683,7 @@ export async function enablePikoConnection(connectorId: string): Promise<boolean
         const existingState = connections.get(connectorId);
         let state: PikoWebSocketConnection; // Declare type
         if (!existingState) {
-             state = { ...initialPikoConnectionState, connectorId: connectorId, disabled: false }; 
+             state = { ...initialPikoConnectionState, connectorId: connectorId, disabled: false };
         } else {
              state = existingState; // Assign from existing
              state.disabled = false; // Mutate the existing state object
@@ -655,15 +694,21 @@ export async function enablePikoConnection(connectorId: string): Promise<boolean
         console.log(`[enablePikoConnection][${connectorId}] Calling and awaiting initPikoWebSocket...`);
         const success = await initPikoWebSocket(connectorId);
         console.log(`[enablePikoConnection][${connectorId}] initPikoWebSocket completed. Result: ${success}`);
-        console.log(`[enablePikoConnection][${connectorId}] FINISHED enablePikoConnection function.`); 
+        console.log(`[enablePikoConnection][${connectorId}] FINISHED enablePikoConnection function.`);
         return success;
 
     } catch (err) {
         console.error(`[enablePikoConnection][${connectorId}] Caught error:`, err);
+         // Enhanced logging:
+         const enableErrorDetails = err instanceof Error
+            ? err.message + (err.stack ? `\\nStack: ${err.stack}` : '')
+            : String(err);
+         console.error(`[enablePikoConnection][${connectorId}] Detailed Enable Error: ${enableErrorDetails}`);
+         // --- End Enhanced Logging ---
         // Use const here as well
         const finalState = connections.get(connectorId);
         if (finalState) {
-            finalState.disabled = true; 
+            finalState.disabled = true;
             finalState.lastStandardizedPayload = null;
             connections.set(connectorId, finalState);
         }

@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "sqlite",
-  "id": "3dda799a-7cda-44c3-ba94-c1e4b9526799",
-  "prevId": "120c7bb1-a0de-4529-b8f1-d6097f6dd63e",
+  "id": "8c731e55-9182-467c-82ab-4befc7781681",
+  "prevId": "3dda799a-7cda-44c3-ba94-c1e4b9526799",
   "tables": {
     "area_devices": {
       "name": "area_devices",
@@ -490,19 +490,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "devices_server_id_piko_servers_id_fk": {
-          "name": "devices_server_id_piko_servers_id_fk",
-          "tableFrom": "devices",
-          "tableTo": "piko_servers",
-          "columnsFrom": [
-            "server_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

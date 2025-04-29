@@ -35,8 +35,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import Image from 'next/image';
 import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
 
-// Interface matching the event data structure passed from the events page
-// This should now match the structure from EventsPage
+// MODIFIED: Interface matching the updated API structure
 interface EventData {
   id: number;
   eventUuid: string;
@@ -53,9 +52,9 @@ interface EventData {
   eventType: string;
   rawEventType?: string;
   displayState?: DisplayState;
-  // Added from EventsPage interface update
   bestShotUrlComponents?: {
-    pikoSystemId: string;
+    type: 'cloud' | 'local'; // Added type
+    pikoSystemId?: string; // Optional
     connectorId: string;
     objectTrackId: string;
     cameraId: string;
@@ -156,38 +155,52 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
   const DeviceIcon = getDeviceTypeIcon(typeInfo.type);
   const StateIcon = event.displayState ? getDisplayStateIcon(event.displayState) : null;
 
-  // NEW: Construct Media Thumbnail URL to point to our API route
+  // MODIFIED: Construct Media Thumbnail URL to point to our API route
   let mediaThumbnailUrl: string | null = null;
   if (event.bestShotUrlComponents) {
-    const { pikoSystemId, connectorId, objectTrackId, cameraId } = event.bestShotUrlComponents;
-    // Ensure all components are present before constructing
-    if (pikoSystemId && connectorId && objectTrackId && cameraId) {
-       // Construct the URL for our backend proxy API route
-       const apiUrl = new URL('/api/piko/best-shot', window.location.origin); // Use relative path
-       apiUrl.searchParams.append('pikoSystemId', pikoSystemId);
-       apiUrl.searchParams.append('connectorId', connectorId);
-       apiUrl.searchParams.append('objectTrackId', objectTrackId);
-       apiUrl.searchParams.append('cameraId', cameraId);
-       mediaThumbnailUrl = apiUrl.toString();
+    // Destructure all components, including the new 'type' and optional 'pikoSystemId'
+    const { type, pikoSystemId, connectorId, objectTrackId, cameraId } = event.bestShotUrlComponents;
+    
+    // Core components are always required
+    if (connectorId && objectTrackId && cameraId) {
+        // Construct the base URL for our backend proxy API route
+        const apiUrl = new URL('/api/piko/best-shot', window.location.origin); // Use relative path
+        
+        // Always append the core IDs
+        apiUrl.searchParams.append('connectorId', connectorId);
+        apiUrl.searchParams.append('objectTrackId', objectTrackId);
+        apiUrl.searchParams.append('cameraId', cameraId);
+        
+        // Conditionally append pikoSystemId ONLY if it's a cloud event
+        if (type === 'cloud' && pikoSystemId) {
+            apiUrl.searchParams.append('pikoSystemId', pikoSystemId);
+        }
+        // Note: We don't explicitly pass 'type=local'. The backend proxy
+        // will infer the type based on the presence/absence of pikoSystemId 
+        // or by looking up the connector config using connectorId.
+        
+        mediaThumbnailUrl = apiUrl.toString();
     } else {
-        console.warn("Missing components required for Media Thumbnail URL:", event.bestShotUrlComponents);
+        console.warn("Missing core components required for Media Thumbnail URL:", event.bestShotUrlComponents);
     }
   }
 
-  // NEW: Handle clicking the play button - Now fetches media info first
+  // Handle clicking the play button - Now fetches media info first
   const handlePlayMediaClick = () => {
     setShowVideoPlayer(true); // Simply show the player area
   }
 
-  // --- Prepare props for PikoVideoPlayer (handle potential undefined) ---
+  // MODIFIED: Prepare props for PikoVideoPlayer, handle potential undefined or local type
   const pikoVideoProps = {
       connectorId: event.connectorId,
-      pikoSystemId: event.bestShotUrlComponents?.pikoSystemId,
+      // Pass pikoSystemId only if it's a cloud event and exists
+      pikoSystemId: event.bestShotUrlComponents?.type === 'cloud' ? event.bestShotUrlComponents?.pikoSystemId : undefined,
       cameraId: event.bestShotUrlComponents?.cameraId,
       positionMs: event.timestamp
   };
   // Check if all necessary props are available before attempting to render player
-  const canRenderPlayer = !!(pikoVideoProps.connectorId && pikoVideoProps.pikoSystemId && pikoVideoProps.cameraId && pikoVideoProps.positionMs !== undefined);
+  // For local, pikoSystemId is intentionally undefined, which is okay for the player if it handles it
+  const canRenderPlayer = !!(pikoVideoProps.connectorId && pikoVideoProps.cameraId && pikoVideoProps.positionMs !== undefined);
 
   return (
     <Dialog>

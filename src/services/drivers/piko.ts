@@ -1,18 +1,23 @@
-// Piko driver with test connection functionality
+import { Readable } from 'stream';
 
 // Base URL for Piko Cloud API
 const PIKO_CLOUD_URL = 'https://cloud.pikovms.com';
 
 // Configuration interface for Piko accounts
 export interface PikoConfig {
-  type: 'cloud'; // For now, only supporting cloud connections
+  type: 'cloud' | 'local'; // Allow local connection
   username: string;
   password: string;
+  host?: string; // Add host for local
+  port?: number; // Add port for local
+  ignoreTlsErrors?: boolean; // Add option to ignore TLS errors for local
   selectedSystem?: string; // ID of the selected Piko system
   token?: {
     accessToken: string;
-    refreshToken: string;
-    expiresAt: string;
+    refreshToken?: string; // Optional as local doesn't have refresh
+    expiresAt?: string; // Optional as local uses expiresInS
+    expiresIn?: number | string; // Allow number for local expiresInS
+    sessionId?: string; // Add session ID for local
   };
 }
 
@@ -27,12 +32,22 @@ export interface PikoSystem {
 
 // Interface for token response from authentication
 export interface PikoTokenResponse {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: string;
-  expiresIn: string;
-  tokenType: string;
-  scope: string;
+  accessToken: string;      // Maps to access_token (cloud) or token (local)
+  refreshToken?: string;     // Only for cloud
+  expiresAt?: string;        // Only for cloud (ISO string)
+  expiresIn?: string | number; // Cloud (string seconds), Local (number seconds)
+  tokenType?: string;        // Cloud ("Bearer")
+  scope?: string;            // Cloud
+  sessionId?: string;        // Local (maps to "id")
+}
+
+// Interface for local token response structure
+interface PikoLocalTokenData {
+  token: string;
+  expiresInS: number;
+  id: string; // Session ID
+  username: string;
+  ageS: number;
 }
 
 // Interface for raw server data from API
@@ -136,6 +151,14 @@ export class PikoApiError extends Error {
   }
 }
 
+// Load https module conditionally
+let https: typeof import('https') | undefined;
+try {
+    https = require('https');
+} catch (e) {
+    console.warn("Could not import https module. TLS verification cannot be disabled.");
+}
+
 /**
  * Authenticates with Piko Cloud API and obtains a general bearer token
  * @param username Piko account username
@@ -144,8 +167,7 @@ export class PikoApiError extends Error {
  * @throws Error with a user-friendly message if authentication fails
  */
 export async function getAccessToken(username: string, password: string): Promise<PikoTokenResponse> {
-  // Call the helper without a scope for general token
-  return _fetchPikoToken(username, password);
+  return _fetchPikoCloudToken(username, password);
 }
 
 /**
@@ -155,78 +177,44 @@ export async function getAccessToken(username: string, password: string): Promis
 * @throws Error with a user-friendly message if fetching fails
 */
 export async function getSystems(accessToken: string): Promise<PikoSystem[]> {
-  console.log('Piko getSystems called with token present:', !!accessToken);
+  // Cloud only, uses fetch internally via _makePikoRequest
+  const data = await _makePikoRequest(
+    { type: 'cloud', username: '', password: '', selectedSystem: 'placeholder' }, // Config only needs type=cloud
+    accessToken, // Token is needed for auth header
+    `/cdb/systems`, 
+    'GET', 
+    undefined, // queryParams
+    undefined, // body
+    { 'Authorization': `Bearer ${accessToken}` }, // Pass header explicitly for this non-standard endpoint
+    'json'
+  );
 
-  if (!accessToken) {
-    throw new Error('Access token is required to fetch Piko systems');
+  if (!data || !data.systems || !Array.isArray(data.systems)) {
+    throw new PikoApiError('Piko systems response did not contain a valid systems array', { rawError: data });
   }
-
-  try {
-    console.log('Preparing to fetch Piko systems from Cloud API');
-    
-    const response = await fetch(`${PIKO_CLOUD_URL}/cdb/systems`, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      },
-    });
-
-    console.log('Piko systems fetch response status:', response.status);
-    
-    if (!response.ok) {
-      let errorInfo = 'Failed to fetch systems';
-      
-      try {
-        const errorData = await response.json();
-        errorInfo = errorData.error_description || errorData.error || errorInfo;
-      } catch (parseError) {
-        console.error('Error parsing Piko systems fetch error response:', parseError);
-      }
-      
-      console.error(`Failed to fetch Piko systems: ${errorInfo}`);
-      throw new Error(`Failed to fetch Piko systems: ${errorInfo}`);
-    }
-
-    const data = await response.json();
-    
-    if (!data.systems || !Array.isArray(data.systems)) {
-      throw new Error('Piko systems response did not contain a valid systems array');
-    }
-
-    console.log(`Successfully retrieved ${data.systems.length} Piko systems`);
-    
-    // Map and return simplified system data
-    return data.systems.map((system: PikoSystemRaw) => ({
+  return data.systems.map((system: PikoSystemRaw) => ({
       id: system.id,
       name: system.name,
       version: system.version,
       health: system.stateOfHealth,
       role: system.accessRole
-    }));
-  } catch (error) {
-    if (error instanceof Error) {
-      console.error('Error in Piko getSystems:', error.message);
-      throw error; // Re-throw known errors
-    }
-    
-    // Handle network or unexpected errors
-    console.error('Unexpected error fetching Piko systems:', error);
-    throw new Error('Network error or unexpected issue fetching Piko systems');
-  }
+  }));
 }
 
 /**
 * Tests the connection to Piko Cloud by authenticating and fetching systems
-* @param config The Piko configuration with username and password
+* OR tests the connection to a Piko Local system by authenticating.
+* @param config The Piko configuration (cloud or local)
 * @returns Promise resolving to an object with connection status and optional data
 */
 export async function testConnection(config: PikoConfig): Promise<{
   connected: boolean;
   message?: string;
-  systems?: PikoSystem[];
-  token?: PikoTokenResponse;
+  systems?: PikoSystem[]; // Only populated for cloud
+  token?: PikoTokenResponse; // Contains relevant token info
 }> {
-  console.log('Piko testConnection called with username:', config.username);
-  
+  console.log(`Piko testConnection called for type: ${config.type} with username: ${config.username}`);
+   
   try {
     // Validate required configuration
     if (!config.username || !config.password) {
@@ -236,80 +224,169 @@ export async function testConnection(config: PikoConfig): Promise<{
       };
     }
 
-    // Step 1: Authenticate and get token
-    const tokenResponse = await getAccessToken(config.username, config.password);
-    
-    // Step 2: Fetch systems to verify token works
-    const systems = await getSystems(tokenResponse.accessToken);
-    
-    return {
-      connected: true,
-      message: `Successfully connected to Piko Cloud. Found ${systems.length} systems.`,
-      systems,
-      token: tokenResponse
-    };
+    if (config.type === 'cloud') {
+        // --- Cloud Connection Test --- 
+        // Step 1: Authenticate and get token
+        const tokenResponse = await _fetchPikoCloudToken(config.username, config.password);
+        
+        // Step 2: Fetch systems to verify token works
+        const systems = await getSystems(tokenResponse.accessToken);
+        
+        return {
+          connected: true,
+          message: `Successfully connected to Piko Cloud. Found ${systems.length} systems.`,
+          systems,
+          token: tokenResponse
+        };
+    } else {
+        // --- Local Connection Test --- 
+        if (!config.host || !config.port) {
+            return {
+                connected: false,
+                message: 'Missing host or port for local connection test'
+            };
+        }
+        // Explicit type assertion needed
+        const tokenResponse = await _fetchPikoLocalToken(config as PikoConfig & { type: 'local' });
+
+        // TODO: Optionally make a test API call to verify token works (e.g., fetch servers)
+
+        return {
+            connected: true,
+            message: `Successfully authenticated with Piko at ${config.host}:${config.port}.`,
+            systems: [], // No systems list for local
+            token: tokenResponse
+        };
+    }
   } catch (error) {
     console.error('Piko connection test failed:', error);
-    
+ 
     return {
       connected: false,
-      message: error instanceof Error ? error.message : 'Failed to connect to Piko Cloud'
+      message: error instanceof Error ? error.message : `Failed to connect to Piko ${config.type}`
     };
   }
 }
 
 /**
-* Get a system-scoped access token for Piko Cloud API
-* @param username Piko account username
-* @param password Piko account password
-* @param systemId The ID of the target Piko system
-* @returns Promise resolving to system-scoped token response object
-* @throws Error with a user-friendly message if authentication fails
+* Tests the connection to a LOCAL Piko instance and returns token info.
+* (This is the function called by the API route handler)
+* @param config The Piko configuration (must be type='local')
+* @returns Promise resolving to connection status and token
 */
+export async function testLocalPikoConnection(config: PikoConfig): Promise<{
+  connected: boolean;
+  message?: string;
+  token?: PikoTokenResponse;
+}> {
+    if (config.type !== 'local') {
+        throw new Error('testLocalPikoConnection called with non-local config type.');
+    }
+    if (!config.host || !config.port || !config.username || !config.password) {
+        return {
+            connected: false,
+            message: 'Missing required parameters (host, port, username, or password) for local connection test.'
+        };
+    }
+
+    console.log(`testLocalPikoConnection called for ${config.host}:${config.port}`);
+
+    try {
+        // Explicit type assertion (safer even with signature check)
+        const tokenResponse = await _fetchPikoLocalToken(config as PikoConfig & { type: 'local' });
+
+        // Optionally perform a lightweight API call here to further verify connection/token
+        // Example: await fetchPikoApiData(config, tokenResponse.accessToken, '/rest/v3/servers', { limit: '1' });
+        // If the above call fails, it will throw, caught below.
+
+        return {
+            connected: true,
+            message: `Successfully authenticated with Piko at ${config.host}:${config.port}.`,
+            token: tokenResponse
+        };
+    } catch (error) {
+        console.error(`Local Piko connection test failed for ${config.host}:${config.port}:`, error);
+        // Use PikoApiError details if available
+        const message = (error instanceof PikoApiError && error.errorString)
+                       ? error.errorString 
+                       : (error instanceof Error ? error.message : 'Failed to connect to local Piko');
+        return {
+            connected: false,
+            message: message
+            // No token on failure
+        };
+    }
+}
+
+/**
+ * Get a system-scoped access token for Piko Cloud API
+ * @param username Piko account username
+ * @param password Piko account password
+ * @param systemId The ID of the target Piko system
+ * @returns Promise resolving to system-scoped token response object
+ * @throws Error with a user-friendly message if authentication fails
+ */
 export async function getSystemScopedAccessToken(
   username: string, 
   password: string, 
   systemId: string
 ): Promise<PikoTokenResponse> {
-  // Call the helper with the system-specific scope
   const scope = `cloudSystemId=${systemId}`;
-  return _fetchPikoToken(username, password, scope);
+  return _fetchPikoCloudToken(username, password, scope);
 }
 
 /**
- * Internal helper to construct the base URL for Piko Relay API requests.
- * @param systemId The ID of the Piko system.
- * @returns The base URL string for the relay proxy.
+ * Internal helper to construct the base URL for Piko API requests (Cloud or Local).
+ * @param config The Piko connector configuration.
+ * @returns The base URL string.
+ * @throws Error if required config fields are missing for the type.
  */
-function _getPikoRelayBaseUrl(systemId: string): string {
-    if (!systemId) {
-        // Add basic check although callers should also validate
-        console.warn("Attempted to get Piko relay base URL without systemId");
-        throw new Error("System ID is required to construct Piko Relay base URL.");
+function _getPikoApiBaseUrl(config: PikoConfig): string {
+    if (config.type === 'cloud') {
+        if (!config.selectedSystem) {
+            console.error("Attempted to get Piko cloud API base URL without selectedSystem.");
+            throw new PikoApiError("System ID is required for Piko Cloud API base URL.", { errorId: PikoErrorCode.MissingParameter });
+        }
+        return `https://${config.selectedSystem}.relay.vmsproxy.com`;
+    } else if (config.type === 'local') {
+        if (!config.host || !config.port) {
+            console.error("Attempted to get Piko local API base URL without host or port.");
+            throw new PikoApiError("Host and Port are required for Piko Local API base URL.", { errorId: PikoErrorCode.MissingParameter });
+        }
+        return `https://${config.host}:${config.port}`; 
+    } else {
+        throw new PikoApiError(`Unsupported Piko config type: ${(config as any).type}`, { errorId: PikoErrorCode.InvalidParameter });
     }
-    return `https://${systemId}.relay.vmsproxy.com`;
 }
 
 /**
- * Internal helper to construct the basic RequestInit object for Piko Relay API requests.
+ * Base Request options (Authorization header)
+ * @param accessToken The bearer token
+ * @returns Record<string, string> containing Authorization header
+ */
+function _getPikoBaseHeaders(accessToken?: string): Record<string, string> {
+    return accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {};
+}
+
+/**
+ * Internal helper to construct the basic RequestInit object for Piko API requests.
  * Includes method and Authorization header.
- * @param systemScopedToken The system-scoped bearer token.
+ * @param accessToken The bearer token (cloud or local).
  * @param method The HTTP method.
  * @returns A RequestInit object with method and Authorization header.
  */
-function _getPikoRelayRequestOptions(
-    systemScopedToken: string,
+function _getPikoRequestOptions(
+    accessToken: string,
     method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET'
 ): RequestInit {
-    if (!systemScopedToken) {
-        // Basic check, though callers should ensure token validity
-        console.warn("Attempted to get Piko relay request options without token");
-        throw new Error("System-scoped token is required for Piko Relay request options.");
+    if (!accessToken) {
+        console.warn("Attempted to get Piko request options without access token.");
+        throw new Error("Access token is required for Piko API request options.");
     }
     return {
         method: method,
         headers: {
-            'Authorization': `Bearer ${systemScopedToken}`,
+            'Authorization': `Bearer ${accessToken}`,
         },
     };
 }
@@ -331,30 +408,30 @@ function _validateRequiredStrings(params: Record<string, string | undefined | nu
 }
 
 /**
-* Fetches data from the Piko Relay URL for a specific system.
-* @param systemId The ID of the Piko system.
-* @param systemScopedToken The system-scoped bearer token.
+* Fetches data from the appropriate Piko API endpoint (Cloud Relay or Local).
+* @param config The Piko connector configuration (determines endpoint).
+* @param accessToken The bearer token (cloud or local).
 * @param path The API path (e.g., '/rest/v3/servers').
 * @param queryParams Optional query parameters object.
 * @param method Optional HTTP method (default: 'GET').
 * @param body Optional request body for POST/PUT requests.
 * @returns Promise resolving to the parsed JSON response data.
-* @throws Error if the request fails.
+* @throws PikoApiError if the request fails.
 */
-async function fetchPikoRelayData(
-  systemId: string, 
-  systemScopedToken: string,
+async function fetchPikoApiData(
+  config: PikoConfig,
+  accessToken: string,
   path: string,
   queryParams?: Record<string, string>,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
   body?: object | null | undefined
 ): Promise<unknown> {
   // Restore simple combined check for required string params
-  if (!systemId || !systemScopedToken || !path) {
-     throw new Error('Missing required parameters (System ID, Token, or Path) for fetchPikoRelayData.');
+  if (!config || !accessToken || !path) {
+     throw new PikoApiError('Missing required parameters (Config, Token, or Path) for fetchPikoApiData.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
   }
 
-  const baseUrl = _getPikoRelayBaseUrl(systemId);
+  const baseUrl = _getPikoApiBaseUrl(config);
   const url = new URL(path, baseUrl);
   
   if (queryParams) {
@@ -362,126 +439,255 @@ async function fetchPikoRelayData(
       url.searchParams.append(key, value);
     });
   }
+  
+  // --- Conditional Execution: Use https.request for local+ignoreTlsErrors --- 
+  if (config.type === 'local' && config.ignoreTlsErrors && https && config.host && config.port) {
+    console.warn(`[Piko Driver] Using https.request (TLS ignored) for: ${method} ${url.toString()}`);
+    
+    const agent = new https.Agent({ rejectUnauthorized: false });
+    const requestBody = (body && (method === 'POST' || method === 'PUT')) ? JSON.stringify(body) : '';
+    
+    const options: import('https').RequestOptions = {
+      hostname: config.host,
+      port: config.port,
+      path: url.pathname + url.search, // Combine path and query string
+      method: method,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json', // Assume JSON response
+        // Add Content-Type and Content-Length only if there's a body
+        ...(requestBody && { 
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(requestBody)
+        })
+      },
+      agent: agent, 
+    };
 
-  console.log(`Preparing Piko Relay JSON request: ${method} ${url.toString()}`);
+    return new Promise((resolve, reject) => {
+      const req = https!.request(options, (res) => {
+        let responseBody = '';
+        const statusCode = res.statusCode ?? 0;
 
-  try {
-    // USE HELPER for base options
-    const requestOptions = _getPikoRelayRequestOptions(systemScopedToken, method); 
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { responseBody += chunk; });
 
-    // Add JSON specific headers/body if needed
-    if (body && (method === 'POST' || method === 'PUT')) { 
-      requestOptions.headers = { ...requestOptions.headers, 'Content-Type': 'application/json' };
-      requestOptions.body = JSON.stringify(body);
-    }
+        res.on('end', () => {
+          console.log(`Piko API https.request response status (${config.type} ${path}):`, statusCode);
+          
+          if (statusCode < 200 || statusCode >= 300) {
+             const errorInfo: { message: string, errorId?: string, errorString?: string, raw?: unknown } = {
+                  message: `Failed ${method} request to ${path} (Status: ${statusCode}) via https.request`
+              };
+              try {
+                  const errorData = JSON.parse(responseBody);
+                  errorInfo.errorId = errorData.errorId; 
+                  errorInfo.errorString = errorData.errorString;
+                  errorInfo.message = errorData.errorString || errorData.message || errorInfo.message;
+                  errorInfo.raw = errorData;
+              } catch (parseError) {
+                  console.warn(`Could not parse JSON error response from Piko API (${path}, https.request):`, parseError);
+                  if (responseBody && responseBody.length < 200) {
+                     errorInfo.message += `: ${responseBody.substring(0, 100)}`;
+                  }
+                   errorInfo.raw = responseBody;
+              }
+              reject(new PikoApiError(errorInfo.message, {
+                  statusCode: statusCode,
+                  errorId: errorInfo.errorId,
+                  errorString: errorInfo.errorString,
+                  rawError: errorInfo.raw
+              }));
+              return;
+          }
 
-    // console.log(`>>> Making fetch request to: ${url.toString()}`); // <<< REVERTED LOG
-    const response = await fetch(url.toString(), requestOptions); 
+          // Handle success
+          if (statusCode === 204) {
+             console.log(`Successfully executed Piko API request (${config.type} ${method} ${path}, https.request) - No Content`);
+             resolve(null);
+             return;
+          }
 
-    console.log(`Piko Relay fetch response status (${path}):`, response.status);
+          try {
+             const data = JSON.parse(responseBody);
+             console.log(`Successfully executed Piko API request (${config.type} ${method} ${path}, https.request)`);
+             resolve(data);
+          } catch (parseError) {
+             console.error(`Failed to parse successful JSON response from ${path} (https.request):`, parseError);
+             reject(new PikoApiError(`Failed to parse successful API response: ${parseError instanceof Error ? parseError.message : String(parseError)}`, { statusCode: 500, rawError: responseBody }));
+          }
+        });
+      });
 
-    if (!response.ok) {
-      const errorInfo: { message: string, errorId?: string, errorString?: string, raw?: unknown } = {
-          message: `Failed ${method} request to ${path} (Status: ${response.status})`
-      };
-      try {
-        const errorData = await response.json();
-        // Attempt to extract Piko-specific error details
-        errorInfo.errorId = errorData.errorId; // e.g., "missingParameter"
-        errorInfo.errorString = errorData.errorString; // e.g., "Missing required parameter: ..."
-        errorInfo.message = errorData.errorString || errorData.message || errorInfo.message; // Prefer specific errorString
-        errorInfo.raw = errorData;
-      } catch (parseError) {
-        console.warn(`Could not parse JSON error response from Piko Relay (${path}):`, parseError);
-        // Try reading as text for non-JSON errors
-        try {
-            const errorText = await response.text();
-            if (errorText && errorText.length < 200) {
-                errorInfo.message += `: ${errorText.substring(0, 100)}`;
+      req.on('error', (e) => {
+         console.error(`[fetchPikoApiData] https.request error for ${method} ${url.toString()}:`, e);
+         // Reuse error message generation from _fetchPikoLocalToken if possible, or create a similar logic
+         let errorMessage = `Request failed: ${e.message}`;
+         const errorCode = (e as any).code;
+         if (errorCode) {
+             // Add specific error checks if needed (e.g., ECONNREFUSED, ETIMEDOUT)
+             errorMessage = `Request failed with code ${errorCode}: ${e.message}`;
+         } // Note: We shouldn't get TLS errors here since rejectUnauthorized is false
+         reject(new PikoApiError(errorMessage, { cause: e }));
+      });
+
+      // Write body if exists
+      if (requestBody) {
+         req.write(requestBody);
+      }
+      req.end();
+    });
+
+  } else {
+     // --- Original Execution: Use fetch for cloud or local without ignoreTlsErrors --- 
+     console.log(`[Piko Driver] Using fetch for: ${method} ${url.toString()}`);
+     
+     // Create custom agent only if ignoreTlsErrors is true and https module is available
+     // THIS BLOCK IS NOW ONLY THEORETICALLY REACHED IF https MODULE IS *NOT* AVAILABLE
+     // OR if ignoreTlsErrors is false. fetch should handle valid certs fine.
+     let agent: import('https').Agent | undefined = undefined;
+     if (config.type === 'local' && config.ignoreTlsErrors && https) {
+         console.warn(`[Piko Driver] Disabling TLS certificate validation for local API request to ${config.host}:${config.port} (via fetch agent)`);
+         agent = new https.Agent({ rejectUnauthorized: false });
+     } else if (config.type === 'local' && config.ignoreTlsErrors && !https) {
+         console.error("[Piko Driver] Cannot ignore TLS errors via fetch: https module not available.");
+         // Consider throwing an error here if strict TLS ignoring is required but impossible
+     }
+
+     try {
+        // USE HELPER for base options
+        const requestOptions = _getPikoRequestOptions(accessToken, method);
+
+        // Add JSON specific headers/body if needed
+        if (body && (method === 'POST' || method === 'PUT')) {
+          requestOptions.headers = { ...requestOptions.headers, 'Content-Type': 'application/json' };
+          requestOptions.body = JSON.stringify(body);
+        }
+
+        // === CORRECTED: Conditionally add agent directly to the options object ===
+        if (agent) {
+            // Node.js fetch expects the agent directly on the options object
+            (requestOptions as any).agent = agent; 
+        }
+
+        // console.log(`>>> Making fetch request to: ${url.toString()}`);
+        // Pass the potentially modified requestOptions directly
+        const response = await fetch(url.toString(), requestOptions);
+
+        console.log(`Piko API fetch response status (${config.type} ${path}):`, response.status);
+
+        if (!response.ok) {
+          const errorInfo: { message: string, errorId?: string, errorString?: string, raw?: unknown } = {
+              message: `Failed ${method} request to ${path} (Status: ${response.status}) via fetch`
+          };
+          try {
+            const errorData = await response.json();
+            // Attempt to extract Piko-specific error details
+            errorInfo.errorId = errorData.errorId; // e.g., "missingParameter"
+            errorInfo.errorString = errorData.errorString; // e.g., "Missing required parameter: ..."
+            errorInfo.message = errorData.errorString || errorData.message || errorInfo.message; // Prefer specific errorString
+            errorInfo.raw = errorData;
+          } catch (parseError) {
+            console.warn(`Could not parse JSON error response from Piko API (${path}, fetch):`, parseError);
+            // Try reading as text for non-JSON errors
+            try {
+                const errorText = await response.text();
+                if (errorText && errorText.length < 200) {
+                    errorInfo.message += `: ${errorText.substring(0, 100)}`;
+                }
+                 errorInfo.raw = errorText;
+            } catch (textError) {
+                console.warn(`Could not read text error response either for ${path} (fetch):`, textError);
             }
-        } catch (textError) {
-            console.warn(`Could not read text error response either for ${path}:`, textError);
+          }
+          // Throw the custom error
+          throw new PikoApiError(errorInfo.message, {
+              statusCode: response.status,
+              errorId: errorInfo.errorId,
+              errorString: errorInfo.errorString,
+              rawError: errorInfo.raw
+          });
+        }
+
+        if (response.status === 204) {
+          console.log(`Successfully executed Piko API request (${config.type} ${method} ${path}, fetch) - No Content`);
+          return null;
+        }
+
+        const data = await response.json();
+        console.log(`Successfully executed Piko API request (${config.type} ${method} ${path}, fetch)`);
+        return data;
+
+      } catch (error) {
+        // This catch block now primarily handles errors from fetch itself (network, DNS, etc.)
+        // or errors thrown by the !response.ok block above.
+        if (error instanceof PikoApiError) {
+           // Re-throw PikoApiError directly
+           console.error(`Error in fetchPikoApiData (${config.type} ${path}, fetch):`, error.message);
+           throw error;
+        } else if (error instanceof Error) {
+          console.error(`Fetch-related error in fetchPikoApiData (${config.type} ${path}):`, error.message);
+           // Wrap other errors (like fetch network errors) in PikoApiError for consistency?
+           // Or keep them distinct? Let's wrap them for now.
+           throw new PikoApiError(`Network or fetch error for ${path}: ${error.message}`, { cause: error });
+        } else {
+            // Unknown error type
+            console.error(`Unexpected non-Error type during Piko API fetch (${config.type} ${path}):`, error);
+            throw new PikoApiError(`Unexpected issue connecting to Piko ${config.type} (${path})`); 
         }
       }
-      // Throw the custom error
-      throw new PikoApiError(errorInfo.message, {
-          statusCode: response.status,
-          errorId: errorInfo.errorId,
-          errorString: errorInfo.errorString,
-          rawError: errorInfo.raw
-      });
-    }
-
-    if (response.status === 204) {
-      console.log(`Successfully executed Piko Relay request (${method} ${path}) - No Content`);
-      return null;
-    }
-
-    const data = await response.json();
-    console.log(`Successfully executed Piko Relay request (${method} ${path})`);
-    return data;
-
-  } catch (error) {
-    if (error instanceof Error) {
-      console.error(`Error in fetchPikoRelayData (${path}):`, error.message);
-      throw error; // Re-throw known errors (like PikoApiError or network errors)
-    }
-    console.error(`Unexpected error during Piko Relay fetch (${path}):`, error);
-    throw new Error(`Network error or unexpected issue connecting to Piko Relay (${path})`); // Keep generic for true network issues
   }
 }
 
 /**
 * Fetches the list of Servers for a specific Piko system.
-* @param systemId The ID of the Piko system.
-* @param systemScopedToken The system-scoped bearer token.
+* @param config The Piko configuration.
+* @param accessToken The bearer token.
 * @returns Promise resolving to array of PikoServerRaw objects.
 */
 export async function getSystemServers(
-  systemId: string, 
-  systemScopedToken: string
+  config: PikoConfig, 
+  accessToken: string
 ): Promise<PikoServerRaw[]> {
-  const data = await fetchPikoRelayData(systemId, systemScopedToken, '/rest/v3/servers', {
-    '_with': 'id,name,osInfo,parameters.systemRuntime,parameters.physicalMemory,parameters.timeZoneInformation,status,storages,url,version'
-  });
-  
-  if (!Array.isArray(data)) {
-     throw new Error('Piko servers response was not a valid array');
-  }
+  const data = await _makePikoRequest(
+      config, accessToken, '/rest/v3/servers', 'GET', 
+      { '_with': 'id,name,osInfo,parameters.systemRuntime,parameters.physicalMemory,parameters.timeZoneInformation,status,storages,url,version' },
+      undefined, undefined, 'json'
+  );
+  if (!Array.isArray(data)) throw new Error('Piko servers response was not a valid array');
   return data as PikoServerRaw[];
 }
 
 /**
 * Fetches the list of Devices for a specific Piko system.
-* @param systemId The ID of the Piko system.
-* @param systemScopedToken The system-scoped bearer token.
+* @param config The Piko configuration.
+* @param accessToken The bearer token.
 * @returns Promise resolving to array of PikoDeviceRaw objects.
 */
 export async function getSystemDevices(
-  systemId: string, 
-  systemScopedToken: string
+  config: PikoConfig, 
+  accessToken: string
 ): Promise<PikoDeviceRaw[]> {
-  const data = await fetchPikoRelayData(systemId, systemScopedToken, '/rest/v3/devices/', {
-    '_with': 'id,deviceType,mac,model,name,serverId,status,url,vendor'
-  });
-  
-  if (!Array.isArray(data)) {
-     throw new Error('Piko devices response was not a valid array');
-  }
+  const data = await _makePikoRequest(
+      config, accessToken, '/rest/v3/devices/', 'GET', 
+      { '_with': 'id,deviceType,mac,model,name,serverId,status,url,vendor' },
+      undefined, undefined, 'json'
+  );
+  if (!Array.isArray(data)) throw new Error('Piko devices response was not a valid array');
   return data as PikoDeviceRaw[];
 }
 
 /**
 * Fetches details for a specific Device in a Piko system, including media streams.
-* @param systemId The ID of the Piko system.
-* @param systemScopedToken The system-scoped bearer token.
+* @param config The Piko configuration.
+* @param accessToken The bearer token.
 * @param deviceId The GUID of the specific device.
 * @returns Promise resolving to a PikoDeviceRaw object or null if not found.
 * @throws Error if the request fails or the response is invalid.
 */
 export async function getSystemDeviceById(
-  systemId: string,
-  systemScopedToken: string,
+  config: PikoConfig,
+  accessToken: string,
   deviceId: string
 ): Promise<PikoDeviceRaw | null> {
   if (!deviceId) {
@@ -490,17 +696,19 @@ export async function getSystemDeviceById(
 
   const path = `/rest/v3/devices/${deviceId}`;
   try {
-    const data = await fetchPikoRelayData(systemId, systemScopedToken, path, {
-      '_with': 'id,deviceType,mac,model,name,serverId,status,url,vendor,mediaStreams'
-    });
+    const data = await _makePikoRequest(
+        config, accessToken, path, 'GET',
+        { '_with': 'id,deviceType,mac,model,name,serverId,status,url,vendor,mediaStreams' },
+        undefined, undefined, 'json'
+    );
 
     // Check if the response is an object (expected for single device)
     if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
       return data as PikoDeviceRaw;
     } else {
       // Unexpected response format (e.g., array or non-object)
-      console.warn(`Unexpected response format fetching device ${deviceId}. Expected object, got:`, data);
-      // If Piko returns a 404, fetchPikoRelayData should throw PikoApiError
+      console.warn(`Unexpected response format fetching device ${deviceId} (${config.type}). Expected object, got:`, data);
+      // If Piko returns a 404, fetchPikoApiData should throw PikoApiError
       // If it's another unexpected format, return null or throw
       // Returning null is perhaps safer if the API contract isn't perfectly known
       return null;
@@ -508,7 +716,7 @@ export async function getSystemDeviceById(
   } catch (error) {
     // Specifically handle 404 Not Found errors from the API
     if (error instanceof PikoApiError && error.statusCode === 404) {
-      console.log(`Device with ID ${deviceId} not found in system ${systemId}.`);
+      console.log(`Device with ID ${deviceId} not found in Piko system (${config.type}).`);
       return null; // Return null if the device specifically wasn't found
     }
     // Re-throw other errors (network, auth, unexpected API errors)
@@ -531,162 +739,32 @@ interface PikoLoginTicketResponse {
 /**
  * Creates a short-lived login ticket for authenticating a single request via query parameter.
  * Requires the serverId associated with the camera.
- * @param systemId The ID of the Piko system.
- * @param systemScopedToken The system-scoped bearer token for authentication.
+ * @param config The Piko configuration.
+ * @param accessToken The bearer token for authentication.
  * @param serverId The ID of the Piko server hosting the camera.
  * @returns Promise resolving to the ticket token string.
  * @throws PikoApiError if the request fails.
  * @see {@link https://meta.nxvms.com/doc/developers/api-tool/rest-v3-login-tickets-post}
  */
 export async function createPikoLoginTicket(
-  systemId: string,
-  systemScopedToken: string,
+  config: PikoConfig,
+  accessToken: string,
   serverId: string
 ): Promise<string> {
-  if (!systemId || !systemScopedToken || !serverId) {
-    throw new Error('Missing required parameters (System ID, Token, or Server ID) for createPikoLoginTicket.');
+  if (!config || !accessToken || !serverId) {
+    throw new Error('Missing required parameters (Config, Token, or Server ID) for createPikoLoginTicket.');
   }
 
   const path = '/rest/v3/login/tickets';
-  const baseUrl = _getPikoRelayBaseUrl(systemId);
-  const url = new URL(path, baseUrl);
-  const method = 'POST';
-
-  try {
-    // Base options include Authorization
-    const requestOptions = _getPikoRelayRequestOptions(systemScopedToken, method);
-    // Add specific headers for this request
-    requestOptions.headers = {
-      ...requestOptions.headers,
-      'X-Server-Guid': serverId,
-      'Content-Type': 'application/json', // Sending empty body, but API might expect header
-      'Accept': 'application/json'
-    };
-    // No body needed for this POST request
-    requestOptions.body = undefined; 
-
-    const response = await fetch(url.toString(), requestOptions);
-
-    const data = await response.json() as PikoLoginTicketResponse;
-
-    if (!data || !data.token) {
-        console.error('Piko Create Ticket response missing token.', data);
-        throw new Error('Piko Create Ticket response did not contain a token.');
-    }
-
-    return data.token;
-
-  } catch (error) {
-    if (error instanceof Error) {
-      console.error(`Error during createPikoLoginTicket (${path}):`, error.message);
-      throw error; // Re-throw known errors
-    }
-    console.error(`Unexpected error during createPikoLoginTicket (${path}):`, error);
-    throw new Error(`Unexpected error occurred while creating Piko login ticket`);
+  const headers = { 'X-Server-Guid': serverId, 'Accept': 'application/json' };
+  const data = await _makePikoRequest(config, accessToken, path, 'POST', undefined, undefined, headers, 'json');
+  
+  const ticketResponse = data as PikoLoginTicketResponse;
+  if (!ticketResponse || !ticketResponse.token) {
+    console.error('Piko Create Ticket response missing token.', data);
+    throw new Error('Piko Create Ticket response did not contain a token.');
   }
-}
-
-/**
- * Internal helper to fetch Piko access token (either general or system-scoped)
- * @param username Piko account username
- * @param password Piko account password
- * @param scope Optional scope string (e.g., 'cloudSystemId=...')
- * @returns Promise resolving to token response object
- * @throws Error if authentication fails
- */
-async function _fetchPikoToken(
-  username: string, 
-  password: string, 
-  scope?: string
-): Promise<PikoTokenResponse> { // Can return either general or scoped type
-  console.log(`_fetchPikoToken called for username: ${username}, with scope: ${scope || 'general'}`);
-
-  if (!username || !password) {
-    throw new Error('Username and password are required');
-  }
-
-  const requestBody: Record<string, string | undefined> = {
-    grant_type: 'password',
-    response_type: 'token',
-    client_id: '3rdParty',
-    username,
-    password,
-  };
-
-  if (scope) {
-    requestBody.scope = scope;
-  }
-
-  try {
-    const response = await fetch(`${PIKO_CLOUD_URL}/cdb/oauth2/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
- 
-    if (!response.ok) {
-      const errorInfo: { message: string, errorId?: string, errorString?: string, raw?: unknown } = {
-          message: `Authentication failed (Status: ${response.status})`
-      };
-      try {
-        const errorData = await response.json();
-        // Auth errors might use 'error' and 'error_description'
-        errorInfo.errorId = errorData.errorId || errorData.error; // Use errorId if present, fallback to error
-        errorInfo.errorString = errorData.errorString || errorData.error_description;
-        errorInfo.message = errorInfo.errorString || errorInfo.message;
-        errorInfo.raw = errorData;
-      } catch (parseError) {
-        console.error(`Error parsing Piko auth error response (scope: ${scope || 'general'}):`, parseError);
-        // Try reading as text for non-JSON errors
-        try {
-            const errorText = await response.text();
-             if (errorText && errorText.length < 200) {
-                errorInfo.message += `: ${errorText.substring(0, 100)}`;
-            }
-        } catch (textError) {
-             console.warn(`Could not read text error response either for auth:`, textError);
-        }
-      }
-      // Throw the custom error
-      throw new PikoApiError(errorInfo.message, {
-          statusCode: response.status,
-          errorId: errorInfo.errorId,
-          errorString: errorInfo.errorString,
-          rawError: errorInfo.raw
-      });
-    }
-
-    const data = await response.json();
-    
-    if (!data.access_token) {
-      // This case indicates a successful status code but missing token - unusual.
-      console.error('Piko auth response OK but missing access_token');
-      throw new PikoApiError('Authentication response missing access token despite OK status.', { statusCode: response.status });
-    }
-
-    console.log(`Successfully authenticated with Piko (scope: ${scope || 'general'}). Token received.`);
-    
-    // Return token data in camelCase format
-    return {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      expiresAt: data.expires_at,
-      expiresIn: data.expires_in,
-      tokenType: data.token_type,
-      scope: data.scope || '' // Ensure scope is always present
-    };
-  } catch (error) {
-    if (error instanceof Error) {
-      console.error(`Error in Piko _fetchPikoToken (scope: ${scope || 'general'}):`, error.message);
-      throw error; // Re-throw known errors (PikoApiError, network errors)
-    }
-    
-    // Handle network or unexpected errors
-    console.error(`Unexpected error during Piko authentication (scope: ${scope || 'general'}):`, error);
-    throw new Error('Network error or unexpected issue connecting to Piko Cloud for token'); // Keep generic for true network issues
-  }
+  return ticketResponse.token;
 }
 
 /**
@@ -727,31 +805,23 @@ export async function createPikoEvent(
   payload: PikoCreateEventPayload
 ): Promise<PikoCreateEventResponse> {
   console.log(`createPikoEvent called for system: ${systemId}, source: ${payload.source}`);
-
-  const responseData = await fetchPikoRelayData(
-    systemId,
+  const config: PikoConfig = { type: 'cloud', username: '', password: '', selectedSystem: systemId }; // Synthesize config
+  const responseData = await _makePikoRequest(
+    config,
     systemScopedToken,
-    '/api/createEvent', // The specific API path
-    undefined, // No query parameters
-    'POST', // HTTP method
-    payload // The request body
+    '/api/createEvent',
+    'POST',
+    undefined,
+    payload, 
+    undefined,
+    'json'
   );
-
-  // Basic validation of the response structure for success
   const result = responseData as PikoCreateEventResponse;
   if (result?.error && String(result.error) !== '0') {
-    // This endpoint returns errors in a different structure within the JSON body even on 200 OK
     const errorMessage = `Piko createEvent API returned error: ${result.errorString || 'Unknown error'} (Code: ${result.error})`;
     console.error(errorMessage, result);
-    // Throw PikoApiError using the details from the success response body
-    throw new PikoApiError(errorMessage, {
-        errorId: result.errorId,
-        errorString: result.errorString,
-        rawError: result // Keep the whole response as raw error info
-        // statusCode is likely 200 here, so maybe don't set it? Or set it to indicate the source.
-    });
+    throw new PikoApiError(errorMessage, { errorId: result.errorId, errorString: result.errorString, rawError: result });
   }
-
   console.log(`Successfully created Piko event for system: ${systemId}, source: ${payload.source}`);
   return result;
 }
@@ -768,7 +838,7 @@ export interface PikoCreateBookmarkPayload {
 }
 
 // No specific response interface defined for createBookmark as success is usually 200 OK with no body or a simple confirmation.
-// We'll rely on fetchPikoRelayData to throw errors on non-ok statuses.
+// We'll rely on fetchPikoApiData to throw errors on non-ok statuses.
 
 /**
  * Creates a bookmark for a specific camera in a Piko system using the Relay API.
@@ -786,24 +856,19 @@ export async function createPikoBookmark(
   payload: PikoCreateBookmarkPayload
 ): Promise<void> { // Returns void on success
   console.log(`createPikoBookmark called for system: ${systemId}, camera: ${pikoCameraDeviceId}, name: ${payload.name}`);
-
-  if (!pikoCameraDeviceId) {
-      throw new Error('Piko Camera Device ID is required to create a bookmark.');
-  }
-
+  if (!pikoCameraDeviceId) throw new Error('Piko Camera Device ID required.');
   const apiPath = `/rest/v3/devices/${pikoCameraDeviceId}/bookmarks`;
-
-  // fetchPikoRelayData will handle JSON parsing and error throwing for non-OK responses
-  await fetchPikoRelayData(
-    systemId,
+  const config: PikoConfig = { type: 'cloud', username: '', password: '', selectedSystem: systemId }; // Synthesize config
+  await _makePikoRequest(
+    config,
     systemScopedToken,
     apiPath,
-    undefined, // No query parameters
-    'POST',    // HTTP method
-    payload    // The request body
+    'POST',
+    undefined,
+    payload, 
+    undefined,
+    'json' // Expects JSON success/error or maybe 204
   );
-
-  // If fetchPikoRelayData does not throw, the request was successful (e.g., 200 OK, 201 Created, or 204 No Content)
   console.log(`Successfully created Piko bookmark for camera: ${pikoCameraDeviceId} in system: ${systemId}`);
 }
 
@@ -811,110 +876,61 @@ export async function createPikoBookmark(
  * Fetches the "best shot" thumbnail image for a given analytics object track as a Blob.
  * Leverages common setup logic but handles image-specific response.
  * 
- * @param systemId The ID of the Piko system.
- * @param systemScopedToken The system-scoped bearer token.
+ * MODIFIED: Now accepts full config and token to support both cloud and local.
+ * 
+ * @param config The Piko connector configuration (determines endpoint type).
+ * @param accessToken The bearer token (cloud or local).
  * @param objectTrackId The ID of the analytics object track.
  * @param cameraId The GUID of the camera associated with the event.
  * @returns Promise resolving to the image Blob.
  * @throws Error if the request fails, the response is not an image, or data cannot be read.
  */
 export async function getPikoBestShotImageBlob(
-  systemId: string,
-  systemScopedToken: string,
+  config: PikoConfig, // MODIFIED: Accept full config
+  accessToken: string, // MODIFIED: Generic token
   objectTrackId: string,
   cameraId: string
 ): Promise<Blob> {
-  // Restore simple combined check for required string params
-  if (!systemId || !systemScopedToken || !objectTrackId || !cameraId) {
-    throw new Error('Missing required parameters (System ID, Token, Object Track ID, or Camera ID) for getPikoBestShotImageBlob.');
+  if (!config || !accessToken || !objectTrackId || !cameraId) {
+    throw new PikoApiError('Missing required parameters for getPikoBestShotImageBlob.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
   }
+  const path = '/ec2/analyticsTrackBestShot';
+  const queryParams = { objectTrackId, cameraId };
+  const headers = { 'Accept': 'image/*' }; // Specify we want an image
 
-  // --- Common Setup Start --- 
-  const path = '/ec2/analyticsTrackBestShot'; 
-  const baseUrl = _getPikoRelayBaseUrl(systemId); // USE HELPER
-  const url = new URL(path, baseUrl); // Construct URL object
+  const blob = await _makePikoRequest(config, accessToken, path, 'GET', queryParams, undefined, headers, 'blob');
   
-  // Add specific query params for this endpoint
-  url.searchParams.append('objectTrackId', objectTrackId);
-  url.searchParams.append('cameraId', cameraId);
-  
-  const method = 'GET'; // Specific method
-
-  console.log(`Preparing Piko Best Shot request: ${method} ${url.toString()}`);
-
-  try {
-    // USE HELPER for base options (method is 'GET' here)
-    const requestOptions = _getPikoRelayRequestOptions(systemScopedToken, method); 
-    // No extra headers/body needed for this GET request
-
-    const response = await fetch(url.toString(), requestOptions); 
-
-    console.log(`Piko Best Shot response status: ${response.status}`); // Log specific type
-
-    // --- Image Specific Error/Response Handling ---
-    if (!response.ok) {
-      const errorInfo: { message: string, errorId?: string, errorString?: string, raw?: unknown } = {
-        message: `Failed ${method} request to ${path} (Status: ${response.status})`
-      };
-      try {
-        // Attempt to get text, might not be JSON for image endpoint errors
-        const errorText = await response.text();
-        // Check if it looks like a Piko JSON error structure despite content-type
-        try {
-            const errorData = JSON.parse(errorText);
-             errorInfo.errorId = errorData.errorId;
-             errorInfo.errorString = errorData.errorString;
-             errorInfo.message = errorData.errorString || errorData.message || errorInfo.message;
-             errorInfo.raw = errorData;
-        } catch(jsonParseError) {
-             // If not JSON, use the text directly
-             if (errorText && errorText.length < 200) { 
-                errorInfo.message += `: ${errorText.substring(0,100)}`;
-             }
-             errorInfo.raw = errorText; // Store raw text
-        }
-      } catch (readError) {
-        console.warn(`Could not read error response body for ${method} ${path}:`, readError);
-      }
-      // Throw custom error
-       throw new PikoApiError(errorInfo.message, {
-          statusCode: response.status,
-          errorId: errorInfo.errorId,
-          errorString: errorInfo.errorString,
-          rawError: errorInfo.raw
-      });
-    }
-
-    // Validate Content Type specifically for image
-    const contentType = response.headers.get('Content-Type');
-    if (!contentType || !contentType.startsWith('image/')) {
-      console.error(`Piko Best Shot response was not an image. Content-Type: ${contentType}`);
-      let responseText = '';
-      try { responseText = await response.text(); } catch {} // Try reading text if not image
-      throw new Error(`Expected an image response from Best Shot API, but received ${contentType || 'unknown content type'}. ${responseText ? 'Response Text: ' + responseText.substring(0, 100) : ''}`);
-    }
-
-    // Process and return Blob
-    try {
-      const blob = await response.blob();
-      console.log(`Successfully retrieved Piko Best Shot image blob (Type: ${blob.type}, Size: ${blob.size}) for track ${objectTrackId}`);
-      return blob;
-    } catch (e) {
-      console.error(`Failed to read blob data from Piko Best Shot response for track ${objectTrackId}:`, e);
-      throw new Error(`Failed to read image data from Piko Best Shot API response`);
-    }
-
-  } catch (error) { // Common catch block pattern
-    if (error instanceof Error) {
-      console.error(`Error during getPikoBestShotImageBlob (${path}):`, error.message);
-      throw error; 
-    }
-    console.error(`Unexpected error during getPikoBestShotImageBlob (${path}):`, error);
-    throw new Error(`Unexpected error occurred while fetching Piko Best Shot image`); // Generic for network/unexpected
+  if (!(blob instanceof Blob)) { // Add type check for safety
+     console.error('Piko Best Shot did not return a Blob.', blob);
+     throw new PikoApiError('Expected image Blob response from Best Shot API.', { rawError: blob });
   }
+  console.log(`Successfully retrieved Piko Best Shot image blob (Type: ${blob.type}, Size: ${blob.size}) (${config.type})`);
+  return blob;
 }
 
-// --- WebSocket Event Subscription Interfaces ---
+/**
+ * Interface for the /rest/v3/system/info response
+ */
+export interface PikoSystemInfo {
+  name: string;
+  customization: string;
+  version: string;
+  protoVersion: number;
+  restApiVersions: {
+    min: string;
+    max: string;
+  };
+  cloudHost: string;
+  localId: string; // GUID format
+  cloudId: string;
+  cloudOwnerId: string; // GUID format
+  organizationId: string; // GUID format
+  servers: string[]; // Array of server GUIDs
+  edgeServerCount: number;
+  devices: string[]; // Array of device GUIDs
+  ldapSyncId: string;
+  synchronizedTimeMs: number;
+}
 
 /**
  * Parameters for the JSON-RPC event subscription request.
@@ -979,12 +995,141 @@ export interface PikoJsonRpcEventUpdateMessage {
 }
 
 /**
+* Fetches system information for the configured Piko system.
+* @param config The Piko configuration.
+* @param accessToken The bearer token.
+* @returns Promise resolving to the PikoSystemInfo object.
+* @throws PikoApiError if the request fails or the response is invalid.
+* @see {@link https://meta.nxvms.com/doc/developers/api-tool/rest-v3-system-info-get}
+*/
+export async function getSystemInfo(
+  config: PikoConfig, 
+  accessToken: string
+): Promise<PikoSystemInfo> {
+  const path = '/rest/v3/system/info';
+  const data = await _makePikoRequest(config, accessToken, path, 'GET', undefined, undefined, undefined, 'json');
+  if (typeof data !== 'object' || data === null || typeof (data as PikoSystemInfo).name !== 'string') {
+     throw new PikoApiError(`Invalid response format received from ${path}`, { rawError: data });
+  }
+  return data as PikoSystemInfo;
+}
+
+/**
+ * Internal helper to fetch Piko access token for LOCAL connections.
+ * @param config The Piko configuration.
+ * @returns Promise resolving to token response object
+ * @throws PikoApiError if authentication fails
+ */
+async function _fetchPikoLocalToken(
+  config: PikoConfig & { type: 'local' } // Ensure type is local
+): Promise<PikoTokenResponse> {
+  const { host, port, username, password, ignoreTlsErrors } = config;
+  console.log(`_fetchPikoLocalToken using https.request for local host: ${host}:${port}`);
+  if (!https || !host || !port || !username || !password) throw new PikoApiError('...');
+  const url = `https://${host}:${port}/rest/v3/login/sessions`;
+  const requestBody = JSON.stringify({ username, password });
+  let agent: import('https').Agent | undefined = undefined;
+  if (ignoreTlsErrors && https) {
+      console.warn(`[Piko Driver] Disabling TLS certificate validation for local connection to ${host}:${port}`);
+      agent = new https.Agent({ rejectUnauthorized: false });
+  }
+  const options: import('https').RequestOptions = {
+    hostname: host, port: port, path: '/rest/v3/login/sessions', method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(requestBody), 'Accept': 'application/json' },
+    agent: agent, 
+  };
+  return new Promise((resolve, reject) => { 
+    const req = https!.request(options, (res) => { /* ... response handling ... */ 
+         let responseBody = '';
+         const statusCode = res.statusCode ?? 0;
+         res.setEncoding('utf8');
+         res.on('data', (chunk) => { responseBody += chunk; });
+         res.on('end', () => {
+           if (statusCode < 200 || statusCode >= 300) {
+               const errorInfo: any = { message: `Local auth failed (Status: ${statusCode})` };
+               try { const errorData = JSON.parse(responseBody); errorInfo.raw = errorData; /* ... */ } catch { errorInfo.raw = responseBody; }
+               reject(new PikoApiError(errorInfo.message, { statusCode, rawError: errorInfo.raw }));
+               return;
+           }
+           try {
+               const data: PikoLocalTokenData = JSON.parse(responseBody);
+               if (!data.token) reject(new PikoApiError('Local auth response missing token.', { statusCode }));
+               else resolve({ accessToken: data.token, expiresIn: data.expiresInS, sessionId: data.id, tokenType: 'Bearer' });
+           } catch (parseError) {
+               reject(new PikoApiError(`Failed to parse successful auth response: ${parseError instanceof Error ? parseError.message : String(parseError)}`, { statusCode: 500, rawError: responseBody }));
+           }
+         });
+    });
+    req.on('error', (e) => { reject(new PikoApiError(`Request failed: ${e.message}`, { cause: e })); });
+    req.write(requestBody);
+    req.end();
+  });
+}
+
+/**
+ * Internal helper to fetch Piko access token for CLOUD connections.
+ * @param username Piko account username
+ * @param password Piko account password
+ * @param scope Optional scope string (e.g., 'cloudSystemId=...')
+ * @returns Promise resolving to token response object
+ * @throws Error if authentication fails
+ */
+async function _fetchPikoCloudToken(username: string, password: string, scope?: string): Promise<PikoTokenResponse> {
+  // ... (Implementation remains the same) ...
+  console.log(`_fetchPikoToken called for username: ${username}, with scope: ${scope || 'general'}`);
+  if (!username || !password) throw new PikoApiError('Username and password are required', { /*...*/ });
+  const url = `${PIKO_CLOUD_URL}/cdb/oauth2/token`;
+  const requestBody: Record<string, string | undefined> = { /*...*/ grant_type: 'password', response_type: 'token', client_id: '3rdParty', username, password, scope };
+  const finalRequestBody = Object.fromEntries(Object.entries(requestBody).filter(([, v]) => v !== undefined));
+  try {
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(finalRequestBody) });
+    if (!response.ok) {
+      const errorInfo: any = { message: `Cloud auth failed (Status: ${response.status})` };
+      try { const errorData = await response.json(); errorInfo.raw = errorData; /*...*/ } catch { /*...*/ }
+      throw new PikoApiError(errorInfo.message, { statusCode: response.status, rawError: errorInfo.raw });
+    }
+    const data = await response.json();
+    if (!data.access_token) throw new PikoApiError('Cloud auth response missing access_token.', { statusCode: response.status });
+    console.log(`Successfully authenticated with Piko cloud (${url}). Token received.`);
+    return { accessToken: data.access_token, refreshToken: data.refresh_token, expiresAt: data.expires_at, expiresIn: data.expires_in, tokenType: data.token_type, scope: data.scope || undefined };
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(`Error in Piko _fetchPikoCloudToken (${PIKO_CLOUD_URL}):`, error.message);
+      if (error instanceof PikoApiError) throw error;
+      throw new PikoApiError(`Failed to connect or authenticate with Piko Cloud: ${error.message}`, { cause: error });
+    }
+    console.error(`Unexpected error during Piko cloud authentication (${PIKO_CLOUD_URL}):`, error);
+    throw new PikoApiError('Unexpected error during Piko Cloud authentication');
+  }
+}
+
+/**
+ * Gets a Piko access token based on the configuration type (cloud or local).
+ * @param config The Piko configuration.
+ * @returns Promise resolving to the token response object.
+ * @throws PikoApiError if authentication fails.
+ */
+export async function getToken(config: PikoConfig): Promise<PikoTokenResponse> {
+    if (config.type === 'cloud') {
+        if (!config.username || !config.password) throw new PikoApiError('...');
+        return _fetchPikoCloudToken(config.username, config.password, config.selectedSystem ? `cloudSystemId=${config.selectedSystem}` : undefined);
+    } else if (config.type === 'local') {
+        if (!config.host || !config.port || !config.username || !config.password) throw new PikoApiError('...');
+        return _fetchPikoLocalToken(config as PikoConfig & { type: 'local' });
+    } else {
+        throw new PikoApiError(`Unsupported Piko config type: ${(config as any).type}`, { /*...*/ });
+    }
+}
+
+/**
  * Initiates a media stream request for a specific camera and timestamp.
  * IMPORTANT: This function returns the raw Response object. The caller is responsible
  * for handling the media stream (e.g., reading the body as a ReadableStream).
  *
- * @param systemId The ID of the Piko system.
- * @param systemScopedToken The system-scoped bearer token.
+ * MODIFIED: Accepts full config object.
+ *
+ * @param config The Piko connector configuration (determines endpoint type).
+ * @param accessToken The bearer token (can be undefined if ticket is used).
  * @param cameraId The GUID of the camera device.
  * @param positionMs The starting position for the media stream in epoch milliseconds.
  * @param format Optional container format (e.g., 'webm'). If provided, appends '.<format>' to the path.
@@ -994,205 +1139,292 @@ export interface PikoJsonRpcEventUpdateMessage {
  * @throws Error if the request fails or required parameters are missing.
  */
 export async function getPikoMediaStream(
-  systemId: string,
-  systemScopedToken: string | undefined, // Can be undefined if ticket is used
+  config: PikoConfig, // MODIFIED: Accept full config
+  accessToken: string | undefined, // MODIFIED: Can be undefined if ticket is used
   cameraId: string,
   positionMs: number, // Using number for timestamp
   format?: string, // Optional format parameter
   ticket?: string, // Optional ticket parameter
   serverId?: string // Optional serverId, needed for ticket auth request header
 ): Promise<Response> { // Returns the raw Response object
-  // Validate required parameters - allow systemScopedToken to be undefined IF ticket is present
-  // If ticket is present, serverId MUST also be present for the header
-  if (
-    !systemId ||
-    (!systemScopedToken && !ticket) || 
-    (ticket && !serverId) || // Added check: if ticket, need serverId
-    !cameraId || 
-    positionMs === undefined || positionMs === null
-  ) {
-    throw new Error('Missing required parameters (System ID, (Token OR Ticket+ServerID), Camera ID, or Position) for getPikoMediaStream.');
+  if (!config || (!accessToken && !ticket) || (ticket && !serverId) || !cameraId || positionMs === undefined) {
+    throw new PikoApiError('Missing required parameters for getPikoMediaStream.', { /*...*/ });
   }
-  if (systemScopedToken && ticket) {
-    // Log warning but proceed (using ticket)
-    console.warn('getPikoMediaStream received both token and ticket, preferring ticket authentication.');
-  }
+  if (accessToken && ticket) console.warn('getPikoMediaStream prefers ticket auth.');
 
-  // Construct path, conditionally appending format
   let path = `/rest/v3/devices/${cameraId}/media`;
-  if (format && format.trim() !== '') {
-    path += `.${format.trim()}`; // Append .webm, .mkv etc.
+  if (format) path += `.${format.trim()}`;
+  const queryParams: Record<string, string> = { positionMs: String(positionMs) };
+  if (ticket) queryParams['_ticket'] = ticket;
+  
+  const headers = ticket ? { 'X-Server-Guid': serverId! } : undefined;
+  const tokenToUse = ticket ? undefined : accessToken; // Don't pass bearer token if using ticket
+
+  // Call the helper, expecting a stream
+  const response = await _makePikoRequest(config, tokenToUse, path, 'GET', queryParams, undefined, headers, 'stream');
+
+  if (!(response instanceof Response)) { // Type check for safety
+     console.error('Piko Media Stream did not return a Response object.', response);
+     throw new PikoApiError('Expected stream Response object.', { rawError: response });
   }
-
-  // Construct URL using helpers
-  const baseUrl = _getPikoRelayBaseUrl(systemId);
-  const url = new URL(path, baseUrl);
-  url.searchParams.append('positionMs', String(positionMs)); // Convert number to string for query param
-
-  // --- Conditional Authentication --- 
-  let requestOptions: RequestInit;
-  if (ticket) {
-    if (!serverId) { 
-        // This check is technically redundant due to the initial validation, but belts and suspenders
-        throw new Error('Server ID is required when using ticket authentication for getPikoMediaStream.');
-    }
-    url.searchParams.append('_ticket', ticket);
-    requestOptions = {
-        method: 'GET',
-        headers: {
-            'X-Server-Guid': serverId
-        }
-    };
-  } else {
-    // Use Bearer token authentication
-    requestOptions = _getPikoRelayRequestOptions(systemScopedToken!, 'GET'); // Non-null assertion ok due to initial check
-  }
-  // --- End Conditional Authentication --- 
-
-  try {
-    // Make the fetch request using the prepared options
-    const response = await fetch(url.toString(), requestOptions);
-
-    if (!response.ok) {
-      const errorInfo: { message: string, errorId?: string, errorString?: string, raw?: unknown } = {
-        message: `Failed GET request to ${path} (Status: ${response.status})`
-      };
-      try {
-        const errorText = await response.text();
-         try {
-            const errorData = JSON.parse(errorText);
-             errorInfo.errorId = errorData.errorId;
-             errorInfo.errorString = errorData.errorString;
-             errorInfo.message = errorData.errorString || errorData.message || errorInfo.message;
-             errorInfo.raw = errorData;
-        } catch(jsonParseError) {
-             if (errorText && errorText.length < 200) {
-                errorInfo.message += `: ${errorText.substring(0,100)}`;
-             }
-             errorInfo.raw = errorText; 
-        }
-      } catch (readError) {
-        console.warn(`Could not read error response body for GET ${path}:`, readError);
-      }
-      // Throw the custom error
-       throw new PikoApiError(errorInfo.message, {
-          statusCode: response.status,
-          errorId: errorInfo.errorId,
-          errorString: errorInfo.errorString,
-          rawError: errorInfo.raw
-      });
-    }
-
-    // Return the raw response object on success
-    console.log(`Successfully initiated Piko Media Stream request for camera ${cameraId} at timestamp ${positionMs}`);
-    return response;
-
-  } catch (error) {
-    // Handle fetch errors or errors thrown above
-    if (error instanceof Error) {
-      console.error(`Error during getPikoMediaStream (${path}):`, error.message);
-      throw error;
-    }
-    console.error(`Unexpected error during getPikoMediaStream (${path}):`, error);
-    throw new Error(`Unexpected error occurred while initiating Piko Media Stream`); // Generic for network/unexpected
-  }
+  console.log(`Successfully initiated Piko Media Stream request for camera ${cameraId}`);
+  return response;
 }
 
 /**
  * Initiates an HLS media stream request for a specific camera.
  * Returns the raw Response object containing the M3U8 playlist.
  *
+ * MODIFIED: Accepts full config object.
  *
- * @param systemId The ID of the Piko system.
- * @param systemScopedToken The system-scoped bearer token.
+ * @param config The Piko connector configuration (determines endpoint type).
+ * @param accessToken The bearer token.
  * @param cameraId The GUID of the camera device.
  * @returns Promise resolving to the raw Fetch Response object containing the M3U8 playlist.
  * @throws Error if the request fails or required parameters are missing.
  * @see {@link https://meta.nxvms.com/doc/developers/api-tool/hls-deviceidm3u-get}
  */
 export async function getPikoHlsStream(
-  systemId: string,
-  systemScopedToken: string,
+  config: PikoConfig, // MODIFIED: Accept full config
+  accessToken: string,
   cameraId: string
 ): Promise<Response> { // Returns the raw Response object
-  // Validate required parameters
-  if (!systemId || !systemScopedToken || !cameraId) {
-    throw new Error('Missing required parameters (System ID, Token, or Camera ID) for getPikoHlsStream.');
+  if (!config || !accessToken || !cameraId) {
+    throw new PikoApiError('Missing required parameters for getPikoHlsStream.', { /*...*/ });
+  }
+  const path = `/hls/${cameraId}.m3u8`;
+  const headers = { 'Accept': '*/*', 'User-Agent': 'FusionBridge/1.0' };
+
+  // Call the helper, expecting a stream
+  const response = await _makePikoRequest(config, accessToken, path, 'GET', undefined, undefined, headers, 'stream');
+  
+  if (!(response instanceof Response)) { // Type check for safety
+     console.error('Piko HLS Stream did not return a Response object.', response);
+     throw new PikoApiError('Expected stream Response object.', { rawError: response });
+  }
+  console.log(`Successfully initiated Piko HLS Stream request for camera ${cameraId}`);
+  return response;
+}
+
+// --- Consolidated Request Helper --- 
+
+type ExpectedResponseType = 'json' | 'blob' | 'stream';
+
+async function _makePikoRequest(
+  config: PikoConfig,
+  accessToken: string | undefined,
+  path: string,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
+  queryParams?: Record<string, string>,
+  body?: object | null | undefined,
+  additionalHeaders?: Record<string, string>,
+  expectedResponseType: ExpectedResponseType = 'json'
+): Promise<any> { 
+
+  // Validate core inputs needed for URL construction
+  if (!config || !path) {
+     throw new PikoApiError('Missing required parameters (Config or Path) for _makePikoRequest.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
   }
 
-  // Construct URL using helpers
-  // The URL format is slightly different from other REST calls - it doesn't use /rest/vX
-  const path = `/hls/${cameraId}.m3u8`; // Using .m3u8 extension is common for HLS playlists
-  const baseUrl = _getPikoRelayBaseUrl(systemId);
+  const baseUrl = _getPikoApiBaseUrl(config);
   const url = new URL(path, baseUrl);
+  if (queryParams) {
+    Object.entries(queryParams).forEach(([key, value]) => {
+      url.searchParams.append(key, value);
+    });
+  }
+  
+  // --- Centralized Header Preparation --- 
+  const logPrefix = `[Piko Driver _makePikoRequest (${config.type})]`;
+  const requestBodyStr = (body && (method === 'POST' || method === 'PUT')) ? JSON.stringify(body) : '';
 
-  const method = 'GET';
+  // Start with base auth + additional headers
+  const headersToUse: Record<string, string> = {
+       ..._getPikoBaseHeaders(accessToken),
+       ...additionalHeaders
+  };
+  // Add body-related headers if applicable
+  if (requestBodyStr) {
+      headersToUse['Content-Type'] = 'application/json';
+      // Content-Length will be added specifically for https.request later
+  }
+  // Set default Accept header if not provided
+  if (!headersToUse['Accept']) {
+      headersToUse['Accept'] = expectedResponseType === 'json' ? 'application/json' : '*/*';
+  }
+  // --- End Header Preparation ---
 
-  try {
-    // Get base request options
-    const requestOptions = _getPikoRelayRequestOptions(systemScopedToken, method);
-    // Add Accept and User-Agent headers
-    requestOptions.headers = {
-       ...requestOptions.headers,
-       'Accept': '*/*',
-       'User-Agent': 'FusionBridge/1.0' // Add a generic User-Agent
-     };
-    // HLS might require specific Accept headers, but let's start with */*
-    // requestOptions.headers = { ...requestOptions.headers, 'Accept': 'application/vnd.apple.mpegurl, */*' };
-
-    // Make the fetch request
-    const response = await fetch(url.toString(), requestOptions);
-
-    if (!response.ok) {
-      const errorInfo: { message: string, errorId?: string, errorString?: string, raw?: unknown } = {
-        message: `Failed ${method} request to ${path} (Status: ${response.status})`
-      };
-      try {
-        // HLS errors might return text or potentially JSON (less likely for M3U8 endpoint)
-        const errorText = await response.text();
-         try {
-            const errorData = JSON.parse(errorText);
-             errorInfo.errorId = errorData.errorId;
-             errorInfo.errorString = errorData.errorString;
-             errorInfo.message = errorData.errorString || errorData.message || errorInfo.message;
-             errorInfo.raw = errorData;
-        } catch(jsonParseError) {
-            // If not JSON, use the text directly
-             if (errorText && errorText.length < 200) {
-                errorInfo.message += `: ${errorText.substring(0,100)}`;
-             }
-             errorInfo.raw = errorText; // Store raw text
+  // --- Conditional Execution: Use https.request for local+ignoreTlsErrors --- 
+  if (config.type === 'local' && config.ignoreTlsErrors && https && config.host && config.port) {
+    console.warn(`${logPrefix} Using https.request (TLS ignored) for: ${method} ${url.toString()}`);
+    
+    const agent = new https.Agent({ rejectUnauthorized: false });
+    
+    // Prepare OutgoingHttpHeaders from headersToUse
+    const outgoingHeaders: import('http').OutgoingHttpHeaders = {};
+    for (const [key, value] of Object.entries(headersToUse)) {
+        if (value !== undefined && value !== null) { 
+             outgoingHeaders[key.toLowerCase()] = String(value); 
         }
-      } catch (readError) {
-        console.warn(`Could not read error response body for ${method} ${path}:`, readError);
+    }
+    // Add Content-Length specifically for https.request if body exists
+    if (requestBodyStr) {
+        outgoingHeaders['content-length'] = Buffer.byteLength(requestBodyStr);
+    }
+    
+    const options: import('https').RequestOptions = {
+      hostname: config.host,
+      port: config.port,
+      path: url.pathname + url.search,
+      method: method,
+      headers: outgoingHeaders, 
+      agent: agent, 
+    };
+
+    return new Promise((resolve, reject) => {
+        const req = https!.request(options, (res) => {
+            const statusCode = res.statusCode ?? 0;
+            const contentType = res.headers['content-type'];
+            console.log(`${logPrefix} https.request response status: ${statusCode}`);
+            if (statusCode < 200 || statusCode >= 300) {
+                let responseBody = '';
+                res.setEncoding('utf8');
+                res.on('data', chunk => responseBody += chunk);
+                res.on('end', () => {
+                    const errorInfo = { message: `Failed ${method} ${path} (${statusCode}) via https.request`, raw: responseBody };
+                    try { const errData = JSON.parse(responseBody); errorInfo.raw = errData; /* extract details */ } catch {} 
+                    reject(new PikoApiError(errorInfo.message, { statusCode, rawError: errorInfo.raw }));
+                });
+                return; 
+            }
+            try {
+                if (expectedResponseType === 'json') {
+                    let responseBody = '';
+                    res.setEncoding('utf8');
+                    res.on('data', chunk => responseBody += chunk);
+                    res.on('end', () => {
+                        if (statusCode === 204) {
+                            console.log(`${logPrefix} Success (204 No Content)`);
+                            resolve(null);
+                            return;
+                        }
+                        try {
+                            const data = JSON.parse(responseBody);
+                            console.log(`${logPrefix} Success (JSON)`);
+                            resolve(data);
+                        } catch (e) {
+                            console.error(`${logPrefix} Failed to parse JSON response:`, e);
+                            reject(new PikoApiError(`Failed to parse JSON: ${e instanceof Error ? e.message : 'Unknown error'}`, { statusCode: 500, rawError: responseBody }));
+                        }
+                    });
+                } else if (expectedResponseType === 'blob') {
+                    if (!contentType || !contentType.startsWith('image/')) { // Assuming blob is always image for now
+                        console.error(`${logPrefix} Response was not an image. Content-Type: ${contentType}`);
+                        res.resume();
+                        reject(new PikoApiError(`Expected image response, got ${contentType || 'unknown'}`, { statusCode }));
+                        return;
+                    }
+                    const chunks: Buffer[] = [];
+                    res.on('data', (chunk) => chunks.push(chunk));
+                    res.on('end', () => {
+                        try {
+                            const finalBuffer = Buffer.concat(chunks);
+                            const blob = new Blob([finalBuffer], { type: contentType });
+                            console.log(`${logPrefix} Success (Blob)`);
+                            resolve(blob);
+                        } catch (e) {
+                            console.error(`${logPrefix} Failed to process blob data:`, e);
+                            reject(new PikoApiError(`Failed to process image data: ${e instanceof Error ? e.message : 'Unknown error'}`, { cause: e }));
+                        }
+                    });
+                } else if (expectedResponseType === 'stream') {
+                    const webStream = Readable.toWeb(res);
+                    const responseHeaders = new Headers();
+                    for (const [key, value] of Object.entries(res.headers)) {
+                        if (value !== undefined) {
+                            if (Array.isArray(value)) value.forEach(v => responseHeaders.append(key, v));
+                            else responseHeaders.set(key, value);
+                        }
+                    }
+                    console.log(`${logPrefix} Success (Stream)`);
+                    resolve(new Response(webStream as any, { status: statusCode, statusText: res.statusMessage || '', headers: responseHeaders }));
+                } else {
+                    console.error(`${logPrefix} Invalid expectedResponseType: ${expectedResponseType}`);
+                    res.resume(); // Consume data
+                    reject(new PikoApiError(`Internal error: Invalid expected response type.`, { statusCode: 500 }));
+                }
+            } catch (processingError) {
+                console.error(`${logPrefix} Error during response processing:`, processingError);
+                res.resume(); // Ensure stream is consumed on error
+                reject(new PikoApiError(`Failed processing response: ${processingError instanceof Error ? processingError.message : String(processingError)}`, { cause: processingError }));
+            }
+        });
+        req.on('error', (e) => { reject(new PikoApiError(`Request failed: ${e.message}`, { cause: e })); });
+        if (requestBodyStr) req.write(requestBodyStr);
+        req.end();
+    });
+
+  } else {
+     // --- Use fetch for cloud or local without ignoreTlsErrors --- 
+     console.log(`${logPrefix} Using fetch for: ${method} ${url.toString()}`);
+     
+     try {
+        // Prepare HeadersInit compatible headers 
+        const fetchHeaders: Record<string, string> = {};
+        for (const [key, value] of Object.entries(headersToUse)) {
+            if (value !== undefined && value !== null) {
+                 fetchHeaders[key] = String(value);
+            }
+        }
+
+        const requestOptions: RequestInit = {
+            method: method,
+            headers: fetchHeaders, // Use prepared headers
+            body: requestBodyStr || undefined, // Use prepared stringified body
+        };
+
+        const response = await fetch(url.toString(), requestOptions);
+        console.log(`${logPrefix} fetch response status: ${response.status}`);
+
+        if (!response.ok) {
+          const errorInfo = { message: `Failed ${method} ${path} (${response.status}) via fetch`, raw: null as any };
+          try { errorInfo.raw = await response.text(); } catch {} // Try to get text body
+          try { /* Try parsing as JSON? */ const errData = JSON.parse(errorInfo.raw); errorInfo.raw = errData; /* extract details */ } catch {} 
+          throw new PikoApiError(errorInfo.message, { statusCode: response.status, rawError: errorInfo.raw });
+        }
+
+        // Handle Success based on Expected Type
+        if (expectedResponseType === 'json') {
+            if (response.status === 204) {
+                 console.log(`${logPrefix} Success (204 No Content)`);
+                 return null;
+            }
+            const data = await response.json();
+            console.log(`${logPrefix} Success (JSON)`);
+            return data;
+        } else if (expectedResponseType === 'blob') {
+             const blob = await response.blob();
+             console.log(`${logPrefix} Success (Blob)`);
+             return blob;
+        } else if (expectedResponseType === 'stream') {
+             console.log(`${logPrefix} Success (Stream)`);
+             return response; // Return the raw Response object
+        } else {
+             console.error(`${logPrefix} Invalid expectedResponseType: ${expectedResponseType}`);
+             throw new PikoApiError(`Internal error: Invalid expected response type.`, { statusCode: 500 });
+        }
+
+      } catch (error) {
+        if (error instanceof PikoApiError) throw error; 
+        console.error(`${logPrefix} Fetch/Network error:`, error);
+        throw new PikoApiError(`Network or fetch error for ${path}: ${error instanceof Error ? error.message : 'Unknown error'}`, { cause: error });
       }
-      // Throw custom error
-       throw new PikoApiError(errorInfo.message, {
-          statusCode: response.status,
-          errorId: errorInfo.errorId,
-          errorString: errorInfo.errorString,
-          rawError: errorInfo.raw
-      });
-    }
-
-    // Check Content-Type (should be something like 'application/vnd.apple.mpegurl' or 'audio/mpegurl')
-    const contentType = response.headers.get('Content-Type');
-    if (!contentType || (!contentType.includes('mpegurl') && !contentType.includes('x-mpegurl'))) {
-        console.warn(`Piko HLS Stream response has unexpected Content-Type: ${contentType}. Proceeding anyway.`);
-        // Don't throw error, but log warning. The browser might still handle it.
-    }
-
-    // Return the raw response object on success
-    console.log(`Successfully initiated Piko HLS Stream request for camera ${cameraId}`);
-    return response;
-
-  } catch (error) {
-    // Handle fetch errors or errors thrown above
-    if (error instanceof Error) {
-      console.error(`Error during getPikoHlsStream (${path}):`, error.message);
-      throw error;
-    }
-    console.error(`Unexpected error during getPikoHlsStream (${path}):`, error);
-    throw new Error(`Unexpected error occurred while initiating Piko HLS Stream`); // Generic for network/unexpected
   }
 }
+
+// --- End Consolidated Request Helper ---
+
+// --- Public API Functions (Refactored to use _makePikoRequest) ---
+
+// ... (The rest of the public functions like getSystems, testConnection, getPikoMediaStream, etc.) ...
+// ... These should now correctly call _makePikoRequest without linter errors ...

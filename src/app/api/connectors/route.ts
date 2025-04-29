@@ -14,17 +14,43 @@ const YoLinkConfigSchema = z.object({
   homeId: z.string().optional(), // Home ID can be optional initially
 });
 
-const PikoConfigSchema = z.object({
-  type: z.literal('cloud'),
-  username: z.string(),
-  password: z.string(),
-  selectedSystem: z.string(),
-  token: z.object({ // Store the whole token object
-    accessToken: z.string(),
-    refreshToken: z.string(),
-    expiresAt: z.string(), // Store as ISO string
-  }).optional(), // Token might not be present initially if just saving creds
+// Define Piko common/base schema
+const PikoTokenSchema = z.object({ 
+  accessToken: z.string(),
+  refreshToken: z.string().optional(), 
+  expiresAt: z.string().optional(),    
+  expiresIn: z.union([z.string(), z.number()]).optional(), 
+  sessionId: z.string().optional(),    
+}).optional();
+
+const PikoBaseConfigSchema = z.object({
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+  token: PikoTokenSchema,
 });
+
+// Define schemas for type-specific fields
+const PikoCloudSpecificSchema = z.object({
+  type: z.literal('cloud'),
+  selectedSystem: z.string().min(1, "Piko System selection is required"),
+});
+
+const PikoLocalSpecificSchema = z.object({
+  type: z.literal('local'),
+  host: z.string().min(1, "Host/URL is required"),
+  port: z.number().int().min(1).max(65535, "Invalid port number"),
+  ignoreTlsErrors: z.boolean().optional(), // Add TLS ignore flag
+});
+
+// Merge base with specific schemas
+const PikoCloudConfigSchema = PikoCloudSpecificSchema.merge(PikoBaseConfigSchema);
+const PikoLocalConfigSchema = PikoLocalSpecificSchema.merge(PikoBaseConfigSchema);
+
+// Re-define the discriminated union using the MERGED schemas
+const PikoConfigSchema = z.discriminatedUnion("type", [
+  PikoCloudConfigSchema,
+  PikoLocalConfigSchema
+]);
 
 const NetBoxConfigSchema = z.object({
   webhookId: z.string().uuid(),
@@ -82,7 +108,7 @@ const createConnectorSchema = z.object({
       } else if (category === 'piko') {
           const parsed = PikoConfigSchema.safeParse(config);
           if (!parsed.success) {
-              parsed.error.errors.forEach((err) => {
+              parsed.error.errors.forEach((err: z.ZodIssue) => { // Explicitly type err
                   ctx.addIssue({ ...err, path: ['config', ...(err.path)] });
               });
           }
@@ -121,10 +147,14 @@ const updateConnectorSchema = z.object({
   // Category cannot be updated
   config: z.union([
     YoLinkConfigSchema.partial(),
-    PikoConfigSchema.partial(),
+    // Use partial schemas for Piko cloud/local within the union
+    PikoCloudConfigSchema.omit({ type: true }).partial(), 
+    PikoLocalConfigSchema.omit({ type: true }).partial(),   
     NetBoxConfigSchema.partial().omit({ webhookId: true }), // webhookId cannot be updated
     GeneaConfigSchema.partial().omit({ webhookId: true }), // webhookId cannot be updated, secret/apiKey can
   ]).optional(),
+  // Add ignoreTlsErrors here too for PUT?
+  // It should likely be part of the PikoLocalConfigSchema partial update
 });
 
 // GET /api/connectors - Fetches all connectors
@@ -204,7 +234,7 @@ export async function POST(req: NextRequest) {
         name: connectorName,
         category,
         cfg_enc: configString, // Store the stringified config (which includes webhookId for relevant types)
-        eventsEnabled: (category === 'yolink' || category === 'piko'), // Default enable events for MQTT/WS
+        eventsEnabled: false, // Default ALL new connectors to disabled
         createdAt: new Date(), // Set creation timestamp
       }).returning(); // Return the inserted row
 

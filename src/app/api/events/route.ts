@@ -45,7 +45,8 @@ interface ApiEnrichedEvent {
   displayState?: DisplayState;
   rawEventType?: string; // Add optional rawEventType
   bestShotUrlComponents?: {
-    pikoSystemId: string;
+    type: 'cloud' | 'local';
+    pikoSystemId?: string; // Optional: Only present for cloud
     connectorId: string;
     objectTrackId: string;
     cameraId: string;
@@ -94,7 +95,7 @@ export async function GET() {
       // Derive displayState from parsed payload
       displayState = payload?.displayState;
       
-      // NEW: Check if this is a Piko analytics event with an objectTrackId
+      // MODIFIED: Handle both Cloud and Local Piko for bestShotUrlComponents
       if (
         connectorCategory === 'piko' &&
         event.standardizedEventCategory === EventCategory.ANALYTICS && // Check category
@@ -102,33 +103,34 @@ export async function GET() {
         typeof payload.objectTrackId === 'string' &&
         event.deviceId // Ensure we have the camera/device ID
       ) {
-        // --- START: Parse Piko Config to get actual System ID ---
-        let actualPikoSystemId: string | undefined = undefined;
-        
         if (event.connectorConfig) {
             try {
                 const config = JSON.parse(event.connectorConfig) as PikoConfig;
+                
                 if (config.type === 'cloud' && config.selectedSystem) {
-                    actualPikoSystemId = config.selectedSystem;
+                    bestShotUrlComponents = {
+                        type: 'cloud',
+                        pikoSystemId: config.selectedSystem, // Include for cloud
+                        objectTrackId: payload.objectTrackId,
+                        cameraId: event.deviceId, // The event's deviceId is the camera GUID
+                        connectorId: event.connectorId // Pass our internal connector ID
+                    };
+                } else if (config.type === 'local') {
+                    bestShotUrlComponents = {
+                        type: 'local',
+                        // pikoSystemId is omitted for local
+                        objectTrackId: payload.objectTrackId,
+                        cameraId: event.deviceId,
+                        connectorId: event.connectorId
+                    };
                 } else {
-                  console.warn(`Piko event ${event.eventUuid} has invalid or incomplete config in connector ${event.connectorId}`);
+                  console.warn(`Piko event ${event.eventUuid} has invalid or incomplete config type/details in connector ${event.connectorId}. Cannot create bestShotUrlComponents.`);
                 }
             } catch (e) {
                 console.warn(`Failed to parse Piko config for connector ${event.connectorId} on event ${event.eventUuid}:`, e);
             }
-        }
-        // --- END: Parse Piko Config ---
-
-        // Only create components if we successfully got the actual Piko System ID
-        if (actualPikoSystemId) {
-             bestShotUrlComponents = {
-                pikoSystemId: actualPikoSystemId, // USE ACTUAL PIKO SYSTEM ID
-                objectTrackId: payload.objectTrackId,
-                cameraId: event.deviceId, // The event's deviceId is the camera GUID
-                connectorId: event.connectorId // Pass our internal connector ID too (using correct name)
-             };
         } else {
-             console.warn(`Could not determine actual Piko System ID for event ${event.eventUuid}, cannot create bestShotUrlComponents.`);
+            console.warn(`Missing connector config for Piko event ${event.eventUuid} from connector ${event.connectorId}. Cannot create bestShotUrlComponents.`);
         }
       }
 
@@ -149,8 +151,8 @@ export async function GET() {
         displayState: displayState,
         rawPayload: rawPayload,
         rawEventType: event.rawEventType ?? undefined, // Include rawEventType
-        bestShotUrlComponents: bestShotUrlComponents,
-      }; // Removed 'satisfies ApiEnrichedEvent' here to simplify debugging if needed
+        bestShotUrlComponents: bestShotUrlComponents, // Use potentially updated components
+      };
 
       return finalEventObject; // Return the constructed object
     });

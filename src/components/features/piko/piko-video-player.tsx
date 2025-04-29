@@ -13,10 +13,10 @@ interface MediaInfoResponse {
 }
 
 interface PikoVideoPlayerProps {
-  connectorId?: string;
-  pikoSystemId?: string;
-  cameraId?: string;
-  positionMs?: number;
+  connectorId: string; // Always required now
+  pikoSystemId?: string; // Optional - only for cloud
+  cameraId: string; // Always required now
+  positionMs: number; // Always required now
   className?: string; // Allow custom styling
 }
 
@@ -43,9 +43,9 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
     setIsLoadingMediaInfo(true);
     setMediaInfoError(null);
 
-    // Validate required props
-    if (!connectorId || !pikoSystemId || !cameraId || positionMs === undefined || positionMs === null) {
-      console.error("PikoVideoPlayer: Missing required props (connectorId, pikoSystemId, cameraId, positionMs).");
+    // MODIFIED: Validate required props, pikoSystemId is optional
+    if (!connectorId || !cameraId || positionMs === undefined || positionMs === null) {
+      console.error("PikoVideoPlayer: Missing required props (connectorId, cameraId, positionMs).");
       setMediaInfoError("Required information missing to load video.");
       setIsLoadingMediaInfo(false);
       return;
@@ -54,7 +54,10 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
     // Construct URL for the getInfo action (default)
     const infoApiUrl = new URL('/api/piko/media', window.location.origin);
     infoApiUrl.searchParams.append('connectorId', connectorId);
-    infoApiUrl.searchParams.append('pikoSystemId', pikoSystemId);
+    // Conditionally add pikoSystemId if present (indicates cloud)
+    if (pikoSystemId) {
+        infoApiUrl.searchParams.append('pikoSystemId', pikoSystemId);
+    }
     infoApiUrl.searchParams.append('cameraId', cameraId);
     infoApiUrl.searchParams.append('positionMs', String(positionMs));
 
@@ -75,7 +78,8 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
            if (data.mediaType && data.streamUrl) {
                console.log(`PikoVideoPlayer: Media info received: Type=${data.mediaType}, URL=${data.streamUrl}`);
                setMediaType(data.mediaType);
-               setStreamUrl(data.streamUrl); // This URL already includes action=getStream
+               // The streamUrl from getInfo already contains action=getStream and all necessary params
+               setStreamUrl(data.streamUrl);
                setMediaInfoError(null);
            } else {
                throw new Error("Invalid media info received from API.");
@@ -110,6 +114,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
         }
     };
     // Re-run effect if any critical prop changes
+    // pikoSystemId is now correctly optional
   }, [connectorId, pikoSystemId, cameraId, positionMs]);
 
 

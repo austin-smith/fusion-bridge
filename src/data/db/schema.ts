@@ -61,9 +61,9 @@ export const devices = sqliteTable("devices", {
   deviceId: text("device_id").notNull(), // External device ID from the connector
   connectorId: text("connector_id").notNull().references(() => connectors.id, { onDelete: 'cascade' }),
   name: text("name").notNull(),
-  type: text("type").notNull(), // Device type/model
-  status: text("status"), // Device status (nullable)
-  serverId: text("server_id").references(() => pikoServers.serverId, { onDelete: 'set null' }), // FK to pikoServers table, SET NULL on piko server delete
+  type: text("type").notNull(),
+  status: text("status"),
+  serverId: text("server_id"),
   vendor: text("vendor"),
   model: text("model"),
   url: text("url"),
@@ -82,10 +82,6 @@ export const devicesRelations = relations(devices, ({ one, many }) => ({
   connector: one(connectors, {
     fields: [devices.connectorId],
     references: [connectors.id],
-  }),
-  pikoServer: one(pikoServers, {
-    fields: [devices.serverId],
-    references: [pikoServers.serverId]
   }),
   cameraAssociationsSource: many(cameraAssociations, { relationName: 'sourceDevice' }), // Associations where this device is the source (e.g., YoLink)
   cameraAssociationsTarget: many(cameraAssociations, { relationName: 'targetCamera' }), // Associations where this device is the target (e.g., Piko Camera)

@@ -420,77 +420,105 @@ async function syncYoLinkDevices(connectorId: string, config: yolinkDriver.YoLin
 async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfig): Promise<number> {
   let processedDeviceCount = 0;
   try {
-    console.log(`Syncing Piko servers and devices for connector ${connectorId}`);
+    console.log(`Syncing Piko servers and devices for connector ${connectorId} (Type: ${config.type})`);
 
-    // Validate required config fields
-    if (!config.username || !config.password || !config.selectedSystem) {
-      throw new Error('Piko config requires username, password, and selectedSystem ID');
+    // === Modified Config Validation ===
+    if (!config.username || !config.password) {
+        throw new Error('Piko config requires username and password');
     }
-    const { username, password, selectedSystem } = config;
-    
-    // 1. Get system-scoped access token
-    const tokenResponse = await pikoDriver.getSystemScopedAccessToken(username, password, selectedSystem);
-    const systemScopedToken = tokenResponse.accessToken;
-    console.log(`Successfully obtained Piko system-scoped token for system: ${selectedSystem}`);
-    
-    // --- Sync Piko Servers ---
+    if (config.type === 'cloud' && !config.selectedSystem) {
+        throw new Error('Piko cloud config requires selectedSystem ID');
+    }
+    if (config.type === 'local' && (!config.host || !config.port)) {
+        throw new Error('Piko local config requires host and port');
+    }
+    // ================================
+
+    // 1. Get appropriate access token (cloud or local)
+    const tokenResponse = await pikoDriver.getToken(config); // Use the generic getToken
+    const accessToken = tokenResponse.accessToken;
+    console.log(`Successfully obtained Piko token (Type: ${config.type})`);
+
+    // === Modified Server/Device Fetching ===
+    // No concept of "Servers" for local? Documentation is unclear.
+    // Let's assume for now server fetching is only for cloud.
+    // Devices fetching should work for both, passing the full config.
+
+    // --- Sync Piko Servers (Conditional for Cloud) ---
     let processedServerCount = 0;
-    try {
-      console.log("Fetching Piko servers...");
-      const pikoServersFromApi = await pikoDriver.getSystemServers(selectedSystem, systemScopedToken);
-      console.log(`Found ${pikoServersFromApi.length} Piko servers from API.`);
+    if (config.type === 'cloud' && config.selectedSystem) { // Only run for cloud
+        try {
+          console.log(`Fetching Piko servers for cloud system: ${config.selectedSystem}...`);
+          // Pass the config object which includes selectedSystem for cloud
+          const pikoServersFromApi = await pikoDriver.getSystemServers(config, accessToken);
+          console.log(`Found ${pikoServersFromApi.length} Piko servers from API.`);
 
-      if (pikoServersFromApi.length > 0) {
-        console.log(`Upserting ${pikoServersFromApi.length} Piko servers...`);
-        for (const server of pikoServersFromApi) {
-          if (!server.id || !server.name) {
-            console.warn('[Piko Server Upsert] Skipping server with missing id or name:', server);
-            continue;
-          }
-
-          const serverData = {
-            serverId: server.id, // Matches schema field name
-            connectorId: connectorId,
-            name: server.name,
-            status: server.status || null,
-            version: server.version || null,
-            osPlatform: server.osInfo?.platform || null,
-            osVariantVersion: server.osInfo?.variantVersion || null,
-            url: server.url || null,
-            updatedAt: new Date()
-          };
-
-          await db.insert(pikoServers)
-            .values({ ...serverData, createdAt: new Date() })
-            .onConflictDoUpdate({
-              target: pikoServers.serverId,
-              set: {
-                name: serverData.name,
-                status: serverData.status,
-                version: serverData.version,
-                osPlatform: serverData.osPlatform,
-                osVariantVersion: serverData.osVariantVersion,
-                url: serverData.url,
-                updatedAt: serverData.updatedAt
-                // connectorId should not change on conflict
+          if (pikoServersFromApi.length > 0) {
+            console.log(`Upserting ${pikoServersFromApi.length} Piko servers...`);
+            for (const server of pikoServersFromApi) {
+              if (!server.id || !server.name) {
+                console.warn('[Piko Server Upsert] Skipping server with missing id or name:', server);
+                continue;
               }
-            });
-          processedServerCount++;
-        }
-        console.log(`Piko server upsert finished. Processed: ${processedServerCount}`);
-      }
-      // Optional: Delete servers associated with connectorId not in pikoServersFromApi
+              const serverData = {
+                serverId: server.id,
+                connectorId: connectorId,
+                name: server.name,
+                status: server.status || null,
+                version: server.version || null,
+                osPlatform: server.osInfo?.platform || null,
+                osVariantVersion: server.osInfo?.variantVersion || null,
+                url: server.url || null,
+                updatedAt: new Date(),
+                createdAt: new Date() // Need createdAt for initial insert
+              };
+              await db.insert(pikoServers)
+                .values({
+                    serverId: server.id,
+                    connectorId: connectorId,
+                    name: server.name,
+                    status: server.status || null,
+                    version: server.version || null,
+                    osPlatform: server.osInfo?.platform || null,
+                    osVariantVersion: server.osInfo?.variantVersion || null,
+                    url: server.url || null,
+                    updatedAt: new Date(),
+                    createdAt: new Date() // Need createdAt for initial insert
+                 })
+                .onConflictDoUpdate({
+                  target: pikoServers.serverId,
+                  set: {
+                    name: server.name,
+                    status: server.status || null,
+                    version: server.version || null,
+                    osPlatform: server.osInfo?.platform || null,
+                    osVariantVersion: server.osInfo?.variantVersion || null,
+                    url: server.url || null,
+                    updatedAt: new Date()
+                    // connectorId should not change on conflict
+                  }
+                });
+              processedServerCount++;
+            }
+            console.log(`Piko server upsert finished. Processed: ${processedServerCount}`);
+          }
+          // Optional: Delete servers associated with connectorId not in pikoServersFromApi
 
-    } catch (serverSyncError: unknown) {
-      console.error(`Error during Piko server sync for connector ${connectorId}:`, serverSyncError);
-      // Decide if server sync error should stop device sync. For now, log and continue.
-      // errors.push(...) could be used if we pass the errors array down.
+        } catch (serverSyncError: unknown) {
+          console.error(`Error during Piko server sync for cloud connector ${connectorId}:`, serverSyncError);
+          // Decide if server sync error should stop device sync. For now, log and continue.
+        }
+    } else if (config.type === 'local') {
+        console.log(`Skipping Piko server sync for local connection type.`);
+        // Optionally, delete any existing server entries for this local connector?
+        // await db.delete(pikoServers).where(eq(pikoServers.connectorId, connectorId));
     }
 
-    // --- Sync Piko Devices ---
-    console.log("Fetching Piko devices...");
-    const pikoDevicesFromApi = await pikoDriver.getSystemDevices(selectedSystem, systemScopedToken);
-    console.log(`Found ${pikoDevicesFromApi.length} Piko devices from API for system ${selectedSystem}.`);
+    // --- Sync Piko Devices (Works for Both Cloud and Local) ---
+    console.log(`Fetching Piko devices (Type: ${config.type})...`);
+    // Pass the full config object and the obtained token
+    const pikoDevicesFromApi = await pikoDriver.getSystemDevices(config, accessToken);
+    console.log(`Found ${pikoDevicesFromApi.length} Piko devices from API (Type: ${config.type}).`);
 
     if (pikoDevicesFromApi.length > 0) {
       console.log(`Upserting ${pikoDevicesFromApi.length} Piko devices...`);
@@ -506,7 +534,7 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
           name: device.name,
           type: device.deviceType || 'Unknown', 
           status: device.status || null, 
-          serverId: device.serverId || null,
+          serverId: config.type === 'local' ? null : (device.serverId || null), // Set serverId to null for local type
           vendor: device.vendor || null,
           model: device.model || null, // Use model field from Piko API
           url: device.url || null,
