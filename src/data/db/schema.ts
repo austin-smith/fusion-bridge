@@ -34,6 +34,7 @@ export const events = sqliteTable("events", {
   // Standardized Classification
   standardizedEventCategory: text("standardized_event_category").notNull(), // StandardizedEvent.eventCategory
   standardizedEventType: text("standardized_event_type").notNull(), // StandardizedEvent.eventType
+  standardizedEventSubtype: text("standardized_event_subtype"), // <-- ADDED: Optional subtype
 
   // Payloads
   rawEventType: text("raw_event_type"), // Original event type string (nullable? - let's keep nullable for now)
@@ -74,7 +75,6 @@ export const devices = sqliteTable("devices", {
   connectorDeviceUniqueIdx: uniqueIndex("devices_connector_device_unique_idx")
     .on(table.connectorId, table.deviceId),
   // Index on internal ID is implicit (PK)
-  serverIdIdx: index("devices_server_id_idx").on(table.serverId),
 }));
 
 // Relation for devices linking back to connector and server
@@ -111,7 +111,7 @@ export const pikoServersRelations = relations(pikoServers, ({ one, many }) => ({
     fields: [pikoServers.connectorId],
     references: [connectors.id],
   }),
-  devices: many(devices),
+  // No explicit relation to devices here anymore
 }));
 
 // Junction table for camera associations (renamed from deviceAssociations)

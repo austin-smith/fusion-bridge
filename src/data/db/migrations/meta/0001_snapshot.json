@@ -1,8 +1,6 @@
 {
-  "version": "5",
+  "version": "6",
   "dialect": "sqlite",
-  "id": "120c7bb1-a0de-4529-b8f1-d6097f6dd63e",
-  "prevId": "e9962ba4-d15e-4b04-8e28-9ae2257692c3",
   "tables": {
     "area_devices": {
       "name": "area_devices",
@@ -49,28 +47,28 @@
         "area_devices_area_id_areas_id_fk": {
           "name": "area_devices_area_id_areas_id_fk",
           "tableFrom": "area_devices",
-          "tableTo": "areas",
           "columnsFrom": [
             "area_id"
           ],
+          "tableTo": "areas",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "area_devices_device_id_devices_id_fk": {
           "name": "area_devices_device_id_devices_id_fk",
           "tableFrom": "area_devices",
-          "tableTo": "devices",
           "columnsFrom": [
             "device_id"
           ],
+          "tableTo": "devices",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -82,7 +80,8 @@
           "name": "area_devices_area_id_device_id_pk"
         }
       },
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "areas": {
       "name": "areas",
@@ -144,19 +143,20 @@
         "areas_location_id_locations_id_fk": {
           "name": "areas_location_id_locations_id_fk",
           "tableFrom": "areas",
-          "tableTo": "locations",
           "columnsFrom": [
             "location_id"
           ],
+          "tableTo": "locations",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "automations": {
       "name": "automations",
@@ -227,19 +227,20 @@
         "automations_source_connector_id_connectors_id_fk": {
           "name": "automations_source_connector_id_connectors_id_fk",
           "tableFrom": "automations",
-          "tableTo": "connectors",
           "columnsFrom": [
             "source_connector_id"
           ],
+          "tableTo": "connectors",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "camera_associations": {
       "name": "camera_associations",
@@ -286,28 +287,28 @@
         "camera_associations_device_id_devices_id_fk": {
           "name": "camera_associations_device_id_devices_id_fk",
           "tableFrom": "camera_associations",
-          "tableTo": "devices",
           "columnsFrom": [
             "device_id"
           ],
+          "tableTo": "devices",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "camera_associations_piko_camera_id_devices_id_fk": {
           "name": "camera_associations_piko_camera_id_devices_id_fk",
           "tableFrom": "camera_associations",
-          "tableTo": "devices",
           "columnsFrom": [
             "piko_camera_id"
           ],
+          "tableTo": "devices",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -319,7 +320,8 @@
           "name": "camera_associations_device_id_piko_camera_id_pk"
         }
       },
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "connectors": {
       "name": "connectors",
@@ -371,7 +373,8 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "devices": {
       "name": "devices",
@@ -482,32 +485,33 @@
         "devices_connector_id_connectors_id_fk": {
           "name": "devices_connector_id_connectors_id_fk",
           "tableFrom": "devices",
-          "tableTo": "connectors",
           "columnsFrom": [
             "connector_id"
           ],
+          "tableTo": "connectors",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "devices_server_id_piko_servers_id_fk": {
           "name": "devices_server_id_piko_servers_id_fk",
           "tableFrom": "devices",
-          "tableTo": "piko_servers",
           "columnsFrom": [
             "server_id"
           ],
+          "tableTo": "piko_servers",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "events": {
       "name": "events",
@@ -611,19 +615,20 @@
         "events_connector_id_connectors_id_fk": {
           "name": "events_connector_id_connectors_id_fk",
           "tableFrom": "events",
-          "tableTo": "connectors",
           "columnsFrom": [
             "connector_id"
           ],
+          "tableTo": "connectors",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "locations": {
       "name": "locations",
@@ -691,19 +696,20 @@
         "locations_parent_id_locations_id_fk": {
           "name": "locations_parent_id_locations_id_fk",
           "tableFrom": "locations",
-          "tableTo": "locations",
           "columnsFrom": [
             "parent_id"
           ],
+          "tableTo": "locations",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "piko_servers": {
       "name": "piko_servers",
@@ -792,25 +798,28 @@
         "piko_servers_connector_id_connectors_id_fk": {
           "name": "piko_servers_connector_id_connectors_id_fk",
           "tableFrom": "piko_servers",
-          "tableTo": "connectors",
           "columnsFrom": [
             "connector_id"
           ],
+          "tableTo": "connectors",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     }
   },
   "enums": {},
   "_meta": {
-    "schemas": {},
     "tables": {},
     "columns": {}
-  }
+  },
+  "id": "120c7bb1-a0de-4529-b8f1-d6097f6dd63e",
+  "prevId": "e9962ba4-d15e-4b04-8e28-9ae2257692c3",
+  "views": {}
 }

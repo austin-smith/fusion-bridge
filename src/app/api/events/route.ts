@@ -4,7 +4,7 @@ import { connectors, devices } from '@/data/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import * as eventsRepository from '@/data/repositories/events';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
-import { TypedDeviceInfo, DisplayState, DeviceType, EventCategory } from '@/lib/mappings/definitions';
+import { TypedDeviceInfo, DisplayState, DeviceType, EventCategory, EventSubtype } from '@/lib/mappings/definitions';
 import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
 import { PikoConfig } from '@/services/drivers/piko';
 
@@ -16,6 +16,7 @@ interface RepoEnrichedEvent {
   timestamp: Date;
   standardizedEventCategory: string;
   standardizedEventType: string;
+  standardizedEventSubtype: string | null;
   standardizedPayload: unknown; // Keep as unknown for parsing
   rawPayload: unknown;
   rawEventType: string | null; // Added from repo
@@ -39,6 +40,7 @@ interface ApiEnrichedEvent {
   timestamp: number; // Epoch ms
   eventCategory: string;
   eventType: string;
+  eventSubtype?: EventSubtype;
   payload: Record<string, any> | null;
   rawPayload: Record<string, any> | null;
   deviceTypeInfo: TypedDeviceInfo;
@@ -139,22 +141,23 @@ export async function GET() {
         id: event.id,
         eventUuid: event.eventUuid,
         deviceId: event.deviceId,
-        deviceName: event.deviceName ?? undefined, // Use joined name, convert null to undefined
+        deviceName: event.deviceName ?? undefined,
         connectorId: event.connectorId,
-        connectorName: event.connectorName ?? undefined, // Use joined name
+        connectorName: event.connectorName ?? undefined,
         connectorCategory: connectorCategory,
-        timestamp: event.timestamp.getTime(), // Convert Date to epoch ms
+        timestamp: event.timestamp.getTime(),
         eventCategory: event.standardizedEventCategory,
         eventType: event.standardizedEventType,
+        eventSubtype: event.standardizedEventSubtype as EventSubtype ?? undefined,
         payload: payload,
         deviceTypeInfo: deviceTypeInfo,
         displayState: displayState,
         rawPayload: rawPayload,
-        rawEventType: event.rawEventType ?? undefined, // Include rawEventType
-        bestShotUrlComponents: bestShotUrlComponents, // Use potentially updated components
+        rawEventType: event.rawEventType ?? undefined,
+        bestShotUrlComponents: bestShotUrlComponents,
       };
 
-      return finalEventObject; // Return the constructed object
+      return finalEventObject;
     });
 
     return NextResponse.json({ success: true, data: apiEvents });

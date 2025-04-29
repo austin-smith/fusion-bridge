@@ -1,8 +1,8 @@
 {
-  "version": "5",
+  "version": "6",
   "dialect": "sqlite",
-  "id": "8c731e55-9182-467c-82ab-4befc7781681",
-  "prevId": "3dda799a-7cda-44c3-ba94-c1e4b9526799",
+  "id": "97468514-6ffd-4ec6-9f8f-5339244c7be7",
+  "prevId": "8c731e55-9182-467c-82ab-4befc7781681",
   "tables": {
     "area_devices": {
       "name": "area_devices",
@@ -82,7 +82,8 @@
           "name": "area_devices_area_id_device_id_pk"
         }
       },
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "areas": {
       "name": "areas",
@@ -156,7 +157,8 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "automations": {
       "name": "automations",
@@ -239,7 +241,8 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "camera_associations": {
       "name": "camera_associations",
@@ -319,7 +322,8 @@
           "name": "camera_associations_device_id_piko_camera_id_pk"
         }
       },
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "connectors": {
       "name": "connectors",
@@ -371,7 +375,8 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "devices": {
       "name": "devices",
@@ -413,13 +418,6 @@
         },
         "status": {
           "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "server_id": {
-          "name": "server_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -469,13 +467,6 @@
             "device_id"
           ],
           "isUnique": true
-        },
-        "devices_server_id_idx": {
-          "name": "devices_server_id_idx",
-          "columns": [
-            "server_id"
-          ],
-          "isUnique": false
         }
       },
       "foreignKeys": {
@@ -494,7 +485,8 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "events": {
       "name": "events",
@@ -546,6 +538,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "standardized_event_subtype": {
+          "name": "standardized_event_subtype",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "raw_event_type": {
@@ -610,7 +609,8 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "locations": {
       "name": "locations",
@@ -690,7 +690,8 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "piko_servers": {
       "name": "piko_servers",
@@ -791,13 +792,18 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     }
   },
+  "views": {},
   "enums": {},
   "_meta": {
     "schemas": {},
     "tables": {},
     "columns": {}
+  },
+  "internal": {
+    "indexes": {}
   }
 }

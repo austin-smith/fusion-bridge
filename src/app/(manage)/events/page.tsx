@@ -371,11 +371,26 @@ export default function EventsPage() {
       cell: ({ row }) => {
         const connectorName = row.original.connectorName;
         const connectorCategory = row.original.connectorCategory;
+        const fullText = connectorName || 'System'; // Text for the tooltip
+
         return (
-          <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-            <ConnectorIcon connectorCategory={connectorCategory} size={12} />
-            <span className="text-xs">{connectorName || 'System'}</span>
-          </Badge>
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                  <ConnectorIcon connectorCategory={connectorCategory} size={12} />
+                  {/* Span handles truncation */}
+                  <span className="block max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap text-xs">
+                    {fullText}
+                  </span>
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {/* Show full text in tooltip */}
+                <p>{fullText}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         );
       },
     },
@@ -474,19 +489,35 @@ export default function EventsPage() {
         const eventType = row.original.eventType as EventType;
         const eventSubtype = row.original.eventSubtype;
         const typeDisplayName = EVENT_TYPE_DISPLAY_MAP[eventType] || eventType;
-        const subtypeDisplayName = eventSubtype ? EVENT_SUBTYPE_DISPLAY_MAP[eventSubtype] : null;
+        const subtypeDisplayName = eventSubtype ? (EVENT_SUBTYPE_DISPLAY_MAP[eventSubtype] ?? eventSubtype) : null;
 
+        // Combine type and subtype for display
+        const fullText = subtypeDisplayName 
+          ? `${typeDisplayName} / ${subtypeDisplayName}` 
+          : typeDisplayName;
+
+        // Tooltip + Truncation approach
         return (
-          <div className="flex flex-col items-start gap-1">
-            <Badge variant="outline">
-              {typeDisplayName}
-            </Badge>
-            {subtypeDisplayName && (
-              <Badge variant="secondary" className="font-normal">
-                {subtypeDisplayName}
-              </Badge>
-            )}
-          </div>
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* Badge acts as the trigger, but content inside is truncated */}
+                <Badge variant="outline" className="font-normal">
+                  {/* Span inside the badge handles truncation */}
+                  <span className="block max-w-[150px] overflow-hidden text-ellipsis whitespace-nowrap">
+                    {typeDisplayName}
+                    {subtypeDisplayName && (
+                      <span className="text-muted-foreground ml-1">/ {subtypeDisplayName}</span>
+                    )}
+                  </span>
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {/* Show full text in tooltip */}
+                <p>{fullText}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         );
       },
     },
@@ -685,10 +716,12 @@ export default function EventsPage() {
             {/* --- End Single Unconditional Video Dialog --- */}
 
             {/* Existing Details Button */}
-            <EventDetailDialogContent 
+            <EventDetailDialogContent
               event={{
                 ...eventData,
                 bestShotUrlComponents: eventData.bestShotUrlComponents ? {
+                  // Determine 'type' based on pikoSystemId presence
+                  type: eventData.bestShotUrlComponents.pikoSystemId ? 'cloud' : 'local',
                   pikoSystemId: eventData.bestShotUrlComponents.pikoSystemId,
                   connectorId: eventData.bestShotUrlComponents.connectorId,
                   objectTrackId: eventData.bestShotUrlComponents.objectTrackId,
@@ -883,38 +916,60 @@ export default function EventsPage() {
                 <TableHeader className="sticky top-0 bg-background z-10">
                   {table.getHeaderGroups().map((headerGroup) => (
                     <TableRow key={headerGroup.id}>
-                      {headerGroup.headers.map((header) => (
-                        <TableHead 
-                          key={header.id}
-                          className="px-2 py-1"
-                        >
-                          <div 
-                            className={header.column.getCanSort() ? "cursor-pointer select-none" : undefined}
-                            onClick={header.column.getToggleSortingHandler()}
+                      {headerGroup.headers.map((header) => {
+                        // Get the full header text (or use accessorKey as fallback)
+                        const headerText = typeof header.column.columnDef.header === 'string' 
+                          ? header.column.columnDef.header 
+                          : header.column.id;
+                        
+                        return (
+                          <TableHead 
+                            key={header.id}
+                            className="px-2 py-1"
                           >
-                            <div className="flex items-center">
-                              {header.isPlaceholder
-                                ? null
-                                : flexRender(
-                                    header.column.columnDef.header,
-                                    header.getContext()
-                                  )}
-                              {header.column.getCanSort() && (
-                                <SortIcon isSorted={header.column.getIsSorted()} />
+                            <TooltipProvider delayDuration={100}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div 
+                                    className={header.column.getCanSort() ? "cursor-pointer select-none" : undefined}
+                                    onClick={header.column.getToggleSortingHandler()}
+                                  >
+                                    <div className="flex items-center">
+                                      {/* Truncated header text */}
+                                      <span className="block max-w-[100px] overflow-hidden text-ellipsis whitespace-nowrap">
+                                        {header.isPlaceholder
+                                          ? null
+                                          : flexRender(
+                                              header.column.columnDef.header,
+                                              header.getContext()
+                                            )}
+                                      </span>
+                                      {header.column.getCanSort() && (
+                                        <SortIcon isSorted={header.column.getIsSorted()} />
+                                      )}
+                                    </div>
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {/* Full header text in tooltip */}
+                                  <p>{headerText}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            
+                            {/* Filter input remains below */}
+                            <div className="mt-1 h-8">
+                              {header.column.getCanFilter() && (
+                                <DebouncedInput
+                                  value={(header.column.getFilterValue() ?? '') as string}
+                                  onChange={value => header.column.setFilterValue(value)}
+                                  placeholder=""
+                                />
                               )}
                             </div>
-                          </div>
-                          <div className="mt-1 h-8">
-                            {header.column.getCanFilter() && (
-                              <DebouncedInput
-                                value={(header.column.getFilterValue() ?? '') as string}
-                                onChange={value => header.column.setFilterValue(value)}
-                                placeholder=""
-                              />
-                            )}
-                          </div>
-                        </TableHead>
-                      ))}
+                          </TableHead>
+                        );
+                      })}
                     </TableRow>
                   ))}
                 </TableHeader>

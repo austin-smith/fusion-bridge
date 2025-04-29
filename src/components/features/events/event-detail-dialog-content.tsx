@@ -200,6 +200,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
   };
   // Check if all necessary props are available before attempting to render player
   // For local, pikoSystemId is intentionally undefined, which is okay for the player if it handles it
+  // *** ADD CHECK FOR cameraId ***
   const canRenderPlayer = !!(pikoVideoProps.connectorId && pikoVideoProps.cameraId && pikoVideoProps.positionMs !== undefined);
 
   return (

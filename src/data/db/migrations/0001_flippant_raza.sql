@@ -34,5 +34,6 @@ CREATE INDEX `locations_parent_idx` ON `locations` (`parent_id`);--> statement-b
 CREATE INDEX `locations_path_idx` ON `locations` (`path`);--> statement-breakpoint
 CREATE INDEX `automations_source_connector_idx` ON `automations` (`source_connector_id`);--> statement-breakpoint
 CREATE INDEX `camera_assoc_piko_idx` ON `camera_associations` (`piko_camera_id`);--> statement-breakpoint
-CREATE INDEX `camera_assoc_device_idx` ON `camera_associations` (`device_id`);--> statement-breakpoint
-CREATE INDEX `devices_server_id_idx` ON `devices` (`server_id`);--> statement-breakpoint
+CREATE INDEX `camera_assoc_device_idx` ON `camera_associations` (`device_id`);--> statement-breakpointstatement-breakpoint
+CREATE INDEX `devices_server_id_idx` ON `devices` (`server_id`);--> statement-breakpoint> statement-breakpoint
+

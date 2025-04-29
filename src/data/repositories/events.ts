@@ -23,6 +23,7 @@ export async function storeStandardizedEvent(stdEvent: StandardizedEvent) {
       deviceId: stdEvent.deviceId,
       standardizedEventCategory: stdEvent.category,
       standardizedEventType: stdEvent.type,
+      standardizedEventSubtype: stdEvent.subtype,
       standardizedPayload: JSON.stringify(stdEvent.payload), // Store the structured payload as JSON
       rawEventType: rawEventType,
       rawPayload: JSON.stringify(stdEvent.originalEvent ?? {}), // Store the original raw payload as JSON
@@ -54,6 +55,7 @@ export async function getRecentEvents(limit = 100) {
         timestamp: events.timestamp,
         standardizedEventCategory: events.standardizedEventCategory,
         standardizedEventType: events.standardizedEventType,
+        standardizedEventSubtype: events.standardizedEventSubtype,
         standardizedPayload: events.standardizedPayload,
         rawPayload: events.rawPayload,
         rawEventType: events.rawEventType,

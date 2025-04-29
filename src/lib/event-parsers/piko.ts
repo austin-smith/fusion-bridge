@@ -10,7 +10,8 @@ type ParsedPikoEventType = EventType.ANALYTICS_EVENT
                          | EventType.ARMED_PERSON 
                          | EventType.TAILGATING 
                          | EventType.INTRUSION 
-                         | EventType.LINE_CROSSING;
+                         | EventType.LINE_CROSSING
+                         | EventType.OBJECT_DETECTED;
 
 /**
  * Parses the event parameters from a Piko JSON-RPC event update message 
@@ -84,10 +85,13 @@ export function parsePikoEvent(
         objectTrackId: rawEventParams.objectTrackId,
     };
 
-    // --- Determine Specific Event Type ---
+    // --- Determine Specific Event Type & Subtype ---
     let specificEventType: ParsedPikoEventType = EventType.ANALYTICS_EVENT; // Default
-    const inputPortId = rawEventParams.inputPortId;
+    let specificEventSubtype: EventSubtype | undefined = undefined; // NEW: For subtype
+    const inputPortId = rawEventParams.inputPortId?.toLowerCase(); // Normalize for reliable checking
+    const pikoEventType = rawEventParams.eventType;
 
+    // 1. Handle specific inputPortId mappings first
     if (inputPortId === 'cvedia.rt.loitering') {
         specificEventType = EventType.LOITERING;
     } else if (inputPortId === 'cvedia.rt.armed_person') {
@@ -99,13 +103,27 @@ export function parsePikoEvent(
     } else if (inputPortId === 'cvedia.rt.crossing') {
         specificEventType = EventType.LINE_CROSSING;
     }
-    // TODO: Add mapping for PERSON_DETECTED based on Piko fields
-    // else if (inputPortId === 'SOME_PIKO_ID_FOR_PERSON') {
-    //     specificEventType = EventType.PERSON_DETECTED;
-    // }
+    // 2. Fallback check for OBJECT_DETECTED based on eventType
+    else if (pikoEventType === 'analyticsSdkObjectDetected') {
+        specificEventType = EventType.OBJECT_DETECTED;
+        // Determine subtype based on inputPortId content
+        if (inputPortId?.includes('person')) {
+            specificEventSubtype = EventSubtype.PERSON;
+        } else if (inputPortId?.includes('vehicle')) {
+            specificEventSubtype = EventSubtype.VEHICLE;
+        }
+        // If neither 'person' nor 'vehicle' is found in inputPortId, 
+        // the subtype remains undefined, which is acceptable for a generic OBJECT_DETECTED event.
+    }
+    // 3. Fallback check for generic ANALYTICS_EVENT based on eventType
+    else if (pikoEventType === 'analyticsSdkEvent') {
+        // The specificEventType is already defaulted to ANALYTICS_EVENT,
+        // but this explicitly confirms it if the Piko eventType matches.
+        specificEventType = EventType.ANALYTICS_EVENT;
+    }
 
     // --- Create Standardized Event ---
-    // Use the determined specificEventType
+    // Use the determined specificEventType and add subtype if available
     const standardizedEvent: StandardizedEvent = {
         eventId: crypto.randomUUID(),
         timestamp: timestamp,
@@ -113,6 +131,7 @@ export function parsePikoEvent(
         deviceId: deviceId,
         category: EventCategory.ANALYTICS,
         type: specificEventType,
+        subtype: specificEventSubtype, // NEW: Add subtype
         deviceInfo: deviceInfo,
         payload: payload,
         originalEvent: rawEventParams,
