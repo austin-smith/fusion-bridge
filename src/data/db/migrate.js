@@ -87,18 +87,38 @@ async function runMigrations() {
 
   } catch (error) {
     // --- Error Handling ---
-    const isTableExistsError = 
+    // Check for Turso specific table exists error
+    const isTursoTableExistsError =
+      error.code === 'SQL_INPUT_ERROR' &&
+      error.message &&
+      error.message.includes('already exists');
+
+    // Check for the original SQLite specific table exists error
+    const isSqliteTableExistsError = 
       error.cause && 
-      error.cause.code === 'SQLITE_ERROR' && 
+      // error.cause.code === 'SQLITE_ERROR' && // LibsqlError might not have SQLITE_ERROR in cause
       error.cause.message && 
       error.cause.message.includes('already exists');
 
-    if (isTableExistsError) {
-      console.log('Some tables might already exist (SQLite). Migration partially applied or skipped. This is often safe.');
-      console.log('Specific error:', error.cause.message);
+    if (isTursoTableExistsError || isSqliteTableExistsError) {
+      console.warn(`Table already exists error detected: ${error.message}`);
+      console.warn('Migration likely partially applied or skipped. This might be safe if migrations are idempotent or already applied.');
+      // Optionally log the full error for debugging but don't exit
+      // console.error('Full error details:', error); 
     } else {
       console.error('Error running migrations:', error);
-      console.error('Detailed error:', JSON.stringify(error, null, 2));
+      // Log the detailed structure if available, especially for LibsqlError
+      if (error.code || error.rawCode || error.cause) {
+         console.error('Detailed error info:', { 
+            code: error.code, 
+            message: error.message, 
+            rawCode: error.rawCode, 
+            cause: error.cause 
+         });
+      } else {
+         // Fallback for generic errors
+         console.error('Detailed error:', JSON.stringify(error, null, 2));
+      }
       process.exit(1);
     }
   } finally {
