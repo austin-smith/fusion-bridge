@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "97468514-6ffd-4ec6-9f8f-5339244c7be7",
-  "prevId": "8c731e55-9182-467c-82ab-4befc7781681",
+  "id": "20675555-d813-4d8b-b743-a94ece869cde",
+  "prevId": "a7c57b37-b502-402f-8abc-3ea2d60679f1",
   "tables": {
     "area_devices": {
       "name": "area_devices",
@@ -177,13 +177,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "source_connector_id": {
-          "name": "source_connector_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "enabled": {
           "name": "enabled",
           "type": "integer",
@@ -216,30 +209,8 @@
           "default": "(unixepoch('now', 'subsec') * 1000)"
         }
       },
-      "indexes": {
-        "automations_source_connector_idx": {
-          "name": "automations_source_connector_idx",
-          "columns": [
-            "source_connector_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "automations_source_connector_id_connectors_id_fk": {
-          "name": "automations_source_connector_id_connectors_id_fk",
-          "tableFrom": "automations",
-          "tableTo": "connectors",
-          "columnsFrom": [
-            "source_connector_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "indexes": {},
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
@@ -416,8 +387,29 @@
           "notNull": true,
           "autoincrement": false
         },
+        "standardized_device_type": {
+          "name": "standardized_device_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "standardized_device_subtype": {
+          "name": "standardized_device_subtype",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "status": {
           "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "server_id": {
+          "name": "server_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -467,6 +459,20 @@
             "device_id"
           ],
           "isUnique": true
+        },
+        "devices_std_type_idx": {
+          "name": "devices_std_type_idx",
+          "columns": [
+            "standardized_device_type"
+          ],
+          "isUnique": false
+        },
+        "devices_std_subtype_idx": {
+          "name": "devices_std_subtype_idx",
+          "columns": [
+            "standardized_device_subtype"
+          ],
+          "isUnique": false
         }
       },
       "foreignKeys": {
@@ -589,6 +595,13 @@
           "columns": [
             "connector_id",
             "device_id"
+          ],
+          "isUnique": false
+        },
+        "events_event_type_idx": {
+          "name": "events_event_type_idx",
+          "columns": [
+            "standardized_event_type"
           ],
           "isUnique": false
         }

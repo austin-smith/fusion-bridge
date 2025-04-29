@@ -6,454 +6,378 @@ import { eq, and, inArray } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
 import * as piko from '@/services/drivers/piko'; // Assuming Piko driver functions are here
-import { type AutomationConfig, AutomationConfigSchema, type AutomationAction } from '@/lib/automation-schemas';
-import { minimatch } from 'minimatch'; // For wildcard matching
+import { type AutomationConfig, AutomationConfigSchema, type AutomationAction, type SecondaryCondition } from '@/lib/automation-schemas';
 import pRetry from 'p-retry'; // Import p-retry
 import type { PikoCreateBookmarkPayload } from '@/services/drivers/piko'; // Import the specific payload type
 // Import other necessary drivers or services as needed
 import type { SendHttpRequestActionParamsSchema } from '@/lib/automation-schemas';
 import { z } from 'zod'; // Add Zod import
+import * as eventsRepository from '@/data/repositories/events'; // Import the event repository
 
 /**
- * Processes a standardized event, checks against triggers, and executes actions.
+ * Processes a standardized event against connector-agnostic automation rules.
  * @param stdEvent The incoming StandardizedEvent object.
  */
-export async function processEvent(stdEvent: StandardizedEvent): Promise<void> { // <-- Remove <any>
+export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
     console.log(`[Automation Service] ENTERED processEvent for event: ${stdEvent.eventId}`);
-
-    // Use the direct properties from the refactored StandardizedEvent
     console.log(`[Automation Service] Processing event: ${stdEvent.type} (${stdEvent.category}) for device ${stdEvent.deviceId} from connector ${stdEvent.connectorId}`);
 
     try {
-        // 1. Find the source connector using connectorId from the event
-        const sourceConnectorId = stdEvent.connectorId;
-        const sourceConnector = await db.query.connectors.findFirst({ // Use db.query.connectors
-            where: eq(connectors.id, sourceConnectorId), // Use connectors.id
-            columns: { id: true, category: true }
+        // Fetch all enabled automations
+        const allEnabledAutomations = await db.query.automations.findMany({
+            where: eq(automations.enabled, true),
         });
 
-        // ---> ADD Log: Check if sourceConnector was found <--- 
-        console.log(`[Automation Service] Looked up source connector for connectorId ${sourceConnectorId}. Found: ${sourceConnector ? sourceConnector.id : 'null'}`);
-
-        if (!sourceConnector) {
-            // This should ideally not happen if connectorId is valid, but good practice to check
-            console.error(`[Automation Service] Could not find source connector with ID ${sourceConnectorId}. Skipping event processing.`);
+        if (allEnabledAutomations.length === 0) {
+            console.log(`[Automation Service] No enabled automations found.`);
             return;
         }
-        // console.log(`[Automation Service] Identified source connector: ${sourceConnectorId}`); // Log less verbose now
 
-        // 2. Fetch enabled automations for the specific connector and event type
-        const candidateAutomations = await db.query.automations.findMany({
-            where: and(
-                eq(automations.enabled, true),
-                eq(automations.sourceConnectorId, sourceConnectorId)
-            ),
-        });
+        console.log(`[Automation Service] Evaluating ${allEnabledAutomations.length} enabled automation(s) against event ${stdEvent.eventId}`);
 
-        // Log reflects the result *after* DB filtering by event type AND connector
-        console.log(`[Automation Service] Found ${candidateAutomations.length} enabled automation(s) for connector ${sourceConnectorId} matching eventType '${stdEvent.type}'`);
+        const triggerDeviceType = stdEvent.deviceInfo?.type ?? DeviceType.Unmapped;
 
-        if (candidateAutomations.length === 0) {
-            // console.log(`[Automation Service] Exiting: No enabled automations found for connector ${sourceConnectorId} matching eventType '${stdEvent.type}'.`);
-            return; // No rules matching this specific event type and connector
-        }
-
-        // Get standardized device type for filtering
-        const deviceType = stdEvent.deviceInfo?.type ?? DeviceType.Unmapped; // Use standardized type
-
-        // 3. Filter candidates in code based on configJson criteria
-        for (const rule of candidateAutomations) {
+        for (const rule of allEnabledAutomations) {
             let ruleConfig: AutomationConfig;
             try {
-                // Parse config (no change needed here)
                 const parseResult = AutomationConfigSchema.safeParse(rule.configJson);
                 if (!parseResult.success) {
-                    // Log parsing error specifically
-                    console.error(`[Automation Service] Rule ID ${rule.id}: Failed to parse configJson - ${parseResult.error.message}`);
-                    continue; // Skip rule if config is invalid
+                    console.error(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Failed to parse configJson - ${parseResult.error.message}. Skipping.`);
+                    continue; 
                 }
                 ruleConfig = parseResult.data;
 
-                // --- UPDATED FILTERING --- 
-                // Check 1: Event Type Filter (Using Standardized Event Type)
-                if (ruleConfig.eventTypeFilter && ruleConfig.eventTypeFilter.trim() !== '') {
-                    if (!minimatch(stdEvent.type, ruleConfig.eventTypeFilter)) { 
-                        // console.log(`[Rule ${rule.id}] Skipping: Standardized event type ${stdEvent.type} does not match filter ${ruleConfig.eventTypeFilter}`);
-                        continue;
-                    }
-                     console.log(`[Automation Service] Rule ID ${rule.id}: Event type filter PASSED.`); // Log pass
-                }
+                // --- Primary Trigger Matching (Connector-Agnostic) --- 
+                const trigger = ruleConfig.primaryTrigger;
+                let primaryTriggerMatched = false;
 
-                // Check 2: Source Entity Types Filter (Using Standardized Device Type)
-                if (ruleConfig.sourceEntityTypes && ruleConfig.sourceEntityTypes.length > 0) { 
-                    if (!ruleConfig.sourceEntityTypes.includes(deviceType)) {
-                        // console.log(`[Rule ${rule.id}] Skipping: Device type ${deviceType} not in allowed types [${ruleConfig.sourceEntityTypes.join(', ')}]`);
-                        continue;
-                    }
-                    console.log(`[Automation Service] Rule ID ${rule.id}: Device type filter PASSED.`); // Log pass
-                }
-                // --- END UPDATED FILTERING --- 
-                
-                 // Check 3: Actions defined (no change needed)
-                if (!ruleConfig.actions || ruleConfig.actions.length === 0) {
-                     console.warn(`[Automation Service] Rule ID ${rule.id}: Skipping - No actions defined.`);
-                     continue;
-                }
-                
-                // ---> ADD LOG BEFORE ACTION EXECUTION <--- 
-                console.log(`[Automation Service] Rule ID ${rule.id}: All filters PASSED. Proceeding to execute actions.`);
-
-                console.log(`[Automation Service] Rule Matched: ${rule.name} (ID: ${rule.id}) - Processing ${ruleConfig.actions.length} action(s) for event ${stdEvent.eventId}`);
-                
-                // Fetch Source Device details (using standardized IDs)
-                let sourceDevice = null;
-                if (stdEvent.deviceId) { 
-                    sourceDevice = await db.query.devices.findFirst({
-                        where: and(
-                            eq(devices.connectorId, sourceConnectorId), // Use sourceConnectorId
-                            eq(devices.deviceId, stdEvent.deviceId) // Use deviceId from event
-                        ),
-                        columns: { id: true, name: true, type: true } // Keep fetching internal ID, name
-                    });
-                }
-                // Use stdEvent fields for context if device not found in DB yet
-                const deviceContext = sourceDevice ?? { 
-                    id: stdEvent.deviceId, // Use connector-specific ID as fallback ID
-                    name: 'Unknown Device', // Fallback name
-                    type: deviceType // Use standardized type 
-                }; 
-
-                // --- Loop through and execute each action defined in the rule --- 
-                for (const action of ruleConfig.actions) {
-                    console.log(`[Automation Service] Attempting action type '${action.type}' for rule ${rule.id}`);
-                    
-                    // Define the operation that p-retry will attempt
-                    const runAction = async () => {
-                        // TODO: Update resolveTokens function signature and logic
-                        // For now, pass stdEvent and deviceContext
-                        const resolvedParams = resolveTokens(action.params, stdEvent, deviceContext) as AutomationAction['params']; 
+                // Match based on event type / subtype filter (array of combined strings)
+                if (!trigger.eventTypeFilter || trigger.eventTypeFilter.length === 0) {
+                    primaryTriggerMatched = true; // No filter means match any event type
+                } else {
+                    for (const filterString of trigger.eventTypeFilter) {
+                        const [filterType, filterSubtype] = filterString.split('.'); // e.g., "ACCESS_DENIED" or "ACCESS_DENIED.INVALID_CREDENTIAL"
                         
-                        switch (action.type) {
-                            case 'createEvent': {
-                                // Type assertion and validation for this action's params
-                                if (!('sourceTemplate' in resolvedParams && 'captionTemplate' in resolvedParams && 'descriptionTemplate' in resolvedParams && 'targetConnectorId' in resolvedParams)) {
-                                    throw new Error(`Invalid/missing parameters for createEvent action.`);
-                                }
-
-                                // --- Fetch Target Connector specific to this action --- 
-                                const targetConnector = await db.query.connectors.findFirst({
-                                    where: eq(connectors.id, resolvedParams.targetConnectorId!),
-                                    // Need category and config for Piko logic
-                                    columns: { id: true, category: true, cfg_enc: true }
-                                });
-                                if (!targetConnector || !targetConnector.cfg_enc || !targetConnector.category) {
-                                    throw new Error(`Target connector ${resolvedParams.targetConnectorId} not found or has no config/category for createEvent action.`);
-                                }
-                                // TODO: Decrypt cfg_enc if needed
-                                const targetConfig = JSON.parse(targetConnector.cfg_enc);
-                                // --- End Fetch Target Connector --- 
-
-                                if (targetConnector.category === 'piko') {
-                                    // Use the fetched targetConfig for Piko details
-                                    const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
-                                    if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target connector ${targetConnector.id}`); }
-                                    
-                                    let pikoTokenResponse: piko.PikoTokenResponse;
-                                    try {
-                                        pikoTokenResponse = await piko.getSystemScopedAccessToken(username, password, selectedSystem);
-                                    } catch (tokenError) {
-                                        throw new Error(`Piko token fetch failed: ${tokenError instanceof Error ? tokenError.message : tokenError}`); 
-                                    }
-
-                                    // --- START: Fetch Associated Camera Refs --- 
-                                    let associatedPikoCameraExternalIds: string[] = [];
-                                    const sourceDeviceInternalId = sourceDevice?.id;
-                                    if (sourceDeviceInternalId) {
-                                        try {
-                                            const associations = await db
-                                                .select({ pikoCameraInternalId: cameraAssociations.pikoCameraId })
-                                                .from(cameraAssociations)
-                                                .where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
-                                            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
-                                            if (internalCameraIds.length > 0) {
-                                                const cameraDevices = await db
-                                                    .select({ externalId: devices.deviceId })
-                                                    .from(devices)
-                                                    .where(inArray(devices.id, internalCameraIds)); 
-                                                
-                                                associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
-                                                console.log(`[Rule ${rule.id}][Action createEvent] Found associated Piko camera external IDs: [${associatedPikoCameraExternalIds.join(', ')}]`);
-                                            } else {
-                                                console.log(`[Rule ${rule.id}][Action createEvent] No Piko cameras associated with source device ${sourceDeviceInternalId}`);
-                                            }
-                                        } catch (assocError) {
-                                            console.error(`[Rule ${rule.id}][Action createEvent] Error fetching camera associations:`, assocError);
-                                        }
-                                    } else {
-                                         console.warn(`[Rule ${rule.id}][Action createEvent] Could not get internal ID for source device ${stdEvent.deviceId}. Cannot fetch camera associations.`);
-                                    }
-                                    // --- END: Fetch Associated Camera Refs --- 
-                                    
-                                    const pikoPayload: piko.PikoCreateEventPayload = { 
-                                        source: resolvedParams.sourceTemplate, 
-                                        caption: resolvedParams.captionTemplate, 
-                                        description: resolvedParams.descriptionTemplate, 
-                                        timestamp: stdEvent.timestamp.toISOString(),
-                                        ...(associatedPikoCameraExternalIds.length > 0 && {
-                                            metadata: { cameraRefs: associatedPikoCameraExternalIds }
-                                        })
-                                    };
-                                    
-                                    try {
-                                        await piko.createPikoEvent(selectedSystem, pikoTokenResponse.accessToken, pikoPayload);
-                                        console.log(`[Rule ${rule.id}][Action createEvent] Piko event created.`); // Simplified log on success
-                                    } catch (apiError) {
-                                        throw new Error(`Piko createEvent API call failed: ${apiError instanceof Error ? apiError.message : apiError}`); 
-                                    }
-                                } else {
-                                    // Log based on the fetched target connector's category
-                                    console.warn(`[Rule ${rule.id}][Action createEvent] Unsupported target connector category ${targetConnector.category}`);
-                                }
-                                break;
-                            } // End case 'createEvent'
-                            
-                            case 'createBookmark': { // Added block scope
-                                // Type assertion and validation for this action's params
-                                if (!('nameTemplate' in resolvedParams && 'durationMsTemplate' in resolvedParams && 'targetConnectorId' in resolvedParams)) {
-                                    throw new Error(`Invalid/missing parameters for createBookmark action.`);
-                                }
-
-                                // --- Fetch Target Connector specific to this action --- 
-                                const targetConnector = await db.query.connectors.findFirst({
-                                    where: eq(connectors.id, resolvedParams.targetConnectorId!),
-                                    // Need category and config for Piko logic
-                                    columns: { id: true, category: true, cfg_enc: true }
-                                });
-                                if (!targetConnector || !targetConnector.cfg_enc || !targetConnector.category) {
-                                    throw new Error(`Target connector ${resolvedParams.targetConnectorId} not found or has no config/category for createBookmark action.`);
-                                }
-                                // TODO: Decrypt cfg_enc if needed
-                                const targetConfig = JSON.parse(targetConnector.cfg_enc);
-                                // --- End Fetch Target Connector --- 
-
-                                if (targetConnector.category === 'piko') {
-                                    // Use the fetched targetConfig for Piko details
-                                    const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
-                                    if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target connector ${targetConnector.id}`); }
-
-                                     // --- START: Fetch Associated Camera Refs (Reused Logic) --- 
-                                    let associatedPikoCameraExternalIds: string[] = [];
-                                    const sourceDeviceInternalId = sourceDevice?.id;
-                                    if (sourceDeviceInternalId) {
-                                        try {
-                                            const associations = await db
-                                                .select({ pikoCameraInternalId: cameraAssociations.pikoCameraId })
-                                                .from(cameraAssociations)
-                                                .where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
-                                            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
-
-                                            if (internalCameraIds.length > 0) {
-                                                const cameraDevices = await db
-                                                    .select({ externalId: devices.deviceId })
-                                                    .from(devices)
-                                                    .where(inArray(devices.id, internalCameraIds)); 
-                                                
-                                                associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
-                                                console.log(`[Rule ${rule.id}][Action createBookmark] Found associated Piko camera external IDs: [${associatedPikoCameraExternalIds.join(', ')}]`);
-                                            } else {
-                                                // If no cameras are associated, we can't create a bookmark. Log and stop this action.
-                                                console.warn(`[Rule ${rule.id}][Action createBookmark] No Piko cameras associated with source device ${sourceDeviceInternalId}. Skipping bookmark creation.`);
-                                                break; // Exit the switch case for this action
-                                            }
-                                        } catch (assocError) {
-                                            // Log the error and re-throw to let pRetry handle it
-                                            console.error(`[Rule ${rule.id}][Action createBookmark] Error fetching camera associations:`, assocError);
-                                            throw new Error(`Failed to fetch camera associations: ${assocError instanceof Error ? assocError.message : assocError}`);
-                                        }
-                                    } else {
-                                         console.warn(`[Rule ${rule.id}][Action createBookmark] Could not get internal ID for source device ${stdEvent.deviceId}. Skipping bookmark creation.`);
-                                         break; // Exit the switch case for this action
-                                    }
-                                    // --- END: Fetch Associated Camera Refs --- 
-
-                                    // Parse Duration
-                                    let durationMs = 5000; // Default duration
-                                    try {
-                                        const parsedDuration = parseInt(resolvedParams.durationMsTemplate, 10);
-                                        if (!isNaN(parsedDuration) && parsedDuration > 0) {
-                                            durationMs = parsedDuration;
-                                        } else {
-                                            console.warn(`[Rule ${rule.id}][Action createBookmark] Invalid duration template value "${resolvedParams.durationMsTemplate}". Using default ${durationMs}ms.`);
-                                        }
-                                    } catch (parseError) {
-                                        console.warn(`[Rule ${rule.id}][Action createBookmark] Error parsing duration template "${resolvedParams.durationMsTemplate}". Using default ${durationMs}ms. Error: ${parseError}`);
-                                    }
-
-                                    // Parse Tags
-                                    let tags: string[] = [];
-                                    if (resolvedParams.tagsTemplate && resolvedParams.tagsTemplate.trim() !== '') {
-                                        try {
-                                            tags = resolvedParams.tagsTemplate.split(',')
-                                                .map(tag => tag.trim())
-                                                .filter(tag => tag !== '');
-                                        } catch (parseError) {
-                                             console.warn(`[Rule ${rule.id}][Action createBookmark] Error parsing tags template "${resolvedParams.tagsTemplate}". No tags will be added. Error: ${parseError}`);
-                                        }
-                                    }
-
-                                    // Get Token (inside runAction to benefit from retry)
-                                    let pikoTokenResponse: piko.PikoTokenResponse;
-                                    try {
-                                        pikoTokenResponse = await piko.getSystemScopedAccessToken(username, password, selectedSystem);
-                                    } catch (tokenError) {
-                                        throw new Error(`Piko token fetch failed: ${tokenError instanceof Error ? tokenError.message : tokenError}`); 
-                                    }
-
-                                    // Loop through associated cameras and create bookmark for each
-                                    for (const pikoCameraDeviceId of associatedPikoCameraExternalIds) {
-                                        const pikoPayload: PikoCreateBookmarkPayload = {
-                                            name: resolvedParams.nameTemplate,
-                                            description: resolvedParams.descriptionTemplate || undefined, // Use undefined if empty/null
-                                            startTimeMs: stdEvent.timestamp.getTime(), // <-- Use stdEvent.timestamp
-                                            durationMs: durationMs,
-                                            tags: tags.length > 0 ? tags : undefined // Use undefined if no tags
-                                        };
-
-                                        try {
-                                            await piko.createPikoBookmark(selectedSystem, pikoTokenResponse.accessToken, pikoCameraDeviceId, pikoPayload);
-                                            console.log(`[Rule ${rule.id}][Action createBookmark] Piko bookmark created for camera ${pikoCameraDeviceId}.`);
-                                        } catch (apiError) {
-                                            // Log specific camera error and re-throw to trigger retry for the whole action if needed
-                                            console.error(`[Rule ${rule.id}][Action createBookmark] Piko createBookmark API call failed for camera ${pikoCameraDeviceId}:`, apiError);
-                                            throw new Error(`Piko createBookmark API call failed for camera ${pikoCameraDeviceId}: ${apiError instanceof Error ? apiError.message : apiError}`); 
-                                        }
-                                    } // End loop through cameras
-
-                                } else {
-                                    // Log based on the fetched target connector's category
-                                    console.warn(`[Rule ${rule.id}][Action createBookmark] Unsupported target connector category ${targetConnector.category}`);
-                                }
-                                break;
-                            } // End case 'createBookmark'
-
-                            case 'sendHttpRequest': { // --- Add case for sendHttpRequest ---
-                                // Type assertion for parameters
-                                const httpParams = resolvedParams as z.infer<typeof SendHttpRequestActionParamsSchema>; 
-
-                                // Parse Headers array
-                                const headers = new Headers();
-                                headers.set('User-Agent', 'FusionBridge Automation/1.0'); // Default User-Agent
-                                
-                                // Check if httpParams.headers exists and is an array before iterating
-                                if (Array.isArray(httpParams.headers)) {
-                                    for (const header of httpParams.headers) {
-                                        // Check if keyTemplate and valueTemplate exist and are valid
-                                        if (header.keyTemplate && typeof header.keyTemplate === 'string' && 
-                                            typeof header.valueTemplate === 'string') { // Allow empty value
-                                            
-                                            const key = header.keyTemplate.trim();
-                                            const value = header.valueTemplate; // Don't trim value, might be intentional
-                                            
-                                            if (key) { // Ensure key is not empty after trimming
-                                                try {
-                                                    headers.set(key, value);
-                                                } catch (e) {
-                                                    // Header names must be valid HTTP token characters
-                                                    console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Invalid header name: "${key}". Skipping.`, e);
-                                                }
-                                            } else {
-                                                 console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Empty header key detected. Skipping.`);
-                                            }
-                                        } else {
-                                            console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Invalid header object found:`, header, `. Skipping.`);
-                                        }
-                                    }
-                                } else if (httpParams.headers) {
-                                    // Log a warning if httpParams.headers exists but is not an array
-                                    console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Invalid format for headers parameter: Expected an array, got`, typeof httpParams.headers);
-                                }
-
-                                // Prepare Fetch options
-                                const fetchOptions: RequestInit = {
-                                    method: httpParams.method,
-                                    headers: headers,
-                                };
-
-                                // Add body only for relevant methods
-                                if (['POST', 'PUT', 'PATCH'].includes(httpParams.method) && httpParams.bodyTemplate) {
-                                    // Automatically set Content-Type if not provided and body is JSON-like
-                                    if (!headers.has('Content-Type') && httpParams.bodyTemplate.trim().startsWith('{')) {
-                                        headers.set('Content-Type', 'application/json');
-                                    }
-                                    fetchOptions.body = httpParams.bodyTemplate;
-                                }
-
-                                // Make the HTTP request using fetch
-                                try {
-                                    console.log(`[Rule ${rule.id}][Action sendHttpRequest] Sending ${httpParams.method} request to ${httpParams.urlTemplate}`);
-                                    const response = await fetch(httpParams.urlTemplate, fetchOptions);
-
-                                    // Log response status
-                                    console.log(`[Rule ${rule.id}][Action sendHttpRequest] Received response status: ${response.status} ${response.statusText}`);
-
-                                    // Check if the response was successful (status code 2xx)
-                                    if (!response.ok) {
-                                        let responseBody = '';
-                                        try {
-                                            // Try to read response body for more context on failure
-                                            responseBody = await response.text();
-                                            console.error(`[Rule ${rule.id}][Action sendHttpRequest] Response body (error): ${responseBody.substring(0, 500)}...`); // Log first 500 chars
-                                        } catch /* Removed unused 'bodyReadError' */ {
-                                             console.error(`[Rule ${rule.id}][Action sendHttpRequest] Could not read response body on error.`);
-                                        }
-                                        // Throw an error to trigger retry or final failure
-                                        throw new Error(`HTTP request failed with status ${response.status}: ${response.statusText}`);
-                                    }
-                                    
-                                    // Optional: Log successful response body if needed (consider size)
-                                    // const responseBody = await response.text();
-                                    // console.log(`[Rule ${rule.id}][Action sendHttpRequest] Response body (success): ${responseBody.substring(0, 200)}...`);
-
-                                } catch (requestError) {
-                                    // Log the specific error and re-throw to let pRetry handle it
-                                    console.error(`[Rule ${rule.id}][Action sendHttpRequest] HTTP request failed:`, requestError);
-                                    throw new Error(`HTTP request failed: ${requestError instanceof Error ? requestError.message : requestError}`);
-                                }
-                                break;
-                            } // --- End case sendHttpRequest ---
-
-                            default:
-                                // Use type assertion for exhaustiveness check
-                                const _exhaustiveCheck: never = action;
-                                // Keeping 'as any' for runtime logging of unhandled cases
-                                 
-                                console.warn(`[Rule ${rule.id}] Unknown or unhandled action type: ${(_exhaustiveCheck as any)?.type}`);
+                        // Check if the event's type matches the filter's type part
+                        if (stdEvent.type === filterType) {
+                            // If a subtype is specified in the filter, check if it matches the event's subtype
+                            // If no subtype is specified (filter is just "TYPE"), it matches any event subtype (including undefined)
+                            if (!filterSubtype || stdEvent.subtype === filterSubtype) {
+                                primaryTriggerMatched = true;
+                                break; // Found a match, no need to check other filters in the array
+                            }
                         }
-                    }; // End runAction definition
-
-                    // Execute the action using p-retry
-                    try {
-                        await pRetry(runAction, {
-                            retries: 3, 
-                            minTimeout: 500, 
-                            maxTimeout: 5000, 
-                            factor: 2, 
-                            onFailedAttempt: (error) => {
-                                console.warn(`[Rule ${rule.id}][Action ${action.type}] Attempt ${error.attemptNumber} failed. Retries left: ${error.retriesLeft}. Error: ${error.message}`);
-                            },
-                        });
-                    } catch (finalError) {
-                        console.error(`[Rule ${rule.id}][Action ${action.type}] Failed permanently after all retries:`, finalError instanceof Error ? finalError.message : finalError);
                     }
-                } // --- End loop through actions --- 
+                }
+                
+                if (!primaryTriggerMatched) {
+                    // console.log(`[Rule ${rule.id}] Skipping: Event type/subtype does not match filter.`);
+                    continue;
+                }
 
-            } catch (parseOrFilterError) {
-                console.error(`[Automation Service] Error parsing/filtering rule ${rule.id}:`, parseOrFilterError);
-                continue;
+                // Match based on standardized device type
+                if (trigger.sourceEntityTypes && trigger.sourceEntityTypes.length > 0) { 
+                    // TODO: Handle "Type.Subtype" format in trigger.sourceEntityTypes if needed?
+                    // Currently assumes triggerDeviceType is just the base type (e.g., "Sensor")
+                    if (!trigger.sourceEntityTypes.includes(triggerDeviceType)) {
+                        continue; 
+                    }
+                }
+                
+                console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Primary trigger matched for event ${stdEvent.eventId}.`);
+
+                // --- Secondary Condition Evaluation (Connector-Agnostic) --- 
+                let allConditionsMet = true; 
+                if (ruleConfig.secondaryConditions && ruleConfig.secondaryConditions.length > 0) {
+                    console.log(`[Rule ${rule.id}] Evaluating ${ruleConfig.secondaryConditions.length} secondary condition(s)...`);
+                    
+                    for (const condition of ruleConfig.secondaryConditions) {
+                        const conditionMet = await evaluateSecondaryCondition(stdEvent, condition);
+                        if (!conditionMet) {
+                            console.log(`[Rule ${rule.id}] Secondary condition ID ${condition.id} (Type: ${condition.type}) NOT MET. Stopping evaluation for this rule.`);
+                            allConditionsMet = false;
+                            break; 
+                        } else {
+                            console.log(`[Rule ${rule.id}] Secondary condition ID ${condition.id} (Type: ${condition.type}) MET.`);
+                        }
+                    } 
+                } else {
+                    console.log(`[Rule ${rule.id}] No secondary conditions to evaluate.`);
+                }
+
+                // --- Action Execution --- 
+                if (allConditionsMet) {
+                    console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): All conditions passed. Proceeding to execute ${ruleConfig.actions.length} action(s).`);
+                    
+                    if (!ruleConfig.actions || ruleConfig.actions.length === 0) {
+                         console.warn(`[Automation Service] Rule ID ${rule.id}: Skipping action execution - No actions defined despite passing conditions.`);
+                         continue;
+                    }
+
+                    // Fetch Source Device details (using trigger event context) for token replacement
+                    let sourceDevice = null;
+                    if (stdEvent.deviceId) { 
+                        sourceDevice = await db.query.devices.findFirst({
+                            where: and(
+                                eq(devices.connectorId, stdEvent.connectorId), 
+                                eq(devices.deviceId, stdEvent.deviceId)
+                            ),
+                            // Select columns needed for tokens or action logic (e.g., internal id for associations)
+                            columns: { id: true, name: true, type: true } 
+                        });
+                    }
+                    const deviceContext = sourceDevice ?? { 
+                        id: stdEvent.deviceId, 
+                        name: 'Unknown Device', 
+                        type: triggerDeviceType 
+                    }; 
+
+                    for (const action of ruleConfig.actions) {
+                        await executeActionWithRetry(rule, action, stdEvent, deviceContext);
+                    } 
+                } else {
+                     console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Did not execute actions because not all conditions were met.`);
+                }
+
+            } catch (ruleProcessingError) {
+                console.error(`[Automation Service] Error processing rule ${rule.id} (${rule.name}):`, ruleProcessingError);
+                continue; 
             }
-        } // End rules loop
+        } // End loop through rules
     } catch (error) {
         console.error('[Automation Service] Top-level error processing event:', error);
+    }
+}
+
+/**
+ * Evaluates a single secondary condition (connector-agnostic).
+ */
+async function evaluateSecondaryCondition(
+    triggerEvent: StandardizedEvent, 
+    condition: SecondaryCondition
+): Promise<boolean> {
+    const triggerTime = triggerEvent.timestamp.getTime();
+
+    const startTimeMs = condition.timeWindowSecondsBefore
+        ? triggerTime - (condition.timeWindowSecondsBefore * 1000)
+        : triggerTime; 
+    const endTimeMs = condition.timeWindowSecondsAfter
+        ? triggerTime + (condition.timeWindowSecondsAfter * 1000)
+        : triggerTime; 
+
+    const finalStartTime = new Date(Math.min(startTimeMs, endTimeMs));
+    const finalEndTime = new Date(Math.max(startTimeMs, endTimeMs));
+    
+    // --- Parse combined event type/subtype filters --- 
+    let targetEventTypes: string[] | undefined = undefined;
+    let targetEventSubtypes: string[] | undefined = undefined;
+    if (condition.eventTypeFilter && condition.eventTypeFilter.length > 0) {
+        const uniqueTypes = new Set<string>();
+        const uniqueSubtypes = new Set<string>();
+        const matchAnySubtypeForType = new Set<string>(); // Change let to const
+
+        for (const filterString of condition.eventTypeFilter) {
+            const [filterType, filterSubtype] = filterString.split('.');
+            uniqueTypes.add(filterType);
+            if (filterSubtype) {
+                uniqueSubtypes.add(filterSubtype);
+            } else {
+                 // If filter is just "TYPE", we need to match any event with this type
+                 // This is handled by default if uniqueSubtypes is empty for this type
+                 // OR we can explicitly track it if mixing "TYPE" and "TYPE.SUBTYPE" filters
+                 matchAnySubtypeForType.add(filterType);
+            }
+        }
+        targetEventTypes = Array.from(uniqueTypes);
+        // Only filter by specific subtypes if they were provided AND we aren't explicitly matching any subtype for all types
+        if (uniqueSubtypes.size > 0) {
+            // Refine: What if filter is ["TYPE", "TYPE.SUBTYPE1"]? 
+            // We want TYPE events with *any* subtype OR specifically SUBTYPE1. 
+            // Current repo logic might not support this OR logic easily.
+            // Simplification: If *any* filter is just "TYPE", don't filter by subtype.
+            const matchAnyOverall = targetEventTypes.some(t => matchAnySubtypeForType.has(t));
+            if (!matchAnyOverall) { 
+                targetEventSubtypes = Array.from(uniqueSubtypes);
+            } // Else: targetEventSubtypes remains undefined, matching any subtype for the specified types
+        }
+    }
+    
+    // Prepare filter for repository
+    const repoFilter: eventsRepository.FindEventsFilter = {
+        startTime: finalStartTime,
+        endTime: finalEndTime,
+        standardizedEventTypes: targetEventTypes, // Pass parsed types
+        standardizedEventSubtypes: targetEventSubtypes, // Pass parsed subtypes (if applicable)
+        standardizedDeviceTypes: condition.entityTypeFilter?.length ? condition.entityTypeFilter : undefined, 
+    };
+    
+    console.log(`[evaluateSecondaryCondition] Condition ID ${condition.id}: Querying eventsRepository.findEventsInWindow with filter:`, repoFilter);
+    
+    try {
+        const eventExists = await eventsRepository.findEventsInWindow(repoFilter);
+        console.log(`[evaluateSecondaryCondition] Condition ID ${condition.id}: findEventsInWindow returned: ${eventExists}`);
+
+        if (condition.type === 'eventOccurred') {
+            return eventExists;
+        } else if (condition.type === 'noEventOccurred') {
+            return !eventExists;
+        } else {
+            // Should not happen due to schema validation, but good practice
+            console.warn(`[evaluateSecondaryCondition] Condition ID ${condition.id}: Unknown condition type '${(condition as any).type}'. Evaluating as false.`);
+            return false;
+        }
+    } catch (error) {
+        console.error(`[evaluateSecondaryCondition] Condition ID ${condition.id}: Error calling findEventsInWindow:`, error);
+        return false;
+    }
+}
+
+/**
+ * Executes a single automation action with retry logic.
+ */
+async function executeActionWithRetry(
+    rule: { id: string; name: string }, 
+    action: AutomationAction, 
+    stdEvent: StandardizedEvent, 
+    deviceContext: Record<string, unknown>
+) {
+    console.log(`[Automation Service] Attempting action type '${action.type}' for rule ${rule.id} (${rule.name})`);
+    
+    const runAction = async () => {
+        const resolvedParams = resolveTokens(action.params, stdEvent, deviceContext) as AutomationAction['params'];
+        
+        switch (action.type) {
+            // Case 'createEvent'
+            case 'createEvent': {
+                if (!('sourceTemplate' in resolvedParams && 'captionTemplate' in resolvedParams && 'descriptionTemplate' in resolvedParams && 'targetConnectorId' in resolvedParams)) {
+                    throw new Error(`Invalid/missing parameters for createEvent action.`);
+                }
+                const targetConnector = await db.query.connectors.findFirst({
+                    where: eq(connectors.id, resolvedParams.targetConnectorId!),
+                    columns: { id: true, category: true, cfg_enc: true }
+                });
+                if (!targetConnector || !targetConnector.cfg_enc || !targetConnector.category) {
+                    throw new Error(`Target connector ${resolvedParams.targetConnectorId} not found or has no config/category for createEvent action.`);
+                }
+                const targetConfig = JSON.parse(targetConnector.cfg_enc);
+                if (targetConnector.category === 'piko') {
+                    const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
+                    if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target connector ${targetConnector.id}`); }
+                    const pikoTokenResponse: piko.PikoTokenResponse = await piko.getSystemScopedAccessToken(username, password, selectedSystem);
+                    let associatedPikoCameraExternalIds: string[] = [];
+                    const sourceDeviceInternalId = (deviceContext as any).id; // Assuming internal ID is on context
+                    if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string' && sourceDeviceInternalId !== stdEvent.deviceId /* Check if it's UUID */) {
+                        try {
+                            const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId }).from(cameraAssociations).where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
+                            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
+                            if (internalCameraIds.length > 0) {
+                                const cameraDevices = await db.select({ externalId: devices.deviceId }).from(devices).where(inArray(devices.id, internalCameraIds)); 
+                                associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
+                            }
+                        } catch (assocError) { console.error(`[Rule ${rule.id}][Action createEvent] Error fetching camera associations:`, assocError); }
+                    } else { console.warn(`[Rule ${rule.id}][Action createEvent] Could not get internal ID for source device ${stdEvent.deviceId}. Cannot fetch camera associations.`); }
+                    const pikoPayload: piko.PikoCreateEventPayload = { 
+                        source: resolvedParams.sourceTemplate, 
+                        caption: resolvedParams.captionTemplate, 
+                        description: resolvedParams.descriptionTemplate, 
+                        timestamp: stdEvent.timestamp.toISOString(),
+                        ...(associatedPikoCameraExternalIds.length > 0 && { metadata: { cameraRefs: associatedPikoCameraExternalIds } })
+                    };
+                    await piko.createPikoEvent(selectedSystem, pikoTokenResponse.accessToken, pikoPayload);
+                } else { console.warn(`[Rule ${rule.id}][Action createEvent] Unsupported target connector category ${targetConnector.category}`); }
+                break;
+            }
+            // Case 'createBookmark'
+            case 'createBookmark': {
+                if (!('nameTemplate' in resolvedParams && 'durationMsTemplate' in resolvedParams && 'targetConnectorId' in resolvedParams)) {
+                    throw new Error(`Invalid/missing parameters for createBookmark action.`);
+                }
+                const targetConnector = await db.query.connectors.findFirst({
+                    where: eq(connectors.id, resolvedParams.targetConnectorId!),
+                    columns: { id: true, category: true, cfg_enc: true }
+                });
+                if (!targetConnector || !targetConnector.cfg_enc || !targetConnector.category) {
+                    throw new Error(`Target connector ${resolvedParams.targetConnectorId} not found or has no config/category for createBookmark action.`);
+                }
+                const targetConfig = JSON.parse(targetConnector.cfg_enc);
+                if (targetConnector.category === 'piko') {
+                    const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
+                    if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target connector ${targetConnector.id}`); }
+                    let associatedPikoCameraExternalIds: string[] = [];
+                    const sourceDeviceInternalId = (deviceContext as any).id;
+                    if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string' && sourceDeviceInternalId !== stdEvent.deviceId) {
+                        try {
+                            const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId }).from(cameraAssociations).where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
+                            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
+                            if (internalCameraIds.length === 0) { console.warn(`[Rule ${rule.id}][Action createBookmark] No Piko cameras associated with source device ${sourceDeviceInternalId}. Skipping.`); break; }
+                            const cameraDevices = await db.select({ externalId: devices.deviceId }).from(devices).where(inArray(devices.id, internalCameraIds)); 
+                            associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
+                        } catch (assocError) { console.error(`[Rule ${rule.id}][Action createBookmark] Error fetching camera associations:`, assocError); throw new Error(`Failed to fetch camera associations: ${assocError instanceof Error ? assocError.message : assocError}`); }
+                    } else { console.warn(`[Rule ${rule.id}][Action createBookmark] Could not get internal ID for source device ${stdEvent.deviceId}. Skipping bookmark creation.`); break; }
+                    let durationMs = 5000;
+                    try { const parsedDuration = parseInt(resolvedParams.durationMsTemplate, 10); if (!isNaN(parsedDuration) && parsedDuration > 0) durationMs = parsedDuration; } catch {} 
+                    let tags: string[] = [];
+                    if (resolvedParams.tagsTemplate && resolvedParams.tagsTemplate.trim() !== '') { try { tags = resolvedParams.tagsTemplate.split(',').map(tag => tag.trim()).filter(tag => tag !== ''); } catch {} }
+                    const pikoTokenResponse: piko.PikoTokenResponse = await piko.getSystemScopedAccessToken(username, password, selectedSystem);
+                    for (const pikoCameraDeviceId of associatedPikoCameraExternalIds) {
+                        const pikoPayload: PikoCreateBookmarkPayload = {
+                            name: resolvedParams.nameTemplate,
+                            description: resolvedParams.descriptionTemplate || undefined,
+                            startTimeMs: stdEvent.timestamp.getTime(),
+                            durationMs: durationMs,
+                            tags: tags.length > 0 ? tags : undefined
+                        };
+                        await piko.createPikoBookmark(selectedSystem, pikoTokenResponse.accessToken, pikoCameraDeviceId, pikoPayload);
+                    }
+                } else { console.warn(`[Rule ${rule.id}][Action createBookmark] Unsupported target connector category ${targetConnector.category}`); }
+                break;
+            }
+            // Case 'sendHttpRequest'
+            case 'sendHttpRequest': {
+                const httpParams = resolvedParams as z.infer<typeof SendHttpRequestActionParamsSchema>; 
+                const headers = new Headers({ 'User-Agent': 'FusionBridge Automation/1.0' });
+                if (Array.isArray(httpParams.headers)) {
+                    for (const header of httpParams.headers) {
+                        if (header.keyTemplate && typeof header.keyTemplate === 'string' && typeof header.valueTemplate === 'string') {
+                            const key = header.keyTemplate.trim();
+                            if (key) try { headers.set(key, header.valueTemplate); } catch (e) { console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Invalid header name: "${key}". Skipping.`, e); }
+                        }
+                    }
+                }
+                const fetchOptions: RequestInit = { method: httpParams.method, headers: headers };
+                if (['POST', 'PUT', 'PATCH'].includes(httpParams.method) && httpParams.bodyTemplate) {
+                    if (!headers.has('Content-Type') && httpParams.bodyTemplate.trim().startsWith('{')) headers.set('Content-Type', 'application/json');
+                    fetchOptions.body = httpParams.bodyTemplate;
+                }
+                const response = await fetch(httpParams.urlTemplate, fetchOptions);
+                if (!response.ok) {
+                    let responseBody = '';
+                    try { responseBody = await response.text(); console.error(`[Rule ${rule.id}][Action sendHttpRequest] Response body (error): ${responseBody.substring(0, 500)}...`); } catch { console.error(`[Rule ${rule.id}][Action sendHttpRequest] Could not read response body on error.`); }
+                    throw new Error(`HTTP request failed with status ${response.status}: ${response.statusText}`);
+                }
+                break;
+            }
+            // Default case
+            default: {
+                const _exhaustiveCheck: never = action;
+                console.warn(`[Rule ${rule.id}] Unknown or unhandled action type: ${(_exhaustiveCheck as any)?.type}`);
+            }
+        }
+    };
+
+    try {
+        await pRetry(runAction, {
+            retries: 3, 
+            minTimeout: 500, 
+            maxTimeout: 5000, 
+            factor: 2, 
+            onFailedAttempt: (error) => {
+                console.warn(`[Rule ${rule.id}][Action ${action.type}] Attempt ${error.attemptNumber} failed. Retries left: ${error.retriesLeft}. Error: ${error.message}`);
+            },
+        });
+        console.log(`[Automation Service] Successfully executed action type '${action.type}' for rule ${rule.id}`);
+    } catch (finalError) {
+        console.error(`[Rule ${rule.id}][Action ${action.type}] Failed permanently after all retries:`, finalError instanceof Error ? finalError.message : finalError);
     }
 }
 
@@ -462,7 +386,7 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
  */
 function resolveTokens(
     params: Record<string, unknown> | null | undefined, 
-    stdEvent: StandardizedEvent, // <-- Updated parameter type
+    stdEvent: StandardizedEvent, 
     deviceContext: Record<string, unknown> | null | undefined 
 ): Record<string, unknown> | null | undefined { 
     

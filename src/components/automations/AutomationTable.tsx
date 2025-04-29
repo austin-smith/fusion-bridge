@@ -44,16 +44,16 @@ import {
 // Import the necessary types for the component
 import type { AutomationConfig } from '@/lib/automation-schemas';
 
-// Define a type for the data actually received from the API
+// Interface AutomationApiResponse needs adjustment if GET /api/automations changed
 interface AutomationApiResponse {
   id: string;
   name: string;
   enabled: boolean;
-  sourceConnectorId: string;
-  createdAt: string; // Dates are often strings in JSON
+  // sourceConnectorId: string; // This is likely removed from API response now
+  createdAt: string; 
   updatedAt: string;
-  configJson: AutomationConfig | null; // Added this
-  sourceConnectorName: string | null;
+  configJson: AutomationConfig | null; // Expects primaryTrigger, secondaryConditions?, actions
+  // sourceConnectorName: string | null; // This is likely removed from API response now
 }
 
 // --- START: New Row Actions Component ---
@@ -78,7 +78,7 @@ function AutomationRowActions({ automation, refreshData }: AutomationRowActionsP
         try { const errorJson = await response.json(); errorDetails = errorJson.message || errorDetails; } catch {} 
         throw new Error(errorDetails);
       }
-      toast.success(`Automation \"${automation.name}\" deleted.`);
+      toast.success(`Automation "${automation.name}" deleted.`);
       setShowDeleteDialog(false); // Close dialog on success
       refreshData(); // Call the refresh function passed via props
     } catch (error) {
@@ -108,7 +108,7 @@ function AutomationRowActions({ automation, refreshData }: AutomationRowActionsP
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
             {/* Link to the manage page */}
-            <Link href={`/automations/${automation.id}`}>Edit</Link>
+            <Link href={`/settings/automations/${automation.id}`}>Edit</Link>
           </DropdownMenuItem>
           <DropdownMenuItem 
             className="text-red-600 focus:text-red-700 focus:bg-red-50"
@@ -151,7 +151,6 @@ function AutomationRowActions({ automation, refreshData }: AutomationRowActionsP
 // --- END: New Row Actions Component ---
 
 export const columns = (
-  // Pass refresh function as argument to the columns definition
   refreshData: () => void 
 ): ColumnDef<AutomationApiResponse>[] => [
   {
@@ -162,29 +161,41 @@ export const columns = (
     id: 'trigger', 
     header: 'Trigger',
     cell: ({ row }) => {
-      // Get the full record from the row, matching API response structure
-      const record = row.original; // Type is now AutomationApiResponse
-      const config = record.configJson; // Type is AutomationConfig | null
+      const config = row.original.configJson;
+      const trigger = config?.primaryTrigger;
       
-      const sourceName = record.sourceConnectorName || 'Unknown Source';
-      const entityTypes = config?.sourceEntityTypes?.length 
-                          ? config.sourceEntityTypes.join(', ') 
-                          : 'Any Type';
-      const eventFilter = config?.eventTypeFilter ? ` (${config.eventTypeFilter})` : '';
+      // Display based on standardized types, not connector name
+      const entityTypes = trigger?.sourceEntityTypes?.length 
+                          ? trigger.sourceEntityTypes.join(', ') 
+                          : 'Any Device Type'; // Clarify default
+      const eventFilter = trigger?.eventTypeFilter 
+                          ? trigger.eventTypeFilter 
+                          : 'Any Event Type'; // Clarify default
 
-      return <span>{`${sourceName}: ${entityTypes}${eventFilter}`}</span>;
+      // Combine for display
+      return <span>{`Device: ${entityTypes} | Event: ${eventFilter}`}</span>;
+    },
+  },
+  {
+    id: 'conditions',
+    header: 'Conditions',
+    cell: ({ row }) => {
+      const config = row.original.configJson;
+      const conditionCount = config?.secondaryConditions?.length ?? 0;
+      return <span>{conditionCount > 0 ? `${conditionCount} Condition(s)` : 'None'}</span>;
     },
   },
   {
     id: 'action',
-    header: 'Action',
+    header: 'Action(s)',
     cell: ({ row }) => {
-      const record = row.original; // Type is now AutomationApiResponse
-      // Get the action type from the config if available
-      const actionType = record.configJson?.actions?.[0]?.type || 'Unknown Action';
-      // Target name is no longer available at the top level
-      // We might enhance this later to show target info based on action type/params
-      return <span>{actionType}</span>;
+      const config = row.original.configJson;
+      const actions = config?.actions;
+      if (!actions || actions.length === 0) return 'None';
+      // Display first action type, indicate if more exist
+      const firstActionType = actions[0].type;
+      const display = actions.length > 1 ? `${firstActionType}, ...` : firstActionType;
+      return <span>{display}</span>;
     },
   },
   {
@@ -211,7 +222,7 @@ export const columns = (
 // --- Skeleton Loader Component ---
 function AutomationTableSkeleton() {
   // Determine number of columns dynamically or use a fixed number
-  const numColumns = 5; // Based on current columns: Name, Trigger, Action, Status, Actions
+  const numColumns = 6; // Based on current columns: Name, Trigger, Conditions, Action(s), Status, Actions
   const numRows = 3; // Show a few skeleton rows
 
   return (

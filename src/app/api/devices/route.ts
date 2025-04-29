@@ -158,52 +158,29 @@ export async function POST() {
     const errors = [];
     let syncedCount = 0;
     
-    // Fetch all connectors
     const allConnectors = await db.select().from(connectors);
     
-    // For each connector, sync devices
+    // Sync devices for each connector
     for (const connector of allConnectors) {
       try {
         if (connector.category === 'yolink') {
-          // Sync YoLink devices
           let yolinkConfig;
-          try {
-            yolinkConfig = JSON.parse(connector.cfg_enc);
-          } catch (parseError: unknown) {
-            console.error(`Error parsing config for connector ${connector.name}:`, parseError);
-            errors.push({
-              connectorName: connector.name,
-              error: 'Invalid configuration format'
-            });
-            continue; // Skip this connector
+          try { yolinkConfig = JSON.parse(connector.cfg_enc); } catch (e) {
+            console.error(`Error parsing config for connector ${connector.name}:`, e);
+            continue;
           }
-
-          // **Update validation to check for uaid and clientSecret**
-          if (!yolinkConfig || typeof yolinkConfig.uaid !== 'string' || yolinkConfig.uaid.trim() === '' || 
-              typeof yolinkConfig.clientSecret !== 'string' || yolinkConfig.clientSecret.trim() === '') {
+          if (!yolinkConfig?.uaid || !yolinkConfig?.clientSecret) {
             console.error(`Incomplete YoLink configuration for connector ${connector.name}. Needs uaid & clientSecret. Found keys: ${Object.keys(yolinkConfig || {}).join(', ')}`);
-            errors.push({
-              connectorName: connector.name,
-              error: 'Incomplete YoLink configuration: Missing or empty uaid/clientSecret'
-            });
-            continue; // Skip this connector
+            continue;
           }
-          
-          // Now we know the config has the required fields (uaid, clientSecret)
-          console.log(`Valid YoLink config (uaid/clientSecret) found for ${connector.name}. Proceeding to sync.`);
-          // syncYoLinkDevices returns a count
-          const countFromYoLinkSync = await syncYoLinkDevices(connector.id, yolinkConfig);
-          syncedCount += countFromYoLinkSync;
+          const count = await syncYoLinkDevices(connector.id, yolinkConfig);
+          syncedCount += count;
         } else if (connector.category === 'piko') {
-          // Sync Piko devices
           const pikoConfig = JSON.parse(connector.cfg_enc);
-          const countFromPikoSync = await syncPikoDevices(connector.id, pikoConfig);
-          syncedCount += countFromPikoSync;
+          const count = await syncPikoDevices(connector.id, pikoConfig);
+          syncedCount += count;
         } else {
-          errors.push({
-            connectorName: connector.name,
-            error: `Unsupported connector type: ${connector.category}`
-          });
+          console.warn(`Sync not implemented for connector type: ${connector.category} (Name: ${connector.name})`);
         }
       } catch (err: unknown) {
         console.error(`Error syncing devices for connector ${connector.name}:`, err);
@@ -214,16 +191,16 @@ export async function POST() {
       }
     }
     
-    // Fetch updated devices
+    // Fetch updated device list to return (and update store)
     const allDevices = await db.select().from(devices);
-    
-    // Map device rows into DeviceWithConnector objects (identical logic to GET)
     const devicesWithConnector = await Promise.all(
       allDevices.map(async (deviceRow) => {
         let connectorName = 'Unknown';
         let connectorCategory = 'Unknown';
         let serverName: string | undefined = undefined;
         let pikoServerDetails: PikoServer | undefined = undefined;
+        let associationCount: number | null = null;
+        let deviceTypeInfo: TypedDeviceInfo | undefined = undefined;
 
         // Fetch connector info
         try {
@@ -254,16 +231,10 @@ export async function POST() {
         }
         
         // Fetch association count using the internal device ID
-        const associationCount = await getAssociationCount(
-          deviceRow.id,
-          connectorCategory
-        );
+        associationCount = await getAssociationCount(deviceRow.id, connectorCategory);
 
         // Map device type/subtype
-        const deviceTypeInfo = getDeviceTypeInfo(
-          connectorCategory,
-          deviceRow.type
-        );
+        deviceTypeInfo = getDeviceTypeInfo(connectorCategory, deviceRow.type);
 
         return {
           // original device fields
@@ -290,14 +261,12 @@ export async function POST() {
       })
     );
     
-    // <-- ADD STORE UPDATE CALL HERE -->
+    // Update Zustand store
     try {
       useFusionStore.getState().setDeviceStatesFromSync(devicesWithConnector);
       console.log('[API Sync] Successfully updated FusionStore with synced devices.');
     } catch (storeError) {
       console.error('[API Sync] Failed to update FusionStore:', storeError);
-      // Optionally add this error to the 'errors' array returned to the client?
-      // errors.push({ connectorName: 'StoreUpdate', error: 'Failed to update application state.' });
     }
     
     return NextResponse.json({
@@ -316,79 +285,58 @@ export async function POST() {
 }
 
 /**
- * Syncs YoLink devices for a specific connector
- * @param connectorId The ID of the connector
- * @param config The YoLink configuration
- * @returns Count of synced devices
+ * Syncs YoLink devices, populating standardized types.
  */
 async function syncYoLinkDevices(connectorId: string, config: yolinkDriver.YoLinkConfig): Promise<number> {
   let processedCount = 0;
   try {
-    console.log(`Syncing YoLink devices for connector ${connectorId} using Upsert Strategy`);
-    
-    const driverConfig = {
-      uaid: config.uaid,
-      clientSecret: config.clientSecret
-    };
-    
+    console.log(`Syncing YoLink devices for connector ${connectorId}`);
+    const driverConfig = { uaid: config.uaid, clientSecret: config.clientSecret };
     const accessToken = await yolinkDriver.getAccessToken(driverConfig);
-    console.log('Successfully obtained access token.');
-    
     const yolinkDevicesFromApi = await yolinkDriver.getDeviceList(accessToken);
     console.log(`Found ${yolinkDevicesFromApi.length} YoLink devices from API.`);
 
-    if (yolinkDevicesFromApi.length === 0) {
-      console.log(`No devices found from API for ${connectorId}. Skipping DB operations.`);
-      // Optionally, we could delete existing devices here if desired.
-      // await db.delete(devices).where(eq(devices.connectorId, connectorId));
-      return 0; 
-    }
+    if (yolinkDevicesFromApi.length === 0) return 0; 
 
-    // **Strategy: Upsert each device individually using onConflictDoUpdate**
-    console.log(`Upserting ${yolinkDevicesFromApi.length} devices...`);
+    console.log(`Upserting ${yolinkDevicesFromApi.length} YoLink devices...`);
     for (const device of yolinkDevicesFromApi) {
-      if (!device.deviceId || !device.name || !device.type) {
-        console.warn('[Upsert Loop] Skipping device with missing required fields:', device);
-        continue;
-      }
+      if (!device.deviceId || !device.name || !device.type) continue;
 
-      // Extract string status from potential state object
       let deviceStatusString: string | null = null;
       if (typeof device.state === 'object' && device.state !== null) {
-        if (typeof device.state.state === 'string') {
-            deviceStatusString = device.state.state;
-        } else if (typeof device.state.power === 'string') {
-            deviceStatusString = device.state.power;
-        }
+        deviceStatusString = (device.state as any).state ?? (device.state as any).power ?? null;
       }
+
+      // Get Standardized Type Info
+      const stdTypeInfo = getDeviceTypeInfo('yolink', device.type);
 
       const deviceData = {
         deviceId: device.deviceId,
         connectorId: connectorId,
         name: device.name,
-        type: device.type,
-        status: deviceStatusString, // Assign extracted string status
-        model: device.modelName, // Map modelName to model
-        // Piko specific fields will be null for YoLink
+        type: device.type, // Raw type
+        standardizedDeviceType: stdTypeInfo.type, 
+        standardizedDeviceSubtype: stdTypeInfo.subtype ?? null,
+        status: deviceStatusString,
+        model: device.modelName,
         serverId: null,
         vendor: null, 
         url: null, 
-        // createdAt is handled by DB default on initial insert
-        updatedAt: new Date() // Always update this
+        updatedAt: new Date()
       };
 
       try {
-        // console.log(`  [Upsert] Attempting for deviceId: ${deviceData.deviceId}`); // Removed verbose log
         await db.insert(devices)
-          .values({ ...deviceData, createdAt: new Date() }) // Need createdAt for initial insert
+          .values({ ...deviceData, createdAt: new Date() }) // Add std types on insert
           .onConflictDoUpdate({
-            target: [devices.connectorId, devices.deviceId], // Composite primary key
-            set: { // Update specific fields
+            target: [devices.connectorId, devices.deviceId],
+            set: { // Update std types on conflict
               name: deviceData.name,
               type: deviceData.type,
-              status: deviceData.status, // Use the prepared string status
-              model: deviceData.model, // Ensure model is updated too
-              // Reset Piko fields to null in case it was previously mis-categorized
+              standardizedDeviceType: deviceData.standardizedDeviceType,
+              standardizedDeviceSubtype: deviceData.standardizedDeviceSubtype,
+              status: deviceData.status,
+              model: deviceData.model,
               serverId: null,
               vendor: null,
               url: null,
@@ -396,84 +344,46 @@ async function syncYoLinkDevices(connectorId: string, config: yolinkDriver.YoLin
             }
           });
         processedCount++;
-        // console.log(`  [Success] Upsert successful for ${deviceData.deviceId}`); // Removed verbose log
       } catch (upsertError: unknown) {
-        // Keep error log for failed upserts
-        console.error(`  [Error] Failed upsert for deviceId ${deviceData.deviceId}:`, upsertError);
+        console.error(`  [Error] Failed YoLink upsert for deviceId ${deviceData.deviceId}:`, upsertError);
       }
     }
-
-    console.log(`Sync finished for ${connectorId}. Total devices processed: ${processedCount}`);
+    console.log(`YoLink Sync finished for ${connectorId}. Processed: ${processedCount}`);
     return processedCount;
   } catch (error: unknown) {
     console.error(`Error syncing YoLink devices for connector ${connectorId}:`, error);
-    throw error; // Re-throw error to indicate sync failure for this connector
+    throw error; 
   }
 }
 
 /**
-* Syncs Piko devices for a specific connector
-* @param connectorId The ID of the connector
-* @param config The Piko configuration (parsed from cfg_enc)
-* @returns Promise resolving to the count of successfully processed devices
+* Syncs Piko devices, populating standardized types.
 */
 async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfig): Promise<number> {
   let processedDeviceCount = 0;
   try {
-    console.log(`Syncing Piko servers and devices for connector ${connectorId} (Type: ${config.type})`);
+    console.log(`Syncing Piko data for connector ${connectorId} (Type: ${config.type})`);
 
-    // === Modified Config Validation ===
-    if (!config.username || !config.password) {
-        throw new Error('Piko config requires username and password');
+    // ... Config Validation ...
+    if (!config.username || !config.password || (config.type === 'cloud' && !config.selectedSystem) || (config.type === 'local' && (!config.host || !config.port))) {
+        throw new Error('Invalid or incomplete Piko configuration.');
     }
-    if (config.type === 'cloud' && !config.selectedSystem) {
-        throw new Error('Piko cloud config requires selectedSystem ID');
-    }
-    if (config.type === 'local' && (!config.host || !config.port)) {
-        throw new Error('Piko local config requires host and port');
-    }
-    // ================================
 
-    // 1. Get appropriate access token (cloud or local)
-    const tokenResponse = await pikoDriver.getToken(config); // Use the generic getToken
+    const tokenResponse = await pikoDriver.getToken(config);
     const accessToken = tokenResponse.accessToken;
     console.log(`Successfully obtained Piko token (Type: ${config.type})`);
 
-    // === Modified Server/Device Fetching ===
-    // No concept of "Servers" for local? Documentation is unclear.
-    // Let's assume for now server fetching is only for cloud.
-    // Devices fetching should work for both, passing the full config.
-
-    // --- Sync Piko Servers (Conditional for Cloud) ---
-    let processedServerCount = 0;
-    if (config.type === 'cloud' && config.selectedSystem) { // Only run for cloud
+    // --- Sync Piko Servers (Cloud only) ---
+    if (config.type === 'cloud' && config.selectedSystem) {
         try {
-          console.log(`Fetching Piko servers for cloud system: ${config.selectedSystem}...`);
-          // Pass the config object which includes selectedSystem for cloud
+          console.log(`Syncing Piko servers for system: ${config.selectedSystem}...`);
           const pikoServersFromApi = await pikoDriver.getSystemServers(config, accessToken);
-          console.log(`Found ${pikoServersFromApi.length} Piko servers from API.`);
-
+          console.log(`Found ${pikoServersFromApi.length} Piko servers.`);
           if (pikoServersFromApi.length > 0) {
-            console.log(`Upserting ${pikoServersFromApi.length} Piko servers...`);
             for (const server of pikoServersFromApi) {
-              if (!server.id || !server.name) {
-                console.warn('[Piko Server Upsert] Skipping server with missing id or name:', server);
-                continue;
-              }
-              const serverData = {
-                serverId: server.id,
-                connectorId: connectorId,
-                name: server.name,
-                status: server.status || null,
-                version: server.version || null,
-                osPlatform: server.osInfo?.platform || null,
-                osVariantVersion: server.osInfo?.variantVersion || null,
-                url: server.url || null,
-                updatedAt: new Date(),
-                createdAt: new Date() // Need createdAt for initial insert
-              };
+              if (!server.id || !server.name) continue;
               await db.insert(pikoServers)
-                .values({
+                .values({ // Insert new server
                     serverId: server.id,
                     connectorId: connectorId,
                     name: server.name,
@@ -483,11 +393,11 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
                     osVariantVersion: server.osInfo?.variantVersion || null,
                     url: server.url || null,
                     updatedAt: new Date(),
-                    createdAt: new Date() // Need createdAt for initial insert
+                    createdAt: new Date()
                  })
                 .onConflictDoUpdate({
                   target: pikoServers.serverId,
-                  set: {
+                  set: { // Update existing server
                     name: server.name,
                     status: server.status || null,
                     version: server.version || null,
@@ -495,62 +405,57 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
                     osVariantVersion: server.osInfo?.variantVersion || null,
                     url: server.url || null,
                     updatedAt: new Date()
-                    // connectorId should not change on conflict
                   }
                 });
-              processedServerCount++;
             }
-            console.log(`Piko server upsert finished. Processed: ${processedServerCount}`);
           }
-          // Optional: Delete servers associated with connectorId not in pikoServersFromApi
-
         } catch (serverSyncError: unknown) {
-          console.error(`Error during Piko server sync for cloud connector ${connectorId}:`, serverSyncError);
-          // Decide if server sync error should stop device sync. For now, log and continue.
+          console.error(`Error syncing Piko servers for ${connectorId}:`, serverSyncError);
         }
     } else if (config.type === 'local') {
-        console.log(`Skipping Piko server sync for local connection type.`);
-        // Optionally, delete any existing server entries for this local connector?
-        // await db.delete(pikoServers).where(eq(pikoServers.connectorId, connectorId));
+        console.log(`Skipping Piko server sync for local connection.`);
     }
 
-    // --- Sync Piko Devices (Works for Both Cloud and Local) ---
+    // --- Sync Piko Devices --- 
     console.log(`Fetching Piko devices (Type: ${config.type})...`);
-    // Pass the full config object and the obtained token
     const pikoDevicesFromApi = await pikoDriver.getSystemDevices(config, accessToken);
-    console.log(`Found ${pikoDevicesFromApi.length} Piko devices from API (Type: ${config.type}).`);
+    console.log(`Found ${pikoDevicesFromApi.length} Piko devices.`);
 
     if (pikoDevicesFromApi.length > 0) {
       console.log(`Upserting ${pikoDevicesFromApi.length} Piko devices...`);
       for (const device of pikoDevicesFromApi) {
-        if (!device.id || !device.name) {
-          console.warn('[Piko Device Upsert] Skipping device with missing id or name:', device);
-          continue;
-        }
+        if (!device.id || !device.name) continue;
+
+        const rawDeviceType = device.deviceType || 'Unknown';
+        const stdTypeInfo = getDeviceTypeInfo('piko', rawDeviceType);
 
         const deviceData = {
           deviceId: device.id,
           connectorId: connectorId,
           name: device.name,
-          type: device.deviceType || 'Unknown', 
+          type: rawDeviceType,
+          standardizedDeviceType: stdTypeInfo.type,
+          standardizedDeviceSubtype: stdTypeInfo.subtype ?? null,
           status: device.status || null, 
-          serverId: config.type === 'local' ? null : (device.serverId || null), // Set serverId to null for local type
+          serverId: config.type === 'local' ? null : (device.serverId || null),
           vendor: device.vendor || null,
-          model: device.model || null, // Use model field from Piko API
+          model: device.model || null,
           url: device.url || null,
           updatedAt: new Date()
         };
 
         try {
           await db.insert(devices)
-            .values({ ...deviceData, createdAt: new Date() })
+            .values({ ...deviceData, createdAt: new Date() }) // Add std types on insert
             .onConflictDoUpdate({
-              target: [devices.connectorId, devices.deviceId], // Composite PK
-              set: { 
+              target: [devices.connectorId, devices.deviceId],
+              set: { // Update std types on conflict
                 name: deviceData.name,
                 type: deviceData.type,
+                standardizedDeviceType: deviceData.standardizedDeviceType,
+                standardizedDeviceSubtype: deviceData.standardizedDeviceSubtype,
                 status: deviceData.status,
-                serverId: deviceData.serverId, // Update serverId
+                serverId: deviceData.serverId,
                 vendor: deviceData.vendor,
                 model: deviceData.model,
                 url: deviceData.url,
@@ -563,14 +468,12 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
         }
       }
     }
-    // Optional: Delete devices associated with connectorId not in pikoDevicesFromApi
 
-    console.log(`Piko device sync finished for ${connectorId}. Total devices processed: ${processedDeviceCount}`);
-    return processedDeviceCount; // Return count of devices processed
+    console.log(`Piko device sync finished for ${connectorId}. Processed: ${processedDeviceCount}`);
+    return processedDeviceCount;
 
   } catch (error: unknown) {
-    console.error(`Error syncing Piko data for connector ${connectorId}:`, error);
-    // Type check before accessing message
+    console.error(`Error syncing Piko data for ${connectorId}:`, error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     throw new Error(`Piko sync failed: ${errorMessage}`); 
   }

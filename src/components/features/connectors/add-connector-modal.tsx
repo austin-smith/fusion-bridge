@@ -999,11 +999,11 @@ export function AddConnectorModal() {
                             >
                               <TabsList className="grid w-full grid-cols-2">
                                 <TabsTrigger value="cloud">
-                                  <Cloud className="h-4 w-4 mr-1" /> { /* Added mr-1 */ }
+                                  <Cloud className="h-4 w-4 mr-2" /> { /* Added mr-1 */ }
                                   Cloud
                                 </TabsTrigger>
                                 <TabsTrigger value="local">
-                                  <EthernetPort className="h-4 w-4 mr-1" /> { /* Added mr-1 */ }
+                                  <EthernetPort className="h-4 w-4 mr-2" /> { /* Added mr-1 */ }
                                   Local
                                 </TabsTrigger>
                               </TabsList>

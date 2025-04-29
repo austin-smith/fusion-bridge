@@ -12,7 +12,7 @@ import { Trash2, Plus, Code, Eye, Edit } from 'lucide-react';
 import { TokenInserter } from '@/components/automations/TokenInserter';
 import { AVAILABLE_AUTOMATION_TOKENS } from '@/lib/automation-tokens';
 import { HttpMethodSchema, HttpContentTypeSchema, SendHttpRequestActionParamsSchema } from '@/lib/automation-schemas';
-import type { AutomationFormValues, ActionParamFieldNames } from './AutomationForm'; // Assuming types are exported or defined appropriately
+import type { AutomationFormValues, InsertableFieldNames } from './AutomationForm';
 import { get } from 'lodash';
 import { toast } from 'sonner';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 
 interface SendHttpRequestActionFieldsProps {
     actionIndex: number;
-    handleInsertToken: (fieldName: ActionParamFieldNames, actionIndex: number, token: string, headerIndex?: number) => void;
+    handleInsertToken: (fieldName: InsertableFieldNames, actionIndex: number, token: string, headerIndex?: number) => void;
 }
 
 // Define the specific fields for SendHttpRequest params excluding headers array itself
@@ -65,7 +65,7 @@ export function SendHttpRequestActionFields({ actionIndex, handleInsertToken }: 
 
     // --- Token Insertion Helpers ---
     const insertToken = (field: HttpRequestFieldName | `headers.${number}.${'keyTemplate' | 'valueTemplate'}`, token: string, headerIndex?: number) => {
-        handleInsertToken(field as ActionParamFieldNames, actionIndex, token, headerIndex);
+        handleInsertToken(field as InsertableFieldNames, actionIndex, token, headerIndex);
     };
     // Specific helpers for clarity
     const insertUrlToken = (token: string) => insertToken('urlTemplate', token);

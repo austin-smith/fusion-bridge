@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/data/db';
-import { automations, connectors } from '@/data/db/schema';
+import { automations } from '@/data/db/schema';
 import { AutomationConfigSchema } from '@/lib/automation-schemas';
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
 
 // Schema for validating the POST request body
 const PostBodySchema = z.object({
     name: z.string().min(1, { message: "Name is required" }),
-    sourceConnectorId: z.string().uuid({ message: "Invalid source connector ID" }),
     enabled: z.boolean().optional().default(true),
     config: AutomationConfigSchema,
 });
@@ -24,16 +22,12 @@ export async function GET(request: Request) {
         id: automations.id,
         name: automations.name,
         enabled: automations.enabled,
-        sourceConnectorId: automations.sourceConnectorId,
         createdAt: automations.createdAt,
         updatedAt: automations.updatedAt,
         configJson: automations.configJson,
-        sourceConnectorName: connectors.name,
       })
-      .from(automations)
-      .leftJoin(connectors, eq(automations.sourceConnectorId, connectors.id));
+      .from(automations);
 
-    // No need for the .map() step anymore
     return NextResponse.json(results);
 
   } catch (error) {
@@ -55,18 +49,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Invalid request body", errors: validationResult.error.flatten().fieldErrors }, { status: 400 });
     }
     
-    const { name, sourceConnectorId, enabled, config } = validationResult.data;
-
-    // Optional: Validate that sourceConnectorId exists in the connectors table
-    const sourceConnectorExists = await db.select({ id: connectors.id }).from(connectors).where(eq(connectors.id, sourceConnectorId)).limit(1);
-    if (!sourceConnectorExists.length) {
-        return NextResponse.json({ message: "Source connector not found" }, { status: 404 });
-    }
-    // TODO: Optionally validate targetConnectorId within actions config against connectors table?
+    const { name, enabled, config } = validationResult.data;
 
     const newAutomation = await db.insert(automations).values({
       name: name,
-      sourceConnectorId: sourceConnectorId,
       enabled: enabled,
       configJson: config,
     }).returning();

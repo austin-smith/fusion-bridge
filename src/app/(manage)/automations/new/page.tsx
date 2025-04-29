@@ -6,23 +6,26 @@ import { connectors } from "@/data/db/schema";
 import { deviceIdentifierMap } from "@/lib/mappings/identification";
 import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
 import type { Metadata } from 'next';
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useFieldArray, useForm } from "react-hook-form";
-import { useRouter } from 'next/navigation';
-import { type AutomationConfig, AutomationConfigSchema, type AutomationAction } from '@/lib/automation-schemas';
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { DeviceType } from "@/lib/mappings/definitions"; // <-- Import DeviceType
+import { type AutomationConfig } from '@/lib/automation-schemas';
+import { DeviceType, DeviceSubtype } from "@/lib/mappings/definitions"; // Import both enums
+import { getDeviceTypeIconName } from '@/lib/mappings/presentation'; // Use getDeviceTypeIconName instead of getDeviceTypeIcon directly
 
 // Define AutomationFormData locally to match the structure expected by the form
 interface AutomationFormData {
     id: string;
-    name: string; // Ensure name is string, not string | null
-    enabled: boolean;
-    sourceConnectorId: string | null; // Corrected field name
-    configJson: AutomationConfig;
-    createdAt: Date;
-    updatedAt: Date;
+    name: string; // Expect non-null for form
+    enabled: boolean; // Expect non-null for form
+    configJson: AutomationConfig; // Expect non-null for form
+    createdAt: Date; // Expect non-null for form
+    updatedAt: Date; // Expect non-null for form
+}
+
+// Update MultiSelectOption to expect iconName (align with combobox definition change later)
+// Note: Could import MultiSelectOption from combobox and extend/omit, but simple interface is fine here.
+interface PageMultiSelectOption {
+  value: string;
+  label: string;
+  iconName?: string;
 }
 
 // Set page title metadata
@@ -32,64 +35,93 @@ export const metadata: Metadata = {
 
 // Fetch data server-side
 async function getFormData() {
-  // Fetch connectors
+  // Fetch connectors needed for Action configuration
   const allConnectors = await db.select({ 
       id: connectors.id,
       name: connectors.name,
       category: connectors.category,
     }).from(connectors);
     
-  // Prepare options for the Source Device Types
-  const sourceDeviceTypeOptions: MultiSelectOption[] = Object.values(DeviceType)
-    .filter(type => type !== DeviceType.Unmapped)
-    .sort((a, b) => a.localeCompare(b))
-    .map(typeValue => ({ 
-        value: typeValue, 
-        label: typeValue 
-    }));
+  // Prepare options for the Standardized Device Types dropdowns
+  const sourceDeviceTypeOptions: PageMultiSelectOption[] = [];
+  const addedValues = new Set<string>();
+  const baseTypesEncountered = new Set<DeviceType>();
+
+  // 1. Add specific Type.Subtype options ONLY
+  Object.values(deviceIdentifierMap).forEach(categoryMap => {
+      Object.values(categoryMap).forEach(mapping => {
+          if (mapping.type === DeviceType.Unmapped) return;
+
+          baseTypesEncountered.add(mapping.type);
+
+          if (mapping.subtype) {
+              const value = `${mapping.type}.${mapping.subtype}`; 
+              const label = `${mapping.type} / ${mapping.subtype}`;
+              const iconName = getDeviceTypeIconName(mapping.type);
+              
+              if (!addedValues.has(value)) {
+                  sourceDeviceTypeOptions.push({ value, label, iconName });
+                  addedValues.add(value);
+              }
+          }
+      });
+  });
+
+  // 2. Add "Type.*" options for all base types encountered
+  baseTypesEncountered.forEach(type => {
+      const value = `${type}.*`; // Use wildcard convention
+      const label = `${type} (All)`; 
+      const iconName = getDeviceTypeIconName(type);
+
+      if (!addedValues.has(value)) {
+          sourceDeviceTypeOptions.push({ value, label, iconName });
+          addedValues.add(value);
+      }
+  });
+
+  sourceDeviceTypeOptions.sort((a, b) => a.label.localeCompare(b.label));
     
-  // Prepare initial data structure for a new automation
+  // Prepare initial (empty) data structure for a new automation
   const initialData: AutomationFormData = {
       id: 'new', 
-      name: '', // Ensure name is an empty string, not null
+      name: '', 
       enabled: true,
-      sourceConnectorId: null, // Use the corrected field name
       configJson: { 
-          sourceEntityTypes: [],
-          eventTypeFilter: '',
+          primaryTrigger: {
+             sourceEntityTypes: [],
+             eventTypeFilter: [],
+          },
+          secondaryConditions: [],
           actions: [],
       },
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: new Date(), // Use current date for new form
+      updatedAt: new Date(), // Use current date for new form
   };
 
   return {
-    availableConnectors: allConnectors, // Rename to availableConnectors
+    availableConnectors: allConnectors,
     initialData,
-    sourceDeviceTypeOptions,
+    sourceDeviceTypeOptions, // Return the formatted options
   };
 }
 
-// Make the page component async to fetch data
+// Page component
 export default async function NewAutomationPage() {
-  // Fetch the necessary data, using the renamed variable
   const { availableConnectors, initialData, sourceDeviceTypeOptions } = await getFormData();
 
   return (
     <div className="flex-1 space-y-4 p-4 pt-6 md:p-8 overflow-y-auto">
-      {/* Heading */}
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Create New Automation</h2>
         <p className="text-muted-foreground">
-          Define a new rule to automate actions based on events.
+          Define a new rule based on standardized event and device types.
         </p>
       </div>
       <Separator />
-      {/* Render the Automation Form Component, passing renamed prop */}
       <div className="pt-4">
         <AutomationForm 
-          initialData={initialData}
-          availableConnectors={availableConnectors} // Pass availableConnectors
+          initialData={initialData} // Pass the prepared initial data
+          availableConnectors={availableConnectors}
           sourceDeviceTypeOptions={sourceDeviceTypeOptions}
         />
       </div>

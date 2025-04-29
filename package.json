@@ -9,8 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "db:studio": "drizzle-kit studio",
-    "db:generate": "drizzle-kit generate:sqlite",
-    "db:push": "drizzle-kit push:sqlite",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
     "migrate": "dotenv -e .env.local -- node -e \"require('./src/data/db/migrate.js').runMigrations()\"",
     "test": "echo \"No tests configured\""
   },

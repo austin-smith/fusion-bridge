@@ -12,11 +12,10 @@ export const connectors = sqliteTable("connectors", {
   eventsEnabled: integer("events_enabled", { mode: "boolean" }).notNull().default(false),
 });
 
-// Relation for connectors (if needed later for areas/locations, though less direct)
+// Remove relation to automations as sourceConnectorId is removed from automations
 export const connectorsRelations = relations(connectors, ({ many }) => ({
 	devices: many(devices),
   pikoServers: many(pikoServers),
-  automations: many(automations, { relationName: 'sourceAutomations' }),
   events: many(events),
 }));
 
@@ -45,6 +44,7 @@ export const events = sqliteTable("events", {
     // Indexes for common query patterns
     timestampIdx: index("events_timestamp_idx").on(table.timestamp),
     connectorDeviceIdx: index("events_connector_device_idx").on(table.connectorId, table.deviceId),
+    eventTypeIdx: index("events_event_type_idx").on(table.standardizedEventType), // <-- Index for filtering conditions
 }));
 
 // Relation for events linking back to connector
@@ -62,19 +62,24 @@ export const devices = sqliteTable("devices", {
   deviceId: text("device_id").notNull(), // External device ID from the connector
   connectorId: text("connector_id").notNull().references(() => connectors.id, { onDelete: 'cascade' }),
   name: text("name").notNull(),
-  type: text("type").notNull(),
+  type: text("type").notNull(), // Raw type from connector
+  // Standardized type info (populated by sync logic)
+  standardizedDeviceType: text("standardized_device_type"), // Mapped DeviceType enum value
+  standardizedDeviceSubtype: text("standardized_device_subtype"), // Mapped DeviceSubtype enum value (nullable)
   status: text("status"),
-  serverId: text("server_id"),
+  serverId: text("server_id"), // Optional: e.g., Piko Server ID
   vendor: text("vendor"),
   model: text("model"),
   url: text("url"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
-  // Keep existing unique index for devices (external ID + connector)
+  // Unique constraint on connector-specific device ID + connector
   connectorDeviceUniqueIdx: uniqueIndex("devices_connector_device_unique_idx")
     .on(table.connectorId, table.deviceId),
-  // Index on internal ID is implicit (PK)
+  // Indexes for filtering conditions by standardized types
+  stdDeviceTypeIdx: index("devices_std_type_idx").on(table.standardizedDeviceType),
+  stdDeviceSubtypeIdx: index("devices_std_subtype_idx").on(table.standardizedDeviceSubtype),
 }));
 
 // Relation for devices linking back to connector and server
@@ -141,27 +146,18 @@ export const cameraAssociationsRelations = relations(cameraAssociations, ({ one 
   }),
 }));
 
-// Table for storing automation configurations
+// Table for storing automation configurations (Connector-Agnostic)
 export const automations = sqliteTable("automations", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text("name").notNull(),
-  sourceConnectorId: text("source_connector_id").notNull().references(() => connectors.id, { onDelete: 'cascade' }), // Renamed field
   enabled: integer("enabled", { mode: "boolean" }).default(true).notNull(),
-  configJson: text("config_json", { mode: "json" }).notNull().$type<AutomationConfig>(),
+  // Stores the AutomationConfig object with primaryTrigger (standardized types) 
+  // and secondaryConditions (standardized types, time windows)
+  configJson: text("config_json", { mode: "json" }).notNull().$type<AutomationConfig>(), 
   createdAt: integer("created_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
 }, (table) => ({
-  // Index on source connector might be useful
-  sourceConnectorIdx: index("automations_source_connector_idx").on(table.sourceConnectorId),
-}));
-
-// Define relations for automations (linking back to connectors)
-export const automationsRelations = relations(automations, ({ one }) => ({
-  sourceConnector: one(connectors, { // Renamed relation and target table
-    fields: [automations.sourceConnectorId], // Use the corrected field name here
-    references: [connectors.id],
-    relationName: 'sourceAutomations',
-  }),
+  // No indexes needed here currently
 }));
 
 // --- NEW: Locations Table ---

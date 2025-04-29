@@ -94,10 +94,39 @@ export const AutomationActionSchema = z.discriminatedUnion("type", [
 // Type helper for a single action
 export type AutomationAction = z.infer<typeof AutomationActionSchema>;
 
-// Schema for the overall automation configuration
+// --- NEW: Schema for the Primary Trigger --- 
+// Connector-agnostic: Filters based on standardized types
+export const PrimaryTriggerSchema = z.object({
+    // Standardized device types (e.g., "Sensor.Contact", "Door")
+    sourceEntityTypes: z.array(z.string()).min(1, { message: "At least one source standardized device type must be selected" }), 
+    // Optional filter for standardized EventType (enum key, e.g., "STATE_CHANGED")
+    eventTypeFilter: z.array(z.string()).optional(),
+});
+
+// --- NEW: Schema for a Secondary Condition --- 
+// Connector-agnostic: Filters based on standardized types
+export const SecondaryConditionSchema = z.object({
+    id: z.string().uuid().default(() => crypto.randomUUID()), // Internal ID for the condition
+    type: z.enum(['eventOccurred', 'noEventOccurred']), // Whether to check for presence or absence of events
+    // Optional filter for standardized device types (e.g., "Sensor.Contact", "Camera")
+    entityTypeFilter: z.array(z.string()).optional(), 
+    // Optional filter for standardized EventType (enum key, e.g., "STATE_CHANGED")
+    eventTypeFilter: z.array(z.string()).optional(),
+    // Time window relative to the primary trigger event
+    timeWindowSecondsBefore: z.number().int().positive().optional(),
+    timeWindowSecondsAfter: z.number().int().positive().optional(),
+}).refine(data => data.timeWindowSecondsBefore !== undefined || data.timeWindowSecondsAfter !== undefined, {
+    message: "At least one time window (before or after) must be specified for a secondary condition.",
+    path: ["timeWindowSecondsBefore"], 
+});
+
+// Type helper for a single secondary condition
+export type SecondaryCondition = z.infer<typeof SecondaryConditionSchema>;
+
+// Schema for the overall automation configuration (UPDATED)
 export const AutomationConfigSchema = z.object({
-  sourceEntityTypes: z.array(z.string()).min(1, { message: "At least one source entity type must be selected" }),
-  eventTypeFilter: z.string().optional(),
+  primaryTrigger: PrimaryTriggerSchema,
+  secondaryConditions: z.array(SecondaryConditionSchema).optional(),
   actions: z.array(AutomationActionSchema).min(1, { message: "At least one action must be configured" }),
 });
 
@@ -105,17 +134,18 @@ export const AutomationConfigSchema = z.object({
 export type AutomationConfig = z.infer<typeof AutomationConfigSchema>;
 
 // Combined type representing the full automation record from the database/API
-// We'll manually define this for now, aligning with the DB schema and expected API response
+// NOTE: This is manually defined and might need adjustment based on actual API/DB shape.
+// It currently includes fields no longer directly on the 'automations' table.
 export interface AutomationRecord {
   id: string;
   name: string;
-  description?: string | null; // Optional in DB
-  triggerSource: string;
-  triggerEvent: string;
-  triggerDeviceId?: string | null; // Optional in DB
-  actionType: string;
-  config: AutomationConfig; // Embeds the config schema
+  description?: string | null; 
+  // triggerSource: string; // Removed (now part of config)
+  // triggerEvent: string; // Removed (now part of config)
+  // triggerDeviceId?: string | null; // Not directly stored
+  // actionType: string; // Removed (actions array in config)
+  config: AutomationConfig; 
   enabled: boolean;
-  createdAt: Date; // Added from DB schema
-  updatedAt: Date; // Added from DB schema
+  createdAt: Date; 
+  updatedAt: Date; 
 } 

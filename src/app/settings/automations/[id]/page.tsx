@@ -2,33 +2,27 @@ import React from 'react';
 import { db } from '@/data/db';
 import { automations, connectors } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/sqlite-core';
 import { notFound } from 'next/navigation';
 import AutomationForm from '@/components/automations/AutomationForm';
 import type { AutomationConfig } from '@/lib/automation-schemas';
-import { deviceIdentifierMap } from '@/lib/mappings/identification'; // Corrected path
-import type { MultiSelectOption } from '@/components/ui/multi-select-combobox'; // Import type
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useFieldArray, useForm } from "react-hook-form";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType
+import { deviceIdentifierMap } from '@/lib/mappings/identification';
+import type { MultiSelectOption } from '@/components/ui/multi-select-combobox';
+import { DeviceType, DeviceSubtype } from '@/lib/mappings/definitions';
 import type { Connector } from '@/lib/types';
+import { getDeviceTypeIconName } from '@/lib/mappings/presentation';
 
-// Define the shape of the data expected by the form
-// Includes joined connector names and allows configJson to be potentially null for 'new'
-export type AutomationFormData = {
+// Type definition for the data needed by this page/form
+// Should align with what getAutomationData returns and AutomationForm expects
+export type AutomationPageData = {
   id: string;
   name: string | null;
   enabled: boolean | null;
-  sourceConnectorId: string | null;
-  configJson: AutomationConfig | null; // Allow null for 'new' case
-  createdAt: Date | null; // Drizzle returns Date objects for timestamp_ms
+  configJson: AutomationConfig | null; 
+  createdAt: Date | null;
   updatedAt: Date | null;
-  sourceConnectorName?: string | null;
 };
 
-// Fetch all available connectors for dropdowns
+// Fetch connectors needed for Action dropdowns
 async function getAvailableConnectors(): Promise<Pick<Connector, 'id' | 'name' | 'category'>[]> {
     return db.select({ 
         id: connectors.id, 
@@ -37,113 +31,157 @@ async function getAvailableConnectors(): Promise<Pick<Connector, 'id' | 'name' |
     }).from(connectors);
 }
 
-// Get AVAILABLE Standardized Device Types for multi-select
-function getStandardizedDeviceTypeOptions(): MultiSelectOption[] {
-    // Use DeviceType enum values
-    return Object.values(DeviceType)
-        // Optionally filter out types you don't want selectable (like Unmapped?)
-        .filter(type => type !== DeviceType.Unmapped) 
-        .sort((a, b) => a.localeCompare(b)) // Sort alphabetically
-        .map(typeValue => ({
-            value: typeValue, // e.g., "Sensor"
-            label: typeValue, // e.g., "Sensor"
-        }));
+// Update MultiSelectOption to expect iconName (align with combobox definition change later)
+interface PageMultiSelectOption {
+  value: string;
+  label: string;
+  iconName?: string;
 }
 
-// Fetch automation data for a specific ID
-async function getAutomationData(id: string): Promise<AutomationFormData | null> {
+// Generates the options for Standardized Device Type dropdowns
+function getStandardizedDeviceTypeOptions(): PageMultiSelectOption[] {
+    const options: PageMultiSelectOption[] = []; 
+    const addedValues = new Set<string>();
+    const baseTypesEncountered = new Set<DeviceType>();
+
+    // 1. Add specific Type.Subtype options ONLY
+    Object.values(deviceIdentifierMap).forEach(categoryMap => {
+        Object.values(categoryMap).forEach(mapping => {
+            if (mapping.type === DeviceType.Unmapped) return;
+            
+            baseTypesEncountered.add(mapping.type);
+            
+            if (mapping.subtype) { 
+                const value = `${mapping.type}.${mapping.subtype}`; 
+                const label = `${mapping.type} / ${mapping.subtype}`;
+                const iconName = getDeviceTypeIconName(mapping.type);
+                
+                if (!addedValues.has(value)) {
+                    options.push({ value, label, iconName });
+                    addedValues.add(value);
+                }
+            }
+        });
+    });
+
+    // 2. Add "Type.*" options for all base types encountered
+    baseTypesEncountered.forEach(type => {
+        const value = `${type}.*`; // Use wildcard convention
+        const label = `${type} (All)`; 
+        const iconName = getDeviceTypeIconName(type);
+
+        if (!addedValues.has(value)) {
+            options.push({ value, label, iconName });
+            addedValues.add(value);
+        }
+    });
+
+    options.sort((a, b) => a.label.localeCompare(b.label));
+    return options;
+}
+
+// Fetches existing automation data or returns structure for a new one
+async function getAutomationData(id: string): Promise<AutomationPageData | null> {
     if (id === 'new') {
-        // Return default structure for creating a new automation
+        // Return default structure for a new automation
         return {
             id: 'new',
             name: null,
             enabled: true,
-            sourceConnectorId: null,
-            configJson: null,
+            configJson: { // Default connector-agnostic config
+                primaryTrigger: {
+                    sourceEntityTypes: [],
+                    eventTypeFilter: [],
+                },
+                secondaryConditions: [],
+                actions: [],
+            },
             createdAt: null,
             updatedAt: null,
         };
     }
 
+    // Fetch existing automation data
     try {
-        const sourceConnectorAlias = alias(connectors, "sourceConnector");
-
         const result = await db
             .select({
                 id: automations.id,
                 name: automations.name,
                 enabled: automations.enabled,
-                sourceConnectorId: automations.sourceConnectorId,
                 configJson: automations.configJson,
                 createdAt: automations.createdAt,
                 updatedAt: automations.updatedAt,
-                sourceConnectorName: sourceConnectorAlias.name,
             })
             .from(automations)
             .where(eq(automations.id, id))
-            .leftJoin(sourceConnectorAlias, eq(automations.sourceConnectorId, sourceConnectorAlias.id))
             .limit(1);
 
         if (result.length === 0) {
-            return null; // Indicate not found
+            return null; // Not found
         }
         
-        // Drizzle might return Date objects for timestamp_ms
-        // Ensure the structure matches AutomationFormData
         const data = result[0];
         return {
-            ...data,
-            // Explicitly cast/convert if necessary, though types should align
+            id: data.id,
+            name: data.name,
+            enabled: data.enabled,
+            configJson: data.configJson as AutomationConfig | null, 
             createdAt: data.createdAt as Date | null,
             updatedAt: data.updatedAt as Date | null,
         };
 
     } catch (error) {
         console.error(`Failed to fetch automation ${id}:`, error);
-        // Re-throw or handle differently if needed
         throw new Error("Failed to fetch automation data."); 
     }
 }
 
+// Page Component for editing or creating an automation
 export default async function AutomationSettingsPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: automationId } = await params; // Await params and destructure id
-  const standardizedDeviceTypes = getStandardizedDeviceTypeOptions(); // Use the new function to get standardized types
+  const { id: automationId } = await params; 
+  const standardizedDeviceTypes = getStandardizedDeviceTypeOptions(); 
 
-  // Fetch initial data and available connectors in parallel
+  // Fetch automation data and available connectors concurrently
   const [initialData, availableConnectors] = await Promise.all([
     getAutomationData(automationId),
     getAvailableConnectors(),
   ]);
 
-  // Handle not found case for existing IDs
+  // Handle case where an existing automation ID was not found
   if (!initialData && automationId !== 'new') {
     notFound();
   }
 
-  // Handle potential error during fetch (e.g., if getAutomationData throws)
-  if (!initialData && automationId === 'new') {
-    // This case might occur if getAutomationData had an error even for 'new'
-    // Or handle more gracefully depending on expected errors
-    return <div>Error loading automation configuration.</div>;
+  // Handle case where fetching failed even for 'new' (should be rare)
+  if (!initialData) {
+     return <div>Error loading automation configuration. Failed to fetch initial data.</div>;
   }
 
-  const title = automationId === 'new' ? 'Create New Automation' : `Edit Automation: ${initialData?.name}`;
+  const title = automationId === 'new' ? 'Create New Automation' : `Edit Automation: ${initialData.name ?? '[Untitled]'}`;
+
+  // Prepare the final data structure for the form, ensuring non-null values where the form expects them
+  const formData = {
+    id: initialData.id, 
+    name: initialData.name ?? '', 
+    enabled: initialData.enabled ?? true, 
+    // Provide a default config if null (for 'new' case)
+    configJson: initialData.configJson ?? {
+        primaryTrigger: { sourceEntityTypes: [], eventTypeFilter: [] },
+        secondaryConditions: [],
+        actions: [],
+    },
+    createdAt: initialData.createdAt ?? new Date(), 
+    updatedAt: initialData.updatedAt ?? new Date(),
+  };
 
   return (
     <div className="container mx-auto py-10">
       <h1 className="text-2xl font-bold mb-6">{title}</h1>
-      {/* Pass initialData which matches AutomationFormData */}
+      {/* Pass the options with iconName */}
       <AutomationForm 
-        initialData={{
-          ...initialData!,
-          name: initialData!.name ?? '', // Provide default empty string for null name
-          enabled: initialData!.enabled ?? false, // Provide default false for null enabled
-          configJson: initialData!.configJson ?? { sourceEntityTypes: [], eventTypeFilter: '', actions: [] }, // Provide default config
-          createdAt: initialData!.createdAt ?? new Date(), // Provide default Date
-          updatedAt: initialData!.updatedAt ?? new Date(), // Provide default Date for updatedAt too
-        }}
+        initialData={formData as any} 
         availableConnectors={availableConnectors} 
-        sourceDeviceTypeOptions={standardizedDeviceTypes} // Pass the standardized types to the form
+        sourceDeviceTypeOptions={standardizedDeviceTypes}
        />
     </div>
   );

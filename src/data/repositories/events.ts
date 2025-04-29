@@ -1,11 +1,117 @@
 import { db } from '@/data/db';
 import { events, devices, connectors } from '@/data/db/schema';
-import { desc, asc, count, eq, sql, and } from 'drizzle-orm';
+import { desc, asc, count, eq, sql, and, gte, lte, or, inArray, type SQL, isNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
 import { EventCategory } from '@/lib/mappings/definitions';
 
 // Maximum number of events to keep
+// TODO: Consider basing cleanup on time window instead of fixed count if rules need longer history
 const MAX_EVENTS = 1000;
+
+// Interface for the filter parameters of findEventsInWindow
+export interface FindEventsFilter {
+    deviceId?: string; // The external device ID from the event
+    standardizedEventTypes?: string[]; 
+    standardizedEventSubtypes?: string[];
+    // Expects standardized types, e.g., "Sensor.Contact", "Sensor", "Door"
+    standardizedDeviceTypes?: string[]; 
+    startTime: Date;
+    endTime: Date;
+}
+
+/**
+ * Checks if any events matching the specified criteria exist within a given time window.
+ * Filters using standardized device type/subtype columns from the devices table.
+ *
+ * @param filter The filter criteria including time window, event type, device types, etc.
+ * @returns Promise<boolean> - True if at least one matching event exists, false otherwise.
+ */
+export async function findEventsInWindow(filter: FindEventsFilter): Promise<boolean> {
+    try {
+        const baseConditions: SQL[] = [
+            gte(events.timestamp, filter.startTime),
+            lte(events.timestamp, filter.endTime),
+        ];
+        if (filter.deviceId) baseConditions.push(eq(events.deviceId, filter.deviceId));
+        if (filter.standardizedEventTypes && filter.standardizedEventTypes.length > 0) {
+            baseConditions.push(inArray(events.standardizedEventType, filter.standardizedEventTypes));
+        }
+        if (filter.standardizedEventSubtypes && filter.standardizedEventSubtypes.length > 0) {
+            baseConditions.push(inArray(events.standardizedEventSubtype, filter.standardizedEventSubtypes));
+        }
+
+        let result: { eventId: number }[] = [];
+
+        const deviceTypesToFilter = filter.standardizedDeviceTypes?.filter(t => t); 
+        const hasDeviceTypeFilter = deviceTypesToFilter && deviceTypesToFilter.length > 0;
+
+        if (hasDeviceTypeFilter) {
+            // Parse the filter strings into type and subtype pairs
+            const typeFilters = deviceTypesToFilter.map(fullType => {
+                const parts = fullType.split('.');
+                return { type: parts[0], subtype: parts[1] || null };
+            });
+
+            // Extract unique types and non-null subtypes
+            const types = [...new Set(typeFilters.map(f => f.type))];
+            const subtypes = [...new Set(typeFilters.filter(f => f.subtype !== null).map(f => f.subtype as string))];
+            const hasSubtypeFilter = subtypes.length > 0;
+            const hasTypeOnlyFilter = typeFilters.some(f => f.subtype === null);
+
+            // Build conditions based on standardized type/subtype from the devices table
+            const deviceFilterConditions: SQL[] = [];
+            if (types.length > 0) {
+                deviceFilterConditions.push(inArray(devices.standardizedDeviceType, types));
+
+                let subtypeCondition: SQL | undefined = undefined;
+                if (hasSubtypeFilter && hasTypeOnlyFilter) {
+                    subtypeCondition = or(
+                        inArray(devices.standardizedDeviceSubtype, subtypes),
+                        isNull(devices.standardizedDeviceSubtype) 
+                    );
+                } else if (hasSubtypeFilter) {
+                    subtypeCondition = inArray(devices.standardizedDeviceSubtype, subtypes);
+                } else if (hasTypeOnlyFilter) {
+                    subtypeCondition = isNull(devices.standardizedDeviceSubtype);
+                }
+
+                if (subtypeCondition) {
+                    deviceFilterConditions.push(subtypeCondition);
+                }
+            }
+            
+            const joinConditions = [
+                ...baseConditions,
+                ...deviceFilterConditions
+            ];
+
+            // Query WITH JOIN to filter by device properties
+            result = await db
+                .select({ eventId: events.id })
+                .from(events)
+                .innerJoin(devices, and( // Join needed to access device standardized types
+                    eq(events.connectorId, devices.connectorId),
+                    eq(events.deviceId, devices.deviceId)
+                ))
+                .where(and(...joinConditions))
+                .limit(1);
+
+        } else {
+            // Query WITHOUT JOIN if no device type filter needed
+            result = await db
+                .select({ eventId: events.id })
+                .from(events)
+                .where(and(...baseConditions))
+                .limit(1);
+        }
+
+        return result.length > 0;
+
+    } catch (err) {
+        console.error('Failed to find events in window:', err, { filter });
+        return false;
+    }
+}
 
 /**
  * Stores a StandardizedEvent in the database.

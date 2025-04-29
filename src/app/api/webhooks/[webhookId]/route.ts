@@ -9,6 +9,7 @@ import { parseNetboxEvent } from '@/lib/event-parsers/netbox'; // Import the Net
 import { storeStandardizedEvent } from '@/data/repositories/events'; // Import the event storage function
 import { useFusionStore } from '@/stores/store'; // Import Zustand store if needed for real-time updates
 import { recordWebhookActivity } from '@/services/webhook-service'; // <-- Import the new function
+import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 
 // Header names
 const NETBOX_SIGNATURE_HEADER = 'x-hub-signature-256'; 
@@ -184,11 +185,20 @@ export async function POST(
 
       for (const portal of devicePayload.Portals) {
         for (const reader of portal.Readers) {
+          // --- Get Standardized Type Info --- 
+          const rawDeviceType = 'NetBoxReader'; // NetBox reader type is fixed
+          const stdTypeInfo = getDeviceTypeInfo('netbox', rawDeviceType);
+          // --- End Get Standardized Type Info --- 
+          
           devicesToUpsert.push({
             deviceId: reader.ReaderKey.toString(),
             connectorId: connectorId, 
             name: reader.Name,
-            type: 'NetBoxReader',
+            type: rawDeviceType, // Keep raw type
+            // --- Add Standardized Types --- 
+            standardizedDeviceType: stdTypeInfo.type,
+            standardizedDeviceSubtype: stdTypeInfo.subtype ?? null,
+            // --- End Add Standardized Types --- 
             vendor: 'NetBox',
             model: 'Reader',
             status: 'Unknown',
@@ -206,6 +216,10 @@ export async function POST(
             set: {
               name: sql`excluded.name`,
               type: sql`excluded.type`,
+              // --- Add Standardized Types to Update Set --- 
+              standardizedDeviceType: sql`excluded.standardized_device_type`,
+              standardizedDeviceSubtype: sql`excluded.standardized_device_subtype`,
+              // --- End Add Standardized Types --- 
               vendor: sql`excluded.vendor`,
               model: sql`excluded.model`,
               status: sql`excluded.status`,
@@ -217,7 +231,6 @@ export async function POST(
         console.log(`[Webhook ${connectorId}] No readers found in NetBox 'Device' payload to upsert.`);
       }
       
-      // Record activity after successful processing
       recordWebhookActivity(connectorId);
       return NextResponse.json({ success: true, message: 'NetBox Device webhook processed' }, { status: 200 });
 

@@ -15,6 +15,13 @@
       "when": 1745814054532,
       "tag": "0001_flippant_raza",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1745917891309,
+      "tag": "0002_mysterious_gamora",
+      "breakpoints": true
     }
   ]
 }

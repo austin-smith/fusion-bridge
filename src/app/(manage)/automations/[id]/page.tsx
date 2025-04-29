@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { deviceIdentifierMap } from "@/lib/mappings/identification";
 import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
 import { redirect } from 'next/navigation';
-import { type AutomationConfig, type AutomationAction } from "@/lib/automation-schemas";
+import { type AutomationConfig, type AutomationAction, type SecondaryCondition } from "@/lib/automation-schemas";
 import { DeviceType } from "@/lib/mappings/definitions";
 
 // Define AutomationFormData based on its usage for the form
@@ -16,7 +16,6 @@ interface AutomationFormData {
   id: string;
   name: string;
   enabled: boolean;
-  sourceConnectorId: string;
   configJson: AutomationConfig;
   createdAt: Date;
   updatedAt: Date;
@@ -64,9 +63,14 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
     
   // Prepare initial data structure from the fetched automation
   let configJsonData: AutomationConfig = { 
-    sourceEntityTypes: [], 
-    eventTypeFilter: '', 
+    // Structure should match AutomationConfig schema
+    primaryTrigger: { 
+      sourceEntityTypes: [], 
+      // eventTypeFilter should be array based on schema update
+      eventTypeFilter: [], 
+    },
     actions: [] 
+    // secondaryConditions can be added later if needed for default
   };
   
   // Check if configJson exists and is not null/undefined before trying to parse
@@ -75,9 +79,9 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
       // Define a potential structure for the parsed config
       // This helps avoid 'any' and provides better type checking
       type PotentialConfig = {
-          sourceEntityTypes?: unknown[]; // Allow unknown initially
-          eventTypeFilter?: unknown;
+          primaryTrigger?: unknown;
           actions?: unknown[]; // Allow unknown initially
+          secondaryConditions?: unknown[]; // Allow unknown initially
       };
       
       let parsedConfig: PotentialConfig | null = null; // Start with null
@@ -100,19 +104,46 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
       // IMPORTANT: Check if parsedConfig is a valid object and has the required arrays
       // Now checks against the PotentialConfig type and validates array types
       if (parsedConfig && 
-          Array.isArray(parsedConfig.sourceEntityTypes) && 
+          parsedConfig.primaryTrigger && // Check if primaryTrigger exists
+          typeof parsedConfig.primaryTrigger === 'object' && // Check if it's an object
+          !Array.isArray(parsedConfig.primaryTrigger) && // Ensure it's not an array
+          Array.isArray((parsedConfig.primaryTrigger as any).sourceEntityTypes) && 
           Array.isArray(parsedConfig.actions)) 
       {
+         // Type cast primaryTrigger safely after checks
+         const trigger = parsedConfig.primaryTrigger as { 
+             sourceEntityTypes?: unknown[]; 
+             eventTypeFilter?: unknown;
+         };
+         
+         // Helper to ensure eventTypeFilter is an array of strings
+         const ensureEventFilterArray = (filter: unknown): string[] => {
+             if (Array.isArray(filter)) {
+                 return filter.filter(item => typeof item === 'string') as string[];
+             }
+             // Handle legacy single string filter (or invalid types)
+             if (typeof filter === 'string' && filter.trim() !== '') {
+                 return [filter.trim()];
+             }
+             return []; // Default to empty array
+         };
+
          configJsonData = {
-            // Ensure sourceEntityTypes contains only strings if possible, or handle mixed types if needed
-            sourceEntityTypes: parsedConfig.sourceEntityTypes.filter(item => typeof item === 'string') as string[], 
-            // Safely access eventTypeFilter, default to empty string if not a string or missing
-            eventTypeFilter: typeof parsedConfig.eventTypeFilter === 'string' ? parsedConfig.eventTypeFilter : '', 
+            primaryTrigger: {
+              // Ensure sourceEntityTypes contains only strings 
+              sourceEntityTypes: trigger.sourceEntityTypes?.filter(item => typeof item === 'string') as string[] ?? [], 
+              // Ensure eventTypeFilter is array of strings
+              eventTypeFilter: ensureEventFilterArray(trigger.eventTypeFilter), 
+            },
             // Assume actions are correctly structured - potential area for more specific validation/typing
             actions: parsedConfig.actions as AutomationAction[], 
+            // Add basic validation for secondaryConditions
+            secondaryConditions: Array.isArray(parsedConfig.secondaryConditions) 
+                                ? parsedConfig.secondaryConditions as SecondaryCondition[]
+                                : undefined,
          };
       } else if (parsedConfig) { // Only warn if parsedConfig was created but failed validation
-          console.warn(`Parsed configJson for automation ${automation.id} is invalid or missing required fields (sourceEntityTypes/actions arrays). Using default empty config.`);
+          console.warn(`Parsed configJson for automation ${automation.id} is invalid or missing required fields (primaryTrigger object with sourceEntityTypes array, actions array). Using default empty config.`);
       }
 
     } catch (e) {
@@ -127,7 +158,6 @@ export default async function EditAutomationPage({ params }: EditAutomationPageP
       id: automation.id, // Use the ID fetched from the database record
       name: automation.name,
       enabled: automation.enabled,
-      sourceConnectorId: automation.sourceConnectorId,
       configJson: configJsonData,
       createdAt: automation.createdAt, 
       updatedAt: automation.updatedAt,

@@ -19,8 +19,11 @@ import {
     // Event category icons
     KeyRound, PersonStanding,
     // ADD: Armed State Icons
-    ShieldOff, ShieldAlert
+    ShieldOff, ShieldAlert,
+    // Import all icons for name mapping
+    LucideProps, // Needed if we want to strongly type the map value?
 } from 'lucide-react';
+import * as LucideIcons from 'lucide-react'; // Import the namespace
 
 
 // --- Device Type Icon Mapping ---
@@ -41,9 +44,59 @@ export const deviceTypeIcons: Record<DeviceType, LucideIcon> = {
     [DeviceType.Unmapped]: HelpCircle,
 };
 
+// Map DeviceType enum to the corresponding icon's string name
+const deviceTypeToIconNameMap: Record<DeviceType, string> = {
+    [DeviceType.Alarm]: 'Siren',
+    [DeviceType.Camera]: 'Cctv',
+    [DeviceType.Door]: 'DoorClosed',
+    [DeviceType.GarageDoor]: 'Warehouse',
+    [DeviceType.Encoder]: 'Combine',
+    [DeviceType.Hub]: 'Router',
+    [DeviceType.IOModule]: 'Cable',
+    [DeviceType.Lock]: 'Lock',
+    [DeviceType.Outlet]: 'Power',
+    [DeviceType.Sensor]: 'Radio',
+    [DeviceType.Sprinkler]: 'Droplets',
+    [DeviceType.Switch]: 'ToggleLeft',
+    [DeviceType.Thermostat]: 'Thermometer',
+    [DeviceType.Unmapped]: 'HelpCircle',
+};
+
 // Helper function to get device type icon component
 export function getDeviceTypeIcon(deviceType: DeviceType): LucideIcon {
     return deviceTypeIcons[deviceType] || HelpCircle; // Fallback to Unknown icon
+}
+
+// Helper function to get the STRING NAME of the device type icon
+export function getDeviceTypeIconName(deviceType: DeviceType): string {
+    return deviceTypeToIconNameMap[deviceType] || 'HelpCircle'; // Fallback name
+}
+
+
+// --- Icon Name to Component Mapping --- (for Client Components)
+// Create a map of known/used icon names to their components
+const nameToIconComponentMap: Record<string, LucideIcon> = {
+  Siren: LucideIcons.Siren,
+  Cctv: LucideIcons.Cctv,
+  DoorClosed: LucideIcons.DoorClosed,
+  Warehouse: LucideIcons.Warehouse,
+  Combine: LucideIcons.Combine,
+  Router: LucideIcons.Router,
+  Cable: LucideIcons.Cable,
+  Lock: LucideIcons.Lock,
+  Power: LucideIcons.Power,
+  Radio: LucideIcons.Radio,
+  Droplets: LucideIcons.Droplets,
+  ToggleLeft: LucideIcons.ToggleLeft,
+  Thermometer: LucideIcons.Thermometer,
+  HelpCircle: LucideIcons.HelpCircle,
+  // Add other icons used elsewhere if needed
+};
+
+// Helper function for Client Components to get icon component by name
+export function getIconComponentByName(name?: string | null): LucideIcon {
+    if (!name) return HelpCircle;
+    return nameToIconComponentMap[name] || HelpCircle;
 }
 
 
