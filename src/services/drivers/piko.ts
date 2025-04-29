@@ -179,15 +179,18 @@ export async function getAccessToken(username: string, password: string): Promis
 */
 export async function getSystems(accessToken: string): Promise<PikoSystem[]> {
   // Cloud only, uses fetch internally via _makePikoRequest
+  // The /cdb/systems endpoint lives on the main cloud URL, not a system-specific relay.
   const data = await _makePikoRequest(
-    { type: 'cloud', username: '', password: '', selectedSystem: 'placeholder' }, // Config only needs type=cloud
+    // Provide a minimal config (type cloud needed for logging/potential future logic)
+    { type: 'cloud', username: 'ignored', password: 'ignored', selectedSystem: 'ignored' },
     accessToken, // Token is needed for auth header
-    `/cdb/systems`, 
+    `/cdb/systems`,
     'GET', 
     undefined, // queryParams
     undefined, // body
-    { 'Authorization': `Bearer ${accessToken}` }, // Pass header explicitly for this non-standard endpoint
-    'json'
+    undefined, // NO additionalHeaders (Authorization is handled by _makePikoRequest)
+    'json',
+    PIKO_CLOUD_URL // Override the base URL for this specific endpoint
   );
 
   if (!data || !data.systems || !Array.isArray(data.systems)) {
@@ -1020,47 +1023,52 @@ export async function getSystemInfo(
 async function _fetchPikoLocalToken(
   config: PikoConfig & { type: 'local' } // Ensure type is local
 ): Promise<PikoTokenResponse> {
-  const { host, port, username, password, ignoreTlsErrors } = config;
-  console.log(`_fetchPikoLocalToken using https.request for local host: ${host}:${port}`);
-  if (!httpsModule || !host || !port || !username || !password) throw new PikoApiError('Missing required parameters or https module for local token fetch.', { statusCode: 500 });
-  const url = `https://${host}:${port}/rest/v3/login/sessions`;
-  const requestBody = JSON.stringify({ username, password });
-  let agent: import('https').Agent | undefined = undefined;
-  if (ignoreTlsErrors && httpsModule) {
-      console.warn(`[Piko Driver] Disabling TLS certificate validation for local connection to ${host}:${port}`);
-      agent = new httpsModule.Agent({ rejectUnauthorized: false });
+  const { username, password } = config;
+  console.log(`_fetchPikoLocalToken using _makePikoRequest for local host: ${config.host}:${config.port}`);
+
+  if (!username || !password) {
+    throw new PikoApiError('Username and password are required for local token fetch.', { statusCode: 400 });
   }
-  const options: import('https').RequestOptions = {
-    hostname: host, port: port, path: '/rest/v3/login/sessions', method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(requestBody), 'Accept': 'application/json' },
-    agent: agent, 
-  };
-  return new Promise((resolve, reject) => { 
-    const req = httpsModule!.request(options, (res) => { /* ... response handling ... */ 
-         let responseBody = '';
-         const statusCode = res.statusCode ?? 0;
-         res.setEncoding('utf8');
-         res.on('data', (chunk) => { responseBody += chunk; });
-         res.on('end', () => {
-           if (statusCode < 200 || statusCode >= 300) {
-               const errorInfo: any = { message: `Local auth failed (Status: ${statusCode})` };
-               try { const errorData = JSON.parse(responseBody); errorInfo.raw = errorData; /* ... */ } catch { errorInfo.raw = responseBody; }
-               reject(new PikoApiError(errorInfo.message, { statusCode, rawError: errorInfo.raw }));
-               return;
-           }
-           try {
-               const data: PikoLocalTokenData = JSON.parse(responseBody);
-               if (!data.token) reject(new PikoApiError('Local auth response missing token.', { statusCode }));
-               else resolve({ accessToken: data.token, expiresIn: data.expiresInS, sessionId: data.id, tokenType: 'Bearer' });
-           } catch (parseError) {
-               reject(new PikoApiError(`Failed to parse successful auth response: ${parseError instanceof Error ? parseError.message : String(parseError)}`, { statusCode: 500, rawError: responseBody }));
-           }
-         });
-    });
-    req.on('error', (e) => { reject(new PikoApiError(`Request failed: ${e.message}`, { cause: e })); });
-    req.write(requestBody);
-    req.end();
-  });
+
+  try {
+    const data = await _makePikoRequest(
+      config,            // Pass the whole config (includes host, port, ignoreTlsErrors)
+      undefined,         // No existing access token for initial auth
+      '/rest/v3/login/sessions',
+      'POST', 
+      undefined,         // No query params
+      { username, password }, // Body contains credentials
+      undefined,         // No additional headers
+      'json'             // Expect JSON response
+    ) as PikoLocalTokenData; // Type assertion after successful fetch
+
+    // Validate the response structure
+    if (!data || !data.token) { 
+      console.error('Local auth response missing token or invalid structure:', data);
+      throw new PikoApiError('Local auth response missing token.', { rawError: data });
+    }
+
+    // Map the PikoLocalTokenData to the standard PikoTokenResponse
+    return {
+      accessToken: data.token,
+      expiresIn: data.expiresInS,
+      sessionId: data.id,
+      tokenType: 'Bearer' // Assuming Bearer, though local API doesn't specify
+    };
+
+  } catch (error) {
+    // Errors thrown by _makePikoRequest will be PikoApiError instances
+    // Log and re-throw for higher-level handlers
+    console.error(`Error in _fetchPikoLocalToken for ${config.host}:${config.port}:`, error);
+    if (error instanceof PikoApiError) {
+        // Optionally customize the error message here if needed
+        // e.g., error.message = `Local authentication failed: ${error.message}`;
+        throw error; 
+    } else {
+        // Wrap unexpected errors
+        throw new PikoApiError(`Unexpected error during local token fetch: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+  }
 }
 
 /**
@@ -1215,44 +1223,45 @@ async function _makePikoRequest(
   queryParams?: Record<string, string>,
   body?: object | null | undefined,
   additionalHeaders?: Record<string, string>,
-  expectedResponseType: ExpectedResponseType = 'json'
-): Promise<any> { 
+  expectedResponseType: ExpectedResponseType = 'json',
+  baseUrlOverride?: string
+): Promise<any> {
 
   // Validate core inputs needed for URL construction
   if (!config || !path) {
-     throw new PikoApiError('Missing required parameters (Config or Path) for _makePikoRequest.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
+    throw new PikoApiError('Missing required parameters (Config or Path) for _makePikoRequest.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
   }
 
-  const baseUrl = _getPikoApiBaseUrl(config);
+  // Use override if provided, otherwise determine based on config
+  const baseUrl = baseUrlOverride ?? _getPikoApiBaseUrl(config);
   const url = new URL(path, baseUrl);
   if (queryParams) {
     Object.entries(queryParams).forEach(([key, value]) => {
       url.searchParams.append(key, value);
     });
   }
-  
-  // --- Centralized Header Preparation --- 
+
   const logPrefix = `[Piko Driver _makePikoRequest (${config.type})]`;
-  const requestBodyStr = (body && (method === 'POST' || method === 'PUT')) ? JSON.stringify(body) : '';
+  const requestBodyStr = (body && (method === 'POST' || method === 'PUT')) ? JSON.stringify(body) : undefined;
 
-  // Start with base auth + additional headers
+  // --- Centralized Header Preparation --- 
   const headersToUse: Record<string, string> = {
-       ..._getPikoBaseHeaders(accessToken),
-       ...additionalHeaders
+    ..._getPikoBaseHeaders(accessToken),
+    ...additionalHeaders
   };
-  // Add body-related headers if applicable
   if (requestBodyStr) {
-      headersToUse['Content-Type'] = 'application/json';
-      // Content-Length will be added specifically for https.request later
+    headersToUse['Content-Type'] = 'application/json';
   }
-  // Set default Accept header if not provided
   if (!headersToUse['Accept']) {
-      headersToUse['Accept'] = expectedResponseType === 'json' ? 'application/json' : '*/*';
+    headersToUse['Accept'] = expectedResponseType === 'json' ? 'application/json' : '*/*';
   }
-  // --- End Header Preparation ---
 
-  // --- Conditional Execution: Use https.request for local+ignoreTlsErrors --- 
-  if (config.type === 'local' && config.ignoreTlsErrors && httpsModule && config.host && config.port) {
+  // --- Special Case: Use https.request ONLY for local + ignoreTlsErrors --- 
+  if (config.type === 'local' && config.ignoreTlsErrors && config.host && config.port) {
+    if (!httpsModule) {
+        console.error(`${logPrefix} Cannot ignore TLS errors: https module not available.`);
+        throw new PikoApiError("HTTPS module required to ignore TLS errors but not available.", { statusCode: 500 });
+    }
     console.warn(`${logPrefix} Using https.request (TLS ignored) for: ${method} ${url.toString()}`);
     
     const agent = new httpsModule.Agent({ rejectUnauthorized: false });
@@ -1260,13 +1269,13 @@ async function _makePikoRequest(
     // Prepare OutgoingHttpHeaders from headersToUse
     const outgoingHeaders: import('http').OutgoingHttpHeaders = {};
     for (const [key, value] of Object.entries(headersToUse)) {
-        if (value !== undefined && value !== null) { 
-             outgoingHeaders[key.toLowerCase()] = String(value); 
-        }
+      if (value !== undefined && value !== null) {
+        outgoingHeaders[key.toLowerCase()] = String(value);
+      }
     }
     // Add Content-Length specifically for https.request if body exists
     if (requestBodyStr) {
-        outgoingHeaders['content-length'] = Buffer.byteLength(requestBodyStr);
+      outgoingHeaders['content-length'] = Buffer.byteLength(requestBodyStr);
     }
     
     const options: import('https').RequestOptions = {
@@ -1274,148 +1283,226 @@ async function _makePikoRequest(
       port: config.port,
       path: url.pathname + url.search,
       method: method,
-      headers: outgoingHeaders, 
-      agent: agent, 
+      headers: outgoingHeaders,
+      agent: agent,
     };
 
+    // Wrap https.request in a Promise for async/await compatibility
     return new Promise((resolve, reject) => {
-        const req = httpsModule!.request(options, (res) => {
-            const statusCode = res.statusCode ?? 0;
-            const contentType = res.headers['content-type'];
-            console.log(`${logPrefix} https.request response status: ${statusCode}`);
-            if (statusCode < 200 || statusCode >= 300) {
-                let responseBody = '';
-                res.setEncoding('utf8');
-                res.on('data', chunk => responseBody += chunk);
-                res.on('end', () => {
-                    const errorInfo = { message: `Failed ${method} ${path} (${statusCode}) via https.request`, raw: responseBody };
-                    try { const errData = JSON.parse(responseBody); errorInfo.raw = errData; /* extract details */ } catch {} 
-                    reject(new PikoApiError(errorInfo.message, { statusCode, rawError: errorInfo.raw }));
-                });
-                return; 
-            }
+      const req = httpsModule!.request(options, (res) => {
+        const statusCode = res.statusCode ?? 0;
+        const contentType = res.headers['content-type'];
+        console.log(`${logPrefix} https.request response status: ${statusCode}`);
+        
+        // --- Handle Error Status (https.request) --- 
+        if (statusCode < 200 || statusCode >= 300) {
+          let responseBody = '';
+          res.setEncoding('utf8');
+          res.on('data', chunk => responseBody += chunk);
+          res.on('end', () => {
+            let parsedErrorJson: any = null;
+            let specificErrorString: string | undefined = undefined;
+            let specificErrorId: string | undefined = undefined;
             try {
-                if (expectedResponseType === 'json') {
-                    let responseBody = '';
-                    res.setEncoding('utf8');
-                    res.on('data', chunk => responseBody += chunk);
-                    res.on('end', () => {
-                        if (statusCode === 204) {
-                            console.log(`${logPrefix} Success (204 No Content)`);
-                            resolve(null);
-                            return;
-                        }
-                        try {
-                            const data = JSON.parse(responseBody);
-                            console.log(`${logPrefix} Success (JSON)`);
-                            resolve(data);
-                        } catch (e) {
-                            console.error(`${logPrefix} Failed to parse JSON response:`, e);
-                            reject(new PikoApiError(`Failed to parse JSON: ${e instanceof Error ? e.message : 'Unknown error'}`, { statusCode: 500, rawError: responseBody }));
-                        }
-                    });
-                } else if (expectedResponseType === 'blob') {
-                    if (!contentType || !contentType.startsWith('image/')) { // Assuming blob is always image for now
-                        console.error(`${logPrefix} Response was not an image. Content-Type: ${contentType}`);
-                        res.resume();
-                        reject(new PikoApiError(`Expected image response, got ${contentType || 'unknown'}`, { statusCode }));
-                        return;
-                    }
-                    const chunks: Buffer[] = [];
-                    res.on('data', (chunk) => chunks.push(chunk));
-                    res.on('end', () => {
-                        try {
-                            const finalBuffer = Buffer.concat(chunks);
-                            const blob = new Blob([finalBuffer], { type: contentType });
-                            console.log(`${logPrefix} Success (Blob)`);
-                            resolve(blob);
-                        } catch (e) {
-                            console.error(`${logPrefix} Failed to process blob data:`, e);
-                            reject(new PikoApiError(`Failed to process image data: ${e instanceof Error ? e.message : 'Unknown error'}`, { cause: e }));
-                        }
-                    });
-                } else if (expectedResponseType === 'stream') {
-                    const webStream = Readable.toWeb(res);
-                    const responseHeaders = new Headers();
-                    for (const [key, value] of Object.entries(res.headers)) {
-                        if (value !== undefined) {
-                            if (Array.isArray(value)) value.forEach(v => responseHeaders.append(key, v));
-                            else responseHeaders.set(key, value);
-                        }
-                    }
-                    console.log(`${logPrefix} Success (Stream)`);
-                    resolve(new Response(webStream as any, { status: statusCode, statusText: res.statusMessage || '', headers: responseHeaders }));
-                } else {
-                    console.error(`${logPrefix} Invalid expectedResponseType: ${expectedResponseType}`);
-                    res.resume(); // Consume data
-                    reject(new PikoApiError(`Internal error: Invalid expected response type.`, { statusCode: 500 }));
-                }
-            } catch (processingError) {
-                console.error(`${logPrefix} Error during response processing:`, processingError);
-                res.resume(); // Ensure stream is consumed on error
-                reject(new PikoApiError(`Failed processing response: ${processingError instanceof Error ? processingError.message : String(processingError)}`, { cause: processingError }));
+              parsedErrorJson = JSON.parse(responseBody);
+              if (typeof parsedErrorJson.errorString === 'string' && parsedErrorJson.errorString) {
+                  specificErrorString = parsedErrorJson.errorString;
+              }
+              if (typeof parsedErrorJson.errorId === 'string' && parsedErrorJson.errorId) {
+                  specificErrorId = parsedErrorJson.errorId;
+              }
+            } catch {
+              // JSON parsing failed, keep raw text
             }
-        });
-        req.on('error', (e) => { reject(new PikoApiError(`Request failed: ${e.message}`, { cause: e })); });
-        if (requestBodyStr) req.write(requestBodyStr);
-        req.end();
-    });
+            const baseMessage = `Failed ${method} ${path} (${statusCode}) via https.request`;
+            const errorMessage = specificErrorString || baseMessage;
+            const rawErrorData = parsedErrorJson || responseBody;
 
-  } else {
-     // --- Use fetch for cloud or local without ignoreTlsErrors --- 
-     console.log(`${logPrefix} Using fetch for: ${method} ${url.toString()}`);
-     
-     try {
-        // Prepare HeadersInit compatible headers 
-        const fetchHeaders: Record<string, string> = {};
-        for (const [key, value] of Object.entries(headersToUse)) {
-            if (value !== undefined && value !== null) {
-                 fetchHeaders[key] = String(value);
+            reject(new PikoApiError(errorMessage, { 
+              statusCode, 
+              errorString: specificErrorString,
+              errorId: specificErrorId,
+              rawError: rawErrorData 
+            }));
+          });
+          return;
+        }
+        
+        // --- Handle Success Status (https.request) --- 
+        try {
+          if (expectedResponseType === 'json') {
+            let responseBody = '';
+            res.setEncoding('utf8');
+            res.on('data', chunk => responseBody += chunk);
+            res.on('end', () => {
+              if (statusCode === 204) {
+                console.log(`${logPrefix} Success (204 No Content)`);
+                resolve(null);
+                return;
+              }
+              try {
+                const data = JSON.parse(responseBody);
+                console.log(`${logPrefix} Success (JSON)`);
+                resolve(data);
+              } catch (e) {
+                console.error(`${logPrefix} Failed to parse JSON response:`, e);
+                reject(new PikoApiError(`Failed to parse JSON: ${e instanceof Error ? e.message : 'Unknown error'}`, { statusCode: 500, rawError: responseBody }));
+              }
+            });
+          } else if (expectedResponseType === 'blob') {
+            if (!contentType || !contentType.startsWith('image/')) {
+              console.error(`${logPrefix} Response was not an image. Content-Type: ${contentType}`);
+              res.resume(); // Consume data to free resources
+              reject(new PikoApiError(`Expected image response, got ${contentType || 'unknown'}`, { statusCode }));
+              return;
             }
-        }
-
-        const requestOptions: RequestInit = {
-            method: method,
-            headers: fetchHeaders, // Use prepared headers
-            body: requestBodyStr || undefined, // Use prepared stringified body
-        };
-
-        const response = await fetch(url.toString(), requestOptions);
-        console.log(`${logPrefix} fetch response status: ${response.status}`);
-
-        if (!response.ok) {
-          const errorInfo = { message: `Failed ${method} ${path} (${response.status}) via fetch`, raw: null as any };
-          try { errorInfo.raw = await response.text(); } catch {} // Try to get text body
-          try { /* Try parsing as JSON? */ const errData = JSON.parse(errorInfo.raw); errorInfo.raw = errData; /* extract details */ } catch {} 
-          throw new PikoApiError(errorInfo.message, { statusCode: response.status, rawError: errorInfo.raw });
-        }
-
-        // Handle Success based on Expected Type
-        if (expectedResponseType === 'json') {
-            if (response.status === 204) {
-                 console.log(`${logPrefix} Success (204 No Content)`);
-                 return null;
+            const chunks: Buffer[] = [];
+            res.on('data', (chunk) => chunks.push(chunk));
+            res.on('end', () => {
+              try {
+                const finalBuffer = Buffer.concat(chunks);
+                const blob = new Blob([finalBuffer], { type: contentType });
+                console.log(`${logPrefix} Success (Blob)`);
+                resolve(blob);
+              } catch (e) {
+                console.error(`${logPrefix} Failed to process blob data:`, e);
+                reject(new PikoApiError(`Failed to process image data: ${e instanceof Error ? e.message : 'Unknown error'}`, { cause: e }));
+              }
+            });
+          } else if (expectedResponseType === 'stream') {
+            // Convert Node stream to Web Stream Response for consistency
+            const webStream = Readable.toWeb(res);
+            const responseHeaders = new Headers();
+            for (const [key, value] of Object.entries(res.headers)) {
+              if (value !== undefined) {
+                if (Array.isArray(value)) value.forEach(v => responseHeaders.append(key, v));
+                else responseHeaders.set(key, value);
+              }
             }
-            const data = await response.json();
-            console.log(`${logPrefix} Success (JSON)`);
-            return data;
-        } else if (expectedResponseType === 'blob') {
-             const blob = await response.blob();
-             console.log(`${logPrefix} Success (Blob)`);
-             return blob;
-        } else if (expectedResponseType === 'stream') {
-             console.log(`${logPrefix} Success (Stream)`);
-             return response; // Return the raw Response object
-        } else {
-             console.error(`${logPrefix} Invalid expectedResponseType: ${expectedResponseType}`);
-             throw new PikoApiError(`Internal error: Invalid expected response type.`, { statusCode: 500 });
+            console.log(`${logPrefix} Success (Stream)`);
+            resolve(new Response(webStream as any, { status: statusCode, statusText: res.statusMessage || '', headers: responseHeaders }));
+          } else {
+            console.error(`${logPrefix} Invalid expectedResponseType: ${expectedResponseType}`);
+            res.resume();
+            reject(new PikoApiError(`Internal error: Invalid expected response type.`, { statusCode: 500 }));
+          }
+        } catch (processingError) {
+          console.error(`${logPrefix} Error during response processing:`, processingError);
+          res.resume(); // Ensure stream is consumed on error
+          reject(new PikoApiError(`Failed processing response: ${processingError instanceof Error ? processingError.message : String(processingError)}`, { cause: processingError }));
         }
+      });
 
-      } catch (error) {
-        if (error instanceof PikoApiError) throw error; 
-        console.error(`${logPrefix} Fetch/Network error:`, error);
-        throw new PikoApiError(`Network or fetch error for ${path}: ${error instanceof Error ? error.message : 'Unknown error'}`, { cause: error });
+      // Handle request-level errors (e.g., DNS resolution, connection refused)
+      req.on('error', (e) => {
+        console.error(`${logPrefix} https.request error:`, e);
+        reject(new PikoApiError(`Request failed: ${e.message}`, { cause: e }));
+      });
+
+      // Write body if exists
+      if (requestBodyStr) {
+        req.write(requestBodyStr);
       }
+      req.end();
+    });
+  }
+  
+  // --- Default Case: Use fetch for Cloud or Local (TLS verified) --- 
+  console.log(`${logPrefix} Using fetch for: ${method} ${url.toString()}`);
+  try {
+    const requestOptions: RequestInit = {
+      method: method,
+      headers: headersToUse,
+      body: requestBodyStr,
+      // No agent needed here, use default fetch TLS handling
+    };
+
+    const response = await fetch(url.toString(), requestOptions);
+    console.log(`${logPrefix} fetch response status: ${response.status}`);
+
+    // --- Handle Non-OK Responses (fetch) --- 
+    if (!response.ok) {
+      let errorBodyText: string | null = null;
+      let parsedErrorJson: any = null;
+      let specificErrorString: string | undefined = undefined;
+      let specificErrorId: string | undefined = undefined;
+      
+      try {
+        errorBodyText = await response.text();
+      } catch (textError) { /* Ignore */ }
+
+      if (errorBodyText) {
+        try {
+          parsedErrorJson = JSON.parse(errorBodyText);
+          if (typeof parsedErrorJson.errorString === 'string' && parsedErrorJson.errorString) {
+            specificErrorString = parsedErrorJson.errorString;
+          }
+           if (typeof parsedErrorJson.errorId === 'string' && parsedErrorJson.errorId) {
+             specificErrorId = parsedErrorJson.errorId;
+           }
+        } catch (jsonError) { /* Ignore */ }
+      }
+
+      const baseMessage = `Failed ${method} ${path} (${response.status}) via fetch`;
+      const errorMessage = specificErrorString || baseMessage;
+      const rawErrorData = parsedErrorJson || errorBodyText;
+
+      throw new PikoApiError(errorMessage, { 
+        statusCode: response.status, 
+        errorString: specificErrorString, 
+        errorId: specificErrorId,
+        rawError: rawErrorData
+      });
+    }
+
+    // --- Handle Successful Responses (fetch) --- 
+    if (expectedResponseType === 'json') {
+      if (response.status === 204) {
+        console.log(`${logPrefix} Success (204 No Content)`);
+        return null;
+      }
+      try {
+        const data = await response.json();
+        console.log(`${logPrefix} Success (JSON)`);
+        return data;
+      } catch (e) {
+          console.error(`${logPrefix} Failed to parse successful JSON response:`, e);
+          let bodyText = '';
+          try { bodyText = await response.text(); } catch {} 
+          throw new PikoApiError(`Failed to parse successful JSON response: ${e instanceof Error ? e.message : 'Unknown error'}`, { 
+              statusCode: response.status, 
+              rawError: bodyText || 'Could not read response body' 
+          });
+      }
+    } else if (expectedResponseType === 'blob') {
+      try {
+        const blob = await response.blob();
+        console.log(`${logPrefix} Success (Blob)`);
+        return blob;
+      } catch (e) {
+         console.error(`${logPrefix} Failed to process successful Blob response:`, e);
+         throw new PikoApiError(`Failed to process blob response: ${e instanceof Error ? e.message : 'Unknown error'}`, { cause: e });
+      }
+    } else if (expectedResponseType === 'stream') {
+      console.log(`${logPrefix} Success (Stream)`);
+      return response;
+    } else {
+      console.error(`${logPrefix} Invalid expectedResponseType: ${expectedResponseType}`);
+      throw new PikoApiError(`Internal error: Invalid expected response type.`, { statusCode: 500 });
+    }
+
+  } catch (error) {
+    // Handle errors from fetch itself (network, DNS) or PikoApiErrors thrown above
+    if (error instanceof PikoApiError) {
+      console.error(`${logPrefix} Piko API Error: ${error.message}`, { statusCode: error.statusCode, errorId: error.errorId, errorString: error.errorString, rawError: error.rawError });
+      throw error;
+    } else if (error instanceof Error) {
+      console.error(`${logPrefix} Fetch/Network error:`, error.message, error.cause ? `\nCause: ${JSON.stringify(error.cause)}` : '', error.stack);
+      throw new PikoApiError(`Network or fetch error for ${path}: ${error.message}`, { cause: error });
+    } else {
+      console.error(`${logPrefix} Unexpected non-Error type during fetch:`, error);
+      throw new PikoApiError(`Unexpected issue during fetch for ${path}`);
+    }
   }
 }
 
