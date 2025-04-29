@@ -5,11 +5,12 @@ import { eq, like, sql } from 'drizzle-orm';
 import type { Location } from '@/types/index';
 import { z } from 'zod';
 
-interface RouteParams {
-  params: {
-    id: string;
-  };
-}
+// Remove unused RouteParams interface
+// interface RouteParams {
+//  params: {
+//    id: string;
+//  };
+// }
 
 // --- Validation Schema ---
 const updateLocationSchema = z.object({
@@ -19,9 +20,12 @@ const updateLocationSchema = z.object({
   message: "Either name or parentId must be provided for update",
 });
 
-// Fetch a specific location by ID
-export async function GET(request: Request, { params }: RouteParams) {
-  const { id } = params;
+// Fetch a specific location by ID - Correct Next.js 15 signature
+export async function GET(
+  request: Request, 
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params; // Await params
 
   // Basic UUID validation (optional but recommended)
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
@@ -46,9 +50,12 @@ export async function GET(request: Request, { params }: RouteParams) {
   }
 }
 
-// Update a location (name and/or parentId)
-export async function PUT(request: Request, { params }: RouteParams) {
-  const { id } = params;
+// Update a location (name and/or parentId) - Correct Next.js 15 signature
+export async function PUT(
+  request: Request, 
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params; // Await params
 
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
     return NextResponse.json({ success: false, error: "Invalid ID format" }, { status: 400 });
@@ -153,9 +160,12 @@ export async function PUT(request: Request, { params }: RouteParams) {
   }
 }
 
-// Delete a location (database cascade should handle descendants)
-export async function DELETE(request: Request, { params }: RouteParams) {
-  const { id } = params;
+// Delete a location (database cascade should handle descendants) - Correct Next.js 15 signature
+export async function DELETE(
+  request: Request, 
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params; // Await params
 
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
     return NextResponse.json({ success: false, error: "Invalid ID format" }, { status: 400 });

@@ -5,21 +5,24 @@ import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 import type { DeviceWithConnector } from '@/types/index';
 
-interface RouteParams {
-  params: {
-    id: string; // Area ID
-  };
-}
+// Remove unused RouteParams interface
+// interface RouteParams {
+//  params: {
+//    id: string; // Area ID
+//  };
+// }
 
 // --- Validation Schema ---
 const assignDeviceSchema = z.object({
   deviceId: z.string().uuid("Invalid Device ID format"),
 });
 
-// Fetch device IDs assigned to an area
-export async function GET(request: Request, { params }: RouteParams) {
-  // Access params.id directly
-  const areaId = params.id; 
+// Fetch device IDs assigned to an area - Correct Next.js 15 signature
+export async function GET(
+  request: Request, 
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const areaId = (await params).id; // Await params promise
 
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(areaId)) {
     return NextResponse.json({ success: false, error: "Invalid Area ID format" }, { status: 400 });
@@ -50,9 +53,12 @@ export async function GET(request: Request, { params }: RouteParams) {
   }
 }
 
-// Assign a device to an area
-export async function POST(request: Request, { params }: RouteParams) {
-  const { id: areaId } = params;
+// Assign a device to an area - Correct Next.js 15 signature
+export async function POST(
+  request: Request, 
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id: areaId } = await params; // Await params promise
 
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(areaId)) {
     return NextResponse.json({ success: false, error: "Invalid Area ID format" }, { status: 400 });

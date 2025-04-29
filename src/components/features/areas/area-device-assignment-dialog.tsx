@@ -5,7 +5,7 @@ import type { Area, DeviceWithConnector, ApiResponse } from '@/types/index';
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DataTable } from "@/components/ui/data-table";
-import { type ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef, type Row } from "@tanstack/react-table";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { DeviceType } from "@/lib/mappings/definitions";
 import { cn } from "@/lib/utils";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 // --- Component Props --- 
 interface AreaDeviceAssignmentDialogProps {
@@ -40,7 +41,7 @@ interface AreaDeviceAssignmentDialogProps {
   area: Area | null; // The area to assign devices to
   allDevices: DeviceWithConnector[]; // List of all available devices
   // Pass store actions directly for simplicity
-  assignDeviceAction: (areaId: string, deviceId: string) => Promise<boolean>; 
+  assignDeviceAction: (areaId: string, deviceId: string) => Promise<boolean>;
   removeDeviceAction: (areaId: string, deviceId: string) => Promise<boolean>;
 }
 
@@ -55,7 +56,6 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
   const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
   const [errorAssignments, setErrorAssignments] = useState<string | null>(null);
   const [initialAssignedIds, setInitialAssignedIds] = useState<Set<string>>(new Set());
-  // Track changes using a Record instead of a Map
   const [changedDeviceIds, setChangedDeviceIds] = useState<Record<string, boolean>>({}); 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -73,37 +73,45 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
   }, [allDevices]);
   // <<< END DEBUG LOGGING >>>
 
+  // --- Reusable function to fetch current assignments ---
+  const refetchAssignments = useCallback(async () => {
+    if (!area) {
+        setInitialAssignedIds(new Set());
+        setChangedDeviceIds({});
+        setErrorAssignments(null);
+        return;
+    }
+    setIsLoadingAssignments(true);
+    setErrorAssignments(null);
+    setChangedDeviceIds({}); // Reset changes on fetch
+    try {
+      const response = await fetch(`/api/areas/${area.id}/devices`);
+      const data: ApiResponse<string[]> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch current assignments');
+      }
+      setInitialAssignedIds(new Set(data.data || []));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error("Error fetching area assignments:", message);
+      setErrorAssignments(message);
+      setInitialAssignedIds(new Set()); // Reset on error
+    } finally {
+      setIsLoadingAssignments(false);
+    }
+  }, [area]); // Dependency: area
+
   // Fetch current assignments when the dialog opens for a specific area
   useEffect(() => {
     if (isOpen && area) {
-      const fetchAssignments = async () => {
-        setIsLoadingAssignments(true);
-        setErrorAssignments(null);
-        setChangedDeviceIds({}); // Reset changes on open
-        try {
-          const response = await fetch(`/api/areas/${area.id}/devices`);
-          const data: ApiResponse<string[]> = await response.json();
-          if (!response.ok || !data.success) {
-            throw new Error(data.error || 'Failed to fetch current assignments');
-          }
-          setInitialAssignedIds(new Set(data.data || []));
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'Unknown error';
-          console.error("Error fetching area assignments:", message);
-          setErrorAssignments(message);
-          setInitialAssignedIds(new Set()); // Reset on error
-        } finally {
-          setIsLoadingAssignments(false);
-        }
-      };
-      fetchAssignments();
+      refetchAssignments(); // Call the reusable function
     } else {
       // Reset when closing or if area is null
       setInitialAssignedIds(new Set());
       setChangedDeviceIds({}); // Reset to empty object
       setErrorAssignments(null);
     }
-  }, [isOpen, area]);
+  }, [isOpen, area, refetchAssignments]);
 
   // Determine the current displayed checked state for a device - MEMOIZED
   const getDisplayedCheckedState = useCallback((deviceId: string): boolean => {
@@ -134,12 +142,20 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
 
   }, [initialAssignedIds]); // Only depends on initialAssignedIds now
 
+  // NEW: Handler for clicking anywhere on the row
+  const handleRowClick = useCallback((row: Row<DeviceWithConnector>) => {
+      const deviceId = row.original.id;
+      if (!deviceId) return; // Safety check
+      
+      const currentCheckedState = getDisplayedCheckedState(deviceId);
+      handleCheckboxChange(deviceId, !currentCheckedState); // Toggle the state
+  }, [getDisplayedCheckedState, handleCheckboxChange]);
+
   // --- Columns for the Device Assignment Table --- 
   const columns = useMemo((): ColumnDef<DeviceWithConnector>[] => [
     {
       id: 'select',
       header: ({ table }) => (
-         // Placeholder for header select-all if needed later
          <span className="sr-only">Select</span>
       ),
       cell: ({ row }) => {
@@ -165,12 +181,13 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
           </div>
         );
       },
-      size: 40, // Small column for checkbox
+      size: 40, // Keep checkbox column small
     },
     {
       accessorKey: 'name',
       header: 'Device Name',
       cell: ({ row }) => <div className="font-medium">{row.getValue('name')}</div>,
+      size: 250, // Give name a fixed, but larger, size
     },
     {
         accessorKey: 'deviceTypeInfo',
@@ -203,6 +220,7 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
                 </TooltipProvider>
             );
         },
+        size: 150, // Reduce size for Type
     },
     {
       accessorKey: 'connectorCategory',
@@ -218,6 +236,7 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
           </Badge>
         );
       },
+      size: 150, // Reduce size for Connector
     },
     // Add more columns if helpful (e.g., Location - though maybe redundant here)
   ], [isLoadingAssignments, getDisplayedCheckedState, handleCheckboxChange]); // Dependencies simplified
@@ -244,22 +263,36 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
     return sortedConnectors; // Return only actual connectors
   }, [allDevices]);
 
-  // Memoize the filtered devices
-  const filteredDevices = useMemo(() => {
-    return allDevices.filter(device => {
-        // Name filter (case-insensitive)
+  // Memoize the filtered devices - Now split into assigned and available
+  const [filteredAssignedDevices, filteredAvailableDevices] = useMemo(() => {
+    // Start with splitting based on initial state
+    const currentAssigned: DeviceWithConnector[] = [];
+    const currentAvailable: DeviceWithConnector[] = [];
+
+    allDevices.forEach(device => {
+        // Check the *target* state based on changes
+        const isTargetAssigned = getDisplayedCheckedState(device.id);
+        if (isTargetAssigned) {
+          currentAssigned.push(device);
+        } else {
+          currentAvailable.push(device);
+        }
+    });
+
+    // Apply filters to both lists
+    const filterDevice = (device: DeviceWithConnector): boolean => {
         const nameMatch = device.name.toLowerCase().includes(nameFilter.toLowerCase());
-        
-        // Type filter
         const typeMatch = typeFilter === 'all' || device.deviceTypeInfo?.type === typeFilter;
-        
-        // Connector filter (check name first, then category as fallback)
         const connectorDisplayName = device.connectorName ?? formatConnectorCategory(device.connectorCategory);
         const connectorMatch = connectorFilter === 'all' || connectorDisplayName === connectorFilter;
-
         return nameMatch && typeMatch && connectorMatch;
-    });
-  }, [allDevices, nameFilter, typeFilter, connectorFilter]);
+    };
+
+    return [
+        currentAssigned.filter(filterDevice),
+        currentAvailable.filter(filterDevice)
+    ];
+  }, [allDevices, nameFilter, typeFilter, connectorFilter, getDisplayedCheckedState]); // Add getDisplayedCheckedState dependency
 
   // --- Submit Handler ---
   const handleSaveChanges = async () => {
@@ -299,21 +332,8 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
         if (errorCount === 0 && successCount === totalChanges) {
              onOpenChange(false); // Close dialog only if all intended changes succeeded
         } else {
-            // If some failed, keep dialog open but refetch initial state to show current status
-            const fetchAssignments = async () => {
-              // Duplicated fetch logic - maybe extract to a function?
-              setIsLoadingAssignments(true);
-              setErrorAssignments(null);
-              try {
-                const response = await fetch(`/api/areas/${area.id}/devices`);
-                const data: ApiResponse<string[]> = await response.json();
-                if (!response.ok || !data.success) throw new Error(data.error || 'Refetch failed');
-                setInitialAssignedIds(new Set(data.data || []));
-                setChangedDeviceIds({}); // Reset changes after partial success/failure
-              } catch (err) { /* handle error */ } 
-              finally { setIsLoadingAssignments(false); }
-            };
-             fetchAssignments();
+            // If some failed, keep dialog open and refetch assignments
+            refetchAssignments(); // Call the reusable function
         }
 
     } catch (error) {
@@ -348,67 +368,89 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
 
         {/* Only show table when not loading initial assignments */} 
         {!isLoadingAssignments && !errorAssignments && (
-            <TooltipProvider>
-                {/* --- Filter Controls --- */} 
-                <div className="flex items-center gap-2 mb-4 px-1">
-                    <Input 
-                        placeholder="Filter by name..."
-                        value={nameFilter}
-                        onChange={(event) => setNameFilter(event.target.value)}
-                        className="max-w-xs h-8 text-xs"
-                    />
-                    <Select value={typeFilter} onValueChange={setTypeFilter}>
-                        <SelectTrigger className="w-[180px] h-8 text-xs">
-                            <SelectValue placeholder="Filter by Type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {uniqueDeviceTypes.map(type => {
-                                // Get icon for device type
-                                const Icon = type === 'all' ? null : getDeviceTypeIcon(type as DeviceType); // Cast string to DeviceType
-                                return (
-                                    <SelectItem key={type} value={type} className="text-xs">
-                                        <div className="flex items-center gap-2">
-                                            {Icon && <Icon className="h-4 w-4 text-muted-foreground" />} 
-                                            <span>{type === 'all' ? 'All Types' : type}</span>
-                                        </div>
-                                    </SelectItem>
-                                );
-                            })}
-                        </SelectContent>
-                    </Select>
-                    <Select value={connectorFilter} onValueChange={setConnectorFilter}>
-                        <SelectTrigger className="w-[180px] h-8 text-xs">
-                            <SelectValue placeholder="Filter by Connector" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {/* Render 'All Connectors' item separately */}
-                            <SelectItem value="all" className="text-xs">
-                                <div className="flex items-center gap-2">
-                                    {/* No icon needed for All */}
-                                    <span>All Connectors</span>
-                                </div>
-                            </SelectItem>
-                            {/* Map over actual connectors */}
-                            {uniqueConnectors.map(connector => (
-                                <SelectItem key={connector.name} value={connector.name as string} className="text-xs">
+            <ScrollArea className="h-[65vh] pr-4"> {/* Wrap content in ScrollArea */}
+                <TooltipProvider>
+                    {/* --- Filter Controls --- */} 
+                    <div className="flex items-center gap-2 mb-4 px-1 sticky top-0 bg-background py-2 z-10"> 
+                        <Input 
+                            placeholder="Filter by name..."
+                            value={nameFilter}
+                            onChange={(event) => setNameFilter(event.target.value)}
+                            className="max-w-xs h-8 text-xs"
+                        />
+                        <Select value={typeFilter} onValueChange={setTypeFilter}>
+                            <SelectTrigger className="w-[180px] h-8 text-xs">
+                                <SelectValue placeholder="Filter by Type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {uniqueDeviceTypes
+                                    .filter((type): type is string => typeof type === 'string') // Explicitly filter for strings
+                                    .map(type => {
+                                    // Get icon for device type
+                                    const Icon = type === 'all' ? null : getDeviceTypeIcon(type as DeviceType); // Cast string to DeviceType
+                                    return (
+                                        <SelectItem key={type} value={type} className="text-xs"> {/* type is now guaranteed string */}
+                                            <div className="flex items-center gap-2">
+                                                {Icon && <Icon className="h-4 w-4 text-muted-foreground" />} 
+                                                <span>{type === 'all' ? 'All Types' : type}</span>
+                                            </div>
+                                        </SelectItem>
+                                    );
+                                })}
+                            </SelectContent>
+                        </Select>
+                        <Select value={connectorFilter} onValueChange={setConnectorFilter}>
+                            <SelectTrigger className="w-[180px] h-8 text-xs">
+                                <SelectValue placeholder="Filter by Connector" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {/* Render 'All Connectors' item separately */}
+                                <SelectItem value="all" className="text-xs">
                                     <div className="flex items-center gap-2">
-                                        <ConnectorIcon connectorCategory={connector.category} size={16} />
-                                        <span>{connector.name}</span>
+                                        {/* No icon needed for All */}
+                                        <span>All Connectors</span>
                                     </div>
                                 </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
+                                {/* Map over actual connectors, filtering out any missing names */}
+                                {uniqueConnectors
+                                    .filter(connector => connector.name) // Ensure name exists
+                                    .map(connector => (
+                                    <SelectItem key={connector.name} value={connector.name} className="text-xs"> {/* Now name is guaranteed to be a string */}
+                                        <div className="flex items-center gap-2">
+                                            <ConnectorIcon connectorCategory={connector.category} size={16} />
+                                            <span>{connector.name}</span>
+                                        </div>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                
+                    {/* Assigned Devices Table */}
+                    <div className="mb-6">
+                        <h4 className="text-sm font-medium mb-2">Assigned Devices ({filteredAssignedDevices.length})</h4>
+                        <div className="rounded-md border"> 
+                            <DataTable 
+                                columns={columns} 
+                                data={filteredAssignedDevices} 
+                                onRowClick={handleRowClick} 
+                            /> 
+                        </div>
+                    </div>
 
-                <div className="max-h-[55vh] overflow-y-auto pr-2"> {/* Adjusted height */} 
-                    <DataTable 
-                        columns={columns} 
-                        data={filteredDevices} 
-                        initialSorting={[{ id: 'name', desc: false }]}
-                    /> 
-                </div>
-            </TooltipProvider>
+                    {/* Available Devices Table */}
+                    <div>
+                        <h4 className="text-sm font-medium mb-2">Available Devices ({filteredAvailableDevices.length})</h4>
+                        <div className="rounded-md border"> 
+                            <DataTable 
+                                columns={columns} 
+                                data={filteredAvailableDevices} 
+                                onRowClick={handleRowClick} 
+                            /> 
+                        </div>
+                    </div>
+                </TooltipProvider>
+            </ScrollArea>
         )}
 
         <DialogFooter>

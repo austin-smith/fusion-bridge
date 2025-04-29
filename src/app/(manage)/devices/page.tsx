@@ -59,6 +59,9 @@ import { DeviceMappingDialogContent } from "@/components/features/devices/device
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon"; 
 import { Badge } from "@/components/ui/badge";
 import { formatConnectorCategory } from '@/lib/utils';
+// Import missing types/functions
+import type { DeviceDetailProps } from "@/components/features/devices/device-detail-dialog-content";
+import { getDeviceTypeInfo } from "@/lib/mappings/identification";
 
 // Define the shape of data expected by the table, combining store data
 interface DisplayedDevice extends Omit<DeviceWithConnector, 'status' | 'type' | 'pikoServerDetails'> { 
@@ -71,6 +74,8 @@ interface DisplayedDevice extends Omit<DeviceWithConnector, 'status' | 'type' | 
   // Add server details explicitly
   pikoServerDetails?: PikoServer; // <-- Add the field here
   // status: string | null; // Keep status omitted as it's replaced by displayState
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // A simple component for sort indicators
@@ -135,6 +140,8 @@ export default function DevicesPage() {
   // const fetchConnectors = useFusionStore(state => state.fetchConnectors); 
   // Use connectors state variable
   const connectors = useFusionStore(state => state.connectors as ConnectorWithConfig<any>[]); 
+  // Fetch allDevices from the store
+  const allDevices = useFusionStore(state => state.allDevices);
   
   // const [devices, setDevices] = useState<DeviceWithConnector[]>([]); // Remove local state
   const [isLoadingInitial, setIsLoadingInitial] = useState(true); // <-- Add loading state for initial fetch
@@ -161,9 +168,8 @@ export default function DevicesPage() {
       setError(null);
       try {
         console.log('[DevicesPage] Fetching initial data (Connectors & Devices)...');
-        // Fetch connectors and devices in parallel
         const [connectorsResponse, devicesResponse] = await Promise.all([
-          fetch('/api/connectors'), // Fetch connectors endpoint
+          fetch('/api/connectors'), 
           fetch('/api/devices')
         ]);
 
@@ -181,12 +187,13 @@ export default function DevicesPage() {
         
         // Process Devices Response
         const devicesData = await devicesResponse.json();
-        console.log('[DevicesPage] GET /api/devices response received:', devicesData);
+        console.log('[DevicesPage] Initial GET /api/devices RAW response data:', devicesData);
         if (!devicesResponse.ok || !devicesData.success) {
           throw new Error(devicesData.error || 'Failed to fetch initial devices');
         }
 
         if (devicesData.data && Array.isArray(devicesData.data)) {
+          console.log(`[DevicesPage] Calling setDeviceStatesFromSync with ${devicesData.data.length} devices.`);
           setDeviceStatesFromSync(devicesData.data as DeviceWithConnector[]); 
           console.log('[DevicesPage] Initial devices loaded into store.');
         } else {
@@ -205,48 +212,63 @@ export default function DevicesPage() {
     fetchInitialData();
   }, [setDeviceStatesFromSync]);
 
-  // Combine store data into the format the table expects - use connectors
+  // Combine store data into the format the table expects
   const tableData = useMemo((): DisplayedDevice[] => {
-    console.log('[DevicesPage] tableData useMemo received deviceStates:', deviceStates);
-    
+    console.log(`[DevicesPage] Recalculating tableData. deviceStates size: ${deviceStates.size}, allDevices length: ${allDevices.length}`);
     const connectorsMap = new Map(connectors.map(c => [c.id, c])); 
+    const allDevicesMap = new Map(allDevices.map(d => [d.deviceId, d])); 
 
-    // Change iteration method: Use Array.from(deviceStates.values()) instead of Object.values()
-    const mappedData = Array.from(deviceStates.values()).map(state => {
+    const mappedData = Array.from(deviceStates.values()).reduce((acc: DisplayedDevice[], state) => {
         const connector = connectorsMap.get(state.connectorId);
-        const serverName = state.serverName; 
-        const serverId = state.serverId;     
-        const pikoServerDetails = state.pikoServerDetails; 
-        const deviceName = state.name ?? 'Unknown Device'; 
-        const model = state.model ?? 'N/A';       
-        const vendor = state.vendor ?? 'N/A';      
-        const url = state.url ?? 'N/A';          
-        const rawDeviceType = state.rawType ?? state.deviceInfo?.type ?? 'Unknown'; 
+        const fullDevice = allDevicesMap.get(state.deviceId); 
+        
+        if (!fullDevice) {
+            console.warn(`[DevicesPage] tableData: Full device not found in allDevicesMap for deviceId: ${state.deviceId}`);
+        }
 
-        return {
-            id: `${state.connectorId}:${state.deviceId}`, 
-            deviceId: state.deviceId,
-            connectorId: state.connectorId,
-            name: deviceName, 
-            connectorName: connector?.name ?? 'Unknown Connector',
-            connectorCategory: connector?.category ?? 'unknown',
-            deviceTypeInfo: state.deviceInfo, 
-            displayState: state.displayState, 
-            lastSeen: state.lastSeen,
-            associationCount: 0, // Placeholder 
-            type: rawDeviceType, 
-            url: url,
-            model: model,
-            vendor: vendor,
-            serverName: serverName,
-            serverId: serverId,
-            pikoServerDetails: pikoServerDetails,
-        };
-    });
+        if (fullDevice && fullDevice.createdAt && fullDevice.updatedAt) {
+            const serverName = state.serverName; 
+            const serverId = state.serverId;     
+            const pikoServerDetails = state.pikoServerDetails; 
+            const deviceName = state.name ?? 'Unknown Device'; 
+            const model = state.model ?? 'N/A';       
+            const vendor = state.vendor ?? 'N/A';      
+            const url = state.url ?? 'N/A';          
+            const rawDeviceType = state.rawType ?? state.deviceInfo?.type ?? 'Unknown'; 
 
-    console.log('[DevicesPage] Mapped tableData:', mappedData);
+            const displayDevice: DisplayedDevice = {
+                id: `${state.connectorId}:${state.deviceId}`, 
+                deviceId: state.deviceId,
+                connectorId: state.connectorId,
+                name: deviceName, 
+                connectorName: connector?.name ?? 'Unknown', // Ensure string
+                connectorCategory: connector?.category ?? 'unknown',
+                deviceTypeInfo: state.deviceInfo, 
+                displayState: state.displayState, 
+                lastSeen: state.lastSeen,
+                associationCount: 0, // Placeholder 
+                type: rawDeviceType, 
+                url: url,
+                model: model,
+                vendor: vendor,
+                serverName: serverName,
+                serverId: serverId,
+                pikoServerDetails: pikoServerDetails,
+                createdAt: new Date(fullDevice.createdAt),
+                updatedAt: new Date(fullDevice.updatedAt), 
+            };
+            acc.push(displayDevice);
+        } else {
+            if (fullDevice) {
+                 console.warn(`[DevicesPage] Skipping device state due to missing dates: ${state.connectorId}:${state.deviceId}`);
+            }
+        }
+        return acc;
+    }, []); 
+
+    console.log('[DevicesPage] Finished calculating tableData. Result length:', mappedData.length);
     return mappedData;
-  }, [deviceStates, connectors]);
+  }, [deviceStates, connectors, allDevices]);
 
   // Filter devices based on the category toggle
   const filteredTableData = useMemo(() => {
@@ -481,11 +503,24 @@ export default function DevicesPage() {
         id: 'actions',
         header: "Actions",
         cell: ({ row }) => {
-          const device = row.original;
+          const device = row.original; 
+          const dialogProps: DeviceDetailProps = {
+            ...device,
+            // Ensure potentially nullable string props are string | undefined
+            url: device.url ?? undefined, 
+            model: device.model ?? undefined, 
+            vendor: device.vendor ?? undefined, 
+            serverName: device.serverName ?? undefined,
+            serverId: device.serverId ?? undefined,
+            // Ensure required string props have fallbacks
+            connectorName: device.connectorName ?? 'Unknown', 
+            // Ensure required object props have fallbacks
+            deviceTypeInfo: device.deviceTypeInfo ?? getDeviceTypeInfo('unknown', 'unknown'),
+          };
           return (
             <Dialog>
               <DialogTrigger asChild><Button variant="ghost" size="icon"><EyeIcon className="h-4 w-4" /></Button></DialogTrigger>
-              <DialogContent className="sm:max-w-[600px]"><DeviceDetailDialogContent device={device} /></DialogContent>
+              <DialogContent className="sm:max-w-[600px]"><DeviceDetailDialogContent device={dialogProps} /></DialogContent>
             </Dialog>
           );
         },

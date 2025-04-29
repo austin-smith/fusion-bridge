@@ -6,12 +6,6 @@ import type { Area } from '@/types/index';
 import { ArmedState } from '@/lib/mappings/definitions';
 import { z } from 'zod';
 
-interface RouteParams {
-  params: {
-    id: string; // Area ID
-  };
-}
-
 // --- Validation Schema ---
 // Define the possible armed states explicitly for validation
 // const armedStateEnum = z.enum(['DISARMED', 'ARMED_AWAY', 'ARMED_STAY', 'TRIGGERED']);
@@ -20,11 +14,14 @@ const updateArmedStateSchema = z.object({
   armedState: z.nativeEnum(ArmedState),
 });
 
-// Update the armed state of an area
-export async function PUT(request: Request, { params }: RouteParams) {
-  // Revert id access back to destructuring
-  const { id } = params;
+// Update the armed state of an area - Correct Next.js 15 signature
+export async function PUT( // Restore async
+  request: Request,
+  { params }: { params: Promise<{ id: string }> } // Use Promise<...> for params
+) {
+  const { id } = await params; // Await the params Promise
 
+  // Restore original logic
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
     return NextResponse.json({ success: false, error: "Invalid ID format" }, { status: 400 });
   }

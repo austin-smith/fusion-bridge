@@ -152,6 +152,9 @@ interface FusionState {
   updateAreaArmedState: (id: string, armedState: ArmedState) => Promise<Area | null>;
   assignDeviceToArea: (areaId: string, deviceId: string) => Promise<boolean>;
   removeDeviceFromArea: (areaId: string, deviceId: string) => Promise<boolean>;
+  moveDeviceToArea: (deviceId: string, targetAreaId: string) => Promise<boolean>;
+  // +++ Add action for optimistic UI update +++
+  optimisticallyMoveDevice: (deviceId: string, sourceAreaId: string | undefined, targetAreaId: string) => void;
 
   // NEW: Fetch all devices 
   fetchAllDevices: () => Promise<void>;
@@ -337,7 +340,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       for (const syncedDevice of syncedDevices) {
           const key = `${syncedDevice.connectorId}:${syncedDevice.deviceId}`;
           const updated: DeviceStateInfo = {
-              ...defaultDeviceStateInfo,
+              // Keep existing properties for DeviceStateInfo
               connectorId: syncedDevice.connectorId,
               deviceId: syncedDevice.deviceId,
               name: syncedDevice.name,
@@ -346,16 +349,22 @@ export const useFusionStore = create<FusionState>((set, get) => ({
               model: syncedDevice.model ?? undefined,
               url: syncedDevice.url ?? undefined,
               deviceInfo: getDeviceTypeInfo(syncedDevice.connectorCategory, syncedDevice.type),
-              lastSeen: new Date(),
+              lastSeen: new Date(), // Update lastSeen on sync
               serverId: syncedDevice.serverId ?? undefined,
               serverName: syncedDevice.serverName ?? undefined,
               pikoServerDetails: syncedDevice.pikoServerDetails ?? undefined,
+              // Add other DeviceStateInfo specific fields if they exist from previous state or default
+              // ... potentially merge with existing state if needed ...
           };
           newDeviceStates.set(key, updated);
       }
       
       console.log('[Store] setDeviceStatesFromSync updated state:', newDeviceStates);
-      return { deviceStates: newDeviceStates };
+      // *** Update both deviceStates AND allDevices ***
+      return { 
+          deviceStates: newDeviceStates, 
+          allDevices: syncedDevices // Update allDevices with the full list
+      };
   }),
 
   fetchConnectors: async () => {
@@ -589,12 +598,11 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to assign device');
         }
-        // Optionally update device/area state if needed, or trigger refetch in component
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
        console.error(`Error assigning device ${deviceId} to area ${areaId}:`, message);
-       // Set specific error state?
+       set({ errorAreas: message });
        return false;
     }
   },
@@ -605,14 +613,68 @@ export const useFusionStore = create<FusionState>((set, get) => ({
          if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to remove device');
         }
-         // Optionally update device/area state if needed, or trigger refetch in component
+        // Refetch areas after successful removal to update the UI
+        await get().fetchAreas(); 
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
        console.error(`Error removing device ${deviceId} from area ${areaId}:`, message);
-        // Set specific error state?
+       set({ errorAreas: message });
        return false;
     }
+  },
+
+  // +++ Implement optimistic action +++
+  optimisticallyMoveDevice: (deviceId, sourceAreaId, targetAreaId) => 
+    set(produce((draft: Draft<FusionState>) => {
+      if (sourceAreaId) {
+        const sourceArea = draft.areas.find(a => a.id === sourceAreaId);
+        if (sourceArea && sourceArea.deviceIds) {
+          sourceArea.deviceIds = sourceArea.deviceIds.filter(id => id !== deviceId);
+        }
+      }
+      const targetArea = draft.areas.find(a => a.id === targetAreaId);
+      if (targetArea) {
+        if (!targetArea.deviceIds) {
+          targetArea.deviceIds = [];
+        }
+        if (!targetArea.deviceIds.includes(deviceId)) {
+          targetArea.deviceIds.push(deviceId);
+        }
+      }
+      // Ensure sorting is maintained if needed, though usually order isn't critical for deviceIds
+      // draft.areas.sort((a, b) => a.name.localeCompare(b.name)); 
+    })),
+
+  moveDeviceToArea: async (deviceId, targetAreaId) => {
+      set({ errorAreas: null }); // Clear previous area-related errors
+      try {
+          console.log(`[Store] Attempting to move device ${deviceId} to area ${targetAreaId}`);
+          const response = await fetch(`/api/devices/${deviceId}/area`, { // Assuming this API endpoint
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ areaId: targetAreaId })
+          });
+
+          const data: ApiResponse<{ deviceId: string, areaId: string }> = await response.json();
+
+          if (!response.ok || !data.success) {
+              throw new Error(data.error || `Failed to move device ${deviceId}`);
+          }
+
+          console.log(`[Store] Successfully moved device ${deviceId} via API. Refetching areas.`);
+          // Refetch areas to get the updated device assignments - REMOVED FOR OPTIMISTIC UPDATE
+          // await get().fetchAreas(); 
+          return true;
+
+      } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error';
+          console.error(`Error moving device ${deviceId} to area ${targetAreaId}:`, message);
+          set({ errorAreas: `Failed to move device: ${message}` });
+          // Optionally refetch areas even on error to ensure UI consistency with backend state
+          await get().fetchAreas(); // Keep refetch on error
+          return false;
+      }
   },
 
   // NEW: Fetch all devices 

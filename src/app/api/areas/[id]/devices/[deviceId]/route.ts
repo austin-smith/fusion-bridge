@@ -4,16 +4,20 @@ import { areaDevices } from '@/data/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 
-interface RouteParams {
-  params: {
-    id: string; // Area ID
-    deviceId: string; // Device ID (our internal UUID)
-  };
-}
+// Remove unused RouteParams interface
+// interface RouteParams {
+//  params: {
+//    id: string; // Area ID
+//    deviceId: string; // Device ID (our internal UUID)
+//  };
+// }
 
-// Remove a device assignment from an area
-export async function DELETE(request: Request, { params }: RouteParams) {
-  const { id: areaId, deviceId } = params;
+// Remove a device assignment from an area - Correct Next.js 15 signature
+export async function DELETE(
+  request: Request, 
+  { params }: { params: Promise<{ id: string; deviceId: string }> } 
+) {
+  const { id: areaId, deviceId } = await params; // Await the params Promise
 
   // Validate IDs
   const idSchema = z.string().uuid("Invalid ID format");

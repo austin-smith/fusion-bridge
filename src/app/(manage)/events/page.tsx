@@ -75,6 +75,7 @@ import { type DeviceDetailProps } from '@/components/features/devices/device-det
 import { DeviceWithConnector, ConnectorWithConfig } from '@/types';
 import { useFusionStore } from '@/stores/store';
 import { EventHierarchyViewer } from '@/components/features/events/EventHierarchyViewer';
+import { getDeviceTypeInfo } from "@/lib/mappings/identification";
 
 // Update the event interface
 interface EnrichedEvent {
@@ -313,6 +314,16 @@ export default function EventsPage() {
         // Construct the object expected by the dialog, including the composite 'id'
         const deviceForDialog: DeviceDetailProps = {
           ...deviceData,
+          // Ensure required string props have fallbacks/correct types
+          connectorName: deviceData.connectorName ?? 'Unknown',
+          // Ensure potentially nullable string props are string | undefined
+          url: deviceData.url ?? undefined,
+          model: deviceData.model ?? undefined,
+          vendor: deviceData.vendor ?? undefined,
+          serverName: deviceData.serverName ?? undefined,
+          serverId: deviceData.serverId ?? undefined,
+          // Ensure required object props have fallbacks
+          deviceTypeInfo: deviceData.deviceTypeInfo ?? getDeviceTypeInfo('unknown', 'unknown'),
           id: `${deviceData.connectorId}:${deviceData.deviceId}` // Construct the required ID
         };
         setSelectedDeviceForDialog(deviceForDialog);
