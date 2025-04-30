@@ -17,7 +17,6 @@ export const AVAILABLE_AUTOMATION_TOKENS: AutomationToken[] = [
     { token: '{{event.connectorId}}', description: 'Internal ID of the connector', group: 'Event' },
 
     // --- Flattened Payload Data (Common fields) ---
-    { token: '{{event.newState}}', description: 'Standardized state (ON, OFF, OPEN, CLOSED, ALERT, NORMAL, etc.)', group: 'Event Payload' },
     { token: '{{event.displayState}}', description: 'User-friendly display state (On, Off, Open, Closed, etc.)', group: 'Event Payload' },
     { token: '{{event.rawStateValue}}', description: 'Original raw state value from the source device', group: 'Event Payload' },
     { token: '{{event.statusType}}', description: 'Specific status (ONLINE, OFFLINE, UNAUTHORIZED)', group: 'Event Payload' },

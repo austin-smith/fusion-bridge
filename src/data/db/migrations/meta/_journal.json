@@ -1,26 +1,12 @@
 {
-  "version": "5",
+  "version": "7",
   "dialect": "sqlite",
   "entries": [
     {
       "idx": 0,
-      "version": "5",
-      "when": 1745478570304,
-      "tag": "0000_ancient_argent",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "5",
-      "when": 1745814054532,
-      "tag": "0001_flippant_raza",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
       "version": "6",
-      "when": 1745917891309,
-      "tag": "0002_mysterious_gamora",
+      "when": 1745973220398,
+      "tag": "0000_clumsy_purifiers",
       "breakpoints": true
     }
   ]

@@ -1,18 +1,96 @@
-// import 'server-only'; // Removed for now
+import 'server-only';
 
 import { db } from '@/data/db';
-import { automations, connectors, devices, cameraAssociations } from '@/data/db/schema';
+import { automations, connectors, devices, cameraAssociations, areas, areaDevices, locations } from '@/data/db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
 import * as piko from '@/services/drivers/piko'; // Assuming Piko driver functions are here
-import { type AutomationConfig, AutomationConfigSchema, type AutomationAction, type SecondaryCondition } from '@/lib/automation-schemas';
+import { type AutomationConfig, AutomationConfigSchema, type AutomationAction, type TemporalCondition } from '@/lib/automation-schemas';
 import pRetry from 'p-retry'; // Import p-retry
 import type { PikoCreateBookmarkPayload } from '@/services/drivers/piko'; // Import the specific payload type
 // Import other necessary drivers or services as needed
 import type { SendHttpRequestActionParamsSchema } from '@/lib/automation-schemas';
 import { z } from 'zod'; // Add Zod import
 import * as eventsRepository from '@/data/repositories/events'; // Import the event repository
+import { findEventsInWindow } from '@/data/repositories/events'; // Import the specific function
+import { Engine } from 'json-rules-engine';
+import type { JsonRuleCondition, JsonRuleGroup } from '@/lib/automation-schemas'; // Import rule types
+
+// --- Moved Type Definition Earlier ---
+// Define structure for trigger device context, including nested location
+type SourceDeviceContext = {
+    id: string;
+    name: string;
+    standardizedDeviceType: string | null;
+    standardizedDeviceSubtype: string | null;
+    area: (typeof areas.$inferSelect & { location: typeof locations.$inferSelect | null }) | null; 
+};
+
+// --- NEW: Helper function to recursively remove null values --- 
+const removeNulls = (obj: any): any => {
+    if (obj === null || typeof obj !== 'object') {
+        return obj;
+    }
+    if (Array.isArray(obj)) {
+        return obj.map(removeNulls).filter(item => item !== null);
+    }
+    const newObj: Record<string, any> = {};
+    for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+            const value = removeNulls(obj[key]);
+            if (value !== null) {
+                newObj[key] = value;
+            }
+        }
+    }
+    // Return the new object only if it has keys, otherwise return null
+    return Object.keys(newObj).length > 0 ? newObj : null;
+};
+// --- End NEW --- 
+
+// --- NEW: Helper function to extract fact paths from conditions --- 
+function extractReferencedFactPaths(condition: JsonRuleCondition | JsonRuleGroup | undefined): Set<string> {
+    const paths = new Set<string>();
+
+    if (!condition) {
+        return paths;
+    }
+
+    // Check if it's a single condition with a 'fact' property
+    if ('fact' in condition && typeof condition.fact === 'string') {
+        paths.add(condition.fact);
+    } 
+    // Check if it's a group condition ('all' or 'any')
+    else if ('all' in condition && Array.isArray(condition.all)) {
+        condition.all.forEach(subCondition => {
+            extractReferencedFactPaths(subCondition).forEach(path => paths.add(path));
+        });
+    } else if ('any' in condition && Array.isArray(condition.any)) {
+        condition.any.forEach(subCondition => {
+            extractReferencedFactPaths(subCondition).forEach(path => paths.add(path));
+        });
+    }
+    // Note: This doesn't handle 'not' conditions or referenced conditions ('condition' key) yet.
+    // Add logic here if those features are used and might contain facts.
+
+    return paths;
+}
+
+// --- NEW: Simple path resolver --- 
+function resolvePath(obj: any, path: string): any {
+    if (!path) return undefined;
+    const keys = path.split('.');
+    let current = obj;
+    for (const key of keys) {
+        if (current === null || current === undefined || typeof current !== 'object') {
+            return undefined;
+        }
+        current = current[key];
+    }
+    return current;
+}
+// --- End NEW ---
 
 /**
  * Processes a standardized event against connector-agnostic automation rules.
@@ -35,113 +113,206 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
 
         console.log(`[Automation Service] Evaluating ${allEnabledAutomations.length} enabled automation(s) against event ${stdEvent.eventId}`);
 
-        const triggerDeviceType = stdEvent.deviceInfo?.type ?? DeviceType.Unmapped;
+        // --- Fetch Source Device details (including area and location) ---
+        let sourceDeviceContext: SourceDeviceContext | null = null; // Define outside try block
+
+        if (stdEvent.deviceId && stdEvent.connectorId) {
+            try {
+                const deviceRecord = await db.query.devices.findFirst({
+                    where: and(
+                        eq(devices.connectorId, stdEvent.connectorId),
+                        eq(devices.deviceId, stdEvent.deviceId)
+                    ),
+                    columns: { id: true, name: true, standardizedDeviceType: true, standardizedDeviceSubtype: true },
+                    // --- Eager load area and its location --- 
+                    with: {
+                        areaDevices: {
+                            with: {
+                                area: {
+                                    with: {
+                                        location: true, // Include location data
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                if (deviceRecord && deviceRecord.areaDevices.length > 0) {
+                     // Assuming one area per device based on previous decision
+                    const areaInfo = deviceRecord.areaDevices[0].area;
+                    sourceDeviceContext = {
+                        id: deviceRecord.id,
+                        name: deviceRecord.name,
+                        standardizedDeviceType: deviceRecord.standardizedDeviceType,
+                        standardizedDeviceSubtype: deviceRecord.standardizedDeviceSubtype,
+                        area: areaInfo, // Includes location nested inside
+                    };
+                } else if (deviceRecord) {
+                     // Device found, but no area assigned
+                     sourceDeviceContext = { 
+                        id: deviceRecord.id, 
+                        name: deviceRecord.name, 
+                        standardizedDeviceType: deviceRecord.standardizedDeviceType,
+                        standardizedDeviceSubtype: deviceRecord.standardizedDeviceSubtype,
+                        area: null 
+                    }; 
+                } else {
+                    console.warn(`[Automation Service] Could not find internal device record for external device ${stdEvent.deviceId}`);
+                }
+            } catch (deviceFetchError) {
+                 console.error(`[Automation Service] Error fetching device details for ${stdEvent.deviceId}:`, deviceFetchError);
+            }
+        }
+        // --- End Fetch Source Device ---
 
         for (const rule of allEnabledAutomations) {
             let ruleConfig: AutomationConfig;
             try {
+                // Parse the config using the UPDATED schema
                 const parseResult = AutomationConfigSchema.safeParse(rule.configJson);
                 if (!parseResult.success) {
                     console.error(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Failed to parse configJson - ${parseResult.error.message}. Skipping.`);
-                    continue; 
+                    continue;
                 }
                 ruleConfig = parseResult.data;
 
-                // --- Primary Trigger Matching (Connector-Agnostic) --- 
-                const trigger = ruleConfig.primaryTrigger;
-                let primaryTriggerMatched = false;
+                // --- Construct Facts for State Conditions ---
+                const payload = stdEvent.payload as any; // Cast once for easier access
+                const fullFacts: Record<string, any> = { // Keep the fully populated object for logging/tokens
+                    event: {
+                        category: stdEvent.category ?? null,
+                        type: stdEvent.type ?? null,
+                        subtype: stdEvent.subtype ?? null,
+                        newState: payload?.newState ?? null,
+                        displayState: payload?.displayState ?? null,
+                        statusType: payload?.statusType ?? null,
+                        rawStateValue: payload?.rawStateValue ?? null,
+                        originalEventType: payload?.originalEventType ?? null,
+                    },
+                    device: {
+                        id: sourceDeviceContext?.id ?? null,
+                        externalId: stdEvent.deviceId ?? null,
+                        name: sourceDeviceContext?.name ?? null,
+                        type: sourceDeviceContext?.standardizedDeviceType ?? null,
+                        subtype: sourceDeviceContext?.standardizedDeviceSubtype ?? null,
+                    },
+                    connector: {
+                        id: stdEvent.connectorId ?? null
+                    },
+                    area: null,
+                    location: null,
+                };
 
-                // Match based on event type / subtype filter (array of combined strings)
-                if (!trigger.eventTypeFilter || trigger.eventTypeFilter.length === 0) {
-                    primaryTriggerMatched = true; // No filter means match any event type
-                } else {
-                    for (const filterString of trigger.eventTypeFilter) {
-                        const [filterType, filterSubtype] = filterString.split('.'); // e.g., "ACCESS_DENIED" or "ACCESS_DENIED.INVALID_CREDENTIAL"
-                        
-                        // Check if the event's type matches the filter's type part
-                        if (stdEvent.type === filterType) {
-                            // If a subtype is specified in the filter, check if it matches the event's subtype
-                            // If no subtype is specified (filter is just "TYPE"), it matches any event subtype (including undefined)
-                            if (!filterSubtype || stdEvent.subtype === filterSubtype) {
-                                primaryTriggerMatched = true;
-                                break; // Found a match, no need to check other filters in the array
-                            }
-                        }
+                if (sourceDeviceContext?.area) {
+                    fullFacts.area = {
+                        id: sourceDeviceContext.area.id ?? null,
+                        name: sourceDeviceContext.area.name ?? null,
+                        armedState: sourceDeviceContext.area.armedState ?? null,
+                    };
+                    if (sourceDeviceContext.area.location) {
+                        fullFacts.location = {
+                            id: sourceDeviceContext.area.location.id ?? null,
+                            name: sourceDeviceContext.area.location.name ?? null,
+                        };
                     }
                 }
                 
-                if (!primaryTriggerMatched) {
-                    // console.log(`[Rule ${rule.id}] Skipping: Event type/subtype does not match filter.`);
-                    continue;
-                }
+                // --- Filter facts ONLY for the engine.run call ---
+                const factsForEngine: Record<string, any> = {
+                    event: fullFacts.event,
+                    device: fullFacts.device,
+                    connector: fullFacts.connector,
+                };
+                 if (fullFacts.area !== null) {
+                     factsForEngine.area = fullFacts.area;
+                 }
+                 if (fullFacts.location !== null) {
+                     factsForEngine.location = fullFacts.location;
+                 }
 
-                // Match based on standardized device type
-                if (trigger.sourceEntityTypes && trigger.sourceEntityTypes.length > 0) { 
-                    // TODO: Handle "Type.Subtype" format in trigger.sourceEntityTypes if needed?
-                    // Currently assumes triggerDeviceType is just the base type (e.g., "Sensor")
-                    if (!trigger.sourceEntityTypes.includes(triggerDeviceType)) {
-                        continue; 
-                    }
-                }
+                 // --- NEW: Flatten facts for engine --- 
+                 const requiredPaths = extractReferencedFactPaths(ruleConfig.conditions);
+                 const minimalFactsForEngine: Record<string, any> = {};
+                 requiredPaths.forEach(path => {
+                     const value = resolvePath(fullFacts, path);
+                     // Always add the path, setting value to null if lookup failed
+                     minimalFactsForEngine[path] = (value === undefined ? null : value);
+                 });
+                 // --- End NEW --- 
+
+                // --- Evaluate State Conditions (json-rules-engine) ---
+                const engine = new Engine();
                 
-                console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Primary trigger matched for event ${stdEvent.eventId}.`);
+                engine.addRule({
+                    conditions: ruleConfig.conditions as any, 
+                    event: { type: 'ruleMatched' }
+                });
 
-                // --- Secondary Condition Evaluation (Connector-Agnostic) --- 
-                let allConditionsMet = true; 
-                if (ruleConfig.secondaryConditions && ruleConfig.secondaryConditions.length > 0) {
-                    console.log(`[Rule ${rule.id}] Evaluating ${ruleConfig.secondaryConditions.length} secondary condition(s)...`);
+                let stateConditionsMet = false;
+                try {
+                     // --- Pass the MINIMAL facts object ---
+                     const { events: engineEvents } = await engine.run(minimalFactsForEngine);
+                     if (engineEvents.length > 0) {
+                         stateConditionsMet = true;
+                         console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): State conditions MET.`);
+                     } else {
+                         console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): State conditions NOT MET.`);
+                     }
+                } catch (engineError) {
+                     console.error(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Error running json-rules-engine:`, engineError);
+                     continue; // Skip rule on engine error
+                }
+
+                // --- Evaluate Temporal Conditions (Only if State Conditions Passed) ---
+                let temporalConditionsMet = true; // Default to true if no temporal conditions exist
+                if (stateConditionsMet && ruleConfig.temporalConditions && ruleConfig.temporalConditions.length > 0) {
+                    console.log(`[Rule ${rule.id}] Evaluating ${ruleConfig.temporalConditions.length} temporal condition(s)...`);
+                    temporalConditionsMet = false; // Assume false until proven true by ALL conditions passing
                     
-                    for (const condition of ruleConfig.secondaryConditions) {
-                        const conditionMet = await evaluateSecondaryCondition(stdEvent, condition);
+                    let allTemporalPassed = true; // Flag to track if all temporal checks pass
+                    for (const condition of ruleConfig.temporalConditions) {
+                        // --- Pass trigger device context to evaluation function ---
+                        const conditionMet = await evaluateTemporalCondition(stdEvent, condition, sourceDeviceContext);
                         if (!conditionMet) {
-                            console.log(`[Rule ${rule.id}] Secondary condition ID ${condition.id} (Type: ${condition.type}) NOT MET. Stopping evaluation for this rule.`);
-                            allConditionsMet = false;
-                            break; 
+                            console.log(`[Rule ${rule.id}] Temporal condition ID ${condition.id} (Type: ${condition.type}) NOT MET.`);
+                            allTemporalPassed = false;
+                            break; // Stop checking temporal conditions for this rule
                         } else {
-                            console.log(`[Rule ${rule.id}] Secondary condition ID ${condition.id} (Type: ${condition.type}) MET.`);
+                            console.log(`[Rule ${rule.id}] Temporal condition ID ${condition.id} (Type: ${condition.type}) MET.`);
                         }
                     } 
-                } else {
-                    console.log(`[Rule ${rule.id}] No secondary conditions to evaluate.`);
+                    temporalConditionsMet = allTemporalPassed; // Final result of temporal checks
+                } else if (stateConditionsMet) {
+                    console.log(`[Rule ${rule.id}] No temporal conditions to evaluate.`);
                 }
 
-                // --- Action Execution --- 
-                if (allConditionsMet) {
-                    console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): All conditions passed. Proceeding to execute ${ruleConfig.actions.length} action(s).`);
-                    
+                // --- Action Execution (Only if BOTH State and Temporal Conditions Passed) ---
+                if (stateConditionsMet && temporalConditionsMet) {
+                    console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): ALL conditions passed. Proceeding to execute ${ruleConfig.actions.length} action(s).`);
+
                     if (!ruleConfig.actions || ruleConfig.actions.length === 0) {
-                         console.warn(`[Automation Service] Rule ID ${rule.id}: Skipping action execution - No actions defined despite passing conditions.`);
-                         continue;
+                        console.warn(`[Automation Service] Rule ID ${rule.id}: Skipping action execution - No actions defined despite passing conditions.`);
+                        continue;
                     }
 
-                    // Fetch Source Device details (using trigger event context) for token replacement
-                    let sourceDevice = null;
-                    if (stdEvent.deviceId) { 
-                        sourceDevice = await db.query.devices.findFirst({
-                            where: and(
-                                eq(devices.connectorId, stdEvent.connectorId), 
-                                eq(devices.deviceId, stdEvent.deviceId)
-                            ),
-                            // Select columns needed for tokens or action logic (e.g., internal id for associations)
-                            columns: { id: true, name: true, type: true } 
-                        });
-                    }
-                    const deviceContext = sourceDevice ?? { 
-                        id: stdEvent.deviceId, 
-                        name: 'Unknown Device', 
-                        type: triggerDeviceType 
-                    }; 
-
+                    // --- Use the original fullFacts for token replacement context ---
                     for (const action of ruleConfig.actions) {
-                        await executeActionWithRetry(rule, action, stdEvent, deviceContext);
-                    } 
+                        await executeActionWithRetry(rule, action, stdEvent, fullFacts);
+                    }
                 } else {
-                     console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Did not execute actions because not all conditions were met.`);
-                }
+                     // Log why actions weren't executed
+                     if (!stateConditionsMet) {
+                         // Already logged above
+                     } else if (!temporalConditionsMet) {
+                          console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Did not execute actions because not all temporal conditions were met.`);
+                     }
+                } 
+                // --- End Action Execution ---
 
             } catch (ruleProcessingError) {
                 console.error(`[Automation Service] Error processing rule ${rule.id} (${rule.name}):`, ruleProcessingError);
-                continue; 
+                continue;
             }
         } // End loop through rules
     } catch (error) {
@@ -150,101 +321,20 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
 }
 
 /**
- * Evaluates a single secondary condition (connector-agnostic).
- */
-async function evaluateSecondaryCondition(
-    triggerEvent: StandardizedEvent, 
-    condition: SecondaryCondition
-): Promise<boolean> {
-    const triggerTime = triggerEvent.timestamp.getTime();
-
-    const startTimeMs = condition.timeWindowSecondsBefore
-        ? triggerTime - (condition.timeWindowSecondsBefore * 1000)
-        : triggerTime; 
-    const endTimeMs = condition.timeWindowSecondsAfter
-        ? triggerTime + (condition.timeWindowSecondsAfter * 1000)
-        : triggerTime; 
-
-    const finalStartTime = new Date(Math.min(startTimeMs, endTimeMs));
-    const finalEndTime = new Date(Math.max(startTimeMs, endTimeMs));
-    
-    // --- Parse combined event type/subtype filters --- 
-    let targetEventTypes: string[] | undefined = undefined;
-    let targetEventSubtypes: string[] | undefined = undefined;
-    if (condition.eventTypeFilter && condition.eventTypeFilter.length > 0) {
-        const uniqueTypes = new Set<string>();
-        const uniqueSubtypes = new Set<string>();
-        const matchAnySubtypeForType = new Set<string>(); // Change let to const
-
-        for (const filterString of condition.eventTypeFilter) {
-            const [filterType, filterSubtype] = filterString.split('.');
-            uniqueTypes.add(filterType);
-            if (filterSubtype) {
-                uniqueSubtypes.add(filterSubtype);
-            } else {
-                 // If filter is just "TYPE", we need to match any event with this type
-                 // This is handled by default if uniqueSubtypes is empty for this type
-                 // OR we can explicitly track it if mixing "TYPE" and "TYPE.SUBTYPE" filters
-                 matchAnySubtypeForType.add(filterType);
-            }
-        }
-        targetEventTypes = Array.from(uniqueTypes);
-        // Only filter by specific subtypes if they were provided AND we aren't explicitly matching any subtype for all types
-        if (uniqueSubtypes.size > 0) {
-            // Refine: What if filter is ["TYPE", "TYPE.SUBTYPE1"]? 
-            // We want TYPE events with *any* subtype OR specifically SUBTYPE1. 
-            // Current repo logic might not support this OR logic easily.
-            // Simplification: If *any* filter is just "TYPE", don't filter by subtype.
-            const matchAnyOverall = targetEventTypes.some(t => matchAnySubtypeForType.has(t));
-            if (!matchAnyOverall) { 
-                targetEventSubtypes = Array.from(uniqueSubtypes);
-            } // Else: targetEventSubtypes remains undefined, matching any subtype for the specified types
-        }
-    }
-    
-    // Prepare filter for repository
-    const repoFilter: eventsRepository.FindEventsFilter = {
-        startTime: finalStartTime,
-        endTime: finalEndTime,
-        standardizedEventTypes: targetEventTypes, // Pass parsed types
-        standardizedEventSubtypes: targetEventSubtypes, // Pass parsed subtypes (if applicable)
-        standardizedDeviceTypes: condition.entityTypeFilter?.length ? condition.entityTypeFilter : undefined, 
-    };
-    
-    console.log(`[evaluateSecondaryCondition] Condition ID ${condition.id}: Querying eventsRepository.findEventsInWindow with filter:`, repoFilter);
-    
-    try {
-        const eventExists = await eventsRepository.findEventsInWindow(repoFilter);
-        console.log(`[evaluateSecondaryCondition] Condition ID ${condition.id}: findEventsInWindow returned: ${eventExists}`);
-
-        if (condition.type === 'eventOccurred') {
-            return eventExists;
-        } else if (condition.type === 'noEventOccurred') {
-            return !eventExists;
-        } else {
-            // Should not happen due to schema validation, but good practice
-            console.warn(`[evaluateSecondaryCondition] Condition ID ${condition.id}: Unknown condition type '${(condition as any).type}'. Evaluating as false.`);
-            return false;
-        }
-    } catch (error) {
-        console.error(`[evaluateSecondaryCondition] Condition ID ${condition.id}: Error calling findEventsInWindow:`, error);
-        return false;
-    }
-}
-
-/**
  * Executes a single automation action with retry logic.
  */
 async function executeActionWithRetry(
-    rule: { id: string; name: string }, 
-    action: AutomationAction, 
-    stdEvent: StandardizedEvent, 
-    deviceContext: Record<string, unknown>
+    rule: { id: string; name: string },
+    action: AutomationAction,
+    stdEvent: StandardizedEvent,
+    // Use the full facts object (which might include null area/location) for tokens
+    tokenFactContext: Record<string, any> 
 ) {
     console.log(`[Automation Service] Attempting action type '${action.type}' for rule ${rule.id} (${rule.name})`);
     
     const runAction = async () => {
-        const resolvedParams = resolveTokens(action.params, stdEvent, deviceContext) as AutomationAction['params'];
+        // Pass the full context to resolveTokens
+        const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as AutomationAction['params'];
         
         switch (action.type) {
             // Case 'createEvent'
@@ -265,7 +355,7 @@ async function executeActionWithRetry(
                     if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target connector ${targetConnector.id}`); }
                     const pikoTokenResponse: piko.PikoTokenResponse = await piko.getSystemScopedAccessToken(username, password, selectedSystem);
                     let associatedPikoCameraExternalIds: string[] = [];
-                    const sourceDeviceInternalId = (deviceContext as any).id; // Assuming internal ID is on context
+                    const sourceDeviceInternalId = tokenFactContext.device?.id;
                     if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string' && sourceDeviceInternalId !== stdEvent.deviceId /* Check if it's UUID */) {
                         try {
                             const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId }).from(cameraAssociations).where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
@@ -304,7 +394,7 @@ async function executeActionWithRetry(
                     const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
                     if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target connector ${targetConnector.id}`); }
                     let associatedPikoCameraExternalIds: string[] = [];
-                    const sourceDeviceInternalId = (deviceContext as any).id;
+                    const sourceDeviceInternalId = tokenFactContext.device?.id;
                     if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string' && sourceDeviceInternalId !== stdEvent.deviceId) {
                         try {
                             const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId }).from(cameraAssociations).where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
@@ -385,28 +475,29 @@ async function executeActionWithRetry(
  * Resolves tokens in action parameter templates using StandardizedEvent data.
  */
 function resolveTokens(
-    params: Record<string, unknown> | null | undefined, 
-    stdEvent: StandardizedEvent, 
-    deviceContext: Record<string, unknown> | null | undefined 
-): Record<string, unknown> | null | undefined { 
-    
+    params: Record<string, unknown> | null | undefined,
+    stdEvent: StandardizedEvent,
+    tokenFactContext: Record<string, any> | null | undefined
+): Record<string, unknown> | null | undefined {
+
     if (params === null || params === undefined) {
         return params;
     }
-    
-    // --- Build the context for token replacement --- 
+
+    // --- Build the context for token replacement ---
     const tokenContext = {
-        // Event-related tokens
+        // Ensure event data is sourced correctly, potentially overriding if already in facts
         event: {
-            id: stdEvent.eventId,
+            ...(tokenFactContext?.event ?? {}), // Use event from facts if available
+            id: stdEvent.eventId, // Always use the current event ID
             category: stdEvent.category,
             type: stdEvent.type,
-            timestamp: stdEvent.timestamp.toISOString(), // Keep ISO string format
-            timestampMs: stdEvent.timestamp.getTime(), // Add epoch ms
-            deviceId: stdEvent.deviceId,
+            subtype: stdEvent.subtype,
+            timestamp: stdEvent.timestamp.toISOString(),
+            timestampMs: stdEvent.timestamp.getTime(),
+            deviceId: stdEvent.deviceId, // External device ID from event
             connectorId: stdEvent.connectorId,
-            // Flatten relevant payload fields for easier access
-            // Add more fields from specific payload types as needed
+            // Flatten relevant payload fields from event payload
             ...(stdEvent.payload && typeof stdEvent.payload === 'object' ? {
                 newState: (stdEvent.payload as any).newState,
                 displayState: (stdEvent.payload as any).displayState,
@@ -415,52 +506,58 @@ function resolveTokens(
                 confidence: (stdEvent.payload as any).confidence,
                 zone: (stdEvent.payload as any).zone,
                 originalEventType: (stdEvent.payload as any).originalEventType,
-                // Add direct access to raw state value if useful
                 rawStateValue: (stdEvent.payload as any).rawStateValue,
                 rawStatusValue: (stdEvent.payload as any).rawStatusValue,
             } : {}),
-             // Include the full payload object if needed, but nested access is harder
-            // payload: stdEvent.payload 
-             // Include raw payload if needed for specific use cases
-            // rawPayload: stdEvent.rawEventPayload 
         },
-        // Device-related tokens (based on DB lookup or fallback)
-        device: {
-            ...(deviceContext ?? {}), // Spread the provided device context
-            // Standardize access to standardized type/subtype from event
-            type: stdEvent.deviceInfo?.type,
-            subtype: stdEvent.deviceInfo?.subtype
-        }
+        // Use device, area, location directly from the facts context
+        device: tokenFactContext?.device ?? null,
+        area: tokenFactContext?.area ?? null,
+        location: tokenFactContext?.location ?? null,
+        // Add connector if needed, though it's also under event
+        connector: tokenFactContext?.connector ?? { id: stdEvent.connectorId },
     };
 
-    // --- Token Replacement Logic --- 
+    // --- Token Replacement Logic (Keep as is) ---
     const resolved = { ...params }; // Create a copy to modify
 
     const replaceToken = (template: string): string => {
-        if (typeof template !== 'string') return template; 
-        
+        if (typeof template !== 'string') return template;
+
+        // Add check for null/undefined context before proceeding
+        if (!tokenContext) return template;
+
         return template.replace(/\{\{\s*([^}]+)\s*\}\}/g, (match, path) => {
             const keys = path.trim().split('.');
-            let value: unknown = tokenContext; 
-            
+            let value: unknown = tokenContext;
+
             try {
                 for (const key of keys) {
-                    // Check if value is an object and key exists before accessing
-                    if (value !== null && typeof value === 'object' && key in value) {
-                        value = (value as Record<string, unknown>)[key]; 
+                    // Important: Check if value is null or not an object before indexing
+                    if (value === null || value === undefined || typeof value !== 'object') {
+                        console.warn(`[Token Resolve] Cannot access key '${key}' in path '${path}'. Parent is not an object or is null/undefined.`);
+                        return match; // Return original token
+                    }
+                    if (key in value) {
+                        value = (value as Record<string, unknown>)[key];
                     } else {
-                        // Path is invalid or key doesn't exist at this level
-                        console.warn(`[Token Resolve] Path '${path}' not found in context.`);
+                        console.warn(`[Token Resolve] Path '${path}' not found in context (key '${key}' missing).`);
                         return match; // Return original token {{...}}
                     }
                 }
-                
-                // Convert resolved value to string
-                // Stringify objects/arrays, handle null/undefined, convert others
+
                 if (value === undefined || value === null) {
-                    return ''; // Replace null/undefined with empty string
+                    // Decide if null should be empty string or kept as null/undefined marker
+                    // Returning '' for templates is usually safer.
+                    return '';
                 } else if (typeof value === 'object') {
-                    return JSON.stringify(value); // Stringify objects/arrays
+                    // Check for excessively large objects before stringifying (optional)
+                    try {
+                        return JSON.stringify(value); // Stringify objects/arrays
+                    } catch (stringifyError) {
+                         console.error(`[Token Resolve] Error stringifying object for path ${path}:`, stringifyError);
+                         return '[Object]'; // Placeholder for unstringifiable objects
+                    }
                 } else {
                     return String(value); // Convert primitives to string
                 }
@@ -471,14 +568,198 @@ function resolveTokens(
         });
     };
 
-    // Iterate over parameters and apply token replacement
+    // Iterate over parameters (Keep as is)
     for (const key in resolved) {
-        if (Object.prototype.hasOwnProperty.call(resolved, key) && typeof resolved[key] === 'string') {
-            resolved[key] = replaceToken(resolved[key] as string);
+        if (Object.prototype.hasOwnProperty.call(resolved, key)) {
+             const paramValue = resolved[key];
+             if (typeof paramValue === 'string') {
+                 resolved[key] = replaceToken(paramValue);
+             } else if (Array.isArray(paramValue) && key === 'headers') {
+                  // Specifically handle headers array for sendHttpRequest
+                  resolved[key] = paramValue.map(header => {
+                      if (typeof header === 'object' && header !== null && 'keyTemplate' in header && 'valueTemplate' in header) {
+                          return {
+                              keyTemplate: typeof header.keyTemplate === 'string' ? replaceToken(header.keyTemplate) : header.keyTemplate,
+                              valueTemplate: typeof header.valueTemplate === 'string' ? replaceToken(header.valueTemplate) : header.valueTemplate,
+                          };
+                      }
+                      return header; // Return unchanged if not the expected header object format
+                  });
+             }
+             // Add handling for other nested structures if needed
         }
-        // Optionally handle nested structures or arrays within params if needed
     }
     return resolved;
+}
+
+// --- REVISED Temporal Condition Evaluation Logic --- 
+async function evaluateTemporalCondition(
+    triggerEvent: StandardizedEvent, 
+    condition: TemporalCondition, 
+    triggerDeviceContext: SourceDeviceContext | null // Context of the *triggering* device
+): Promise<boolean> {
+    // Note: Top-level removeNulls function is available
+    const triggerTime = triggerEvent.timestamp.getTime();
+
+    // Calculate time window bounds
+    const startTimeMs = condition.timeWindowSecondsBefore
+        ? triggerTime - (condition.timeWindowSecondsBefore * 1000)
+        : triggerTime; // If only checking after, start time is trigger time
+    const endTimeMs = condition.timeWindowSecondsAfter
+        ? triggerTime + (condition.timeWindowSecondsAfter * 1000)
+        : triggerTime; // If only checking before, end time is trigger time
+
+    // Ensure start is before end, even if only one window side is defined
+    const finalStartTime = new Date(Math.min(startTimeMs, endTimeMs));
+    const finalEndTime = new Date(Math.max(startTimeMs, endTimeMs));
+    
+    // --- Determine Device Scope Based on Condition --- 
+    let targetDeviceExternalIds: string[] | undefined = undefined; // Undefined means check all
+
+    if (condition.scoping === 'sameArea' || condition.scoping === 'sameLocation') {
+        const scopeId = condition.scoping === 'sameArea' 
+                        ? triggerDeviceContext?.area?.id
+                        : triggerDeviceContext?.area?.location?.id;
+        
+        if (!scopeId) {
+            console.warn(`[evaluateTemporalCondition] Cannot scope by ${condition.scoping}: Trigger device has no associated ${condition.scoping === 'sameArea' ? 'area' : 'location'}. Condition type ${condition.type} will likely fail.`);
+            // If no scope, cannot find matching events unless type is noEventOccurred
+            return condition.type === 'noEventOccurred'; 
+        }
+
+        try {
+            // --- Simplified Query: Only filter by area/location ID --- 
+            let scopedDeviceQuery = db.select({ 
+                                            // Select only external ID needed for event query filter
+                                            externalId: devices.deviceId, 
+                                            // Keep internal ID if needed for other logic later (optional)
+                                            // internalId: devices.id, 
+                                            // No longer need stdType for pre-filtering here
+                                            // stdType: devices.standardizedDeviceType 
+                                        })
+                                        .from(devices)
+                                        .leftJoin(areaDevices, eq(devices.id, areaDevices.deviceId))
+                                        .leftJoin(areas, eq(areaDevices.areaId, areas.id))
+                                        .where(condition.scoping === 'sameArea' 
+                                                ? eq(areaDevices.areaId, scopeId)
+                                                : eq(areas.locationId, scopeId)); 
+            
+            const targetDevices = await scopedDeviceQuery;
+
+            // --- REMOVED entityTypeFilter pre-filtering logic --- 
+            // let preFilteredDevices = targetDevices;
+            // if (condition.entityTypeFilter && condition.entityTypeFilter.length > 0) { ... }
+
+            // Use the directly fetched devices
+            if (targetDevices.length === 0) {
+                 console.log(`[evaluateTemporalCondition] No devices found matching scope '${condition.scoping}' (ID: ${scopeId}).`);
+                 return condition.type === 'noEventOccurred';
+            }
+
+            targetDeviceExternalIds = targetDevices.map(d => d.externalId);
+            console.log(`[evaluateTemporalCondition] Scoping check to devices: [${targetDeviceExternalIds.join(',')}]`);
+
+        } catch (dbError) {
+            console.error(`[evaluateTemporalCondition] Error fetching devices for ${condition.scoping} scope (ID: ${scopeId}):`, dbError);
+            return false; // Error fetching scope -> condition fails
+        }
+    } 
+    // Else: scoping is 'anywhere', targetDeviceExternalIds remains undefined
+    
+    // --- Query Events Within Window and Scope --- 
+    const repoFilter: eventsRepository.FindEventsFilter = {
+        startTime: finalStartTime,
+        endTime: finalEndTime,
+        specificDeviceIds: targetDeviceExternalIds, // Pass the scoped device IDs
+        // --- REMOVED standardizedDeviceTypes filter from here too ---
+        // standardizedDeviceTypes: condition.entityTypeFilter?.length ? condition.entityTypeFilter : undefined, 
+    };
+    
+    let candidateEvents: StandardizedEvent[] = [];
+    try {
+        // Modify findEvents to return full events, not just boolean
+        // console.log(`[evaluateTemporalCondition] ABOUT TO CALL findEventsInWindow. Filter:`, JSON.stringify(repoFilter)); // Log before the await
+        candidateEvents = await findEventsInWindow(repoFilter); // Call the directly imported function
+        // console.log(`[evaluateTemporalCondition] Found ${candidateEvents.length} candidate events within time window and scope.`); // Debug log
+    } catch (error) {
+        // This catch is for errors *calling* findEventsInWindow (e.g., module load issues)
+        console.error(`[evaluateTemporalCondition] Error calling findEventsInWindow. Filter: ${JSON.stringify(repoFilter)}`, error);
+        return false; // Treat errors as condition not met
+    }
+
+    if (candidateEvents.length === 0) {
+        // No events found in the window/scope
+        return condition.type === 'noEventOccurred';
+    }
+
+    // --- Evaluate Event Filter using json-rules-engine --- 
+    const engine = new Engine();
+    engine.addRule({ conditions: condition.eventFilter as any, event: { type: 'eventFilterMatch' } });
+
+    let matchFound = false;
+    for (const event of candidateEvents) {
+        // Construct facts for *this specific candidate event*
+        const eventPayload = event.payload as any;
+        let eventFacts: Record<string, any> = {
+             event: {
+                 category: event.category ?? null,
+                 type: event.type ?? null,
+                 subtype: event.subtype ?? null,
+                 newState: eventPayload?.newState ?? null,
+                 displayState: eventPayload?.displayState ?? null,
+                 statusType: eventPayload?.statusType ?? null,
+                 rawStateValue: eventPayload?.rawStateValue ?? null,
+                 originalEventType: eventPayload?.originalEventType ?? null,
+             },
+             device: { // We might not have full context here easily, use what event provides
+                 externalId: event.deviceId ?? null,
+                 type: event.deviceInfo?.type ?? null,
+                 subtype: event.deviceInfo?.subtype ?? null
+             },
+             connector: { id: event.connectorId ?? null },
+             // Initialize area/location as null, cannot easily get this context for past events
+             area: null,
+             location: null,
+        };
+        // TODO: Consider fetching minimal context (area/location id/name) for candidate events if needed by common eventFilter rules.
+        // This would require another DB query within the loop, potentially impacting performance.
+
+        // --- Flatten facts specifically for the temporal eventFilter engine --- 
+        const temporalRequiredPaths = extractReferencedFactPaths(condition.eventFilter);
+        const minimalTemporalFacts: Record<string, any> = {};
+        temporalRequiredPaths.forEach(path => {
+            const value = resolvePath(eventFacts, path); // Resolve against the constructed eventFacts
+            minimalTemporalFacts[path] = (value === undefined ? null : value);
+        });
+        // console.log(`[evaluateTemporalCondition] Evaluating event filter for event ${event.eventId} with MINIMAL facts:`, minimalTemporalFacts); // Debug log
+        // --- End flatten --- 
+        
+        try {
+            // --- REVERTED: Instantiate temporal engine without allowUndefinedFacts --- 
+            const engine = new Engine();
+            engine.addRule({ conditions: condition.eventFilter as any, event: { type: 'eventFilterMatch' } });
+
+            const { events: filterMatchEvents } = await engine.run(minimalTemporalFacts);
+            if (filterMatchEvents.length > 0) {
+                console.log(`[evaluateTemporalCondition] Event ${event.eventId} matched eventFilter.`);
+                matchFound = true;
+                break; // Found a matching event, no need to check others
+            }
+        } catch (engineError) {
+            console.error(`[evaluateTemporalCondition] Error running engine for event filter on event ${event.eventId}:`, engineError);
+            // Optionally continue to next event or treat as failure? Let's continue for now.
+        }
+    }
+
+    // --- Determine Final Result --- 
+    if (condition.type === 'eventOccurred') {
+        return matchFound;
+    } else if (condition.type === 'noEventOccurred') {
+        return !matchFound;
+    } else {
+        console.warn(`[evaluateTemporalCondition] Condition ID ${condition.id}: Unknown condition type '${(condition as any).type}'.`);
+        return false;
+    }
 }
 
 

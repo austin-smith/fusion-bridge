@@ -1,5 +1,60 @@
 import { z } from 'zod';
 
+// --- START: json-rules-engine Schemas ---
+
+// Define supported operators
+// (Expand this list based on desired capabilities)
+export const JsonRulesEngineOperatorsSchema = z.enum([
+  'equal', 
+  'notEqual',
+  'lessThan', 
+  'lessThanInclusive',
+  'greaterThan', 
+  'greaterThanInclusive',
+  'in', 
+  'notIn',
+  'contains', 
+  'doesNotContain',
+]);
+
+// Base schema for a single condition
+export const JsonRuleConditionSchema = z.object({
+  fact: z.string().min(1, "Fact cannot be empty"),
+  operator: JsonRulesEngineOperatorsSchema,
+  value: z.any(), // Value type depends on the fact/operator
+  // Optional path for nested facts (e.g., '$.user.address.zipCode')
+  path: z.string().optional(), 
+});
+
+// --- EXPORT ADDED --- 
+export type JsonRuleCondition = z.infer<typeof JsonRuleConditionSchema>;
+
+// Base schema for a group (all/any conditions)
+// We use z.lazy() for recursion
+// --- Use exported type --- 
+type JsonRule = JsonRuleCondition | JsonRuleGroup;
+export interface JsonRuleGroup {
+    all?: JsonRule[];
+    any?: JsonRule[];
+    // Can add priority or name if needed later
+    // priority?: number;
+    // name?: string;
+}
+
+// Define the recursive group schema using z.lazy
+export const JsonRuleGroupSchema: z.ZodType<JsonRuleGroup> = z.lazy(() => 
+    z.object({
+        all: z.array(z.union([JsonRuleConditionSchema, JsonRuleGroupSchema])).optional(),
+        any: z.array(z.union([JsonRuleConditionSchema, JsonRuleGroupSchema])).optional(),
+        // priority: z.number().int().optional(),
+        // name: z.string().optional(),
+    }).refine(data => data.all !== undefined || data.any !== undefined, {
+        message: 'Rule group must contain either "all" or "any"',
+    })
+);
+
+// --- END: json-rules-engine Schemas ---
+
 // Schema for the parameters of the 'createEvent' action
 export const CreateEventActionParamsSchema = z.object({
   sourceTemplate: z.string().min(1, { message: "Source is required" }),
@@ -94,43 +149,50 @@ export const AutomationActionSchema = z.discriminatedUnion("type", [
 // Type helper for a single action
 export type AutomationAction = z.infer<typeof AutomationActionSchema>;
 
-// --- NEW: Schema for the Primary Trigger --- 
-// Connector-agnostic: Filters based on standardized types
-export const PrimaryTriggerSchema = z.object({
-    // Standardized device types (e.g., "Sensor.Contact", "Door")
-    sourceEntityTypes: z.array(z.string()).min(1, { message: "At least one source standardized device type must be selected" }), 
-    // Optional filter for standardized EventType (enum key, e.g., "STATE_CHANGED")
-    eventTypeFilter: z.array(z.string()).optional(),
-});
+// --- REMOVED: Schema for the Primary Trigger --- 
+// export const PrimaryTriggerSchema = z.object({ ... });
 
-// --- NEW: Schema for a Secondary Condition --- 
-// Connector-agnostic: Filters based on standardized types
-export const SecondaryConditionSchema = z.object({
-    id: z.string().uuid().default(() => crypto.randomUUID()), // Internal ID for the condition
-    type: z.enum(['eventOccurred', 'noEventOccurred']), // Whether to check for presence or absence of events
-    // Optional filter for standardized device types (e.g., "Sensor.Contact", "Camera")
-    entityTypeFilter: z.array(z.string()).optional(), 
-    // Optional filter for standardized EventType (enum key, e.g., "STATE_CHANGED")
-    eventTypeFilter: z.array(z.string()).optional(),
+// --- REMOVED: Schema for a Secondary Condition --- 
+// export const SecondaryConditionSchema = z.object({ ... });
+
+// --- REMOVED: Type helper for Secondary Condition ---
+// export type SecondaryCondition = z.infer<typeof SecondaryConditionSchema>;
+
+// --- NEW: Schema for Temporal Conditions --- 
+export const TemporalConditionSchema = z.object({
+    id: z.string().uuid().default(() => crypto.randomUUID()), // Internal ID for the condition in the UI list
+    type: z.enum(['eventOccurred', 'noEventOccurred']), 
+    
+    // --- NEW: Scoping definition --- 
+    scoping: z.enum(['anywhere', 'sameArea', 'sameLocation']).default('anywhere'),
+    
+    // --- REMOVED entityTypeFilter --- 
+    // entityTypeFilter: z.array(z.string()).optional(), 
+    
+    // --- REPLACE eventTypeFilter with a nested rule group --- 
+    // eventTypeFilter: z.array(z.string()).optional(), // Removed
+    eventFilter: JsonRuleGroupSchema, // Use the same rule builder structure
+    
     // Time window relative to the primary trigger event
     timeWindowSecondsBefore: z.number().int().positive().optional(),
     timeWindowSecondsAfter: z.number().int().positive().optional(),
+
 }).refine(data => data.timeWindowSecondsBefore !== undefined || data.timeWindowSecondsAfter !== undefined, {
-    message: "At least one time window (before or after) must be specified for a secondary condition.",
+    message: "At least one time window (before or after) must be specified for a temporal condition.",
     path: ["timeWindowSecondsBefore"], 
 });
 
-// Type helper for a single secondary condition
-export type SecondaryCondition = z.infer<typeof SecondaryConditionSchema>;
+// Type helper for a single temporal condition (automatically updated)
+export type TemporalCondition = z.infer<typeof TemporalConditionSchema>;
 
-// Schema for the overall automation configuration (UPDATED)
+// Schema for the overall automation configuration (already includes temporalConditions array)
 export const AutomationConfigSchema = z.object({
-  primaryTrigger: PrimaryTriggerSchema,
-  secondaryConditions: z.array(SecondaryConditionSchema).optional(),
+  conditions: JsonRuleGroupSchema, 
+  temporalConditions: z.array(TemporalConditionSchema).optional(), 
   actions: z.array(AutomationActionSchema).min(1, { message: "At least one action must be configured" }),
 });
 
-// Type helper for the automation configuration
+// Type helper for the automation configuration (already updated)
 export type AutomationConfig = z.infer<typeof AutomationConfigSchema>;
 
 // Combined type representing the full automation record from the database/API
@@ -140,10 +202,12 @@ export interface AutomationRecord {
   id: string;
   name: string;
   description?: string | null; 
-  // triggerSource: string; // Removed (now part of config)
-  // triggerEvent: string; // Removed (now part of config)
-  // triggerDeviceId?: string | null; // Not directly stored
-  // actionType: string; // Removed (actions array in config)
+  // --- REMOVED Outdated/Unused fields ---
+  // triggerSource: string; 
+  // triggerEvent: string; 
+  // triggerDeviceId?: string | null; 
+  // actionType: string; 
+  // --- Use AutomationConfig type for consistency ---
   config: AutomationConfig; 
   enabled: boolean;
   createdAt: Date; 

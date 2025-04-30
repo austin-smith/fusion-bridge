@@ -831,7 +831,7 @@ export default function LocationsAreasPage() {
                               key={location.id} 
                               id={`location-${location.id}`} 
                             >
-                                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                                <CardHeader className="flex flex-row items-center justify-between pb-3 bg-muted/25">
                                     <div className="flex items-center gap-2 min-w-0">
                                       <Building className="h-5 w-5 flex-shrink-0" />
                                       <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
@@ -901,10 +901,10 @@ export default function LocationsAreasPage() {
                     {isFilteredEmptyState && (
                          <Card className="border-dashed">
                              <CardContent className="pt-10 pb-10 px-6 flex flex-col items-center text-center">
-                               <div className="rounded-full bg-muted p-6 mb-4">
+                               <div className="rounded-full p-6 mb-4">
                                  <Building className="h-12 w-12 text-muted-foreground" />
                                </div>
-                               <CardTitle className="mb-2">
+                               <CardTitle className="mb-2 ">
                                  {hasOriginalData && searchTerm !== '' 
                                   ? "No locations match your search term. Try adjusting your filter."
                                   : <>Locations represent physical buildings or sites... {/* rest of original message */}

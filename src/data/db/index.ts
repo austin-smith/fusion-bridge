@@ -51,7 +51,7 @@ if (dbDriver === 'turso') {
   const sqlite = new Database(sqlitePath);
   clientInstance = sqlite;
   // Create the SQLite-specific drizzle instance...
-  const sqliteDb = drizzleSqlite(sqlite, { schema });
+  const sqliteDb = drizzleSqlite(sqlite, { schema, logger: true });
   // ...then CAST it to the unified async type (LibSQLDatabase) for export.
   // This assumes the core API methods (select, insert, etc.) are compatible enough.
   // `as unknown` is used to bridge the potential deep type differences before the final assertion.

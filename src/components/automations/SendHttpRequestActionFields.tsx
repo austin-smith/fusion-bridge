@@ -135,8 +135,9 @@ export function SendHttpRequestActionFields({ actionIndex, handleInsertToken }: 
                                     )}
                                 </SelectTrigger>
                             </FormControl>
+                            {/* --- Sort Method Options --- */}
                             <SelectContent>
-                                {(HttpMethodSchema.options).map(method => (
+                                {[...HttpMethodSchema.options].sort().map(method => (
                                     <SelectItem key={method} value={method}>
                                         {/* Method name with color TEXT, no badge */}
                                         <span className={cn("font-semibold", getMethodTextColor(method))}>{method}</span>
@@ -151,21 +152,22 @@ export function SendHttpRequestActionFields({ actionIndex, handleInsertToken }: 
                 {/* URL Field */}
                 <FormField control={control} name={paramFieldName('urlTemplate')} render={({ field }) => (
                     <FormItem>
-                        {/* Standard Label */}
                         <FormLabel className="block mb-1.5 text-sm">URL</FormLabel>
-                        <FormControl>
-                            {/* Input and TokenInserter side-by-side */}
-                            <div className="flex items-center gap-2">
+                        {/* --- Wrap FormControl and TokenInserter --- */}
+                        <div className="flex items-center gap-2">
+                            <FormControl>
+                                 {/* Input is now direct child */} 
                                 <Input 
                                     placeholder="https://your-api.com/endpoint?id={{event.deviceId}}" 
                                     {...field} 
                                     disabled={isLoading} 
-                                    className="flex-1" /* Input takes available space */
+                                    className="flex-1" 
                                 />
-                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={insertUrlToken}/>
-                            </div>
-                        </FormControl>
-                        <FormMessage className="text-xs min-h-[1rem] mt-1"/> {/* Consistent spacing */}
+                            </FormControl>
+                             {/* TokenInserter is now a sibling to FormControl */} 
+                            <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={insertUrlToken}/>
+                        </div>
+                        <FormMessage className="text-xs min-h-[1rem] mt-1"/> 
                     </FormItem>
                 )} />
             </div>
@@ -237,10 +239,9 @@ export function SendHttpRequestActionFields({ actionIndex, handleInsertToken }: 
                     <FormField control={control} name={paramFieldName('contentType')} render={({ field }) => (
                          <FormItem>
                              <FormLabel>Content Type</FormLabel>
-                             {/* Ensure defaultValue handles potential undefined case */}
                              <Select onValueChange={field.onChange} value={field.value ?? 'text/plain'} disabled={isLoading}>
                                  <FormControl><SelectTrigger><SelectValue placeholder="Select Content Type" /></SelectTrigger></FormControl>
-                                 <SelectContent>{HttpContentTypeSchema.options.map(type => (<SelectItem key={type} value={type}>{type}</SelectItem>))}</SelectContent>
+                                 <SelectContent>{[...HttpContentTypeSchema.options].sort().map(type => (<SelectItem key={type} value={type}>{type}</SelectItem>))}</SelectContent>
                              </Select>
                              <FormMessage />
                          </FormItem>
@@ -282,36 +283,38 @@ export function SendHttpRequestActionFields({ actionIndex, handleInsertToken }: 
                                      <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={insertBodyToken} />
                                  </div>
                              </div>
-                             <FormControl>
-                                {(currentContentType === 'application/json' && showPreview && isValidJSON) ? (
-                                    <div className="border rounded-md">
-                                        <SyntaxHighlighter
-                                            language="json"
-                                            style={atomDark}
-                                            customStyle={{
-                                                margin: 0,
-                                                minHeight: '10rem',
-                                                maxHeight: '20rem',
-                                                fontSize: '13px',
-                                                borderRadius: '6px'
-                                            }}
-                                        >
-                                            {bodyTemplate}
-                                        </SyntaxHighlighter>
-                                    </div>
-                                ) : (
-                                    <Textarea
-                                        placeholder={currentContentType === 'application/json'
-                                            ? '{\n  "key": "value",\n  "event_data": {{event.data | json}}\n}'
-                                            : 'Enter request body...'}
-                                        {...field}
-                                        disabled={isLoading}
-                                        rows={6}
-                                        className={bodyErrorMessage ? "border-destructive" : ""}
-                                    />
-                                )}
-                             </FormControl>
-                             {/* Render the specific error message from Zod refine */}
+                             {/* --- Move Conditional Logic Outside FormControl --- */}
+                             {(currentContentType === 'application/json' && showPreview && isValidJSON) ? (
+                                 // Render Preview Div *instead* of FormControl
+                                 <div className="border rounded-md mt-2"> {/* Added mt-2 for spacing */} 
+                                     <SyntaxHighlighter
+                                         language="json"
+                                         style={atomDark}
+                                         customStyle={{
+                                             margin: 0,
+                                             minHeight: '10rem',
+                                             maxHeight: '20rem',
+                                             fontSize: '13px',
+                                             borderRadius: '6px'
+                                         }}
+                                     >
+                                         {bodyTemplate}
+                                     </SyntaxHighlighter>
+                                 </div>
+                             ) : (
+                                 // Render FormControl wrapping Textarea
+                                 <FormControl>
+                                     <Textarea
+                                         placeholder={currentContentType === 'application/json'
+                                             ? '{\n  "key": "value",\n  "event_data": {{event.data | json}}\n}'
+                                             : 'Enter request body...'}
+                                         {...field}
+                                         disabled={isLoading}
+                                         rows={6}
+                                         className={bodyErrorMessage ? "border-destructive" : ""}
+                                     />
+                                 </FormControl>
+                             )}
                              <FormMessage>{bodyErrorMessage}</FormMessage>
                          </FormItem>
                     )} />

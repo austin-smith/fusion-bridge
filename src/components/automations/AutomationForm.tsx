@@ -9,16 +9,18 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Trash2, Plus } from 'lucide-react';
-import { 
-    AutomationConfigSchema, 
-    type AutomationConfig, 
+import {
+    AutomationConfigSchema,
+    type AutomationConfig,
     type AutomationAction,
-    type SecondaryCondition,
     CreateEventActionParamsSchema,
     CreateBookmarkParamsSchema,
     SendHttpRequestActionParamsSchema,
+    type JsonRuleGroup,
+    type TemporalCondition,
+    JsonRuleGroupSchema,
 } from '@/lib/automation-schemas';
 import { EventType, EVENT_TYPE_DISPLAY_MAP, EventSubtype, EVENT_SUBTYPE_DISPLAY_MAP } from '@/lib/mappings/definitions';
 import type { connectors } from '@/data/db/schema';
@@ -40,6 +42,7 @@ import { cn } from '@/lib/utils';
 import { TokenInserter } from '@/components/automations/TokenInserter';
 import { AVAILABLE_AUTOMATION_TOKENS } from '@/lib/automation-tokens';
 import { SendHttpRequestActionFields } from './SendHttpRequestActionFields';
+import { RuleBuilder } from './RuleBuilder';
 
 interface AutomationFormData {
     id: string;
@@ -52,7 +55,7 @@ interface AutomationFormData {
 
 const FormSchema = z.object({
     id: z.string(),
-    name: z.string().min(1, "Name is required"),
+    name: z.string().min(1),
     enabled: z.boolean(),
     config: AutomationConfigSchema
 });
@@ -79,13 +82,7 @@ const descriptionStyles = "text-xs text-muted-foreground mt-1";
 const generateEventTypeOptions = (): MultiSelectOption[] => {
   const options: MultiSelectOption[] = [];
   for (const [typeKey, typeDisplay] of Object.entries(EVENT_TYPE_DISPLAY_MAP)) {
-    // Add the general type option (matches any subtype)
     options.push({ value: typeKey, label: `${typeDisplay} (Any Subtype)` });
-
-    // Find relevant subtypes for this type
-    // This requires some logic based on definitions.ts structure or convention
-    // Example: Check if subtypes exist for this type based on naming or a map
-    // For now, let's manually define relationships based on current enums
     let relevantSubtypes: EventSubtype[] = [];
     if (typeKey === EventType.ACCESS_DENIED) {
         relevantSubtypes = [EventSubtype.ANTIPASSBACK_VIOLATION, EventSubtype.DOOR_LOCKED, EventSubtype.DURESS_PIN, EventSubtype.EXPIRED_CREDENTIAL, EventSubtype.INVALID_CREDENTIAL, EventSubtype.NOT_IN_SCHEDULE, EventSubtype.OCCUPANCY_LIMIT, EventSubtype.PIN_REQUIRED];
@@ -96,28 +93,27 @@ const generateEventTypeOptions = (): MultiSelectOption[] => {
     } else if (typeKey === EventType.OBJECT_DETECTED) {
         relevantSubtypes = [EventSubtype.PERSON, EventSubtype.VEHICLE];
     }
-    // Add other type-to-subtype mappings here if needed
-
-    // Add specific subtype options
     for (const subtypeKey of relevantSubtypes) {
       const subtypeDisplay = EVENT_SUBTYPE_DISPLAY_MAP[subtypeKey];
       if (subtypeDisplay) {
-        // Use a separator (e.g., '.') to combine type and subtype in the value
         options.push({ value: `${typeKey}.${subtypeKey}`, label: `${typeDisplay}: ${subtypeDisplay}` });
       }
     }
   }
-  // Sort options alphabetically by label for better UX
   options.sort((a, b) => a.label.localeCompare(b.label));
   return options;
 };
 
 const eventTypeOptions = generateEventTypeOptions();
 
-const defaultSecondaryCondition: Omit<SecondaryCondition, 'id'> = {
+const defaultRuleGroup: JsonRuleGroup = { any: [] };
+
+const defaultEventFilterRuleGroup: JsonRuleGroup = { all: [] };
+
+const defaultTemporalCondition: Omit<TemporalCondition, 'id'> = {
     type: 'eventOccurred',
-    entityTypeFilter: [],
-    eventTypeFilter: [],
+    scoping: 'anywhere',
+    eventFilter: defaultEventFilterRuleGroup,
     timeWindowSecondsBefore: 60,
     timeWindowSecondsAfter: 60,
 };
@@ -138,16 +134,6 @@ export default function AutomationForm({
 
     const massageInitialData = (data: AutomationFormData): AutomationFormValues => {
         const config = data.configJson;
-        
-        const ensureArrayEventTypeFilter = (filter: string | string[] | undefined | null): string[] => {
-            if (Array.isArray(filter)) {
-                return filter;
-            }
-            if (typeof filter === 'string' && filter.trim() !== '') {
-                return [filter.trim()];
-            }
-            return [];
-        };
         
         const initialActions = config.actions?.map((action: AutomationAction) => {
             const params = action.params as any;
@@ -172,24 +158,22 @@ export default function AutomationForm({
             return action;
         }) || [];
 
+        const initialTemporalConditions = (config?.temporalConditions ?? []).map(cond => ({
+            id: cond.id ?? crypto.randomUUID(), 
+            type: cond.type ?? 'eventOccurred',
+            scoping: cond.scoping ?? 'anywhere',
+            eventFilter: cond.eventFilter && (cond.eventFilter.all || cond.eventFilter.any) ? cond.eventFilter : defaultEventFilterRuleGroup,
+            timeWindowSecondsBefore: cond.timeWindowSecondsBefore ?? 60,
+            timeWindowSecondsAfter: cond.timeWindowSecondsAfter ?? 60,
+        }));
+
         return {
             id: data.id,
             name: data.name,
             enabled: data.enabled,
             config: {
-                primaryTrigger: {
-                    ...config.primaryTrigger,
-                    sourceEntityTypes: config.primaryTrigger?.sourceEntityTypes ?? [],
-                    eventTypeFilter: ensureArrayEventTypeFilter(config.primaryTrigger?.eventTypeFilter),
-                },
-                secondaryConditions: (config.secondaryConditions ?? []).map(cond => ({
-                    id: cond.id ?? crypto.randomUUID(), 
-                    type: cond.type ?? 'eventOccurred',
-                    entityTypeFilter: cond.entityTypeFilter ?? [],
-                    eventTypeFilter: ensureArrayEventTypeFilter(cond.eventTypeFilter),
-                    timeWindowSecondsBefore: cond.timeWindowSecondsBefore ?? 60,
-                    timeWindowSecondsAfter: cond.timeWindowSecondsAfter ?? 60,
-                })),
+                conditions: config.conditions && (config.conditions.all || config.conditions.any) ? config.conditions : defaultRuleGroup,
+                temporalConditions: initialTemporalConditions as TemporalCondition[],
                 actions: initialActions as AutomationAction[]
             }
         };
@@ -206,16 +190,16 @@ export default function AutomationForm({
         name: "config.actions"
     });
 
-    const { fields: conditionsFields, append: appendCondition, remove: removeCondition } = useFieldArray({
+    const { fields: temporalConditionsFields, append: appendTemporalCondition, remove: removeTemporalCondition } = useFieldArray({
         control: form.control,
-        name: "config.secondaryConditions"
+        name: "config.temporalConditions"
     });
 
     const handleInsertToken = (
         fieldName: InsertableFieldNames,
         index: number,
         token: string,
-        context: 'action' | 'condition',
+        context: 'action',
         headerIndex?: number
     ) => {
         let currentFieldName: string;
@@ -231,9 +215,6 @@ export default function AutomationForm({
             } else { 
                  currentFieldName = `config.actions.${index}.params.${fieldName as Exclude<InsertableFieldNames, `headers.${number}.keyTemplate` | `headers.${number}.valueTemplate`>}`;
              }
-        } else if (context === 'condition') {
-            console.warn("Token insertion for conditions not fully implemented yet.");
-            return;
         } else {
              console.error("Invalid context for token insertion:", context);
              return;
@@ -253,10 +234,6 @@ export default function AutomationForm({
             ...data, 
             config: { 
                 ...data.config, 
-                primaryTrigger: {
-                    ...data.config.primaryTrigger,
-                    eventTypeFilter: data.config.primaryTrigger.eventTypeFilter ?? [],
-                },
                 actions: data.config.actions.map((action: AutomationAction) => {
                     if (action.type === 'sendHttpRequest' && !['POST', 'PUT', 'PATCH'].includes(action.params.method)) {
                         const { bodyTemplate, contentType, ...restParams } = action.params;
@@ -267,11 +244,15 @@ export default function AutomationForm({
                     }
                     return action;
                 }),
-                secondaryConditions: data.config.secondaryConditions?.map(cond => {
+                temporalConditions: data.config.temporalConditions?.map(cond => {
+                    const { entityTypeFilter, ...restCond } = cond as any;
                     return {
-                        ...cond,
-                        timeWindowSecondsBefore: cond.timeWindowSecondsBefore ? Number(cond.timeWindowSecondsBefore) : undefined,
-                        timeWindowSecondsAfter: cond.timeWindowSecondsAfter ? Number(cond.timeWindowSecondsAfter) : undefined,
+                        id: restCond.id,
+                        type: restCond.type,
+                        scoping: restCond.scoping,
+                        eventFilter: restCond.eventFilter,
+                        timeWindowSecondsBefore: restCond.timeWindowSecondsBefore ? Number(restCond.timeWindowSecondsBefore) : undefined,
+                        timeWindowSecondsAfter: restCond.timeWindowSecondsAfter ? Number(restCond.timeWindowSecondsAfter) : undefined,
                     }
                 })
             }
@@ -298,7 +279,7 @@ export default function AutomationForm({
                 throw new Error(errorDetails);
             }
             toast.success(successMessage);
-            router.push('/settings/automations');
+            router.push('/automations');
             router.refresh();
         } catch (error) {
             console.error("Failed to submit form:", error);
@@ -308,13 +289,16 @@ export default function AutomationForm({
 
     const pikoTargetConnectors = availableConnectors.filter(c => c.category === 'piko');
 
+    // --- Sort connectors for dropdown ---
+    const sortedPikoConnectors = [...pikoTargetConnectors].sort((a, b) => a.name.localeCompare(b.name));
+
     return (
         <FormProvider {...form}>
             <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
                     <Card>
                         <CardHeader><CardTitle>General Settings</CardTitle></CardHeader>
-                        <CardContent className="space-y-4">
+                        <CardContent>
                              <input type="hidden" {...form.register("id")} />
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormField 
@@ -322,9 +306,8 @@ export default function AutomationForm({
                                     name="name"
                                     render={({ field, fieldState }) => (
                                     <FormItem>
-                                        <FormLabel>Automation Name</FormLabel>
+                                        <FormLabel className={cn(fieldState.error && "text-destructive")}>Automation Name</FormLabel>
                                         <FormControl><Input {...field} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                        <FormMessage />
                                     </FormItem>
                                 )} />
                                 <FormField control={form.control} name="enabled" render={({ field }) => (
@@ -342,196 +325,131 @@ export default function AutomationForm({
                     </Card>
 
                     <Card>
-                        <CardHeader><CardTitle>Trigger (If This Happens...)</CardTitle></CardHeader>
-                         <CardContent className="space-y-4">
-                             <FormField
-                                control={form.control}
-                                name="config.primaryTrigger.sourceEntityTypes"
-                                render={({ field, fieldState }) => (
-                                <FormItem>
-                                    <FormLabel>Triggering Device Types</FormLabel>
-                                    <FormControl>
-                                        <MultiSelectCombobox
-                                            options={sourceDeviceTypeOptions}
-                                            selected={field.value || []}
-                                            onChange={field.onChange}
-                                            placeholder="Select device types..."
-                                            className={cn(fieldState.error && 'border border-destructive rounded-md')}
-                                        />
-                                    </FormControl>
-                                    <FormDescription className={descriptionStyles}>Select the standardized device types that can trigger this automation.</FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )} />
+                        <CardHeader><CardTitle>Trigger Conditions (if this...)</CardTitle></CardHeader>
+                        <CardContent>
                             <FormField
                                 control={form.control}
-                                name="config.primaryTrigger.eventTypeFilter"
-                                render={({ field, fieldState }) => (
-                                <FormItem>
-                                    <FormLabel>Triggering Event Types (Optional)</FormLabel>
-                                    <FormControl>
-                                        <MultiSelectCombobox
-                                            options={eventTypeOptions}
-                                            selected={field.value || []}
-                                            onChange={field.onChange}
-                                            placeholder="Select event types (optional)..."
-                                            className={cn(fieldState.error && 'border border-destructive rounded-md')}
-                                        />
-                                    </FormControl>
-                                    <FormDescription className={descriptionStyles}>Select the specific standardized event types to trigger this automation. Leave blank for any.</FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )} />
+                                name="config.conditions"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <RuleBuilder value={field.value} onChange={field.onChange} />
+                                        <FormDescription className={descriptionStyles}>Define conditions based on the triggering event's state.</FormDescription>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
                         </CardContent>
                     </Card>
 
-                    <div>
-                        <h2 className="text-xl font-semibold mb-2">Conditions (And If...)</h2>
-                        <p className="text-sm text-muted-foreground mb-4">Add optional conditions based on events happening near the primary trigger time.</p>
-                        <div className="space-y-4">
-                            {conditionsFields.map((fieldItem, index) => (
+                    {/* --- RESTORE Temporal Conditions Card --- */}
+                     
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Temporal Conditions (and if this...)</CardTitle>
+                            <CardDescription className="text-xs text-muted-foreground pt-1">
+                                Optionally, add conditions based on other events happening near the trigger time.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {temporalConditionsFields.map((fieldItem, index) => (
                                 <Card key={fieldItem.id} className="relative border border-blue-200 dark:border-blue-800 pt-8 bg-blue-50/30 dark:bg-blue-950/20">
-                                    <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 text-muted-foreground hover:text-destructive h-6 w-6" onClick={() => removeCondition(index)}><Trash2 className="h-4 w-4" /><span className="sr-only">Remove Condition</span></Button>
+                                    <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 text-muted-foreground hover:text-destructive h-6 w-6" onClick={() => removeTemporalCondition(index)}><Trash2 className="h-4 w-4" /><span className="sr-only">Remove Temporal Condition</span></Button>
                                     <CardContent className="space-y-4">
-                                        <FormField
-                                            control={form.control}
-                                            name={`config.secondaryConditions.${index}.type`}
-                                            render={({ field, fieldState }) => (
+                                        <FormField name={`config.temporalConditions.${index}.type`} render={({ field, fieldState }) => (
+                                            <FormItem>
+                                                <FormLabel>Condition Type</FormLabel>
+                                                <Select onValueChange={field.onChange} value={field.value}>
+                                                    <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
+                                                    <SelectContent>
+                                                        <SelectItem value="eventOccurred">Event occurred within window</SelectItem>
+                                                        <SelectItem value="noEventOccurred">Event NOT occurred within window</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )} />
+                                        <FormField name={`config.temporalConditions.${index}.scoping`} render={({ field, fieldState }) => (
+                                            <FormItem>
+                                                <FormLabel>Check Events From</FormLabel>
+                                                <Select onValueChange={field.onChange} value={field.value ?? 'anywhere'}>
+                                                    <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
+                                                    <SelectContent>
+                                                        <SelectItem value="anywhere">Anywhere</SelectItem>
+                                                        <SelectItem value="sameArea">Devices in Same Area</SelectItem>
+                                                        <SelectItem value="sameLocation">Devices in Same Location</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                                <FormDescription className={descriptionStyles}>Scope the devices checked by this condition.</FormDescription>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )} />
+                                        <FormField name={`config.temporalConditions.${index}.eventFilter`} render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Event Filter Criteria</FormLabel>
+                                                
+                                                    <RuleBuilder 
+                                                        value={field.value} 
+                                                        onChange={field.onChange} 
+                                                    />
+                                                
+                                                <FormDescription className={descriptionStyles}>Define criteria that matching events must meet.</FormDescription>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )} />
+                                       
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                                            <FormField name={`config.temporalConditions.${index}.timeWindowSecondsBefore`} render={({ field, fieldState }) => (
                                                 <FormItem>
-                                                    <FormLabel>Condition Type</FormLabel>
-                                                    <Select onValueChange={field.onChange} value={field.value}>
-                                                        <FormControl><SelectTrigger className={cn(fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
-                                                        <SelectContent>
-                                                            <SelectItem value="eventOccurred">Event Occurred Within Window</SelectItem>
-                                                            <SelectItem value="noEventOccurred">NO Event Occurred Within Window</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
+                                                    <FormLabel>Seconds Before Trigger</FormLabel>
+                                                    <FormControl>
+                                                        <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
+                                                    </FormControl>
+                                                    <FormDescription className={descriptionStyles}>Check for events up to this many seconds before the trigger.</FormDescription>
                                                     <FormMessage />
                                                 </FormItem>
-                                            )}
-                                        />
-                                        <FormField
-                                            control={form.control}
-                                            name={`config.secondaryConditions.${index}.entityTypeFilter`}
-                                            render={({ field, fieldState }) => (
-                                            <FormItem>
-                                                <FormLabel>Device Types Filter (Optional)</FormLabel>
-                                                <FormControl>
-                                                    <MultiSelectCombobox
-                                                        options={sourceDeviceTypeOptions}
-                                                        selected={field.value || []}
-                                                        onChange={field.onChange}
-                                                        placeholder="Any"
-                                                        className={cn(fieldState.error && 'border border-destructive rounded-md')}
-                                                    />
-                                                </FormControl>
-                                                 <FormDescription className={descriptionStyles}>Filter condition by standardized device types. Leave blank for any type.</FormDescription>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )} />
-                                        <FormField
-                                            control={form.control}
-                                            name={`config.secondaryConditions.${index}.eventTypeFilter`}
-                                            render={({ field, fieldState }) => (
-                                            <FormItem>
-                                                <FormLabel>Event Type Filter (Optional)</FormLabel>
-                                                <FormControl>
-                                                    <MultiSelectCombobox
-                                                        options={eventTypeOptions}
-                                                        selected={field.value || []}
-                                                        onChange={field.onChange}
-                                                        placeholder="Select event types (optional)..."
-                                                        className={cn(fieldState.error && 'border border-destructive rounded-md')}
-                                                    />
-                                                </FormControl>
-                                                <FormDescription className={descriptionStyles}>Filter condition events by these standardized types. Leave blank for any.</FormDescription>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )} />
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                                            <FormField
-                                                control={form.control}
-                                                name={`config.secondaryConditions.${index}.timeWindowSecondsBefore`}
-                                                render={({ field, fieldState }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Seconds Before Trigger</FormLabel>
-                                                        <FormControl>
-                                                            <Input 
-                                                                type="number" 
-                                                                min="0" 
-                                                                step="1" 
-                                                                placeholder="e.g., 120" 
-                                                                disabled={isLoading} 
-                                                                className={cn(fieldState.error && 'border-destructive')}
-                                                                value={field.value === undefined || field.value === null ? '' : String(field.value)} 
-                                                                onChange={(e) => {
-                                                                    const val = e.target.value;
-                                                                    field.onChange(val === '' ? undefined : Number(val));
-                                                                }}
-                                                                name={field.name}
-                                                                onBlur={field.onBlur}
-                                                                ref={field.ref}
-                                                            />
-                                                        </FormControl>
-                                                        <FormDescription className={descriptionStyles}>Check for events up to this many seconds before the trigger.</FormDescription>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                            <FormField
-                                                control={form.control}
-                                                name={`config.secondaryConditions.${index}.timeWindowSecondsAfter`}
-                                                render={({ field, fieldState }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Seconds After Trigger</FormLabel>
-                                                         <FormControl>
-                                                            <Input 
-                                                                type="number" 
-                                                                min="0" 
-                                                                step="1" 
-                                                                placeholder="e.g., 120" 
-                                                                disabled={isLoading} 
-                                                                className={cn(fieldState.error && 'border-destructive')}
-                                                                value={field.value === undefined || field.value === null ? '' : String(field.value)} 
-                                                                onChange={(e) => {
-                                                                    const val = e.target.value;
-                                                                    field.onChange(val === '' ? undefined : Number(val));
-                                                                }}
-                                                                name={field.name}
-                                                                onBlur={field.onBlur}
-                                                                ref={field.ref}
-                                                            />
-                                                        </FormControl>
-                                                         <FormDescription className={descriptionStyles}>Check for events up to this many seconds after the trigger.</FormDescription>
-                                                         <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
+                                            )} />
+                                            <FormField name={`config.temporalConditions.${index}.timeWindowSecondsAfter`} render={({ field, fieldState }) => (
+                                                <FormItem>
+                                                    <FormLabel>Seconds After Trigger</FormLabel>
+                                                    <FormControl>
+                                                        <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
+                                                    </FormControl>
+                                                    <FormDescription className={descriptionStyles}>Check for events up to this many seconds after the trigger.</FormDescription>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )} />
                                         </div>
                                     </CardContent>
                                 </Card>
                             ))}
-                        </div>
-                        <Button 
-                            type="button" 
-                            variant="outline" 
-                            size="sm" 
-                            className="mt-4"
-                            onClick={() => appendCondition({ id: crypto.randomUUID(), ...defaultSecondaryCondition })} 
-                            disabled={isLoading}
-                        >
-                            <Plus className="mr-2 h-4 w-4" /> Add Condition
-                        </Button>
-                    </div>
+                            <Button 
+                                type="button" 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => appendTemporalCondition({ id: crypto.randomUUID(), ...defaultTemporalCondition })} 
+                                disabled={isLoading}
+                            >
+                                <Plus className="mr-2 h-4 w-4" /> Add Temporal Condition
+                            </Button>
+                        </CardContent>
+                    </Card>
+                    
 
-                    <div>
-                        <h2 className="text-xl font-semibold mb-4">Actions (Then Do This...)</h2>
-                        <div className="space-y-4">
+                    {/* --- RESTORE Actions Card --- */}
+                     
+                     <Card>
+                         <CardHeader>
+                            <CardTitle>Actions (then do this...)</CardTitle>
+                         </CardHeader>
+                         <CardContent className="space-y-4">
                             {actionsFields.map((fieldItem, index) => {
+                                // --- Add Console Log Here --- 
+                                console.log(`Rendering Action at index ${index}, ID: ${fieldItem.id}, Value:`, form.getValues(`config.actions.${index}`));
+                                
                                 const actionType = form.watch(`config.actions.${index}.type`);
-
                                 return (
                                     <Card key={fieldItem.id} className="relative border border-dashed pt-8">
+                                         {/* Action Card rendering logic - including simplified fields */}
                                         <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 text-muted-foreground hover:text-destructive h-6 w-6" onClick={() => removeAction(index)}><Trash2 className="h-4 w-4" /><span className="sr-only">Remove Action</span></Button>
                                         <CardContent className="space-y-4">
                                             <FormField 
@@ -540,118 +458,193 @@ export default function AutomationForm({
                                                 render={({ field, fieldState }) => (
                                                     <FormItem>
                                                         <FormLabel>Action Type</FormLabel>
-                                                        <Select
-                                                            onValueChange={(value) => {
-                                                                const newType = value as AutomationAction['type'];
-                                                                let newAction: AutomationAction = defaultAction;
-                                                                form.clearErrors(`config.actions.${index}`);
-                                                                if (newType === 'createEvent') { 
-                                                                    newAction = { type: 'createEvent', params: { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' } };
-                                                                } else if (newType === 'createBookmark') { 
-                                                                    newAction = { type: 'createBookmark', params: { nameTemplate: '', descriptionTemplate: '', durationMsTemplate: '5000', tagsTemplate: '', targetConnectorId: '' } };
-                                                                } else if (newType === 'sendHttpRequest') { 
-                                                                    newAction = { type: 'sendHttpRequest', params: { urlTemplate: '', method: 'GET', headers: [], contentType: 'text/plain', bodyTemplate: '' } };
-                                                                } else { 
-                                                                    console.warn(`Unexpected action type: ${value}.`); 
-                                                                }
-                                                                form.setValue(`config.actions.${index}`, newAction, { shouldValidate: false, shouldDirty: true });
-                                                                field.onChange(newType);
-                                                            }}
-                                                            value={field.value}
-                                                        >
-                                                            <FormControl><SelectTrigger className={cn(fieldState.error && 'border-destructive')}><SelectValue placeholder="Select Action Type" /></SelectTrigger></FormControl>
-                                                            <SelectContent>
-                                                                <SelectItem value="createEvent">Create Piko Event</SelectItem>
-                                                                <SelectItem value="createBookmark">Create Piko Bookmark</SelectItem>
-                                                                <SelectItem value="sendHttpRequest">Send HTTP Request</SelectItem>
-                                                            </SelectContent>
-                                                        </Select>
+                                                        <FormControl>
+                                                            <Select
+                                                                onValueChange={(value) => {
+                                                                    // --- Add Console Log Here --- 
+                                                                    console.log(`Action type changed at index ${index} to:`, value);
+                                                                    const newType = value as AutomationAction['type'];
+                                                                    let newAction: AutomationAction;
+                                                                    if (newType === 'createEvent') { 
+                                                                        newAction = { type: 'createEvent', params: { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' } };
+                                                                    } else if (newType === 'createBookmark') { 
+                                                                        newAction = { type: 'createBookmark', params: { nameTemplate: '', descriptionTemplate: '', durationMsTemplate: '5000', tagsTemplate: '', targetConnectorId: '' } };
+                                                                    } else if (newType === 'sendHttpRequest') { 
+                                                                        newAction = { type: 'sendHttpRequest', params: { urlTemplate: '', method: 'GET', headers: [], contentType: 'text/plain', bodyTemplate: '' } };
+                                                                    } else { 
+                                                                        console.warn(`Unexpected action type: ${value}. Defaulting to minimal sendHttpRequest.`); 
+                                                                        newAction = { type: "sendHttpRequest", params: { urlTemplate: '', method: 'GET'} }; 
+                                                                    }
+                                                                    // --- Add Console Log Here ---
+                                                                    console.log(`Setting value for config.actions.${index} to:`, newAction);
+                                                                    form.setValue(`config.actions.${index}`, newAction, { shouldValidate: false, shouldDirty: true });
+                                                                }}
+                                                                value={field.value ?? 'createEvent'}
+                                                            >
+                                                                <SelectTrigger className={cn(fieldState.error && 'border-destructive')}>
+                                                                    <SelectValue placeholder="Select Action Type" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="createBookmark">Create Piko Bookmark</SelectItem>
+                                                                    <SelectItem value="createEvent">Create Piko Event</SelectItem>
+                                                                    <SelectItem value="sendHttpRequest">Send HTTP Request</SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </FormControl>
                                                         <FormMessage />
                                                     </FormItem>
                                                 )}
                                             />
-
+                                            {/* --- Add console log via IIFE --- */}
+                                            {(() => { 
+                                                console.log(`Rendering Target Connector check for index ${index}. actionType:`, actionType);
+                                                return null; 
+                                            })()}
+                                            
+                                            {/* Conditional rendering for Target Connector */}
                                             {(actionType === 'createEvent' || actionType === 'createBookmark') && (
                                                  <FormField
                                                      control={form.control}
                                                      name={`config.actions.${index}.params.targetConnectorId`}
                                                      render={({ field, fieldState }) => (
-                                                     <FormItem>
-                                                         <FormLabel>Target Connector</FormLabel>
-                                                         <Select onValueChange={field.onChange} value={field.value} disabled={isLoading}>
+                                                         <FormItem>
+                                                             <FormLabel>Target Connector</FormLabel>
                                                              <FormControl>
-                                                                 <SelectTrigger className={cn(fieldState.error && 'border-destructive')}>
-                                                                    <SelectValue placeholder="Select Target Connector" />
-                                                                 </SelectTrigger>
+                                                                 <Select 
+                                                                     onValueChange={field.onChange} 
+                                                                     value={field.value ?? ''} 
+                                                                     disabled={isLoading || !(actionType === 'createEvent' || actionType === 'createBookmark')}
+                                                                 >
+                                                                     <SelectTrigger className={cn(fieldState.error && 'border-destructive', !(actionType === 'createEvent' || actionType === 'createBookmark') && 'hidden')}>
+                                                                         <SelectValue placeholder="Select Target Connector" />
+                                                                     </SelectTrigger>
+                                                                     <SelectContent>{sortedPikoConnectors.map(connector => (<SelectItem key={connector.id} value={connector.id}>{connector.name} ({connector.category})</SelectItem>))}</SelectContent>
+                                                                 </Select>
                                                              </FormControl>
-                                                             <SelectContent>{pikoTargetConnectors.map(connector => (<SelectItem key={connector.id} value={connector.id}>{connector.name} ({connector.category})</SelectItem>))}</SelectContent>
-                                                         </Select>
-                                                         <FormMessage />
-                                                     </FormItem>
-                                                 )} />
+                                                             <FormMessage />
+                                                         </FormItem>
+                                                     )} />
                                             )}
-
                                             <div className="space-y-2 border-l-2 pl-4 ml-1 border-muted">
                                                 <h3 className="text-sm font-medium text-muted-foreground mb-2">Action Parameters</h3>
-                                                 <p className="text-xs text-muted-foreground">
-                                                     {actionType === 'createBookmark' && "Creates a bookmark on related Piko cameras."}
-                                                     {actionType === 'createEvent' && "Creates an event in the target Piko system."}
-                                                     {actionType === 'sendHttpRequest' && "Sends an HTTP request."}
-                                                 </p>
-                                                {actionType === 'createEvent' && (
-                                                    <>
-                                                         <FormField control={form.control} name={`config.actions.${index}.params.sourceTemplate`} render={({ field, fieldState }) => (<FormItem><div className="flex items-center justify-between"><FormLabel>Source</FormLabel><TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('sourceTemplate', index, token, 'action')} /></div><FormControl><Textarea placeholder="e.g., YoLink Event - {{device.name}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl><FormMessage /></FormItem>)} />
-                                                         <FormField control={form.control} name={`config.actions.${index}.params.captionTemplate`} render={({ field, fieldState }) => (<FormItem><div className="flex items-center justify-between"><FormLabel>Caption</FormLabel><TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('captionTemplate', index, token, 'action')} /></div><FormControl><Textarea placeholder="e.g., {{device.name}} Event: {{event.data.state}} at {{event.time}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl><FormMessage /></FormItem>)} />
-                                                         <FormField control={form.control} name={`config.actions.${index}.params.descriptionTemplate`} render={({ field, fieldState }) => (<FormItem><div className="flex items-center justify-between"><FormLabel>Description</FormLabel><TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('descriptionTemplate', index, token, 'action')} /></div><FormControl><Textarea placeholder="Device: {{event.deviceId}} Type: {{event.event}} State: {{event.data.state}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl><FormMessage /></FormItem>)} />
-                                                    </>
-                                                )}
-                                                {actionType === 'createBookmark' && (
-                                                    <>
-                                                        <FormField control={form.control} name={`config.actions.${index}.params.nameTemplate`} render={({ field, fieldState }) => (<FormItem><div className="flex items-center justify-between"><FormLabel>Name</FormLabel><TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('nameTemplate', index, token, 'action')}/></div><FormControl><Input placeholder="e.g., Alert: {{device.name}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl><FormMessage /></FormItem>)} />
-                                                        <FormField control={form.control} name={`config.actions.${index}.params.descriptionTemplate`} render={({ field, fieldState }) => (<FormItem><div className="flex items-center justify-between"><FormLabel>Description</FormLabel><TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('descriptionTemplate', index, token, 'action')}/></div><FormControl><Textarea placeholder="e.g., Device: {{device.name}} triggered event {{event.event}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl><FormMessage /></FormItem>)} />
-                                                        <FormField control={form.control} name={`config.actions.${index}.params.durationMsTemplate`} render={({ field, fieldState }) => (<FormItem><div className="flex items-center justify-between"><FormLabel>Duration (milliseconds)</FormLabel><TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('durationMsTemplate', index, token, 'action')}/></div><FormControl><Input placeholder="e.g., 5000" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl><FormDescription className={descriptionStyles}>Duration in milliseconds.</FormDescription><FormMessage /></FormItem>)} />
-                                                        <FormField control={form.control} name={`config.actions.${index}.params.tagsTemplate`} render={({ field, fieldState }) => (<FormItem><div className="flex items-center justify-between"><FormLabel>Tags</FormLabel><TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('tagsTemplate', index, token, 'action')}/></div><FormControl><Input placeholder="e.g., Alert,{{device.type}},Automation" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl><FormDescription className={descriptionStyles}>Enter tags separated by commas.</FormDescription><FormMessage /></FormItem>)} />
-                                                    </>
-                                                )}
-                                                {actionType === 'sendHttpRequest' && (
+                                                 <p className="text-xs text-muted-foreground"> {actionType === 'createBookmark' && "Creates a bookmark on related Piko cameras."} {actionType === 'createEvent' && "Creates an event in the target Piko system."} {actionType === 'sendHttpRequest' && "Sends an HTTP request."} </p>
+                                                {actionType === 'createEvent' && ( <>
+                                                     {/* --- Restore sourceTemplate Field --- */}
+                                                     <FormField control={form.control} name={`config.actions.${index}.params.sourceTemplate`} render={({ field, fieldState }) => (
+                                                        <FormItem>
+                                                            <div className="flex items-center justify-between">
+                                                                <FormLabel>Source</FormLabel>
+                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('sourceTemplate', index, token, 'action')} />
+                                                            </div>
+                                                            <FormControl><Textarea placeholder="Fusion Bridge" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                     )} />
+                                                     {/* --- Restore captionTemplate Field --- */}
+                                                     <FormField control={form.control} name={`config.actions.${index}.params.captionTemplate`} render={({ field, fieldState }) => (
+                                                        <FormItem>
+                                                            <div className="flex items-center justify-between">
+                                                                <FormLabel>Caption</FormLabel>
+                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('captionTemplate', index, token, 'action')} />
+                                                            </div>
+                                                            <FormControl><Textarea placeholder="Device: {{device.name}} // Event: {{event.data.state}} at {{event.time}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                     )} />
+                                                     {/* --- Restore descriptionTemplate Field --- */}
+                                                     <FormField control={form.control} name={`config.actions.${index}.params.descriptionTemplate`} render={({ field, fieldState }) => (
+                                                        <FormItem>
+                                                            <div className="flex items-center justify-between">
+                                                                <FormLabel>Description</FormLabel>
+                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('descriptionTemplate', index, token, 'action')} />
+                                                            </div>
+                                                            <FormControl><Textarea placeholder="Device: {{event.deviceId}} // Type: {{event.event}} // State: {{event.data.state}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                     )} />
+                                                </> )}
+                                                {actionType === 'createBookmark' && ( <>
+                                                     {/* --- Restore Bookmark Fields --- */}
+                                                    <FormField control={form.control} name={`config.actions.${index}.params.nameTemplate`} render={({ field, fieldState }) => (
+                                                        <FormItem>
+                                                            <div className="flex items-center justify-between">
+                                                                <FormLabel>Name</FormLabel>
+                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('nameTemplate', index, token, 'action')}/>
+                                                            </div>
+                                                            <FormControl><Input placeholder="e.g., Alert: {{device.name}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )} />
+                                                    <FormField control={form.control} name={`config.actions.${index}.params.descriptionTemplate`} render={({ field, fieldState }) => (
+                                                        <FormItem>
+                                                            <div className="flex items-center justify-between">
+                                                                <FormLabel>Description</FormLabel>
+                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('descriptionTemplate', index, token, 'action')}/>
+                                                            </div>
+                                                            <FormControl><Textarea placeholder="e.g., Device: {{device.name}} triggered event {{event.event}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )} />
+                                                    <FormField control={form.control} name={`config.actions.${index}.params.durationMsTemplate`} render={({ field, fieldState }) => (
+                                                        <FormItem>
+                                                             <div className="flex items-center justify-between">
+                                                                <FormLabel>Duration (milliseconds)</FormLabel>
+                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('durationMsTemplate', index, token, 'action')}/>
+                                                            </div>
+                                                            <FormControl><Input placeholder="e.g., 5000" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                            <FormDescription className={descriptionStyles}>Duration in milliseconds.</FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )} />
+                                                    <FormField control={form.control} name={`config.actions.${index}.params.tagsTemplate`} render={({ field, fieldState }) => (
+                                                        <FormItem>
+                                                            <div className="flex items-center justify-between">
+                                                                <FormLabel>Tags</FormLabel>
+                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('tagsTemplate', index, token, 'action')}/>
+                                                            </div>
+                                                            <FormControl><Input placeholder="e.g., Alert,{{device.type}},Automation" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                            <FormDescription className={descriptionStyles}>Enter tags separated by commas.</FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )} />
+                                                </> )}
+                                                {actionType === 'sendHttpRequest' && ( 
                                                     <SendHttpRequestActionFields 
                                                         actionIndex={index} 
-                                                        handleInsertToken={(
-                                                            fieldName: InsertableFieldNames,
-                                                            actIndex: number,
-                                                            token: string, 
-                                                            headerIndex?: number
-                                                        ) => {
-                                                            handleInsertToken(fieldName, index, token, 'action', headerIndex);
-                                                        }} 
-                                                    />
+                                                        handleInsertToken={(fieldName, actIndex, token, headerIndex) => {
+                                                            handleInsertToken(fieldName, actIndex, token, 'action', headerIndex);
+                                                        }}
+                                                    /> 
                                                 )}
-                                                {!['createEvent', 'createBookmark', 'sendHttpRequest'].includes(actionType || '') && (
-                                                    <p className="text-sm text-muted-foreground">Select an action type.</p>
-                                                )}
+                                                {!['createEvent', 'createBookmark', 'sendHttpRequest'].includes(actionType || '') && ( <p className="text-sm text-muted-foreground">Select an action type.</p> )}
                                             </div>
                                         </CardContent>
                                     </Card>
                                 )
                             })}
-                        </div>
-                        <Button 
-                            type="button" 
-                            variant="outline" 
-                            size="sm" 
-                            className="mt-4" 
-                            onClick={() => appendAction(defaultAction)} 
-                            disabled={isLoading}
-                        >
-                            <Plus className="mr-2 h-4 w-4" /> Add Action
-                        </Button>
-                    </div>
+                            <Button 
+                                type="button" 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => {
+                                     // --- Add Console Log Here --- 
+                                    console.log('Appending default action:', defaultAction);
+                                    appendAction(defaultAction);
+                                }}
+                                disabled={isLoading}
+                            >
+                                <Plus className="mr-2 h-4 w-4" /> Add Action
+                            </Button>
+                        </CardContent>
+                    </Card>
+                     
 
-                    <div className="flex justify-end space-x-2 mt-8">
+                     {/* Submit Button */}
+                     <div className="flex justify-end space-x-2 mt-8">
                          <Button type="submit" disabled={isLoading || !form.formState.isDirty || !form.formState.isValid}>
                              {isLoading ? 'Saving...' : (initialData.id === 'new' ? 'Create Automation' : 'Save Changes')}
                          </Button>
-                    </div>
+                     </div>
                 </form>
             </Form>
         </FormProvider>

@@ -2,7 +2,9 @@ import { db } from '@/data/db';
 import { events, devices, connectors } from '@/data/db/schema';
 import { desc, asc, count, eq, sql, and, gte, lte, or, inArray, type SQL, isNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
-import { EventCategory } from '@/lib/mappings/definitions';
+import { EventCategory, EventType, EventSubtype } from '@/lib/mappings/definitions';
+import { getDeviceTypeInfo } from '@/lib/mappings/identification';
+import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
 
 // Maximum number of events to keep
 // TODO: Consider basing cleanup on time window instead of fixed count if rules need longer history
@@ -17,22 +19,37 @@ export interface FindEventsFilter {
     standardizedDeviceTypes?: string[]; 
     startTime: Date;
     endTime: Date;
+    specificDeviceIds?: string[]; // The external device IDs
 }
 
 /**
- * Checks if any events matching the specified criteria exist within a given time window.
- * Filters using standardized device type/subtype columns from the devices table.
+ * Finds events matching the specified criteria within a given time window.
+ * Optionally filters by specific device external IDs.
  *
- * @param filter The filter criteria including time window, event type, device types, etc.
- * @returns Promise<boolean> - True if at least one matching event exists, false otherwise.
+ * @param filter The filter criteria including time window, event type, device types, specific device IDs, etc.
+ * @returns Promise<StandardizedEvent[]> - An array of matching events (or empty array).
  */
-export async function findEventsInWindow(filter: FindEventsFilter): Promise<boolean> {
+export async function findEventsInWindow(filter: FindEventsFilter): Promise<StandardizedEvent[]> {
     try {
+        // --- Convert to SECONDS for comparison with DB --- 
+        const startTimeSeconds = Math.floor(filter.startTime.getTime() / 1000);
+        const endTimeSeconds = Math.ceil(filter.endTime.getTime() / 1000);
+
         const baseConditions: SQL[] = [
-            gte(events.timestamp, filter.startTime),
-            lte(events.timestamp, filter.endTime),
+            // --- Compare using SECONDS --- 
+            // --- Direct numeric comparison using seconds --- 
+            sql`${events.timestamp} >= ${startTimeSeconds}`,
+            sql`${events.timestamp} <= ${endTimeSeconds}`,
         ];
-        if (filter.deviceId) baseConditions.push(eq(events.deviceId, filter.deviceId));
+        
+        // --- Filter by specificDeviceIds if provided ---
+        if (filter.specificDeviceIds && filter.specificDeviceIds.length > 0) {
+            baseConditions.push(inArray(events.deviceId, filter.specificDeviceIds));
+        }
+
+        // --- Simplified event type filters (apply only if specificDeviceIds wasn't used or for further filtering) ---
+        // Note: The primary filtering logic now relies on the caller evaluating the eventFilter rule
+        // These filters are kept for potential direct use or optimization if needed.
         if (filter.standardizedEventTypes && filter.standardizedEventTypes.length > 0) {
             baseConditions.push(inArray(events.standardizedEventType, filter.standardizedEventTypes));
         }
@@ -40,41 +57,50 @@ export async function findEventsInWindow(filter: FindEventsFilter): Promise<bool
             baseConditions.push(inArray(events.standardizedEventSubtype, filter.standardizedEventSubtypes));
         }
 
-        let result: { eventId: number }[] = [];
+        // We select all necessary fields to reconstruct StandardizedEvent objects
+        const selectFields = {
+            eventUuid: events.eventUuid,
+            connectorId: events.connectorId,
+            deviceId: events.deviceId,
+            timestamp: events.timestamp,
+            standardizedEventCategory: events.standardizedEventCategory,
+            standardizedEventType: events.standardizedEventType,
+            standardizedEventSubtype: events.standardizedEventSubtype,
+            standardizedPayload: events.standardizedPayload,
+            rawPayload: events.rawPayload,
+            // Include fields needed for deviceInfo reconstruction if joining
+            connectorCategory: connectors.category,
+            rawDeviceType: devices.type, // Raw type from devices table
+        };
+
+        // --- Let TS infer dbResults type --- 
+        let dbResults: any[] = []; // Initialize to empty array
 
         const deviceTypesToFilter = filter.standardizedDeviceTypes?.filter(t => t); 
         const hasDeviceTypeFilter = deviceTypesToFilter && deviceTypesToFilter.length > 0;
 
         if (hasDeviceTypeFilter) {
-            // Parse the filter strings into type and subtype pairs
+            // --- (Parsing logic for type/subtype filters remains similar) --- 
             const typeFilters = deviceTypesToFilter.map(fullType => {
                 const parts = fullType.split('.');
                 return { type: parts[0], subtype: parts[1] || null };
             });
-
-            // Extract unique types and non-null subtypes
             const types = [...new Set(typeFilters.map(f => f.type))];
             const subtypes = [...new Set(typeFilters.filter(f => f.subtype !== null).map(f => f.subtype as string))];
             const hasSubtypeFilter = subtypes.length > 0;
             const hasTypeOnlyFilter = typeFilters.some(f => f.subtype === null);
 
-            // Build conditions based on standardized type/subtype from the devices table
             const deviceFilterConditions: SQL[] = [];
             if (types.length > 0) {
                 deviceFilterConditions.push(inArray(devices.standardizedDeviceType, types));
-
                 let subtypeCondition: SQL | undefined = undefined;
-                if (hasSubtypeFilter && hasTypeOnlyFilter) {
-                    subtypeCondition = or(
-                        inArray(devices.standardizedDeviceSubtype, subtypes),
-                        isNull(devices.standardizedDeviceSubtype) 
-                    );
+                 if (hasSubtypeFilter && hasTypeOnlyFilter) {
+                    subtypeCondition = or(inArray(devices.standardizedDeviceSubtype, subtypes), isNull(devices.standardizedDeviceSubtype));
                 } else if (hasSubtypeFilter) {
                     subtypeCondition = inArray(devices.standardizedDeviceSubtype, subtypes);
                 } else if (hasTypeOnlyFilter) {
                     subtypeCondition = isNull(devices.standardizedDeviceSubtype);
                 }
-
                 if (subtypeCondition) {
                     deviceFilterConditions.push(subtypeCondition);
                 }
@@ -86,30 +112,79 @@ export async function findEventsInWindow(filter: FindEventsFilter): Promise<bool
             ];
 
             // Query WITH JOIN to filter by device properties
-            result = await db
-                .select({ eventId: events.id })
+            dbResults = await db
+                .select(selectFields) // selectFields includes connectorCategory
                 .from(events)
-                .innerJoin(devices, and( // Join needed to access device standardized types
+                // --- JOIN devices to filter by standardizedDeviceType/Subtype ---
+                .innerJoin(devices, and(
                     eq(events.connectorId, devices.connectorId),
                     eq(events.deviceId, devices.deviceId)
                 ))
+                // --- JOIN connectors needed for category info --- 
+                .innerJoin(connectors, eq(events.connectorId, connectors.id))
                 .where(and(...joinConditions))
-                .limit(1);
+                .orderBy(desc(events.timestamp)); // Order by timestamp might be useful
 
         } else {
-            // Query WITHOUT JOIN if no device type filter needed
-            result = await db
-                .select({ eventId: events.id })
+            // Query WITHOUT JOIN if no standardizedDeviceType filter needed
+            // Restore join with connectors and original selectFields
+            dbResults = await db 
+                .select({
+                    eventUuid: events.eventUuid,
+                    connectorId: events.connectorId,
+                    deviceId: events.deviceId,
+                    timestamp: events.timestamp,
+                    standardizedEventCategory: events.standardizedEventCategory,
+                    standardizedEventType: events.standardizedEventType,
+                    standardizedEventSubtype: events.standardizedEventSubtype,
+                    standardizedPayload: events.standardizedPayload,
+                    rawPayload: events.rawPayload,
+                    // Include fields needed for deviceInfo reconstruction
+                    connectorCategory: connectors.category,
+                    // We don't have rawDeviceType without joining 'devices', handle this in mapping
+                })
                 .from(events)
+                .innerJoin(connectors, eq(events.connectorId, connectors.id)) // Restore join
                 .where(and(...baseConditions))
-                .limit(1);
+                .orderBy(desc(events.timestamp)); 
         }
 
-        return result.length > 0;
+        // --- Map DB results back to StandardizedEvent[] --- 
+        // Adjust mapping based on whether connectorCategory/rawDeviceType are present
+        const finalEvents: StandardizedEvent[] = dbResults.map(row => {
+             const payload = typeof row.standardizedPayload === 'string' 
+                             ? JSON.parse(row.standardizedPayload) 
+                             : row.standardizedPayload;
+            const originalEvent = typeof row.rawPayload === 'string' 
+                                  ? JSON.parse(row.rawPayload) 
+                                  : row.rawPayload;
+            // rawDeviceType won't be present without the devices join
+            // We might need a fallback or adjust selectFields if deviceInfo is crucial here
+            const deviceInfo = ('connectorCategory' in row)
+                                ? getDeviceTypeInfo(row.connectorCategory as string, undefined /* No rawDeviceType available here */)
+                                : undefined; 
+            
+             return {
+                eventId: row.eventUuid,
+                connectorId: row.connectorId,
+                deviceId: row.deviceId,
+                timestamp: new Date(row.timestamp),
+                category: row.standardizedEventCategory as EventCategory,
+                type: row.standardizedEventType as EventType,
+                subtype: row.standardizedEventSubtype as EventSubtype | undefined,
+                payload: payload,
+                originalEvent: originalEvent,
+                deviceInfo: deviceInfo,
+            };
+        });
+
+        return finalEvents;
 
     } catch (err) {
-        console.error('Failed to find events in window:', err, { filter });
-        return false;
+        // Simplified catch block to log whatever was caught
+        console.error(`[findEventsInWindow] Error during query execution. Filter:`, JSON.stringify(filter));
+        console.error(`[findEventsInWindow] Caught error object:`, err);
+        return []; // Return empty array on error
     }
 }
 

@@ -4,18 +4,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { DataTable } from '@/components/ui/data-table'; // Correct path to the wrapper component
 import { type ColumnDef } from '@tanstack/react-table';
 import { Button } from '@/components/ui/button';
-import { MoreHorizontal } from 'lucide-react';
-import { 
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Pencil, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge'; // For enabled status
 import { toast } from 'sonner'; // For feedback
 import Link from 'next/link'; // Import Link
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 // Import Alert Dialog components
 import {
@@ -91,39 +84,36 @@ function AutomationRowActions({ automation, refreshData }: AutomationRowActionsP
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="h-8 w-8 p-0">
-            <span className="sr-only">Open menu</span>
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-          <DropdownMenuItem
-            onClick={() => navigator.clipboard.writeText(automation.id)}
-          >
-            Copy ID
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            {/* Link to the manage page */}
-            <Link href={`/settings/automations/${automation.id}`}>Edit</Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem 
-            className="text-red-600 focus:text-red-700 focus:bg-red-50"
-            onSelect={(e) => {
-                e.preventDefault(); // Prevent menu closing immediately
-                setShowDeleteDialog(true);
-              }}
-            disabled={isDeleting}
-          >
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className="flex justify-end space-x-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button asChild variant="ghost" size="icon">
+              <Link href={`/settings/automations/${automation.id}`}>
+                <Pencil className="h-4 w-4" />
+                <span className="sr-only">Edit automation</span>
+              </Link>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Edit automation</TooltipContent>
+        </Tooltip>
 
-      {/* Alert Dialog for Delete Confirmation */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              onClick={() => setShowDeleteDialog(true)}
+              disabled={isDeleting}
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="sr-only">Delete automation</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Delete automation</TooltipContent>
+        </Tooltip>
+      </div>
+
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -159,29 +149,22 @@ export const columns = (
   },
   {
     id: 'trigger', 
-    header: 'Trigger',
+    header: 'State Conditions',
     cell: ({ row }) => {
       const config = row.original.configJson;
-      const trigger = config?.primaryTrigger;
+      const hasStateConditions = config?.conditions && (config.conditions.all || config.conditions.any) && 
+                                 ((config.conditions.all && config.conditions.all.length > 0) || 
+                                  (config.conditions.any && config.conditions.any.length > 0));
       
-      // Display based on standardized types, not connector name
-      const entityTypes = trigger?.sourceEntityTypes?.length 
-                          ? trigger.sourceEntityTypes.join(', ') 
-                          : 'Any Device Type'; // Clarify default
-      const eventFilter = trigger?.eventTypeFilter 
-                          ? trigger.eventTypeFilter 
-                          : 'Any Event Type'; // Clarify default
-
-      // Combine for display
-      return <span>{`Device: ${entityTypes} | Event: ${eventFilter}`}</span>;
+      return <span>{hasStateConditions ? 'Complex Rules' : 'None'}</span>;
     },
   },
   {
     id: 'conditions',
-    header: 'Conditions',
+    header: 'Temporal Conditions',
     cell: ({ row }) => {
       const config = row.original.configJson;
-      const conditionCount = config?.secondaryConditions?.length ?? 0;
+      const conditionCount = config?.temporalConditions?.length ?? 0;
       return <span>{conditionCount > 0 ? `${conditionCount} Condition(s)` : 'None'}</span>;
     },
   },
@@ -296,6 +279,8 @@ export function AutomationTable() {
   }
 
   return (
-    <DataTable columns={tableColumns} data={automations} />
+    <TooltipProvider>
+       <DataTable columns={tableColumns} data={automations} />
+    </TooltipProvider>
   );
 } 
