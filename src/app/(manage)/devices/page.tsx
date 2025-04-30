@@ -520,7 +520,9 @@ export default function DevicesPage() {
           return (
             <Dialog>
               <DialogTrigger asChild><Button variant="ghost" size="icon"><EyeIcon className="h-4 w-4" /></Button></DialogTrigger>
-              <DialogContent className="sm:max-w-[600px]"><DeviceDetailDialogContent device={dialogProps} /></DialogContent>
+              <DialogContent className="sm:max-w-[600px]">
+                <DeviceDetailDialogContent device={dialogProps} />
+              </DialogContent>
             </Dialog>
           );
         },

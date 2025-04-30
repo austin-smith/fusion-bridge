@@ -6,7 +6,7 @@ import { getDisplayStateIcon } from '@/lib/mappings/presentation';
 import { getDeviceTypeIcon } from "@/lib/mappings/presentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   DialogHeader,
@@ -39,6 +39,11 @@ import {
 } from "@/components/ui/accordion";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 import type { PikoServer } from '@/types'; // Keep if pikoServerDetails is used
+import { Skeleton } from "@/components/ui/skeleton";
+import Image from 'next/image';
+import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
+import { useFusionStore } from '@/stores/store'; // Import the store
+import type { PikoConfig } from '@/services/drivers/piko'; // Import PikoConfig type
 
 // Define the shape of the expected prop, compatible with DisplayedDevice from page.tsx
 // It needs all fields used internally, *excluding* the original 'status' field.
@@ -107,6 +112,9 @@ interface DeviceOption {
 }
 
 export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps> = ({ device }) => {
+  // Get connectors from the store
+  const connectors = useFusionStore((state) => state.connectors);
+
   // No need for internal casting anymore
   // const displayDevice = device as ...;
 
@@ -125,6 +133,32 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   // Separate popover states for each type
   const [pikoCameraPopoverOpen, setPikoCameraPopoverOpen] = useState(false);
   const [yolinkDevicePopoverOpen, setYolinkDevicePopoverOpen] = useState(false);
+
+  // --- State for Thumbnail & Live Video --- 
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+  const [isThumbnailLoading, setIsThumbnailLoading] = useState(false);
+  const [thumbnailError, setThumbnailError] = useState<string | null>(null);
+  const [showLiveVideo, setShowLiveVideo] = useState(false);
+
+  // --- START: Logic to get Piko System ID and Connection Type ---
+  let pikoSystemIdForVideo: string | undefined = undefined;
+  let isPikoLocalConnection = false; // Flag for local connection
+  if (device.connectorCategory === 'piko') {
+      const connector = connectors.find(c => c.id === device.connectorId);
+      if (connector && connector.config) {
+          try {
+              const pikoConfig = connector.config as PikoConfig;
+              if (pikoConfig.type === 'cloud') {
+                  pikoSystemIdForVideo = pikoConfig.selectedSystem;
+              } else if (pikoConfig.type === 'local') {
+                  isPikoLocalConnection = true; // Set the flag
+              }
+          } catch (e) {
+              console.error("Error parsing connector config:", e);
+          }
+      }
+  }
+  // --- END: Logic ---
 
   // Debug logging for state changes
   useEffect(() => {
@@ -211,6 +245,54 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     fetchData();
 
   }, [device.deviceId, device.connectorCategory, device.deviceTypeInfo?.type]); // Updated dependency
+
+  // Fetch Thumbnail when dialog opens for Piko cameras
+  useEffect(() => {
+    if (device.connectorCategory === 'piko' && device.deviceTypeInfo?.type === 'Camera') {
+      setIsThumbnailLoading(true);
+      setThumbnailError(null);
+      setThumbnailUrl(null);
+      setShowLiveVideo(false); // Reset video player view on device change
+
+      const fetchThumbnail = async () => {
+        try {
+          // Construct URL for thumbnail API
+          const apiUrl = new URL('/api/piko/device-thumbnail', window.location.origin);
+          apiUrl.searchParams.append('connectorId', device.connectorId);
+          apiUrl.searchParams.append('deviceId', device.deviceId);
+          // ADDED: Request a smaller size
+          apiUrl.searchParams.append('size', '640x480'); 
+
+          console.log(`[DeviceDetail] Fetching thumbnail: ${apiUrl.toString()}`); // Log the URL
+
+          const response = await fetch(apiUrl.toString());
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({})); // Try to parse error
+            throw new Error(errorData.error || `Failed to fetch thumbnail (${response.status})`);
+          }
+          const blob = await response.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          setThumbnailUrl(objectUrl);
+        } catch (err: unknown) {
+          console.error("Error fetching device thumbnail:", err);
+          const message = err instanceof Error ? err.message : 'Failed to load thumbnail';
+          setThumbnailError(message);
+          toast.error(message);
+        } finally {
+          setIsThumbnailLoading(false);
+        }
+      };
+
+      fetchThumbnail();
+
+      // Cleanup object URL on component unmount or device change
+      return () => {
+        if (thumbnailUrl) {
+          URL.revokeObjectURL(thumbnailUrl);
+        }
+      };
+    }
+  }, [device.connectorId, device.deviceId, device.connectorCategory, device.deviceTypeInfo?.type, thumbnailUrl]); // Rerun if device changes or thumbnailUrl changes
 
   // --- Handle Saving Associations ---
   const handleSaveAssociations = async () => {
@@ -341,6 +423,85 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     ? getDeviceTypeIcon(device.deviceTypeInfo.type) 
     : HelpCircle; // Use HelpCircle if type is missing
 
+  // --- Handle clicking the thumbnail to show video --- 
+  const handleThumbnailClick = () => {
+    if (thumbnailUrl && !thumbnailError) {
+        setShowLiveVideo(true);
+    }
+  };
+
+  // --- Simple Media Thumbnail Component --- 
+  const MediaThumbnail: React.FC<{ 
+      src: string; 
+      isLoading: boolean; 
+      error: string | null; 
+      onPlayClick: () => void; 
+      isPlayDisabled?: boolean; // Added optional prop
+  }> = 
+    ({ src, isLoading, error, onPlayClick, isPlayDisabled = false }) => {
+    const [imageLoadError, setImageLoadError] = useState(false);
+
+    const handleImageError = () => setImageLoadError(true);
+    const handleImageLoad = () => setImageLoadError(false); // Reset error on successful load
+
+    useEffect(() => {
+      // Reset image error state when src changes
+      setImageLoadError(false);
+    }, [src]);
+
+    return (
+      <div className="relative w-full aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center group">
+        {/* Loading Skeleton */}
+        {isLoading && (
+          <Skeleton className="absolute inset-0 animate-pulse" />
+        )}
+        {/* Error Message (API error or Image load error) */}
+        {!isLoading && (error || imageLoadError) && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-destructive text-xs p-2 text-center">
+            <AlertCircle className="h-6 w-6 mb-1" />
+            <span>{error || "Could not load image"}</span>
+          </div>
+        )}
+        {/* Image (only render if not loading and no API error) */}
+        {!isLoading && !error && src && (
+          <Image
+            src={src}
+            alt="Device Thumbnail"
+            fill // Use fill layout
+            className={cn(
+              "absolute inset-0 w-full h-full object-contain transition-opacity duration-300",
+              imageLoadError ? 'opacity-0' : 'opacity-100'
+            )}
+            onError={handleImageError}
+            onLoad={handleImageLoad} // Reset error on successful load
+            unoptimized // Assuming thumbnails might not be static build images
+          />
+        )}
+        {/* Play Button Overlay (Show only when image is loaded successfully AND not disabled) */}
+        {!isLoading && !error && !imageLoadError && src && (
+          <button
+            onClick={!isPlayDisabled ? onPlayClick : undefined} // Conditionally attach handler
+            disabled={isPlayDisabled} // Disable the button
+            className={cn(
+              "absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity duration-200 z-10",
+              isPlayDisabled 
+                ? "opacity-50 cursor-not-allowed" // Style for disabled
+                : "opacity-0 group-hover:opacity-100 cursor-pointer" // Normal hover effect
+            )}
+            aria-label={isPlayDisabled ? "Live view unavailable for local connections" : "Play live video"}
+          >
+            <PlayIcon 
+              className={cn(
+                "h-12 w-12 text-white/80",
+                isPlayDisabled ? "fill-white/30" : "fill-white/60" // Dim icon when disabled
+              )} 
+            />
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       <DialogHeader className="pb-4 border-b">
@@ -385,7 +546,36 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         </DialogDescription>
       </DialogHeader>
       
-      <div className="py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+      <div className="py-4 space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+        {/* --- START: Piko Camera Media Section --- */}
+        {device.connectorCategory === 'piko' && device.deviceTypeInfo?.type === 'Camera' && (
+           <div className="mb-4">
+             <div className="flex items-center space-x-2 py-2">
+               <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+               <span className="text-xs font-medium text-muted-foreground">LIVE VIEW</span>
+               <div className="h-px grow bg-border"></div>
+             </div>
+             {/* Conditionally render Player or Thumbnail */}
+             {showLiveVideo ? (
+                <PikoVideoPlayer
+                  connectorId={device.connectorId}
+                  cameraId={device.deviceId}
+                  pikoSystemId={pikoSystemIdForVideo}
+                  className="w-full"
+                />
+             ) : (
+                <MediaThumbnail 
+                  src={thumbnailUrl || ''} 
+                  isLoading={isThumbnailLoading} 
+                  error={thumbnailError}
+                  onPlayClick={handleThumbnailClick}
+                  isPlayDisabled={isPikoLocalConnection} // Pass the flag
+                />
+             )}
+           </div>
+        )}
+        {/* --- END: Piko Camera Media Section --- */}
+
         {/* Device Information Section - Always Visible */}
         <div>
           <h3 className="mb-2 text-sm font-medium text-muted-foreground">Device Information</h3>

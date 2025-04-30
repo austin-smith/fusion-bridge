@@ -1,4 +1,7 @@
 import { Readable } from 'stream';
+import { db } from '@/data/db';
+import { connectors } from '@/data/db/schema';
+import { eq } from 'drizzle-orm';
 
 // --- Dynamically import https for optional TLS ignore --- 
 let httpsModule: typeof import('https') | undefined;
@@ -909,6 +912,63 @@ export async function getPikoBestShotImageBlob(
 }
 
 /**
+ * Fetches the thumbnail image for a specific device as a Blob.
+ * Supports both cloud and local connections.
+ *
+ * @param config The Piko connector configuration (determines endpoint type).
+ * @param accessToken The bearer token (cloud or local).
+ * @param deviceId The GUID of the device.
+ * @param timestampMs Optional epoch timestamp in milliseconds for a historical thumbnail.
+ * @param size Optional desired image size in "WidthxHeight" format (e.g., "320x240").
+ * @returns Promise resolving to the image Blob.
+ * @throws PikoApiError if the request fails or the response is not an image.
+ * @see {@link https://meta.nxvms.com/doc/developers/api-tool/rest-v3-devices-id-image-get}
+ */
+export async function getPikoDeviceThumbnail(
+  config: PikoConfig,
+  accessToken: string,
+  deviceId: string,
+  timestampMs?: number,
+  size?: string
+): Promise<Blob> {
+  if (!config || !accessToken || !deviceId) {
+    throw new PikoApiError('Missing required parameters (config, accessToken, deviceId) for getPikoDeviceThumbnail.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
+  }
+
+  const path = `/rest/v3/devices/${deviceId}/image`;
+  const queryParams: Record<string, string> = {};
+  if (timestampMs !== undefined) {
+    queryParams['timestampMs'] = String(timestampMs);
+  }
+  if (size) {
+    // Basic validation for WxH format could be added here if needed
+    queryParams['size'] = size;
+  }
+
+  const headers = { 'Accept': 'image/*' }; // Specify we want an image
+
+  console.log(`Requesting device thumbnail: ${path} with params: ${JSON.stringify(queryParams)} (${config.type})`);
+
+  const blob = await _makePikoRequest(
+    config, 
+    accessToken, 
+    path, 
+    'GET', 
+    queryParams, 
+    undefined, 
+    headers, 
+    'blob'
+  );
+  
+  if (!(blob instanceof Blob)) {
+     console.error(`Piko Device Thumbnail request did not return a Blob for device ${deviceId}.`, blob);
+     throw new PikoApiError('Expected image Blob response from Device Thumbnail API.', { rawError: blob });
+  }
+  console.log(`Successfully retrieved Piko Device Thumbnail blob (Type: ${blob.type}, Size: ${blob.size}) for device ${deviceId} (${config.type})`);
+  return blob;
+}
+
+/**
  * Interface for the /rest/v3/system/info response
  */
 export interface PikoSystemInfo {
@@ -1508,7 +1568,71 @@ async function _makePikoRequest(
 
 // --- End Consolidated Request Helper ---
 
-// --- Public API Functions (Refactored to use _makePikoRequest) ---
+// ===== START: getTokenAndConfig Function =====
+/**
+ * Fetches the Piko configuration and a valid access token for a given connector ID.
+ * 
+ * @param connectorId The ID of the Piko connector.
+ * @returns An object containing the validated PikoConfig and a PikoTokenResponse.
+ * @throws Throws an error if the connector is not found, invalid, misconfigured, or if authentication fails.
+ */
+export async function getTokenAndConfig(connectorId: string): Promise<{ config: PikoConfig; token: PikoTokenResponse; }> {
+    console.log(`[getTokenAndConfig] Fetching config for connector: ${connectorId}`); // Added log
+    const connectorData = await db.select()
+        .from(connectors)
+        .where(eq(connectors.id, connectorId))
+        .limit(1);
 
-// ... (The rest of the public functions like getSystems, testConnection, getPikoMediaStream, etc.) ...
-// ... These should now correctly call _makePikoRequest without linter errors ...
+    if (!connectorData.length) {
+        console.error(`[getTokenAndConfig] Connector not found: ${connectorId}`);
+        throw new Error(`Connector not found: ${connectorId}`);
+    }
+    if (connectorData[0].category !== 'piko') {
+         console.error(`[getTokenAndConfig] Connector ${connectorId} is not a Piko connector`);
+         throw new Error(`Connector ${connectorId} is not a Piko connector`);
+    }
+    if (!connectorData[0].cfg_enc) {
+        console.error(`[getTokenAndConfig] Configuration missing for Piko connector ${connectorId}`);
+        throw new Error(`Configuration missing for Piko connector ${connectorId}`);
+    }
+
+    let config: PikoConfig;
+    try {
+        config = JSON.parse(connectorData[0].cfg_enc);
+        // Basic validation of parsed config
+        if (!config.type || !config.username || !config.password) {
+            throw new Error("Parsed configuration is missing type, username, or password.");
+        }
+        if (config.type === 'cloud' && !config.selectedSystem) {
+            throw new Error("Cloud configuration missing selectedSystem.");
+        }
+        if (config.type === 'local' && (!config.host || !config.port)) {
+            throw new Error("Local configuration missing host or port.");
+        }
+        console.log(`[getTokenAndConfig] Successfully parsed config for ${connectorId} (Type: ${config.type})`); // Added log
+    } catch (e) {
+        const parseErrorMsg = e instanceof Error ? e.message : 'Unknown parsing error';
+        console.error(`[getTokenAndConfig] Failed to parse configuration for connector ${connectorId}: ${parseErrorMsg}`);
+        throw new Error(`Failed to process connector configuration: ${parseErrorMsg}`);
+    }
+
+    // Get token (using the getToken function from this same file now)
+    try {
+        console.log(`[getTokenAndConfig] Attempting to get token for ${connectorId}...`); // Added log
+        const token = await getToken(config); // Use getToken from piko.ts
+        console.log(`[getTokenAndConfig] Successfully obtained token for ${connectorId}.`); // Added log
+        return { config, token };
+    } catch (authError) {
+        console.error(`[getTokenAndConfig] Failed to get Piko token for connector ${connectorId}:`, authError); // Log full error
+        if (authError instanceof PikoApiError) { // Use PikoApiError from piko.ts
+            // Re-throw PikoApiError to propagate specific details
+            throw authError;
+        }
+        // Wrap other errors
+        const authErrorMsg = authError instanceof Error ? authError.message : 'Unknown reason';
+        throw new Error(`Authentication failed for Piko connector ${connectorId}: ${authErrorMsg}`);
+    }
+} 
+// ===== END: getTokenAndConfig Function =====
+
+// --- Public API Functions (Refactored to use _makePikoRequest) ---

@@ -430,7 +430,13 @@ async function executeActionWithRetry(
                     for (const header of httpParams.headers) {
                         if (header.keyTemplate && typeof header.keyTemplate === 'string' && typeof header.valueTemplate === 'string') {
                             const key = header.keyTemplate.trim();
-                            if (key) try { headers.set(key, header.valueTemplate); } catch (e) { console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Invalid header name: "${key}". Skipping.`, e); }
+                            if (key) {
+                                try { 
+                                    headers.set(key, header.valueTemplate); 
+                                } catch (e) { 
+                                    console.warn(`[Rule ${rule.id}][Action sendHttpRequest] Invalid header name: \"${key}\". Skipping.`, e); 
+                                }
+                            }
                         }
                     }
                 }
@@ -629,7 +635,7 @@ async function evaluateTemporalCondition(
 
         try {
             // --- Simplified Query: Only filter by area/location ID --- 
-            let scopedDeviceQuery = db.select({ 
+            const scopedDeviceQuery = db.select({ 
                                             // Select only external ID needed for event query filter
                                             externalId: devices.deviceId, 
                                             // Keep internal ID if needed for other logic later (optional)
@@ -700,7 +706,7 @@ async function evaluateTemporalCondition(
     for (const event of candidateEvents) {
         // Construct facts for *this specific candidate event*
         const eventPayload = event.payload as any;
-        let eventFacts: Record<string, any> = {
+        const eventFacts: Record<string, any> = {
              event: {
                  category: event.category ?? null,
                  type: event.type ?? null,
@@ -740,6 +746,8 @@ async function evaluateTemporalCondition(
             engine.addRule({ conditions: condition.eventFilter as any, event: { type: 'eventFilterMatch' } });
 
             const { events: filterMatchEvents } = await engine.run(minimalTemporalFacts);
+            // TEMP: Assume no match for now
+            // const filterMatchEvents: any[] = [];
             if (filterMatchEvents.length > 0) {
                 console.log(`[evaluateTemporalCondition] Event ${event.eventId} matched eventFilter.`);
                 matchFound = true;

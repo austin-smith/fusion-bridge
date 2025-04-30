@@ -333,7 +333,7 @@ export default function AutomationForm({
                                 render={({ field }) => (
                                     <FormItem>
                                         <RuleBuilder value={field.value} onChange={field.onChange} />
-                                        <FormDescription className={descriptionStyles}>Define conditions based on the triggering event's state.</FormDescription>
+                                        <FormDescription className={descriptionStyles}>Define conditions based on the triggering event&apos;s state.</FormDescription>
                                         <FormMessage />
                                     </FormItem>
                                 )}

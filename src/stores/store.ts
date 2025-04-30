@@ -6,6 +6,7 @@ import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, 
 import type { DeviceWithConnector, ConnectorWithConfig, Location, Area, ApiResponse } from '@/types/index';
 import { YoLinkConfig } from '@/services/drivers/yolink';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
+import type { DashboardEvent } from '@/app/api/events/dashboard/route';
 
 // Enable Immer plugin for Map/Set support
 enableMapSet();
@@ -103,6 +104,11 @@ interface FusionState {
   isLoadingAreas: boolean;
   errorAreas: string | null;
   
+  // --- NEW: Event Dashboard State ---
+  dashboardEvents: DashboardEvent[];
+  isLoadingDashboardEvents: boolean;
+  errorDashboardEvents: string | null;
+  
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
   addConnector: (connector: ConnectorWithConfig) => void;
@@ -158,6 +164,9 @@ interface FusionState {
 
   // NEW: Fetch all devices 
   fetchAllDevices: () => Promise<void>;
+
+  // NEW: Fetch dashboard events
+  fetchDashboardEvents: () => Promise<void>;
 }
 
 // Initial state for MQTT (default)
@@ -219,6 +228,11 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   areas: [],
   isLoadingAreas: false,
   errorAreas: null,
+  
+  // --- NEW: Event Dashboard Initial State ---
+  dashboardEvents: [],
+  isLoadingDashboardEvents: false,
+  errorDashboardEvents: null,
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -702,4 +716,36 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       set({ isLoadingAllDevices: false, errorAllDevices: message, allDevices: [] });
     }
   },
+
+  // --- NEW: Fetch Dashboard Events Action ---
+  fetchDashboardEvents: async () => {
+    set({ isLoadingDashboardEvents: true, errorDashboardEvents: null });
+    try {
+      const response = await fetch('/api/events/dashboard'); 
+      // Expect the direct DashboardEvent type from the API
+      const data: ApiResponse<DashboardEvent[]> = await response.json(); 
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch dashboard events');
+      }
+      
+      const eventsWithDates = (data.data || []).map(event => ({
+        ...event,
+        timestamp: new Date(event.timestamp) 
+      }));
+      
+      // Set the state directly with the fetched data
+      set({ dashboardEvents: eventsWithDates, isLoadingDashboardEvents: false });
+      console.log('[FusionStore] Dashboard events loaded:', eventsWithDates.length);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error("Error fetching dashboard events:", message);
+      set({ isLoadingDashboardEvents: false, errorDashboardEvents: message, dashboardEvents: [] });
+    }
+  },
+
+  // REMOVE addDashboardEvent action implementation
+
+  // REMOVE markEventAsSeen action implementation
+
 })); 

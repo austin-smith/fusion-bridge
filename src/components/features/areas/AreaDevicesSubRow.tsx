@@ -34,7 +34,7 @@ const DraggableDeviceItem: React.FC<DraggableDeviceItemProps> = ({ device, sourc
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
         id: device.id,
         data: {
-            type: 'device', 
+            type: 'device',
             sourceAreaId: sourceAreaId,
             deviceDetails: device
         }
@@ -53,56 +53,64 @@ const DraggableDeviceItem: React.FC<DraggableDeviceItemProps> = ({ device, sourc
         <div
             ref={setNodeRef}
             style={style}
-            {...listeners}
-            {...attributes}
             className={cn(
                 "relative p-2.5 border rounded-md bg-background text-xs flex flex-col gap-1.5 h-full justify-between transition-opacity duration-200 ease-in-out group cursor-grab",
                 isDragging ? 'opacity-50 z-50 shadow-lg' : 'hover:bg-muted/50'
             )}
+            {...listeners} 
+            {...attributes} 
             title={`Drag ${device.name}`}
         >
-            <div className="flex items-center justify-between gap-2 min-w-0">
-                <span className="font-medium truncate flex-grow" title={device.name}>{device.name}</span>
-                <Dialog>
-                    <DialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0">
-                            <Info className="h-3.5 w-3.5" />
-                            <span className="sr-only">View Details for {device.name}</span>
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-[600px] md:max-w-[750px] lg:max-w-[900px]">
-                        <DeviceDetailDialogContent device={{
-                           ...device,
-                           connectorName: device.connectorName ?? device.connectorCategory, 
-                           url: device.url ?? undefined,
-                           model: device.model ?? undefined,
-                           vendor: device.vendor ?? undefined,
-                           serverName: device.serverName ?? undefined,
-                           serverId: device.serverId ?? undefined
-                        }} />
-                    </DialogContent>
-                </Dialog>
-            </div>
-            <div className="flex items-center gap-1 pt-1">
-                <TooltipProvider delayDuration={100}>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                           <ConnectorIcon connectorCategory={device.connectorCategory} size={14} className="flex-shrink-0" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            <p>Connector: {device.connectorName ?? device.connectorCategory}</p>
-                        </TooltipContent>
-                    </Tooltip>
-                </TooltipProvider>
-                <Badge variant="secondary" className="inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 font-normal">
-                    <IconComponent className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-xs truncate">
-                        {typeText}
-                        {subtypeText && (
-                            <span className="text-muted-foreground ml-0.5">/{subtypeText}</span>
-                        )}
-                    </span>
-                </Badge>
+            <div className="flex flex-col gap-1.5 flex-grow">
+                <div 
+                    className="flex items-center justify-between gap-1 min-w-0" 
+                >
+                    <span className="font-medium truncate flex-grow pl-1" title={device.name}>{device.name}</span>
+                    <Dialog>
+                        <DialogTrigger asChild>
+                            <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-6 w-6 flex-shrink-0 -mr-1"
+                            >
+                                <Info className="h-3.5 w-3.5" />
+                                <span className="sr-only">View Details for {device.name}</span>
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[600px]">
+                            <DeviceDetailDialogContent device={{
+                               ...device,
+                               connectorName: device.connectorName ?? device.connectorCategory, 
+                               url: device.url ?? undefined,
+                               model: device.model ?? undefined,
+                               vendor: device.vendor ?? undefined,
+                               serverName: device.serverName ?? undefined,
+                               serverId: device.serverId ?? undefined
+                            }} />
+                        </DialogContent>
+                    </Dialog>
+                </div>
+                <div className="flex items-center gap-1 pt-1 pl-1">
+                    <TooltipProvider delayDuration={100}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                               <ConnectorIcon connectorCategory={device.connectorCategory} size={14} className="flex-shrink-0" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Connector: {device.connectorName ?? device.connectorCategory}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                    <Badge variant="secondary" className="inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 font-normal">
+                        <IconComponent className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-xs truncate">
+                            {typeText}
+                            {subtypeText && (
+                                <span className="text-muted-foreground ml-0.5">/{subtypeText}</span>
+                            )}
+                        </span>
+                    </Badge>
+                </div>
             </div>
         </div>
     );

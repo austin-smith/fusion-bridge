@@ -87,11 +87,8 @@ async function getFormData() {
       name: '', 
       enabled: true,
       configJson: { 
-          primaryTrigger: {
-             sourceEntityTypes: [],
-             eventTypeFilter: [],
-          },
-          secondaryConditions: [],
+          conditions: { all: [] }, // Default to empty all conditions
+          temporalConditions: [], // Optional array of temporal conditions
           actions: [],
       },
       createdAt: new Date(), // Use current date for new form

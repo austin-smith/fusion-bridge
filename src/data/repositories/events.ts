@@ -181,7 +181,6 @@ export async function findEventsInWindow(filter: FindEventsFilter): Promise<Stan
         return finalEvents;
 
     } catch (err) {
-        // Simplified catch block to log whatever was caught
         console.error(`[findEventsInWindow] Error during query execution. Filter:`, JSON.stringify(filter));
         console.error(`[findEventsInWindow] Caught error object:`, err);
         return []; // Return empty array on error

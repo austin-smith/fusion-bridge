@@ -89,11 +89,8 @@ async function getAutomationData(id: string): Promise<AutomationPageData | null>
             name: null,
             enabled: true,
             configJson: { // Default connector-agnostic config
-                primaryTrigger: {
-                    sourceEntityTypes: [],
-                    eventTypeFilter: [],
-                },
-                secondaryConditions: [],
+                conditions: { all: [] }, // Default to empty all conditions
+                temporalConditions: [], // Optional array of temporal conditions
                 actions: [],
             },
             createdAt: null,
@@ -166,8 +163,8 @@ export default async function AutomationSettingsPage({ params }: { params: Promi
     enabled: initialData.enabled ?? true, 
     // Provide a default config if null (for 'new' case)
     configJson: initialData.configJson ?? {
-        primaryTrigger: { sourceEntityTypes: [], eventTypeFilter: [] },
-        secondaryConditions: [],
+        conditions: { all: [] }, // Default to empty all conditions
+        temporalConditions: [], // Optional array of temporal conditions
         actions: [],
     },
     createdAt: initialData.createdAt ?? new Date(), 

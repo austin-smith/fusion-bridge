@@ -183,7 +183,7 @@ export function RuleBuilder({
 
             // Reset operator and value when fact changes
             const newOperator = newFactDefinition.operators[0];
-            let defaultValue: any = '';
+            const defaultValue: any = '';
             // --- REMOVED boolean check to satisfy linter --- 
             // if (newFactDefinition.dataType === 'boolean') defaultValue = false;
             // Add other default value logic if needed (e.g., for numbers)
@@ -197,7 +197,7 @@ export function RuleBuilder({
         };
 
         const handleValueChange = (newValue: any) => {
-             let finalValue = newValue;
+             const finalValue = newValue;
              // --- REMOVE Coercion logic for now --- 
              // if (factDefinition?.dataType === 'number') {
              //     const parsed = parseFloat(newValue);

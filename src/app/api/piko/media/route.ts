@@ -1,48 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/data/db';
-import { connectors } from '@/data/db/schema';
-import { eq } from 'drizzle-orm';
-import * as piko from '@/services/drivers/piko';
+import * as pikoDriver from '@/services/drivers/piko';
 import { mapPikoErrorResponse } from '@/lib/api-utils';
-
-// MODIFIED: Helper function now takes only connectorId and returns full config + token
-async function getPikoConfigAndToken(connectorId: string): Promise<{ config: piko.PikoConfig; accessToken: string }> {
-  const connector = await db.query.connectors.findFirst({
-    where: eq(connectors.id, connectorId),
-    columns: { id: true, category: true, cfg_enc: true }
-  });
-
-  if (!connector) {
-    throw { status: 404, message: `Connector not found: ${connectorId}` };
-  }
-  if (connector.category !== 'piko' || !connector.cfg_enc) {
-    throw { status: 400, message: `Connector ${connectorId} is not a valid Piko connector or is missing configuration` };
-  }
-
-  let config: piko.PikoConfig;
-  try {
-    config = JSON.parse(connector.cfg_enc) as piko.PikoConfig;
-    // Validate based on type
-    if (!config.type || !config.username || !config.password) {
-        throw new Error("Parsed configuration is missing type, username, or password.");
-    }
-    if (config.type === 'cloud' && !config.selectedSystem) {
-        throw new Error("Cloud configuration missing selectedSystem.");
-    }
-    if (config.type === 'local' && (!config.host || !config.port)) {
-        throw new Error("Local configuration missing host or port.");
-    }
-  } catch (e) {
-    const parseErrorMsg = e instanceof Error ? e.message : 'Unknown parsing error';
-    console.error(`Piko media request: Failed to parse configuration for connector ${connectorId}: ${parseErrorMsg}`);
-    throw { status: 500, message: 'Failed to process connector configuration (invalid JSON or structure)' };
-  }
-
-  // Use generic getToken
-  const tokenResponse = await piko.getToken(config);
-  
-  return { config, accessToken: tokenResponse.accessToken };
-}
 
 // --- Main GET Handler ---
 export async function GET(request: NextRequest) {
@@ -52,25 +10,30 @@ export async function GET(request: NextRequest) {
   const cameraId = searchParams.get('cameraId');
   const positionMsStr = searchParams.get('positionMs');
 
-  if (!connectorId || !cameraId || !positionMsStr) {
-    console.error("Piko media request: Missing required query parameters (connectorId, cameraId, positionMs).");
-    return NextResponse.json({ error: 'Missing required query parameters: connectorId, cameraId, positionMs' }, { status: 400 });
-  }
-  const positionMs = parseInt(positionMsStr, 10);
-  if (isNaN(positionMs)) {
-    console.error("Piko media request: Invalid positionMs parameter.");
-    return NextResponse.json({ error: 'Invalid positionMs parameter, must be a number.' }, { status: 400 });
+  if (!connectorId || !cameraId) {
+    console.error("Piko media request: Missing required query parameters (connectorId, cameraId).");
+    return NextResponse.json({ error: 'Missing required query parameters: connectorId, cameraId' }, { status: 400 });
   }
 
-  console.log(`Piko media request: Action=${action}, C:${connectorId}, Cam:${cameraId}, Pos:${positionMs}`);
+  let positionMs: number | null = null;
+  if (positionMsStr) {
+      positionMs = parseInt(positionMsStr, 10);
+      if (isNaN(positionMs)) {
+          console.error("Piko media request: Invalid positionMs parameter.");
+          return NextResponse.json({ error: 'Invalid positionMs parameter, must be a number.' }, { status: 400 });
+      }
+  }
+
+  console.log(`Piko media request: Action=${action}, C:${connectorId}, Cam:${cameraId}, Pos:${positionMs === null ? 'LIVE' : positionMs}`);
 
   try {
-    // --- 2. Get Config and Token --- 
-    const { config, accessToken } = await getPikoConfigAndToken(connectorId);
+    // --- Get Config and Token using Helper from piko.ts ---
+    const { config, token } = await pikoDriver.getTokenAndConfig(connectorId);
+    const accessToken = token.accessToken;
 
-    // --- 3. Fetch Device Details --- 
-    const deviceDetails = await piko.getSystemDeviceById(
-        config, 
+    // --- Fetch Device Details ---
+    const deviceDetails = await pikoDriver.getSystemDeviceById(
+        config,
         accessToken,
         cameraId
     );
@@ -79,33 +42,43 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: `Camera device not found: ${cameraId}` }, { status: 404 });
     }
 
-    // --- 4. Determine Transport Type (MODIFIED) --- 
-    let determinedMediaType: 'hls' | 'webm';
-    
+    // --- Determine Transport Type ---
+    let determinedMediaType: 'hls' | 'webm' | 'mp4';
     if (config.type === 'local') {
-        // --- Always use WebM for local connectors --- 
-        determinedMediaType = 'webm';
-        console.log(`Piko media request: Connector type is local. Forcing media type to WebM.`);
-    } else {
-        // --- Cloud connector: Check for HLS support --- 
-        let useHls = false;
-        if (deviceDetails.mediaStreams && Array.isArray(deviceDetails.mediaStreams)) {
-            const streamConfig = deviceDetails.mediaStreams[0]; 
-            if (streamConfig) {
-                useHls = streamConfig.transports?.includes('hls') ?? false;
-            }
-            console.log(`Piko media request: Cloud connector. HLS available: ${useHls}`); 
+        // Local Connector
+        // No live format needed here now as play button is disabled
+        // Defaulting recorded local to WebM
+        determinedMediaType = 'webm'; 
+        if (positionMs === null) {
+            console.log(`[API Media] Connector type is local, positionMs is null. (Live view disabled in UI, defaulting type to WebM for consistency)`);
         } else {
-            console.warn(`Piko media request: Cloud connector - mediaStreams data missing or invalid for camera ${cameraId}. Defaulting to WebM.`);
+             console.log(`[API Media] Connector type is local, positionMs is ${positionMs}. Forcing media type to WebM.`);
         }
-        determinedMediaType = useHls ? 'hls' : 'webm';
+    } else {
+        // Cloud Connector (HLS for live, HLS/WebM for recorded)
+        if (positionMs === null) {
+            determinedMediaType = 'hls';
+            console.log(`[API Media] Cloud connector, positionMs is null. Forcing media type to HLS.`);
+        } else {
+             // Cloud Recorded -> Check capabilities
+            let useHls = false;
+            if (deviceDetails.mediaStreams && Array.isArray(deviceDetails.mediaStreams)) {
+                const streamConfig = deviceDetails.mediaStreams[0];
+                if (streamConfig) {
+                    useHls = streamConfig.transports?.includes('hls') ?? false;
+                }
+                console.log(`[API Media] Cloud connector with positionMs=${positionMs}. HLS available: ${useHls}`);
+            } else {
+                console.warn(`[API Media] Cloud connector with positionMs=${positionMs} - mediaStreams data missing. Defaulting to WebM.`);
+            }
+            determinedMediaType = useHls ? 'hls' : 'webm';
+        }
     }
-    // --- End Transport Type Determination --- 
 
-    // --- 5. Execute Action --- 
+    // --- Execute Action --- 
     if (action === 'getInfo') {
         // --- Action: getInfo ---
-        console.log(`Piko media request [getInfo]: Determined type: ${determinedMediaType}`);
+        console.log(`[API Media/getInfo] Determined type: ${determinedMediaType}`);
         
         // Construct the URL for the getStream action
         const streamUrl = new URL(request.url);
@@ -118,90 +91,110 @@ export async function GET(request: NextRequest) {
 
     } else if (action === 'getStream') {
         // --- Action: getStream ---
-        console.log(`Piko media request [getStream]: Proceeding with type: ${determinedMediaType}`);
+        console.log(`[API Media/getStream] Proceeding with type: ${determinedMediaType}`);
         
         let pikoResponse: Response;
         let finalContentType: string;
 
         if (determinedMediaType === 'hls') {
-            // Get HLS Stream (only reachable if config.type was 'cloud')
-            console.log(`Piko media request [getStream/HLS]: Calling getPikoHlsStream`);
-            pikoResponse = await piko.getPikoHlsStream(config, accessToken, cameraId);
+            // Get HLS Stream
+            console.log(`[API Media/getStream/HLS] Calling getPikoHlsStream`);
+            pikoResponse = await pikoDriver.getPikoHlsStream(config, accessToken, cameraId);
             finalContentType = pikoResponse.headers.get('Content-Type') || 'application/vnd.apple.mpegurl';
         } else {
-            // Get WebM Stream (used for local OR cloud if HLS not supported/found)
-            console.log(`Piko media request [getStream/WebM]: Attempting Login Ticket auth.`);
-            const serverId = deviceDetails.serverId; 
-            if (!serverId && config.type === 'cloud') { // Only throw error if serverId is missing for cloud where it's expected
-                throw { status: 500, message: `Configuration error: Server ID missing for camera ${cameraId} on cloud connector. Cannot generate media ticket.` };
+            if (positionMs === null) {
+                // Safeguard: Should not happen for WebM based on logic above
+                console.error("[API Media/WebM] Inconsistency: Reached WebM case with null positionMs.");
+                throw { status: 500, message: "Internal logic error determining media type for WebM." };
             }
-            // For local, serverId might be null, attempt ticket creation anyway if needed, 
-            // but the driver might handle this appropriately or fail gracefully if tickets require serverId.
-            // OR: We could potentially bypass ticket auth for local WebM if direct token auth works for media.
-
+            console.log(`[API Media/getStream/WebM] Preparing WebM stream request (Recorded).`);
+            const serverId = deviceDetails.serverId;
+            console.log(`[API Media/WebM] Associated Server ID: ${serverId || 'Not Found'}`);
             try {
-                let streamToken: string | undefined = accessToken;
-                let streamServerId: string | undefined = undefined;
-                let streamTicket: string | undefined = undefined;
-
-                // Attempt ticket auth primarily for cloud, maybe for local if serverId exists?
-                if (serverId) { 
-                    try {
-                        streamTicket = await piko.createPikoLoginTicket(config, accessToken, serverId);
-                        streamToken = undefined; // Prefer ticket if available
-                        streamServerId = serverId; // Needed for ticket request
-                        console.log(`Piko media request [getStream/WebM]: Login ticket obtained. Requesting stream.`);
-                    } catch(ticketGenError) {
-                        console.warn(`Piko media request [getStream/WebM]: Failed to generate login ticket (ServerId: ${serverId}, Type: ${config.type}). Falling back to Bearer token. Error:`, ticketGenError);
-                        // Fallback to using Bearer token if ticket fails
-                        streamToken = accessToken;
-                        streamTicket = undefined;
-                        streamServerId = undefined;
-                    }
-                }
-                // If no serverId (likely local), just use Bearer token
-                else {
-                    console.log(`Piko media request [getStream/WebM]: No ServerID found (likely local). Using Bearer token directly.`);
-                    streamToken = accessToken;
-                }
-
-                pikoResponse = await piko.getPikoMediaStream(
-                    config, 
-                    streamToken, // Use Bearer token OR undefined if ticket was obtained
-                    cameraId,
-                    positionMs,
-                    'webm', 
-                    streamTicket, // Pass ticket if obtained
-                    streamServerId // Pass serverId only if using ticket
-                );
-                finalContentType = 'video/webm'; 
-            
-            } catch (streamError: unknown) { // Catch errors from either ticket or stream fetch
-                console.error(`Piko media request [getStream/WebM]: Failed to get stream:`, streamError);
-                const { status, message } = mapPikoErrorResponse(streamError); 
-                throw { status: status, message: `Failed to retrieve Piko WebM stream`, details: message };
-            }
+                 let streamToken: string | undefined = accessToken;
+                 let streamServerId: string | undefined = undefined;
+                 let streamTicket: string | undefined = undefined;
+                 if (serverId) {
+                     console.log(`[API Media/WebM] Attempting login ticket generation for server ${serverId}...`);
+                     try {
+                         streamTicket = await pikoDriver.createPikoLoginTicket(config, accessToken, serverId);
+                         streamToken = undefined;
+                         streamServerId = serverId;
+                         console.log(`[API Media/WebM] Login ticket obtained successfully.`);
+                     } catch(ticketGenError) {
+                         console.warn(`[API Media/WebM] Failed ticket gen (ServerId: ${serverId}). Fallback to Bearer. Error:`, ticketGenError);
+                         streamToken = accessToken;
+                         streamTicket = undefined;
+                         streamServerId = undefined;
+                     }
+                 } else {
+                     console.log(`[API Media/WebM] No ServerID. Using Bearer token.`);
+                     streamToken = accessToken;
+                 }
+                 console.log(`[API Media/WebM] Calling getPikoMediaStream using: ${streamTicket ? 'Ticket Auth' : 'Bearer Auth'}`);
+                 pikoResponse = await pikoDriver.getPikoMediaStream(
+                     config,
+                     streamToken,
+                     cameraId,
+                     positionMs,
+                     'webm',
+                     streamTicket,
+                     streamServerId
+                 );
+                 console.log(`[API Media/WebM] getPikoMediaStream call successful. Status: ${pikoResponse.status}`);
+                 finalContentType = 'video/webm';
+             } catch (streamError: unknown) {
+                 console.error(`[API Media/WebM] Error during stream initiation/fetch:`, streamError);
+                 const { status, message } = mapPikoErrorResponse(streamError);
+                 throw { status: status, message: `Failed to retrieve Piko WebM stream`, details: message };
+             }
         }
 
-        // --- Stream Piko Response Back --- 
+        // --- Stream Piko Response Back (Add Content-Type check specific to finalContentType) ---
         if (!pikoResponse.ok || !pikoResponse.body) {
-            console.error(`Piko media request [getStream]: Failed to get valid media stream from Piko API (Status: ${pikoResponse.status}). Body is null: ${!pikoResponse.body}`);
-            const errorMessage = 'Failed to get media stream from Piko';
-            let errorDetails = `Piko API returned status ${pikoResponse.status}`;
-            try { 
-                const errorText = await pikoResponse.text();
-                errorDetails = errorText.substring(0, 300);
-                try { const errorJson = JSON.parse(errorText); errorDetails = errorJson.errorString || errorJson.message || errorDetails; } catch {}
-            } catch {}
-            throw { status: pikoResponse.status || 502, message: errorMessage, details: errorDetails };
+             console.error(`[API Media/getStream] Failed Piko response (Status: ${pikoResponse.status}) for type ${determinedMediaType}`);
+             const errorMessage = `Failed to get media stream from Piko (Type: ${determinedMediaType})`;
+             let errorDetails = `Piko API returned status ${pikoResponse.status}`;
+             try { 
+                 const errorText = await pikoResponse.text();
+                 errorDetails = errorText.substring(0, 500);
+                 try { const errorJson = JSON.parse(errorText); errorDetails = errorJson.errorString || errorJson.message || errorDetails; } catch {}
+             } catch {} 
+             throw { status: pikoResponse.status || 502, message: errorMessage, details: errorDetails };
         }
+        
+        const responseContentType = pikoResponse.headers.get('Content-Type');
+        const expectedContentTypePrefix = finalContentType.startsWith('video/') 
+                                          ? 'video' 
+                                          : (finalContentType.startsWith('application/') ? 'application' : ''); // Handle HLS
+
+        // Check if received type starts with the expected prefix (video/ or application/ for HLS)
+        if (!expectedContentTypePrefix || !responseContentType || !responseContentType.startsWith(`${expectedContentTypePrefix}/`)) {
+             console.error(`[API Media/getStream] Piko API returned unexpected Content-Type: ${responseContentType}. Expected type like '${finalContentType}'.`);
+             let errorBody = 'Unknown content';
+             try {
+                 errorBody = (await pikoResponse.text()).substring(0, 500);
+             } catch { /* Ignore read error */ }
+             throw { 
+                 status: 502, 
+                 message: `Piko device returned unexpected content for ${determinedMediaType} stream.`,
+                 details: `Expected Content-Type like '${finalContentType}', received ${responseContentType}. Body: ${errorBody}` 
+             };
+        }
+
+        // Stream back the response
         const headers = new Headers();
-        headers.set('Content-Type', finalContentType); 
+        headers.set('Content-Type', responseContentType); // Use actual type from Piko
         const contentLength = pikoResponse.headers.get('Content-Length');
         if (contentLength) headers.set('Content-Length', contentLength);
         headers.set('Cache-Control', 'no-cache');
-        console.log(`Piko media request [getStream]: Streaming response with Content-Type: ${finalContentType}`);
-        return new NextResponse(pikoResponse.body, { status: pikoResponse.status, statusText: pikoResponse.statusText, headers: headers });
+        headers.set('Connection', 'keep-alive'); 
+        console.log(`[API Media/getStream] Streaming response with Content-Type: ${responseContentType}`);
+        return new NextResponse(pikoResponse.body, { 
+            status: pikoResponse.status, 
+            statusText: pikoResponse.statusText, 
+            headers: headers 
+        });
 
     } else {
         // --- Invalid Action ---
@@ -228,7 +221,7 @@ export async function GET(request: NextRequest) {
         const mappedError = mapPikoErrorResponse(error);
         status = mappedError.status;
         message = mappedError.message;
-        if (error instanceof piko.PikoApiError) {
+        if (error instanceof pikoDriver.PikoApiError) {
             details = error.errorString || error.message;
         }
     }
