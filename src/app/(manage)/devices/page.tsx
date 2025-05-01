@@ -596,24 +596,6 @@ export default function DevicesPage() {
     return Array.from(categorySet).sort();
   }, [connectors]);
 
-  // Add the association count check effect here, after tableData and syncDevices are defined
-  // Trigger sync on page load to ensure association counts are loaded
-  useEffect(() => {
-    if (!isLoadingInitial && !isSyncing && tableData.length > 0) {
-      // Only sync if we have devices but no association counts showing
-      const hasAssociations = tableData.some(device => 
-        device.associationCount !== undefined && 
-        device.associationCount !== null && 
-        device.associationCount > 0
-      );
-      
-      if (!hasAssociations) {
-        console.log('[DevicesPage] No association counts found, triggering sync...');
-        syncDevices();
-      }
-    }
-  }, [isLoadingInitial, isSyncing, tableData, syncDevices]);
-
   return (
     <div className="flex flex-col h-full p-4 md:p-6"> 
       <TooltipProvider>
