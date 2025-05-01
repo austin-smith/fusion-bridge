@@ -21,8 +21,8 @@ import { db } from '@/data/db';
 import { connectors } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import { Connector } from '@/types';
-// Restore PikoApiError import
-import { PikoConfig, PikoTokenResponse, getToken, PikoDeviceRaw, getSystemDevices, PikoJsonRpcSubscribeRequest, PikoApiError } from '@/services/drivers/piko';
+// Restore PikoApiError import - NO LONGER NEEDED
+import { PikoConfig, PikoTokenResponse, getToken, PikoDeviceRaw, getSystemDevices, PikoJsonRpcSubscribeRequest /* PikoApiError */ } from '@/services/drivers/piko';
 import { parsePikoEvent } from '@/lib/event-parsers/piko';
 import * as eventsRepository from '@/data/repositories/events';
 import { useFusionStore } from '@/stores/store';
@@ -384,16 +384,14 @@ export async function initPikoWebSocket(
                     client.on('connectFailed', (error) => {
                          if (!connectTimeoutId) return; 
                          
-                         console.error(`${logPrefix}[connectFailed] WebSocket connection failed:`, error.toString());
-                         console.error(`${logPrefix}[connectFailed] Full error object:`, JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
-                         console.error(`${logPrefix}[connectFailed] Raw error object (for console inspection):`, error);
-
-                         // --- Redirect Handling Logic --- 
                          const errorMessage = error.message || '';
                          const isRedirect = errorMessage.includes('non-101 status: 307');
                          const locationMatch = errorMessage.match(/\nlocation: (https?:\/\/[^\n]+)/);
 
                          if (isRedirect && locationMatch && locationMatch[1]) {
+                             // Log minimal warning for expected redirect
+                             console.warn(`${logPrefix}[connectFailed] Handling expected 307 redirect.`);
+                             // Continue with redirect logic...
                              const httpsRedirectUrl = locationMatch[1].trim();
                              console.warn(`${logPrefix}[connectFailed] Detected 307 redirect to: ${httpsRedirectUrl}`);
                              
@@ -425,16 +423,17 @@ export async function initPikoWebSocket(
                                          .then(resolve) // Pass resolve/reject down the chain
                                          .catch(reject);
                                  });
-                                 return; // Stop processing this failed attempt
-
+                                 return; 
                              } catch (urlParseError) {
                                  console.error(`${logPrefix}[connectFailed] Failed to parse or convert redirect URL '${httpsRedirectUrl}':`, urlParseError);
                                  // Fall through to normal error handling if URL parsing fails
                              }
                          }
-                         // --- End Redirect Handling --- 
                          
-                         // If not a handled redirect, treat as normal failure
+                         // If it wasn't the handled redirect, log as a real error (keep essential info)
+                         console.error(`${logPrefix}[connectFailed] WebSocket connection failed (Non-redirect error):`, error.toString());
+                         
+                         // Treat as normal failure
                          const normalFailState = connections.get(connectorId);
                          if(normalFailState && normalFailState.client === client) {
                              normalFailState.client = null;
@@ -871,66 +870,3 @@ export async function initializePikoConnections(): Promise<void> {
      }
 }
 
-// +++ Restore HELPER FUNCTION (Modified Purpose) +++
-/**
- * Probes the initial Piko Cloud WebSocket endpoint URL via fetch to detect a 307 redirect.
- * @param initialHttpsUrl The initial HTTPS URL (e.g., https://{systemId}.relay.vmsproxy.com/jsonrpc).
- * @param accessToken The bearer token for authorization.
- * @param connectorId For logging purposes.
- * @returns Promise resolving to the final HTTPS URL (either original or from Location header). 
- *          Does NOT guarantee the returned URL is connectable via fetch, only discovers the target.
- * @throws PikoApiError if the initial fetch fails or a redirect response is missing the Location header.
- */
-async function _resolveWebSocketUrlWithRedirects(initialHttpsUrl: string, accessToken: string, connectorId: string): Promise<string> {
-    const logPrefix = `[${connectorId}][_resolveWebSocketUrl]`;
-    console.log(`${logPrefix} Probing URL for redirects: ${initialHttpsUrl}`);
-
-    const requestOptions: RequestInit = {
-        method: 'GET',
-        headers: {
-            'Authorization': `Bearer ${accessToken}`,
-        },
-        redirect: 'manual', // We only care about the first response
-    };
-
-    try {
-        const response = await fetch(initialHttpsUrl, requestOptions);
-        console.log(`${logPrefix} Probe response status: ${response.status}`);
-        // Consume body immediately
-        try { await response.text(); } catch {} 
-
-        if (response.status === 307) { // Redirect detected
-            const locationHeader = response.headers.get('Location');
-            if (!locationHeader) {
-                throw new PikoApiError(`Redirect status ${response.status} received but no Location header found.`, { statusCode: response.status });
-            }
-
-            // Resolve the new URL against the original one
-            let nextUrl: URL;
-            try {
-                const originalUrlObj = new URL(initialHttpsUrl);
-                 nextUrl = new URL(locationHeader, originalUrlObj);
-             } catch (urlError) {
-                 console.error(`${logPrefix} Failed to parse or construct URL from Location header '${locationHeader}' relative to '${initialHttpsUrl}':`, urlError);
-                 throw new PikoApiError(`Invalid Location header received during redirect: ${locationHeader}`, { cause: urlError });
-             }
-            const resolvedRedirectUrl = nextUrl.toString();
-            console.warn(`${logPrefix} Redirect detected. Target URL: ${resolvedRedirectUrl}`);
-            return resolvedRedirectUrl; // Return the URL from the Location header
-        }
-
-        // If not 307, assume no redirect needed for WS connection
-        console.log(`${logPrefix} No redirect detected (Status: ${response.status}). Using original URL.`);
-        return initialHttpsUrl; // Return the original URL
-
-    } catch (error) {
-         console.error(`${logPrefix} Error during initial URL probe:`, error);
-         if (error instanceof Error) {
-             console.error(`${logPrefix} Raw probe error properties: name=${error.name}, message=${error.message}, code=${(error as any).code}, errno=${(error as any).errno}, syscall=${(error as any).syscall}`);
-         }
-         // Decide if PikoApiError needs to be imported/used here
-         if ((error as any)?.name === 'PikoApiError') throw error;
-         throw new Error(`Fetch probe error for ${initialHttpsUrl}: ${error instanceof Error ? error.message : String(error)}`); // Throw a generic error if needed
-    }
-}
-// +++ END Modified HELPER FUNCTION +++ 
