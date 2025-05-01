@@ -210,7 +210,7 @@ export const validDisplayStatesMap: ValidDisplayStatesMap = {
 };
 
 // --- CONNECTOR CATEGORIES ---
-export type ConnectorCategory = 'yolink' | 'piko' | 'netbox';
+export type ConnectorCategory = 'yolink' | 'piko' | 'netbox' | 'genea';
 
 // --- EVENT CATEGORIES ---
 // High-level grouping for events.

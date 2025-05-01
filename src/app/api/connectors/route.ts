@@ -62,6 +62,7 @@ const GeneaConfigSchema = z.object({
   webhookId: z.string().uuid(),
   apiKey: z.string().min(1, "API Key is required"), 
   webhookSecret: z.string().min(1, "Webhook Secret is required"), // Add webhookSecret as required
+  customerUuid: z.string().uuid().optional(), // Add optional customerUuid from test connection
 });
 
 // Combined schema for the request body for POST

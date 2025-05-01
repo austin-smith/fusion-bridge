@@ -235,6 +235,7 @@ export function AddConnectorModal() {
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [testedYoLinkHomeId, setTestedYoLinkHomeId] = useState<string | null>(null);
+  const [testedGeneaCustomerUuid, setTestedGeneaCustomerUuid] = useState<string | null>(null);
   
   // Wizard state for Piko
   const [pikoWizardStep, setPikoWizardStep] = useState<PikoWizardStep>('credentials');
@@ -288,6 +289,7 @@ export function AddConnectorModal() {
     });
     setTestResult(null);
     setTestedYoLinkHomeId(null);
+    setTestedGeneaCustomerUuid(null);
     setPikoWizardStep('credentials');
     setPikoSystems([]);
   }, [form]);
@@ -502,6 +504,7 @@ export function AddConnectorModal() {
       setIsTestingConnection(true);
       setTestResult(null);
       setTestedYoLinkHomeId(null);
+      setTestedGeneaCustomerUuid(null);
       // Reset name field for local piko before test
       const currentValues = form.getValues();
       if (currentValues.category === 'piko' && currentValues.type === 'local') {
@@ -614,14 +617,23 @@ export function AddConnectorModal() {
         if (data.data.connected) {
           toast.success('Connection test successful!');
 
+          // Reset results before potentially setting new ones
+          setTestedYoLinkHomeId(null); 
+          setTestedGeneaCustomerUuid(null);
+
           // If it's a YoLink connection, try to get the Home ID
           if (driver === 'yolink' && data.data.homeId) {
-            // Store it in the component state, not the form
             setTestedYoLinkHomeId(data.data.homeId);
-
             setTestResult({
               success: true,
               message: `Connection successful! YoLink Home ID: ${data.data.homeId.substring(0, 8)}...`,
+            });
+          } else if (driver === 'genea' && data.data.customerUuid) {
+            // If it's a Genea connection, store the customerUuid
+            setTestedGeneaCustomerUuid(data.data.customerUuid);
+            setTestResult({
+              success: true,
+              message: data.data.message || 'Connection successful!', // Use message from API
             });
           } else {
             setTestResult({
@@ -678,11 +690,52 @@ export function AddConnectorModal() {
     
     setLoading(true);
     setError(null);
-    setTestResult(null);
+    // Keep testResult visible until submission starts processing
+    // setTestResult(null); 
 
     try {
-      let config: Partial<ConnectorConfig> | undefined; 
+      let config: Partial<ConnectorConfig> & { customerUuid?: string } = {}; 
+      let fetchedCustomerUuidOnSubmit: string | null = null; // Store implicitly fetched UUID for add mode
 
+      // --- Implicit Test for Genea Add --- 
+      if (!isEditMode && values.category === 'genea') {
+        console.log("Attempting implicit Genea API key verification on submit...");
+        try {
+          const testResponse = await fetch('/api/test-connection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              driver: 'genea', 
+              config: { apiKey: values.apiKey } 
+            }),
+          });
+          const testData = await testResponse.json();
+
+          if (testData.success && testData.data.connected && testData.data.customerUuid) {
+            fetchedCustomerUuidOnSubmit = testData.data.customerUuid;
+            console.log(`Implicit verification successful. Customer UUID: ${fetchedCustomerUuidOnSubmit}`);
+            // Optionally clear any previous explicit test error message if submit test passes
+            setTestResult(null); 
+          } else {
+            const errorMsg = testData.data?.message || testData.error || 'Failed to verify API key and retrieve Customer UUID.';
+            console.error("Implicit Genea verification failed:", errorMsg);
+            toast.error(`Add Connector Failed: ${errorMsg}`);
+            setError(errorMsg);
+            setLoading(false);
+            return; // Abort submission
+          }
+        } catch (error) {
+          console.error("Error during implicit Genea verification:", error);
+          const errorMsg = error instanceof Error ? error.message : 'Network error during API key verification.';
+          toast.error(`Add Connector Failed: ${errorMsg}`);
+          setError(errorMsg);
+          setLoading(false);
+          return; // Abort submission
+        }
+      }
+      // --- End Implicit Test ---
+
+      // --- Construct Config --- 
       if (values.category === 'yolink') {
         config = {
           uaid: values.uaid || '',
@@ -716,34 +769,59 @@ export function AddConnectorModal() {
           webhookSecret: values.webhookSecret || undefined, 
         };
       } else if (values.category === 'genea') {
+        const existingConfig = editingConnector?.config as GeneaConfig & { customerUuid?: string };
         config = {
           webhookId: isEditMode ? undefined : generatedWebhookId ?? undefined,
           apiKey: values.apiKey || '',
-          webhookSecret: values.webhookSecret || undefined, // Include webhookSecret
+          webhookSecret: values.webhookSecret || undefined, 
+          // Use implicitly fetched UUID for add, fallback to explicit test/existing for edit
+          customerUuid: isEditMode 
+            ? (testedGeneaCustomerUuid || existingConfig?.customerUuid)
+            : (fetchedCustomerUuidOnSubmit || undefined), // Use the UUID fetched during *this* submit
         };
       }
+      // --- End Construct Config ---
 
-      const apiPayload: { name: string; category: string; config?: Partial<ConnectorConfig> } = {
+      const apiPayload: { name: string; category: string; config?: typeof config } = { // Use typeof config here
         name: values.name || `${formatConnectorCategory(values.category)} Connector`, 
         category: values.category,
+        // config: config || {} // Assign config below
       };
-
-      if ( (values.category !== 'netbox' && values.category !== 'genea') || // If not a webhook type
-           isEditMode || // Or if editing any type
-           (!isEditMode && generatedWebhookId) ) { // Or if adding a new webhook type and ID is generated
-        apiPayload.config = config || {}; 
+      // Only include config if it has properties (or for specific types)
+      if (Object.keys(config).length > 0) {
+          apiPayload.config = config;
       }
 
       let response: Response;
       let successMessage = '';
 
       if (isEditMode && editingConnector) {
+        // Construct the payload for PUT, ensuring customerUuid is handled correctly
+        const updatePayload: { name?: string; config?: typeof config } = {};
+        if (values.name !== editingConnector.name) {
+          updatePayload.name = values.name || `${formatConnectorCategory(values.category)} Connector`;
+        }
+        // Only include config if it has changed (relevant fields for the category)
+        // For Genea, check apiKey, webhookSecret, customerUuid
+        const currentGeneaConfig = editingConnector.config as GeneaConfig & { customerUuid?: string };
+        if (values.category === 'genea' && 
+            (values.apiKey !== currentGeneaConfig.apiKey || 
+             values.webhookSecret !== currentGeneaConfig.webhookSecret ||
+             // Check if customerUuid changed (either by re-testing or if it was missing before)
+             config.customerUuid !== currentGeneaConfig.customerUuid) 
+            ) {
+             updatePayload.config = config; 
+        } else if (values.category !== 'genea') { // Include config for non-Genea if necessary (add checks here)
+          // TODO: Add similar diff checks for other connector types if needed
+          updatePayload.config = config; // Defaulting to include for now
+        }
+
         response = await fetch(`/api/connectors/${editingConnector.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ name: apiPayload.name, config: apiPayload.config }), 
+          body: JSON.stringify(updatePayload), // Send only changed fields
         });
         successMessage = 'Connector updated successfully!';
       } else {
@@ -770,6 +848,7 @@ export function AddConnectorModal() {
         form.reset();
         setTestResult(null);
         setTestedYoLinkHomeId(null);
+        setTestedGeneaCustomerUuid(null); // Reset Genea customerUuid
         setPikoWizardStep('credentials');
         setPikoSystems([]);
         if (isEditMode) setEditingConnector(null);

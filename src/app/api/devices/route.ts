@@ -4,10 +4,12 @@ import { devices, connectors, pikoServers, cameraAssociations } from '@/data/db/
 import { eq, count } from 'drizzle-orm';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import * as pikoDriver from '@/services/drivers/piko';
+import * as geneaDriver from '@/services/drivers/genea';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import type { DeviceWithConnector, PikoServer } from '@/types';
 import { useFusionStore } from '@/stores/store';
 import type { TypedDeviceInfo } from '@/lib/mappings/definitions';
+import { DeviceType } from '@/lib/mappings/definitions';
 
 // Helper function to get association count
 async function getAssociationCount(
@@ -163,27 +165,42 @@ export async function POST() {
     // Sync devices for each connector
     for (const connector of allConnectors) {
       try {
+        let connectorConfig;
+        try { 
+          connectorConfig = JSON.parse(connector.cfg_enc); 
+        } catch (e) {
+          console.error(`[API Sync] Error parsing config for connector ${connector.name} (ID: ${connector.id}):`, e);
+          errors.push({
+            connectorName: connector.name,
+            error: 'Failed to parse connector configuration.'
+          });
+          continue; // Skip this connector
+        }
+
         if (connector.category === 'yolink') {
-          let yolinkConfig;
-          try { yolinkConfig = JSON.parse(connector.cfg_enc); } catch (e) {
-            console.error(`Error parsing config for connector ${connector.name}:`, e);
+          if (!connectorConfig?.uaid || !connectorConfig?.clientSecret) {
+            console.error(`[API Sync] Incomplete YoLink configuration for connector ${connector.name}. Needs uaid & clientSecret.`);
+            errors.push({ connectorName: connector.name, error: 'Incomplete YoLink configuration.' });
             continue;
           }
-          if (!yolinkConfig?.uaid || !yolinkConfig?.clientSecret) {
-            console.error(`Incomplete YoLink configuration for connector ${connector.name}. Needs uaid & clientSecret. Found keys: ${Object.keys(yolinkConfig || {}).join(', ')}`);
-            continue;
-          }
-          const count = await syncYoLinkDevices(connector.id, yolinkConfig);
+          const count = await syncYoLinkDevices(connector.id, connectorConfig);
           syncedCount += count;
         } else if (connector.category === 'piko') {
-          const pikoConfig = JSON.parse(connector.cfg_enc);
-          const count = await syncPikoDevices(connector.id, pikoConfig);
+          const count = await syncPikoDevices(connector.id, connectorConfig);
+          syncedCount += count;
+        } else if (connector.category === 'genea') {
+          if (!connectorConfig?.apiKey || !connectorConfig?.customerUuid) {
+            console.error(`[API Sync] Incomplete Genea configuration for connector ${connector.name}. Needs apiKey & customerUuid.`);
+            errors.push({ connectorName: connector.name, error: 'Incomplete Genea configuration (missing apiKey or customerUuid).' });
+            continue;
+          }
+          const count = await syncGeneaDevices(connector.id, connectorConfig);
           syncedCount += count;
         } else {
-          console.warn(`Sync not implemented for connector type: ${connector.category} (Name: ${connector.name})`);
+          console.warn(`[API Sync] Sync not implemented for connector category: ${connector.category} (Name: ${connector.name})`);
         }
       } catch (err: unknown) {
-        console.error(`Error syncing devices for connector ${connector.name}:`, err);
+        console.error(`[API Sync] Error syncing devices for connector ${connector.name}:`, err);
         errors.push({
           connectorName: connector.name,
           error: err instanceof Error ? err.message : 'Unknown error during sync'
@@ -256,7 +273,7 @@ export async function POST() {
           pikoServerDetails, 
           associationCount, // Include association count
           // Mapped type info object
-          deviceTypeInfo, // Add the mapped info object
+          deviceTypeInfo: deviceTypeInfo!, // Use non-null assertion as we provide a fallback
         } satisfies DeviceWithConnector;
       })
     );
@@ -276,7 +293,7 @@ export async function POST() {
       errors: errors.length > 0 ? errors : undefined
     });
   } catch (error: unknown) {
-    console.error('Error syncing devices:', error);
+    console.error('[API Sync] Error syncing devices:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to sync devices' },
       { status: 500 }
@@ -478,3 +495,78 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
     throw new Error(`Piko sync failed: ${errorMessage}`); 
   }
 } 
+
+// --- NEW: Sync Genea devices ---
+/**
+ * Syncs Genea devices (doors).
+ */
+async function syncGeneaDevices(connectorId: string, config: geneaDriver.GeneaConfig): Promise<number> {
+  let processedCount = 0;
+  try {
+    console.log(`Syncing Genea devices for connector ${connectorId}`);
+    // Config is already parsed and validated in the main POST handler
+    const geneaDoorsFromApi = await geneaDriver.getGeneaDoors(config);
+    console.log(`Found ${geneaDoorsFromApi.length} Genea doors from API.`);
+
+    if (geneaDoorsFromApi.length === 0) return 0;
+
+    console.log(`Upserting ${geneaDoorsFromApi.length} Genea doors...`);
+    for (const door of geneaDoorsFromApi) {
+      if (!door.uuid || !door.name) continue;
+
+      // Determine status based on 'is_online' if available, otherwise null
+      const status = typeof door.is_online === 'boolean' 
+        ? (door.is_online ? 'Online' : 'Offline') 
+        : null;
+
+      // Standardized type info for a Door
+      // Use the mapping function for consistency
+      const stdTypeInfo = getDeviceTypeInfo('genea', 'Door'); 
+
+      const deviceData = {
+        deviceId: door.uuid,
+        connectorId: connectorId,
+        name: door.name,
+        type: 'Door', // Raw type from Genea perspective is still 'Door'
+        standardizedDeviceType: stdTypeInfo.type, // Get type from mapping
+        standardizedDeviceSubtype: stdTypeInfo.subtype ?? null, // Get subtype (null for Door)
+        status: status,
+        model: door.reader_model ?? null, // Use null if reader_model is null/undefined
+        serverId: null, // Genea doesn't have the concept of a server like Piko
+        vendor: 'Genea', // Assuming Genea is the vendor
+        url: null, // No specific URL per door in the API sample
+        updatedAt: new Date()
+      };
+
+      try {
+        await db.insert(devices)
+          .values({ ...deviceData, createdAt: new Date() })
+          .onConflictDoUpdate({
+            target: [devices.connectorId, devices.deviceId], // Unique constraint
+            set: { // Fields to update on conflict
+              name: deviceData.name,
+              type: deviceData.type,
+              standardizedDeviceType: deviceData.standardizedDeviceType,
+              standardizedDeviceSubtype: deviceData.standardizedDeviceSubtype,
+              status: deviceData.status,
+              model: deviceData.model,
+              vendor: deviceData.vendor,
+              url: deviceData.url,
+              updatedAt: deviceData.updatedAt
+              // serverId is intentionally not updated as it's always null for Genea
+            }
+          });
+        processedCount++;
+      } catch (upsertError: unknown) {
+        console.error(`  [Error] Failed Genea door upsert for deviceId ${deviceData.deviceId}:`, upsertError);
+      }
+    }
+    console.log(`Genea Sync finished for ${connectorId}. Processed: ${processedCount}`);
+    return processedCount;
+  } catch (error: unknown) {
+    console.error(`Error syncing Genea devices for connector ${connectorId}:`, error);
+    // Re-throw error to be caught by the main POST handler and reported
+    throw error; 
+  }
+}
+// --- END NEW Genea Sync ---

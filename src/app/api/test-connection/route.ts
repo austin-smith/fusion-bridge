@@ -76,6 +76,7 @@ export async function POST(request: Request) {
     let success = false;
     let message: string | null = null;
     let errorMessage: string | null = null;
+    let additionalData: Record<string, any> | null = null; // To store extra data like customerUuid
     let validatedPikoConfig: PikoConfig | null = null; // To store validated Piko config
     
     // Dispatch to the appropriate driver
@@ -127,6 +128,10 @@ export async function POST(request: Request) {
         success = geneaResult.success;
         if (success) {
           message = geneaResult.message || 'Genea connection successful!';
+          // Store the customerUuid if available
+          if (geneaResult.customerUuid) {
+            additionalData = { customerUuid: geneaResult.customerUuid };
+          }
         } else {
           errorMessage = geneaResult.error || 'Genea connection failed.';
         }
@@ -143,6 +148,7 @@ export async function POST(request: Request) {
         data: {
           connected: true,
           message: message || 'Connection successful!', // Use specific message if available
+          ...additionalData, // Spread additional data like customerUuid here
         },
       });
     } else {

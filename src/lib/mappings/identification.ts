@@ -42,6 +42,10 @@ export const deviceIdentifierMap: Partial<Record<ConnectorCategory, Record<strin
   netbox: {
     'NetBoxReader': { type: DeviceType.Door },
   },
+  genea: { // Genea devices are identified as Doors
+    'Door': { type: DeviceType.Door },
+    // Add other potential Genea types here if discovered
+  },
 };
 
 // Define the default "Unmapped" type info explicitly
