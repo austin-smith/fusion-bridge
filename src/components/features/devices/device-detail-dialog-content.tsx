@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 // Remove the direct import of DeviceWithConnector if not needed elsewhere
-// import { DeviceWithConnector } from '@/types'; 
+// import { DeviceWithConnector } from '@/types';
 import type { DisplayState, TypedDeviceInfo } from '@/lib/mappings/definitions';
 import { getDisplayStateIcon } from '@/lib/mappings/presentation';
 import { getDeviceTypeIcon } from "@/lib/mappings/presentation";
@@ -111,6 +111,98 @@ interface DeviceOption {
   label: string; // name
 }
 
+// Create a new TimeAgoText component just for the text content
+// Component that ONLY updates the text, not the container
+const TimeAgoText = ({ refreshTime }: { refreshTime: Date }) => {
+  const [timeText, setTimeText] = useState<string>('');
+
+  useEffect(() => {
+    const updateText = () => {
+      const now = new Date();
+      const secondsAgo = Math.round((now.getTime() - refreshTime.getTime()) / 1000);
+
+      if (secondsAgo < 1) {
+        setTimeText('Just now');
+      } else if (secondsAgo < 60) {
+        setTimeText(`${secondsAgo}s ago`);
+      } else {
+        setTimeText(`${Math.floor(secondsAgo / 60)}m ago`);
+      }
+    };
+
+    updateText();
+    const interval = setInterval(updateText, 1000);
+    return () => clearInterval(interval);
+  }, [refreshTime]);
+
+  return <>{timeText}</>;
+};
+
+// Isolated Play Button component that won't re-render on parent changes
+const PlayButton = memo(({ onPlayClick, isDisabled }: { 
+  onPlayClick: () => void; 
+  isDisabled?: boolean;
+}) => {
+  // Use callback ref to attach event listeners directly to DOM, bypassing React's event system
+  const overlayRef = useRef<HTMLDivElement>(null);
+  
+  // Set up event listeners once when component mounts
+  useEffect(() => {
+    // This is the element that won't be affected by React re-renders
+    const overlay = overlayRef.current;
+    if (!overlay || isDisabled) return;
+    
+    // Instead of relying on React's synthetic events or CSS hover,
+    // directly manage the hover state with DOM event listeners
+    const handleMouseEnter = () => {
+      overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.3)';
+      const playIcon = overlay.querySelector('.play-icon') as HTMLElement;
+      if (playIcon) playIcon.style.opacity = '1';
+    };
+    
+    const handleMouseLeave = () => {
+      overlay.style.backgroundColor = 'rgba(0, 0, 0, 0)';
+      const playIcon = overlay.querySelector('.play-icon') as HTMLElement;
+      if (playIcon) playIcon.style.opacity = '0';
+    };
+    
+    // Add event listeners directly to the DOM element
+    overlay.addEventListener('mouseenter', handleMouseEnter);
+    overlay.addEventListener('mouseleave', handleMouseLeave);
+    
+    // Clean up
+    return () => {
+      overlay.removeEventListener('mouseenter', handleMouseEnter);
+      overlay.removeEventListener('mouseleave', handleMouseLeave);
+    };
+  }, [isDisabled]);
+  
+  return (
+    <div 
+      ref={overlayRef}
+      onClick={!isDisabled ? onPlayClick : undefined}
+      className={cn(
+        "absolute inset-0 z-30 transition-colors duration-300",
+        isDisabled ? "pointer-events-none bg-black/30 opacity-40" : "cursor-pointer"
+      )}
+      aria-label={isDisabled ? "Live view unavailable for local connections" : "Play live video"}
+    >
+      <div className="absolute inset-0 flex items-center justify-center">
+        <PlayIcon 
+          className={cn(
+            "play-icon h-12 w-12 transition-opacity duration-300",
+            isDisabled 
+              ? "text-white/60 fill-white/30" 
+              : "text-white/90 fill-white/60 opacity-0"
+          )} 
+        />
+      </div>
+    </div>
+  );
+});
+
+PlayButton.displayName = 'PlayButton';
+
 export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps> = ({ device }) => {
   // Get connectors from the store
   const connectors = useFusionStore((state) => state.connectors);
@@ -139,6 +231,12 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   const [isThumbnailLoading, setIsThumbnailLoading] = useState(false);
   const [thumbnailError, setThumbnailError] = useState<string | null>(null);
   const [showLiveVideo, setShowLiveVideo] = useState(false);
+  const [lastThumbnailRefreshTime, setLastThumbnailRefreshTime] = useState<Date | null>(null);
+  
+  // Refs for double-buffering/preloading strategy
+  const preloaderImgRef = useRef<HTMLImageElement | null>(null);
+  const preloadingUrlRef = useRef<string | null>(null);
+  const urlToRevokeRef = useRef<string | null>(null);
 
   // --- START: Logic to get Piko System ID and Connection Type ---
   let pikoSystemIdForVideo: string | undefined = undefined;
@@ -246,53 +344,173 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
 
   }, [device.deviceId, device.connectorCategory, device.deviceTypeInfo?.type]); // Updated dependency
 
-  // Fetch Thumbnail when dialog opens for Piko cameras
+  const pikoServerDetails = device.pikoServerDetails;
+
+  // Handlers for preloading image
+  const handlePreloadComplete = useCallback(() => {
+    if (!preloadingUrlRef.current) return; // Should not happen, but safeguard
+    console.log('[Preloader] onLoad success for:', preloadingUrlRef.current);
+
+    // 1. Revoke the *previously* displayed URL (now stored in urlToRevokeRef)
+    if (urlToRevokeRef.current) {
+      console.log('[Preloader] Revoking old URL:', urlToRevokeRef.current);
+      URL.revokeObjectURL(urlToRevokeRef.current);
+      urlToRevokeRef.current = null;
+    }
+
+    // 2. Update the visible image state with the preloaded URL
+    setThumbnailUrl(preloadingUrlRef.current);
+
+    // 3. Clear preloader state
+    preloadingUrlRef.current = null;
+    if (preloaderImgRef.current) {
+      preloaderImgRef.current.src = ''; // Clear src of hidden img
+    }
+    setIsThumbnailLoading(false); // Finished loading sequence
+    // Don't disrupt video playback
+  }, [preloadingUrlRef, urlToRevokeRef, preloaderImgRef, setThumbnailUrl, setIsThumbnailLoading]);
+
+  // Handler for errors on the hidden preloader image
+  const handlePreloadError = useCallback(() => {
+    if (!preloadingUrlRef.current) return;
+    console.error('[Preloader] onError for:', preloadingUrlRef.current);
+    setThumbnailError(`Failed to preload thumbnail.`);
+    
+    // 1. Revoke the URL that failed to preload
+    URL.revokeObjectURL(preloadingUrlRef.current);
+    preloadingUrlRef.current = null;
+    
+    // 2. Clear any pending revocation for the old URL (it remains displayed)
+    urlToRevokeRef.current = null; 
+    
+    // 3. Clear hidden image src
+    if (preloaderImgRef.current) {
+      preloaderImgRef.current.src = '';
+    }
+    setIsThumbnailLoading(false); // Finished loading sequence (with error)
+  }, [preloadingUrlRef, urlToRevokeRef, preloaderImgRef, setThumbnailError, setIsThumbnailLoading]);
+
+  // Attach event listeners to the hidden image element (TOP LEVEL HOOK)
   useEffect(() => {
-    if (device.connectorCategory === 'piko' && device.deviceTypeInfo?.type === 'Camera') {
-      setIsThumbnailLoading(true);
-      setThumbnailError(null);
-      setThumbnailUrl(null);
-      setShowLiveVideo(false); // Reset video player view on device change
-
-      const fetchThumbnail = async () => {
-        try {
-          // Construct URL for thumbnail API
-          const apiUrl = new URL('/api/piko/device-thumbnail', window.location.origin);
-          apiUrl.searchParams.append('connectorId', device.connectorId);
-          apiUrl.searchParams.append('deviceId', device.deviceId);
-          // ADDED: Request a smaller size
-          apiUrl.searchParams.append('size', '640x480'); 
-
-          console.log(`[DeviceDetail] Fetching thumbnail: ${apiUrl.toString()}`); // Log the URL
-
-          const response = await fetch(apiUrl.toString());
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({})); // Try to parse error
-            throw new Error(errorData.error || `Failed to fetch thumbnail (${response.status})`);
-          }
-          const blob = await response.blob();
-          const objectUrl = URL.createObjectURL(blob);
-          setThumbnailUrl(objectUrl);
-        } catch (err: unknown) {
-          console.error("Error fetching device thumbnail:", err);
-          const message = err instanceof Error ? err.message : 'Failed to load thumbnail';
-          setThumbnailError(message);
-          toast.error(message);
-        } finally {
-          setIsThumbnailLoading(false);
-        }
-      };
-
-      fetchThumbnail();
-
-      // Cleanup object URL on component unmount or device change
+    const img = preloaderImgRef.current;
+    if (img) {
+      console.log('[Preloader] Attaching listeners');
+      img.addEventListener('load', handlePreloadComplete);
+      img.addEventListener('error', handlePreloadError);
+      // Cleanup listeners on unmount or ref change
       return () => {
-        if (thumbnailUrl) {
-          URL.revokeObjectURL(thumbnailUrl);
-        }
+        console.log('[Preloader] Removing listeners');
+        img.removeEventListener('load', handlePreloadComplete);
+        img.removeEventListener('error', handlePreloadError);
       };
     }
-  }, [device.connectorId, device.deviceId, device.connectorCategory, device.deviceTypeInfo?.type, thumbnailUrl]); // Rerun if device changes or thumbnailUrl changes
+  }, [preloaderImgRef, handlePreloadComplete, handlePreloadError]); // Include handler functions
+
+  // Fetch Thumbnail, manage preloading and refresh interval
+  useEffect(() => {
+    if (device.connectorCategory !== 'piko' || device.deviceTypeInfo?.type !== 'Camera') {
+      // Not a Piko camera, clear any existing state if necessary
+      return;
+    }
+    
+    // Skip thumbnail fetching when live video is being shown
+    if (showLiveVideo) {
+      console.log('Thumbnail refreshing paused while live video is playing');
+      return;
+    }
+    
+    // Initial fetch
+    fetchThumbnail();
+    
+    // Set up auto-refresh interval
+    const intervalId = setInterval(fetchThumbnail, 10000);
+    return () => {
+      clearInterval(intervalId);
+      // Clean up any object URLs still in memory
+      if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
+      if (preloadingUrlRef.current) URL.revokeObjectURL(preloadingUrlRef.current);
+      if (urlToRevokeRef.current) URL.revokeObjectURL(urlToRevokeRef.current);
+    };
+  }, [device.connectorId, device.deviceId, device.connectorCategory, device.deviceTypeInfo?.type, showLiveVideo]); // Added showLiveVideo to dependencies
+
+  // Clean up the fetchThumbnail function to avoid duplicated checks
+  async function fetchThumbnail() {
+    if (device.connectorCategory !== 'piko' || device.deviceTypeInfo?.type !== 'Camera') {
+       // Not a Piko camera, clear any existing timer/state if necessary
+       setThumbnailUrl(null);
+       setLastThumbnailRefreshTime(null);
+       // Ensure refs are clear too
+       if (preloadingUrlRef.current) URL.revokeObjectURL(preloadingUrlRef.current);
+       if (urlToRevokeRef.current) URL.revokeObjectURL(urlToRevokeRef.current);
+       preloadingUrlRef.current = null;
+       urlToRevokeRef.current = null;
+       return;
+    }
+
+    // Skip fetching if video is being played
+    if (showLiveVideo) {
+      console.log('[Fetch] Skipping thumbnail refresh while video is playing');
+      return;
+    }
+
+    setIsThumbnailLoading(true);
+    setThumbnailError(null);
+
+    try {
+      const apiUrl = new URL('/api/piko/device-thumbnail', window.location.origin);
+      apiUrl.searchParams.append('connectorId', device.connectorId);
+      apiUrl.searchParams.append('deviceId', device.deviceId);
+      apiUrl.searchParams.append('size', '640x480');
+
+      const response = await fetch(apiUrl.toString());
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to fetch thumbnail (${response.status})`);
+      }
+      const blob = await response.blob();
+      const newObjectUrl = URL.createObjectURL(blob);
+      console.log('[Fetch] New blob URL created:', newObjectUrl);
+
+      // Store the currently displayed URL for later revocation
+      urlToRevokeRef.current = thumbnailUrl;
+      // Store the new URL being preloaded
+      preloadingUrlRef.current = newObjectUrl;
+
+      // Assign to hidden image src to start loading
+      if (preloaderImgRef.current) {
+        console.log('[Fetch] Assigning to preloader src:', newObjectUrl);
+        preloaderImgRef.current.src = newObjectUrl;
+      } else {
+        console.error('[Fetch] Preloader img ref not available! Cannot preload.');
+        // Fallback: Directly set the image, potentially causing flicker
+        URL.revokeObjectURL(newObjectUrl);
+        preloadingUrlRef.current = null;
+        urlToRevokeRef.current = null; 
+        setIsThumbnailLoading(false);
+        setThumbnailError("Internal error: Preloader not ready.");
+        // Or maybe try setting it directly?
+        // setThumbnailUrl(newObjectUrl);
+        // urlToRevokeRef.current = null; // No old one to revoke now
+      }
+
+      // State updated via preload handlers now
+      setLastThumbnailRefreshTime(new Date());
+      // Only switch to thumbnail view if not already showing video
+      // This prevents interrupting video playback
+      
+    } catch (err: unknown) {
+      console.error("Error fetching device thumbnail:", err);
+      const message = err instanceof Error ? err.message : 'Failed to load thumbnail';
+      setThumbnailError(message);
+      setIsThumbnailLoading(false);
+      // Clean up refs if fetch fails
+      if (preloadingUrlRef.current) URL.revokeObjectURL(preloadingUrlRef.current);
+      if (urlToRevokeRef.current) URL.revokeObjectURL(urlToRevokeRef.current); // Or maybe keep the old one?
+      preloadingUrlRef.current = null;
+      urlToRevokeRef.current = null;
+    }
+    // No finally block for setIsThumbnailLoading(false) - handled by preload events
+  }
 
   // --- Handle Saving Associations ---
   const handleSaveAssociations = async () => {
@@ -429,81 +647,125 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         setShowLiveVideo(true);
     }
   };
-
-  // --- Simple Media Thumbnail Component --- 
+  
+  // --- Simple Media Thumbnail Component ---
   const MediaThumbnail: React.FC<{ 
       src: string; 
       isLoading: boolean; 
       error: string | null; 
-      onPlayClick: () => void; 
-      isPlayDisabled?: boolean; // Added optional prop
+      onPlayClick?: () => void;
+      isPlayDisabled?: boolean;
   }> = 
     ({ src, isLoading, error, onPlayClick, isPlayDisabled = false }) => {
     const [imageLoadError, setImageLoadError] = useState(false);
-
-    const handleImageError = () => setImageLoadError(true);
-    const handleImageLoad = () => setImageLoadError(false); // Reset error on successful load
-
+    // Track both current and previous image for crossfade
+    const [previousSrc, setPreviousSrc] = useState<string | null>(null);
+    const [fadeIn, setFadeIn] = useState(true); // Controls when to fade in
+    const [showPrevious, setShowPrevious] = useState(false); // Controls when previous is visible
+    
+    // When src changes, setup crossfade
     useEffect(() => {
-      // Reset image error state when src changes
+      if (src && previousSrc !== src) {
+        // Keep previous image showing during fade
+        setShowPrevious(!!previousSrc);
+        // Start new image faded out
+        setFadeIn(false);
+        // Trigger fade-in after a very short delay (for next paint)
+        setTimeout(() => {
+          setFadeIn(true);
+          // After transition duration, remove previous image
+          setTimeout(() => {
+            setShowPrevious(false);
+          }, 500); // Should match duration-500
+        }, 10);
+        // Remember current as previous for next change
+        setPreviousSrc(src);
+      }
+    }, [src, previousSrc]);
+
+    const handleImageError = () => {
+       console.error('[MediaThumbnail] Image onError triggered for src:', src);
+       setImageLoadError(true);
+    };
+    
+    // Reset image error state when src changes
+    useEffect(() => {
       setImageLoadError(false);
     }, [src]);
 
     return (
-      <div className="relative w-full aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center group">
-        {/* Loading Skeleton */}
-        {isLoading && (
-          <Skeleton className="absolute inset-0 animate-pulse" />
-        )}
-        {/* Error Message (API error or Image load error) */}
-        {!isLoading && (error || imageLoadError) && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-destructive text-xs p-2 text-center">
-            <AlertCircle className="h-6 w-6 mb-1" />
-            <span>{error || "Could not load image"}</span>
-          </div>
-        )}
-        {/* Image (only render if not loading and no API error) */}
-        {!isLoading && !error && src && (
-          <Image
-            src={src}
-            alt="Device Thumbnail"
-            fill // Use fill layout
-            className={cn(
-              "absolute inset-0 w-full h-full object-contain transition-opacity duration-300",
-              imageLoadError ? 'opacity-0' : 'opacity-100'
-            )}
-            onError={handleImageError}
-            onLoad={handleImageLoad} // Reset error on successful load
-            unoptimized // Assuming thumbnails might not be static build images
-          />
-        )}
-        {/* Play Button Overlay (Show only when image is loaded successfully AND not disabled) */}
-        {!isLoading && !error && !imageLoadError && src && (
-          <button
-            onClick={!isPlayDisabled ? onPlayClick : undefined} // Conditionally attach handler
-            disabled={isPlayDisabled} // Disable the button
-            className={cn(
-              "absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity duration-200 z-10",
-              isPlayDisabled 
-                ? "opacity-50 cursor-not-allowed" // Style for disabled
-                : "opacity-0 group-hover:opacity-100 cursor-pointer" // Normal hover effect
-            )}
-            aria-label={isPlayDisabled ? "Live view unavailable for local connections" : "Play live video"}
-          >
-            <PlayIcon 
-              className={cn(
-                "h-12 w-12 text-white/80",
-                isPlayDisabled ? "fill-white/30" : "fill-white/60" // Dim icon when disabled
-              )} 
-            />
-          </button>
-        )}
+      <div className={cn(
+        "relative w-full aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center group",
+        onPlayClick && !isPlayDisabled ? "cursor-pointer" : ""
+      )}>
+         {/* Loading Skeleton */}
+         {isLoading && !src && (
+           <Skeleton className="absolute inset-0 animate-pulse" />
+         )}
+         {/* Error Message */}
+         {!isLoading && (error || imageLoadError) && (
+           <div className="absolute inset-0 flex flex-col items-center justify-center text-destructive text-xs p-2 text-center">
+             <AlertCircle className="h-6 w-6 mb-1" />
+             <span>{error || "Could not load image"}</span>
+           </div>
+         )}
+         {/* Previous Image (for crossfade) */}
+         {!isLoading && !error && showPrevious && previousSrc && previousSrc !== src && (
+           <Image 
+             src={previousSrc}
+             alt="Previous Thumbnail" 
+             fill 
+             className="absolute inset-0 w-full h-full object-contain z-10 pointer-events-none"
+             unoptimized
+             priority={false}
+           />
+         )} 
+         {/* Current Image - with fade in effect */}
+         {!isLoading && !error && src && (
+           <Image 
+             src={src} 
+             alt="Device Thumbnail" 
+             fill 
+             className={cn(
+               "absolute inset-0 w-full h-full object-contain transition-opacity duration-500 z-20 pointer-events-none",
+               fadeIn ? 'opacity-100' : 'opacity-0',
+               imageLoadError ? 'opacity-0' : undefined
+             )}
+             onError={handleImageError}
+             onLoad={() => setImageLoadError(false)}
+             unoptimized
+             priority // Load with priority
+           />
+         )} 
+         {/* Pure CSS Play Button Overlay */}
+         {!isLoading && !error && !imageLoadError && src && onPlayClick && (
+           <div 
+             className={cn(
+               "absolute inset-0 z-30 flex items-center justify-center transition-opacity duration-300",
+               isPlayDisabled 
+                 ? "bg-black/30 opacity-40 pointer-events-none" // Always visible if disabled
+                 : "bg-black/30 opacity-0 group-hover:opacity-100" // Show on hover if enabled
+             )}
+             onClick={onPlayClick}
+             aria-label={isPlayDisabled ? "Live view unavailable for local connections" : "Play live video"}
+           >
+             <PlayIcon 
+               className={cn(
+                 "h-12 w-12 transition-opacity duration-300",
+                 isPlayDisabled ? "text-white/60 fill-white/30" : "text-white/90 fill-white/60"
+               )}
+             />
+           </div>
+         )}
       </div>
     );
   };
 
   return (
     <>
+      {/* Add hidden image for preloading */} 
+      <img ref={preloaderImgRef} alt="" style={{ display: 'none' }} /> 
+
       <DialogHeader className="pb-4 border-b">
         <div className="flex items-center gap-2">
           <DeviceIcon className="h-5 w-5 text-muted-foreground" /> 
@@ -557,20 +819,53 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
              </div>
              {/* Conditionally render Player or Thumbnail */}
              {showLiveVideo ? (
-                <PikoVideoPlayer
-                  connectorId={device.connectorId}
-                  cameraId={device.deviceId}
-                  pikoSystemId={pikoSystemIdForVideo}
-                  className="w-full"
-                />
+                <div className="relative">
+                  <PikoVideoPlayer
+                    connectorId={device.connectorId}
+                    cameraId={device.deviceId}
+                    pikoSystemId={pikoSystemIdForVideo}
+                    className="w-full"
+                  />
+                  {/* Back to thumbnail button */}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="absolute top-2 left-2 gap-1 text-xs opacity-80 hover:opacity-100"
+                    onClick={() => setShowLiveVideo(false)}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="w-3.5 h-3.5"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M18 10a.75.75 0 01-.75.75H4.66l2.1 1.95a.75.75 0 11-1.02 1.1l-3.5-3.25a.75.75 0 010-1.1l3.5-3.25a.75.75 0 111.02 1.1l-2.1 1.95h12.59A.75.75 0 0118 10z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    Back to thumbnail
+                  </Button>
+                </div>
              ) : (
-                <MediaThumbnail 
-                  src={thumbnailUrl || ''} 
-                  isLoading={isThumbnailLoading} 
-                  error={thumbnailError}
-                  onPlayClick={handleThumbnailClick}
-                  isPlayDisabled={isPikoLocalConnection} // Pass the flag
-                />
+                <div className="relative">
+                  {/* MediaThumbnail without TimeAgo */}
+                  <MediaThumbnail 
+                    src={thumbnailUrl || ''} 
+                    isLoading={isThumbnailLoading && !thumbnailUrl}
+                    error={thumbnailError}
+                    onPlayClick={!isPikoLocalConnection ? handleThumbnailClick : undefined}
+                    isPlayDisabled={isPikoLocalConnection}
+                  />
+                  
+                  {/* TimeAgo badge rendered separately from MediaThumbnail */}
+                  {lastThumbnailRefreshTime && (
+                    <div className="absolute bottom-1 left-1 z-50 px-1.5 py-0.5 rounded bg-black/50 text-white text-[10px] font-medium min-w-[50px] text-center pointer-events-none">
+                      <TimeAgoText refreshTime={lastThumbnailRefreshTime} />
+                    </div>
+                  )}
+                </div>
              )}
            </div>
         )}

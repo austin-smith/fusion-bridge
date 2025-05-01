@@ -246,7 +246,7 @@ export default function DevicesPage() {
                 deviceTypeInfo: state.deviceInfo, 
                 displayState: state.displayState, 
                 lastSeen: state.lastSeen,
-                associationCount: 0, // Placeholder 
+                associationCount: fullDevice.associationCount ?? 0, // Use device association count
                 type: rawDeviceType, 
                 url: url,
                 model: model,
@@ -365,10 +365,19 @@ export default function DevicesPage() {
           const connectorName = row.original.connectorName;
           const connectorCategory = row.original.connectorCategory;
           return (
-            <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                <ConnectorIcon connectorCategory={connectorCategory} size={12} /> 
-                <span className="text-xs">{connectorName}</span>
-            </Badge>
+            <TooltipProvider delayDuration={100}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                    <ConnectorIcon connectorCategory={connectorCategory} size={12} /> 
+                    <span className="text-xs max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap">{connectorName}</span>
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {connectorName}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           );
         },
       },
@@ -377,7 +386,20 @@ export default function DevicesPage() {
         header: "Device Name",
         enableSorting: true,
         enableColumnFilter: true,
-        cell: ({ row }) => <div className="font-medium">{row.getValue('name')}</div>,
+        cell: ({ row }) => (
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="font-medium max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap">
+                  {row.getValue('name')}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                {row.getValue('name')}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ),
       },
       {
         id: 'state',
@@ -393,7 +415,7 @@ export default function DevicesPage() {
              <TooltipProvider delayDuration={100}>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap">
                           {state ? (
                             <>
                               <StateIcon className="h-4 w-4 text-muted-foreground shrink-0" /> 
@@ -405,6 +427,7 @@ export default function DevicesPage() {
                       </div>
                   </TooltipTrigger>
                   <TooltipContent>
+                      <p>State: {state || 'Unknown'}</p>
                       <p>Last seen: {lastSeen ? new Date(lastSeen).toLocaleString() : 'Never'}</p>
                   </TooltipContent>
                 </Tooltip>
@@ -428,13 +451,15 @@ export default function DevicesPage() {
         cell: ({ row }) => {
           const typeInfo = row.original.deviceTypeInfo; // Use the object from combined data
           const IconComponent = getDeviceTypeIcon(typeInfo.type);
+          const fullText = typeInfo.subtype ? `${typeInfo.type} / ${typeInfo.subtype}` : typeInfo.type;
+          
           return (
             <TooltipProvider delayDuration={100}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
                     <IconComponent className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-xs">{typeInfo.type}</span>
+                    <span className="text-xs max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap">{typeInfo.type}</span>
                   </Badge>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -445,17 +470,6 @@ export default function DevicesPage() {
             </TooltipProvider>
           );
         },
-      },
-      {
-        accessorKey: 'serverName',
-        header: "Server",
-        enableSorting: true,
-        enableColumnFilter: true,
-        cell: ({ row }) => (
-          <div className="text-muted-foreground">
-            {row.original.serverName || ''}
-          </div>
-        ),
       },
       {
         accessorKey: 'associationCount',
@@ -469,9 +483,18 @@ export default function DevicesPage() {
           return (
             <div>
               <Popover onOpenChange={(open) => { if (open) { fetchAssociatedDevices(device.deviceId, device.connectorCategory); } }}>
-                <PopoverTrigger asChild>
-                  <Button variant={count > 0 ? "secondary" : "outline"} size="sm" className="h-5 min-w-[1.5rem] px-1.5 text-xs font-medium">{count}</Button>
-                </PopoverTrigger>
+                <TooltipProvider delayDuration={100}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PopoverTrigger asChild>
+                        <Button variant={count > 0 ? "secondary" : "outline"} size="sm" className="h-5 min-w-[1.5rem] px-1.5 text-xs font-medium">{count}</Button>
+                      </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{device.connectorCategory === 'yolink' ? `${count} associated Piko cameras` : `${count} associated YoLink devices`}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <PopoverContent className="text-sm p-3 max-w-[250px] w-full" align="center">
                   {count > 0 ? (
                     <div className="space-y-2">
@@ -519,7 +542,18 @@ export default function DevicesPage() {
           };
           return (
             <Dialog>
-              <DialogTrigger asChild><Button variant="ghost" size="icon"><EyeIcon className="h-4 w-4" /></Button></DialogTrigger>
+              <TooltipProvider delayDuration={100}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DialogTrigger asChild>
+                      <Button variant="ghost" size="icon"><EyeIcon className="h-4 w-4" /></Button>
+                    </DialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>View device details</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <DialogContent className="sm:max-w-[600px]">
                 <DeviceDetailDialogContent device={dialogProps} />
               </DialogContent>
@@ -551,20 +585,6 @@ export default function DevicesPage() {
     enableMultiSort: true, 
   });
 
-  // Effect to control Server column visibility based on category filter
-  useEffect(() => {
-    const serverColumn = table.getColumn('serverName');
-    if (serverColumn) {
-      // Show server column for Piko and NetBox, hide for YoLink
-      // For 'all' category, show the column
-      const shouldShowServerColumn = 
-        categoryFilter === 'all' || 
-        ['piko', 'netbox'].includes(categoryFilter);
-      
-      serverColumn.toggleVisibility(shouldShowServerColumn);
-    }
-  }, [categoryFilter, table]);
-
   // Extract unique connector categories from connectors state
   const connectorCategories = useMemo(() => {
     const categorySet = new Set<string>();
@@ -575,6 +595,24 @@ export default function DevicesPage() {
     });
     return Array.from(categorySet).sort();
   }, [connectors]);
+
+  // Add the association count check effect here, after tableData and syncDevices are defined
+  // Trigger sync on page load to ensure association counts are loaded
+  useEffect(() => {
+    if (!isLoadingInitial && !isSyncing && tableData.length > 0) {
+      // Only sync if we have devices but no association counts showing
+      const hasAssociations = tableData.some(device => 
+        device.associationCount !== undefined && 
+        device.associationCount !== null && 
+        device.associationCount > 0
+      );
+      
+      if (!hasAssociations) {
+        console.log('[DevicesPage] No association counts found, triggering sync...');
+        syncDevices();
+      }
+    }
+  }, [isLoadingInitial, isSyncing, tableData, syncDevices]);
 
   return (
     <div className="flex flex-col h-full p-4 md:p-6"> 
@@ -698,7 +736,20 @@ export default function DevicesPage() {
                             onClick={header.column.getToggleSortingHandler()}
                           >
                             <div className="flex items-center">
-                              {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                              <TooltipProvider delayDuration={100}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="block max-w-[100px] overflow-hidden text-ellipsis whitespace-nowrap">
+                                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    {typeof header.column.columnDef.header === 'string' 
+                                      ? header.column.columnDef.header 
+                                      : header.column.id}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                               {header.column.getCanSort() ? <SortIcon isSorted={header.column.getIsSorted()} /> : null}
                             </div>
                           </div>
