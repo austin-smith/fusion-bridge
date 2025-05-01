@@ -21,6 +21,6 @@ export default defineConfig({
     // Point to the path from utils.ts
     url: dbPath,
   },
-  verbose: false, 
+  verbose: true, 
   strict: true,
 });

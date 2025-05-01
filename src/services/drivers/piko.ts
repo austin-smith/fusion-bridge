@@ -451,7 +451,7 @@ async function fetchPikoApiData(
   if (config.type === 'local' && config.ignoreTlsErrors && httpsModule && config.host && config.port) {
     console.warn(`[Piko Driver] Using https.request (TLS ignored) for: ${method} ${url.toString()}`);
     
-    const agent = new httpsModule.Agent({ rejectUnauthorized: false });
+    const agent = new httpsModule!.Agent({ rejectUnauthorized: false });
     const requestBody = (body && (method === 'POST' || method === 'PUT')) ? JSON.stringify(body) : '';
     
     const options: import('https').RequestOptions = {
@@ -575,68 +575,104 @@ async function fetchPikoApiData(
 
         // console.log(`>>> Making fetch request to: ${url.toString()}`);
         // Pass the potentially modified requestOptions directly
-        const response = await fetch(url.toString(), requestOptions);
+        let response: Response;
+        let redirectCount = 0;
+        const MAX_REDIRECTS = 5; // Sensible limit
 
-        console.log(`Piko API fetch response status (${config.type} ${path}):`, response.status);
+        while (redirectCount <= MAX_REDIRECTS) {
+            console.log(`[Piko Driver _makePikoRequest (${config.type})] Attempt ${redirectCount + 1} to ${method} ${url.toString()}`);
+            response = await fetch(url.toString(), requestOptions);
+            console.log(`[Piko Driver _makePikoRequest (${config.type})] fetch response status: ${response.status}`);
 
-        if (!response.ok) {
-          const errorInfo: { message: string, errorId?: string, errorString?: string, raw?: unknown } = {
-              message: `Failed ${method} request to ${path} (Status: ${response.status}) via fetch`
-          };
-          try {
-            const errorData = await response.json();
-            // Attempt to extract Piko-specific error details
-            errorInfo.errorId = errorData.errorId; // e.g., "missingParameter"
-            errorInfo.errorString = errorData.errorString; // e.g., "Missing required parameter: ..."
-            errorInfo.message = errorData.errorString || errorData.message || errorInfo.message; // Prefer specific errorString
-            errorInfo.raw = errorData;
-          } catch (parseError) {
-            console.warn(`Could not parse JSON error response from Piko API (${path}, fetch):`, parseError);
-            // Try reading as text for non-JSON errors
-            try {
-                const errorText = await response.text();
-                if (errorText && errorText.length < 200) {
-                    errorInfo.message += `: ${errorText.substring(0, 100)}`;
+            // --- Handle Redirects ONLY for Cloud ---
+            // Only handle 307 Temporary Redirect as specified by Piko Cloud behavior
+            if (config.type === 'cloud' && response.status === 307) {
+                const locationHeader = response.headers.get('Location');
+                if (!locationHeader) {
+                    throw new PikoApiError(`Redirect status ${response.status} received but no Location header found.`, { statusCode: response.status });
                 }
-                 errorInfo.raw = errorText;
-            } catch (textError) {
-                console.warn(`Could not read text error response either for ${path} (fetch):`, textError);
+
+                // Resolve the new URL against the current one to handle relative paths
+                const originalUrlObj = new URL(url.toString());
+                const nextUrl = new URL(locationHeader, originalUrlObj);
+                url.href = nextUrl.toString(); // Update URL for the next iteration
+
+                console.warn(`[Piko Driver _makePikoRequest (${config.type})] Redirecting (${response.status}) to: ${url.toString()}`);
+                redirectCount++;
+
+                // IMPORTANT: For subsequent requests in a redirect chain, we rely on the initial
+                // requestOptions which already contain the necessary headers (including Auth).
+                // Fetch with redirect: 'manual' does NOT automatically strip/modify headers for the *next* manual request.
+                // If the redirect logic required header modification *between* redirects, we'd adjust 'initialRequestOptions' here.
+                continue; // Go to the next iteration of the loop
             }
+
+            // If not a redirect or not a cloud request needing manual handling, break the loop
+            break;
+        } // End while loop
+
+        // Check if we exceeded max redirects
+        if (redirectCount > MAX_REDIRECTS) {
+            throw new PikoApiError(`Exceeded maximum redirect limit (${MAX_REDIRECTS}) for ${method} ${url.toString()}`, { statusCode: 508 }); // 508 Loop Detected might be appropriate
+        }
+
+        // --- Handle Non-OK Responses (fetch) --- 
+        // Now process the *final* response after handling redirects
+        if (!response!.ok) {
+          let errorBodyText: string | null = null;
+          let parsedErrorJson: any = null;
+          let specificErrorString: string | undefined = undefined;
+          let specificErrorId: string | undefined = undefined;
+          
+          try {
+            errorBodyText = await response!.text();
+          } catch (textError) { /* Ignore */ }
+
+          if (errorBodyText) {
+            try {
+              parsedErrorJson = JSON.parse(errorBodyText);
+              if (typeof parsedErrorJson.errorString === 'string' && parsedErrorJson.errorString) {
+                specificErrorString = parsedErrorJson.errorString;
+              }
+               if (typeof parsedErrorJson.errorId === 'string' && parsedErrorJson.errorId) {
+                 specificErrorId = parsedErrorJson.errorId;
+               }
+            } catch (jsonError) { /* Ignore */ }
           }
-          // Throw the custom error
-          throw new PikoApiError(errorInfo.message, {
-              statusCode: response.status,
-              errorId: errorInfo.errorId,
-              errorString: errorInfo.errorString,
-              rawError: errorInfo.raw
+
+          const baseMessage = `Failed ${method} ${path} (${response!.status}) via fetch`;
+          const errorMessage = specificErrorString || baseMessage;
+          const rawErrorData = parsedErrorJson || errorBodyText;
+
+          throw new PikoApiError(errorMessage, { 
+            statusCode: response!.status, 
+            errorString: specificErrorString, 
+            errorId: specificErrorId,
+            rawError: rawErrorData
           });
         }
 
-        if (response.status === 204) {
-          console.log(`Successfully executed Piko API request (${config.type} ${method} ${path}, fetch) - No Content`);
+        // --- Handle Successful Responses (fetch) ---
+        if (response!.status === 204) {
+          console.log(`[Piko Driver _makePikoRequest (${config.type})] Success (204 No Content)`);
           return null;
         }
 
-        const data = await response.json();
-        console.log(`Successfully executed Piko API request (${config.type} ${method} ${path}, fetch)`);
+        const data = await response!.json();
+        console.log(`[Piko Driver _makePikoRequest (${config.type})] Success (JSON)`);
         return data;
 
       } catch (error) {
-        // This catch block now primarily handles errors from fetch itself (network, DNS, etc.)
-        // or errors thrown by the !response.ok block above.
+        // Handle errors from fetch itself (network, DNS) or PikoApiErrors thrown above
         if (error instanceof PikoApiError) {
-           // Re-throw PikoApiError directly
-           console.error(`Error in fetchPikoApiData (${config.type} ${path}, fetch):`, error.message);
-           throw error;
+          console.error(`[Piko Driver _makePikoRequest (${config.type})] Piko API Error: ${error.message}`, { statusCode: error.statusCode, errorId: error.errorId, errorString: error.errorString, rawError: error.rawError });
+          throw error;
         } else if (error instanceof Error) {
-          console.error(`Fetch-related error in fetchPikoApiData (${config.type} ${path}):`, error.message);
-           // Wrap other errors (like fetch network errors) in PikoApiError for consistency?
-           // Or keep them distinct? Let's wrap them for now.
-           throw new PikoApiError(`Network or fetch error for ${path}: ${error.message}`, { cause: error });
+          console.error(`[Piko Driver _makePikoRequest (${config.type})] Fetch/Network error:`, error.message, error.cause ? `\nCause: ${JSON.stringify(error.cause)}` : '', error.stack);
+          throw new PikoApiError(`Network or fetch error for ${url.toString()}: ${error.message}`, { cause: error });
         } else {
-            // Unknown error type
-            console.error(`Unexpected non-Error type during Piko API fetch (${config.type} ${path}):`, error);
-            throw new PikoApiError(`Unexpected issue connecting to Piko ${config.type} (${path})`); 
+          console.error(`[Piko Driver _makePikoRequest (${config.type})] Unexpected non-Error type during fetch:`, error);
+          throw new PikoApiError(`Unexpected issue during fetch for ${url.toString()}`);
         }
       }
   }
@@ -1140,7 +1176,6 @@ async function _fetchPikoLocalToken(
  * @throws Error if authentication fails
  */
 async function _fetchPikoCloudToken(username: string, password: string, scope?: string): Promise<PikoTokenResponse> {
-  // ... (Implementation remains the same) ...
   console.log(`_fetchPikoToken called for username: ${username}, with scope: ${scope || 'general'}`);
   if (!username || !password) throw new PikoApiError('Username and password are required', { /*...*/ });
   const url = `${PIKO_CLOUD_URL}/cdb/oauth2/token`;
@@ -1324,7 +1359,7 @@ async function _makePikoRequest(
     }
     console.warn(`${logPrefix} Using https.request (TLS ignored) for: ${method} ${url.toString()}`);
     
-    const agent = new httpsModule.Agent({ rejectUnauthorized: false });
+    const agent = new httpsModule!.Agent({ rejectUnauthorized: false });
     
     // Prepare OutgoingHttpHeaders from headersToUse
     const outgoingHeaders: import('http').OutgoingHttpHeaders = {};
@@ -1470,25 +1505,72 @@ async function _makePikoRequest(
   // --- Default Case: Use fetch for Cloud or Local (TLS verified) --- 
   console.log(`${logPrefix} Using fetch for: ${method} ${url.toString()}`);
   try {
-    const requestOptions: RequestInit = {
+    let currentUrl = url.toString(); // URL can change due to redirects
+    let response: Response | null = null; // Initialize response to null
+    let redirectCount = 0;
+    const MAX_REDIRECTS = 5; // Sensible limit
+
+    const initialRequestOptions: RequestInit = {
       method: method,
-      headers: headersToUse,
+      headers: headersToUse, // These include the initial Authorization header
       body: requestBodyStr,
-      // No agent needed here, use default fetch TLS handling
+      // Set redirect: 'manual' ONLY for cloud connections where we need to re-apply auth
+      redirect: config.type === 'cloud' ? 'manual' : 'follow',
     };
 
-    const response = await fetch(url.toString(), requestOptions);
-    console.log(`${logPrefix} fetch response status: ${response.status}`);
+    while (redirectCount <= MAX_REDIRECTS) {
+        console.log(`${logPrefix} Attempt ${redirectCount + 1} to ${method} ${currentUrl}`);
+        // Assign response inside the loop
+        response = await fetch(currentUrl, initialRequestOptions);
+        console.log(`${logPrefix} fetch response status: ${response.status}`);
+
+        // --- Handle Redirects ONLY for Cloud ---
+        // Handle 307 Temporary Redirect as specified by Piko Cloud behavior
+        if (config.type === 'cloud' && response.status === 307) {
+            const locationHeader = response.headers.get('Location');
+            if (!locationHeader) {
+                throw new PikoApiError(`Redirect status ${response.status} received but no Location header found.`, { statusCode: response.status });
+            }
+
+            // Resolve the new URL against the current one to handle relative paths
+            const originalUrlObj = new URL(currentUrl);
+            const nextUrl = new URL(locationHeader, originalUrlObj);
+            currentUrl = nextUrl.toString(); // Update URL for the next iteration
+
+            console.warn(`${logPrefix} Redirecting (${response.status}) to: ${currentUrl}`);
+            redirectCount++;
+
+            // IMPORTANT: For subsequent requests in a redirect chain, we rely on the initial
+            // requestOptions which already contain the necessary headers (including Auth).
+            // Fetch with redirect: 'manual' does NOT automatically strip/modify headers for the *next* manual request.
+            // If the redirect logic required header modification *between* redirects, we'd adjust 'initialRequestOptions' here.
+            continue; // Go to the next iteration of the loop
+        }
+
+        // If not a redirect or not a cloud request needing manual handling, break the loop
+        break;
+    } // End while loop
+
+    // Check if we exceeded max redirects
+    if (redirectCount > MAX_REDIRECTS) {
+        throw new PikoApiError(`Exceeded maximum redirect limit (${MAX_REDIRECTS}) for ${method} ${url.toString()}`, { statusCode: 508 }); // 508 Loop Detected might be appropriate
+    }
+
+    // Check if response is somehow still null (shouldn't happen if loop runs once)
+    if (!response) {
+        throw new PikoApiError(`Request failed unexpectedly after redirect handling for ${method} ${url.toString()}`, { statusCode: 500 });
+    }
 
     // --- Handle Non-OK Responses (fetch) --- 
-    if (!response.ok) {
+    // Now process the *final* response after handling redirects
+    if (!response!.ok) {
       let errorBodyText: string | null = null;
       let parsedErrorJson: any = null;
       let specificErrorString: string | undefined = undefined;
       let specificErrorId: string | undefined = undefined;
       
       try {
-        errorBodyText = await response.text();
+        errorBodyText = await response!.text();
       } catch (textError) { /* Ignore */ }
 
       if (errorBodyText) {
@@ -1503,40 +1585,40 @@ async function _makePikoRequest(
         } catch (jsonError) { /* Ignore */ }
       }
 
-      const baseMessage = `Failed ${method} ${path} (${response.status}) via fetch`;
+      const baseMessage = `Failed ${method} ${path} (${response!.status}) via fetch`;
       const errorMessage = specificErrorString || baseMessage;
       const rawErrorData = parsedErrorJson || errorBodyText;
 
       throw new PikoApiError(errorMessage, { 
-        statusCode: response.status, 
+        statusCode: response!.status, 
         errorString: specificErrorString, 
         errorId: specificErrorId,
         rawError: rawErrorData
       });
     }
 
-    // --- Handle Successful Responses (fetch) --- 
+    // --- Handle Successful Responses (fetch) ---
     if (expectedResponseType === 'json') {
-      if (response.status === 204) {
+      if (response!.status === 204) {
         console.log(`${logPrefix} Success (204 No Content)`);
         return null;
       }
       try {
-        const data = await response.json();
+        const data = await response!.json();
         console.log(`${logPrefix} Success (JSON)`);
         return data;
       } catch (e) {
           console.error(`${logPrefix} Failed to parse successful JSON response:`, e);
           let bodyText = '';
-          try { bodyText = await response.text(); } catch {} 
-          throw new PikoApiError(`Failed to parse successful JSON response: ${e instanceof Error ? e.message : 'Unknown error'}`, { 
-              statusCode: response.status, 
-              rawError: bodyText || 'Could not read response body' 
+          try { bodyText = await response!.text(); } catch {} // Use ! here too
+          throw new PikoApiError(`Failed to parse successful JSON response: ${e instanceof Error ? e.message : 'Unknown error'}`, {
+              statusCode: response!.status, // Use ! here too
+              rawError: bodyText || 'Could not read response body'
           });
       }
     } else if (expectedResponseType === 'blob') {
       try {
-        const blob = await response.blob();
+        const blob = await response!.blob(); // Use ! here
         console.log(`${logPrefix} Success (Blob)`);
         return blob;
       } catch (e) {
@@ -1545,9 +1627,11 @@ async function _makePikoRequest(
       }
     } else if (expectedResponseType === 'stream') {
       console.log(`${logPrefix} Success (Stream)`);
-      return response;
+      return response!; // Use ! here
     } else {
       console.error(`${logPrefix} Invalid expectedResponseType: ${expectedResponseType}`);
+      // Ensure response body is consumed if possible before throwing
+      try { await response?.text(); } catch {}
       throw new PikoApiError(`Internal error: Invalid expected response type.`, { statusCode: 500 });
     }
 
@@ -1558,10 +1642,10 @@ async function _makePikoRequest(
       throw error;
     } else if (error instanceof Error) {
       console.error(`${logPrefix} Fetch/Network error:`, error.message, error.cause ? `\nCause: ${JSON.stringify(error.cause)}` : '', error.stack);
-      throw new PikoApiError(`Network or fetch error for ${path}: ${error.message}`, { cause: error });
+      throw new PikoApiError(`Network or fetch error for ${url.toString()}: ${error.message}`, { cause: error });
     } else {
       console.error(`${logPrefix} Unexpected non-Error type during fetch:`, error);
-      throw new PikoApiError(`Unexpected issue during fetch for ${path}`);
+      throw new PikoApiError(`Unexpected issue during fetch for ${url.toString()}`);
     }
   }
 }
