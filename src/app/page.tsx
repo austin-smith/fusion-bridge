@@ -16,7 +16,7 @@ export default function Home() {
 
   // Set page title
   useEffect(() => {
-    document.title = 'Dashboard // Fusion Bridge';
+    document.title = 'Dashboard // Fusion';
   }, []);
 
   useEffect(() => {

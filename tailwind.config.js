@@ -17,8 +17,13 @@ module.exports = {
   	},
   	extend: {
   		fontFamily: {
-  			sans: ['var(--font-inter)', 'sans-serif'],
-  			csg: ['var(--font-csg)'],
+  			sans: [
+  				'var(--font-inter)',
+  				'sans-serif'
+  			],
+  			csg: [
+  				'var(--font-csg)'
+  			]
   		},
   		colors: {
   			border: 'hsl(var(--border))',
@@ -55,18 +60,14 @@ module.exports = {
   				foreground: 'hsl(var(--card-foreground))'
   			},
   			sidebar: {
-  				DEFAULT: 'var(--sidebar)',
-  				foreground: 'var(--sidebar-foreground)',
-  				primary: {
-  					DEFAULT: 'var(--sidebar-primary)',
-  					foreground: 'var(--sidebar-primary-foreground)'
-  				},
-  				accent: {
-  					DEFAULT: 'var(--sidebar-accent)',
-  					foreground: 'var(--sidebar-accent-foreground)'
-  				},
-  				border: 'var(--sidebar-border)',
-  				ring: 'var(--sidebar-ring)'
+  				DEFAULT: 'hsl(var(--sidebar-background))',
+  				foreground: 'hsl(var(--sidebar-foreground))',
+  				primary: 'hsl(var(--sidebar-primary))',
+  				accent: 'hsl(var(--sidebar-accent))',
+  				border: 'hsl(var(--sidebar-border))',
+  				ring: 'hsl(var(--sidebar-ring))',
+  				'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
+  				'accent-foreground': 'hsl(var(--sidebar-accent-foreground))'
   			},
   			chart: {
   				'1': 'var(--chart-1)',

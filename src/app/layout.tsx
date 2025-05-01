@@ -14,8 +14,8 @@ const csgFont = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'Fusion Bridge',
-  description: 'A local-first security integration platform',
+  title: 'Fusion',
+  description: 'Scurity integration platform',
 };
 
 export default function RootLayout({

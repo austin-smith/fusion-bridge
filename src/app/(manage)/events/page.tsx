@@ -242,7 +242,7 @@ export default function EventsPage() {
 
   // Set page title
   useEffect(() => {
-    document.title = 'Events // Fusion Bridge';
+    document.title = 'Events // Fusion';
   }, []);
 
   // Function to fetch events

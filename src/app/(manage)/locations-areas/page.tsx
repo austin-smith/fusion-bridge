@@ -60,7 +60,7 @@ export default function LocationsAreasPage() {
 
   // Set page title
   useEffect(() => {
-    document.title = 'Locations & Areas // Fusion Bridge';
+    document.title = 'Locations & Areas // Fusion';
   }, []);
 
   const { 

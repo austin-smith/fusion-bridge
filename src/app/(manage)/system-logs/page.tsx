@@ -40,7 +40,7 @@ export default function SystemLogsPage() {
 
   // Set page title
   useEffect(() => {
-    document.title = 'System Logs // Fusion Bridge';
+    document.title = 'System Logs // Fusion';
   }, []);
 
   // Initialize connectionStatus based on initial isLiveEnabled

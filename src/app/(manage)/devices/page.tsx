@@ -159,7 +159,7 @@ export default function DevicesPage() {
   });
   
   // Set page title
-  useEffect(() => { document.title = 'Devices // Fusion Bridge'; }, []);
+  useEffect(() => { document.title = 'Devices // Fusion'; }, []);
 
   // --- Initial Data Fetch --- 
   useEffect(() => {

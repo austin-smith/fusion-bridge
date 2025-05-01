@@ -1,11 +1,14 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useFusionStore } from '@/stores/store';
 import toast from 'react-hot-toast';
 import { ThemeProvider } from "@/components/common/theme-provider";
 import { ToasterProvider } from '@/components/common/toaster-provider';
 import { ServerInit } from '@/components/layout/server-init';
+import { SidebarProvider } from '@/components/ui/sidebar';
+
+const LOCAL_STORAGE_SIDEBAR_KEY = 'sidebar_state';
 
 // Component to handle global state effects like toasts
 function GlobalStateEffects() {
@@ -26,6 +29,30 @@ interface ClientLayoutProps {
 }
 
 export function ClientLayout({ children }: ClientLayoutProps) {
+  // State for controlling sidebar open state, initialized to null for SSR safety
+  const [sidebarOpen, setSidebarOpen] = useState<boolean | null>(null);
+
+  // Effect to load state from localStorage on mount
+  useEffect(() => {
+    const storedState = localStorage.getItem(LOCAL_STORAGE_SIDEBAR_KEY);
+    // Default to true (expanded) if nothing is stored
+    setSidebarOpen(storedState ? JSON.parse(storedState) : true);
+  }, []); // Empty dependency array ensures this runs only once on mount
+
+  // Effect to save state to localStorage when it changes (and is not null)
+  useEffect(() => {
+    if (sidebarOpen !== null) { // Only save when state is determined
+      localStorage.setItem(LOCAL_STORAGE_SIDEBAR_KEY, JSON.stringify(sidebarOpen));
+    }
+  }, [sidebarOpen]);
+
+  // Avoid rendering children until state is loaded to prevent hydration mismatch
+  if (sidebarOpen === null) {
+    // Optionally return a loading indicator or null
+    // Returning null might cause a flash, consider a skeleton if needed
+    return null;
+  }
+
   return (
     <ThemeProvider
       attribute="class"
@@ -36,7 +63,9 @@ export function ClientLayout({ children }: ClientLayoutProps) {
       <ToasterProvider />
       <ServerInit />
       <GlobalStateEffects />
-      {children} 
+      <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        {children}
+      </SidebarProvider>
     </ThemeProvider>
   );
 } 

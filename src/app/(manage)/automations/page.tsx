@@ -7,7 +7,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Automations // Fusion Bridge',
+  title: 'Automations // Fusion',
 };
 
 export default function AutomationsPage() {

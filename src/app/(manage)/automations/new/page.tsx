@@ -30,7 +30,7 @@ interface PageMultiSelectOption {
 
 // Set page title metadata
 export const metadata: Metadata = {
-  title: 'Add Automation // Fusion Bridge',
+  title: 'Add Automation // Fusion',
 };
 
 // Fetch data server-side

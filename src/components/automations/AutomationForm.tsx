@@ -573,7 +573,7 @@ export default function AutomationForm({
                                                                 <FormLabel>Source</FormLabel>
                                                                 <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('sourceTemplate', index, token, 'action')} />
                                                             </div>
-                                                            <FormControl><Textarea placeholder="Fusion Bridge" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                            <FormControl><Textarea placeholder="Fusion" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
                                                             <FormMessage />
                                                         </FormItem>
                                                      )} />

@@ -141,7 +141,7 @@ export default function ConnectorsPage() {
 
   // Set page title
   useEffect(() => {
-    document.title = 'Connectors // Fusion Bridge';
+    document.title = 'Connectors // Fusion';
   }, []);
 
   // --- Data Fetching and Polling ---
@@ -381,7 +381,7 @@ export default function ConnectorsPage() {
         {/* Error Alert */}
         {error && (
           <Alert variant="destructive" className="mb-6">
-             <AlertCircle className="h-4 w-4" />
+            <AlertCircle className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>
               {error}
