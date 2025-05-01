@@ -149,37 +149,45 @@ export const AutomationActionSchema = z.discriminatedUnion("type", [
 // Type helper for a single action
 export type AutomationAction = z.infer<typeof AutomationActionSchema>;
 
-// --- REMOVED: Schema for the Primary Trigger --- 
-// export const PrimaryTriggerSchema = z.object({ ... });
-
-// --- REMOVED: Schema for a Secondary Condition --- 
-// export const SecondaryConditionSchema = z.object({ ... });
-
-// --- REMOVED: Type helper for Secondary Condition ---
-// export type SecondaryCondition = z.infer<typeof SecondaryConditionSchema>;
-
 // --- NEW: Schema for Temporal Conditions --- 
 export const TemporalConditionSchema = z.object({
     id: z.string().uuid().default(() => crypto.randomUUID()), // Internal ID for the condition in the UI list
-    type: z.enum(['eventOccurred', 'noEventOccurred']), 
+    type: z.enum([
+        'eventOccurred', 
+        'noEventOccurred',
+        'eventCountEquals',
+        'eventCountLessThan',
+        'eventCountGreaterThan',
+        'eventCountLessThanOrEqual',
+        'eventCountGreaterThanOrEqual'
+    ]), 
+    
+    // --- NEW: Add expected count ---
+    expectedEventCount: z.number().int().min(0).optional(), // Required for count-based types
     
     // --- NEW: Scoping definition --- 
     scoping: z.enum(['anywhere', 'sameArea', 'sameLocation']).default('anywhere'),
-    
-    // --- REMOVED entityTypeFilter --- 
-    // entityTypeFilter: z.array(z.string()).optional(), 
-    
-    // --- REPLACE eventTypeFilter with a nested rule group --- 
-    // eventTypeFilter: z.array(z.string()).optional(), // Removed
     eventFilter: JsonRuleGroupSchema, // Use the same rule builder structure
     
     // Time window relative to the primary trigger event
     timeWindowSecondsBefore: z.number().int().positive().optional(),
     timeWindowSecondsAfter: z.number().int().positive().optional(),
 
-}).refine(data => data.timeWindowSecondsBefore !== undefined || data.timeWindowSecondsAfter !== undefined, {
-    message: "At least one time window (before or after) must be specified for a temporal condition.",
-    path: ["timeWindowSecondsBefore"], 
+}).refine(data => {
+    // Require expectedEventCount if a count-based type is selected
+    if ([
+        'eventCountEquals',
+        'eventCountLessThan',
+        'eventCountGreaterThan',
+        'eventCountLessThanOrEqual',
+        'eventCountGreaterThanOrEqual'
+    ].includes(data.type)) {
+        return data.expectedEventCount !== undefined && data.expectedEventCount !== null;
+    }
+    return true; // Not a count-based type, no requirement
+}, {
+    message: "Expected event count must be specified for count-based temporal conditions.",
+    path: ["expectedEventCount"], // Apply error to the count field
 });
 
 // Type helper for a single temporal condition (automatically updated)
@@ -202,12 +210,6 @@ export interface AutomationRecord {
   id: string;
   name: string;
   description?: string | null; 
-  // --- REMOVED Outdated/Unused fields ---
-  // triggerSource: string; 
-  // triggerEvent: string; 
-  // triggerDeviceId?: string | null; 
-  // actionType: string; 
-  // --- Use AutomationConfig type for consistency ---
   config: AutomationConfig; 
   enabled: boolean;
   createdAt: Date; 

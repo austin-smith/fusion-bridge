@@ -198,6 +198,7 @@ export function SendHttpRequestActionFields({ actionIndex, handleInsertToken }: 
                                                 className="h-8" 
                                             />
                                         </FormControl>
+                                        <FormMessage className="text-xs min-h-[1rem] mt-1"/>
                                     </FormItem>
                                 )} />
                                 
@@ -212,6 +213,7 @@ export function SendHttpRequestActionFields({ actionIndex, handleInsertToken }: 
                                                 className="h-8" 
                                             />
                                         </FormControl>
+                                        <FormMessage className="text-xs min-h-[1rem] mt-1"/>
                                     </FormItem>
                                 )} />
                                 

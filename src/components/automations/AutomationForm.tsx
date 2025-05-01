@@ -324,113 +324,150 @@ export default function AutomationForm({
                         </CardContent>
                     </Card>
 
-                    <Card>
-                        <CardHeader><CardTitle>Trigger Conditions (if this...)</CardTitle></CardHeader>
-                        <CardContent>
-                            <FormField
-                                control={form.control}
-                                name="config.conditions"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <RuleBuilder value={field.value} onChange={field.onChange} />
-                                        <FormDescription className={descriptionStyles}>Define conditions based on the triggering event&apos;s state.</FormDescription>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-                        </CardContent>
-                    </Card>
-
-                    {/* --- RESTORE Temporal Conditions Card --- */}
-                     
+                    {/* --- NEW Parent Conditions Card --- */}
                     <Card>
                         <CardHeader>
-                            <CardTitle>Temporal Conditions (and if this...)</CardTitle>
+                            <CardTitle>Conditions (if...)</CardTitle>
                             <CardDescription className="text-xs text-muted-foreground pt-1">
-                                Optionally, add conditions based on other events happening near the trigger time.
+                                Define the primary event trigger and optional subsequent time-based conditions.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-4">
-                            {temporalConditionsFields.map((fieldItem, index) => (
-                                <Card key={fieldItem.id} className="relative border border-blue-200 dark:border-blue-800 pt-8 bg-blue-50/30 dark:bg-blue-950/20">
-                                    <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 text-muted-foreground hover:text-destructive h-6 w-6" onClick={() => removeTemporalCondition(index)}><Trash2 className="h-4 w-4" /><span className="sr-only">Remove Temporal Condition</span></Button>
-                                    <CardContent className="space-y-4">
-                                        <FormField name={`config.temporalConditions.${index}.type`} render={({ field, fieldState }) => (
-                                            <FormItem>
-                                                <FormLabel>Condition Type</FormLabel>
-                                                <Select onValueChange={field.onChange} value={field.value}>
-                                                    <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
-                                                    <SelectContent>
-                                                        <SelectItem value="eventOccurred">Event occurred within window</SelectItem>
-                                                        <SelectItem value="noEventOccurred">Event NOT occurred within window</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )} />
-                                        <FormField name={`config.temporalConditions.${index}.scoping`} render={({ field, fieldState }) => (
-                                            <FormItem>
-                                                <FormLabel>Check Events From</FormLabel>
-                                                <Select onValueChange={field.onChange} value={field.value ?? 'anywhere'}>
-                                                    <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
-                                                    <SelectContent>
-                                                        <SelectItem value="anywhere">Anywhere</SelectItem>
-                                                        <SelectItem value="sameArea">Devices in Same Area</SelectItem>
-                                                        <SelectItem value="sameLocation">Devices in Same Location</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                                <FormDescription className={descriptionStyles}>Scope the devices checked by this condition.</FormDescription>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )} />
-                                        <FormField name={`config.temporalConditions.${index}.eventFilter`} render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>Event Filter Criteria</FormLabel>
-                                                
-                                                    <RuleBuilder 
-                                                        value={field.value} 
-                                                        onChange={field.onChange} 
-                                                    />
-                                                
-                                                <FormDescription className={descriptionStyles}>Define criteria that matching events must meet.</FormDescription>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )} />
-                                       
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                                            <FormField name={`config.temporalConditions.${index}.timeWindowSecondsBefore`} render={({ field, fieldState }) => (
-                                                <FormItem>
-                                                    <FormLabel>Seconds Before Trigger</FormLabel>
-                                                    <FormControl>
-                                                        <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
-                                                    </FormControl>
-                                                    <FormDescription className={descriptionStyles}>Check for events up to this many seconds before the trigger.</FormDescription>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )} />
-                                            <FormField name={`config.temporalConditions.${index}.timeWindowSecondsAfter`} render={({ field, fieldState }) => (
-                                                <FormItem>
-                                                    <FormLabel>Seconds After Trigger</FormLabel>
-                                                    <FormControl>
-                                                        <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
-                                                    </FormControl>
-                                                    <FormDescription className={descriptionStyles}>Check for events up to this many seconds after the trigger.</FormDescription>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )} />
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            ))}
-                            <Button 
-                                type="button" 
-                                variant="outline" 
-                                size="sm" 
-                                onClick={() => appendTemporalCondition({ id: crypto.randomUUID(), ...defaultTemporalCondition })} 
-                                disabled={isLoading}
-                            >
-                                <Plus className="mr-2 h-4 w-4" /> Add Temporal Condition
-                            </Button>
+                        <CardContent className="space-y-6"> 
+                            {/* --- Trigger Conditions Section --- */}
+                            <div>
+                                <h3 className="text-md font-semibold mb-3">Primary Trigger (if this happens...)</h3>
+                                <FormField
+                                    control={form.control}
+                                    name="config.conditions"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <RuleBuilder value={field.value} onChange={field.onChange} />
+                                            <FormDescription className={descriptionStyles}>Define conditions based on the triggering event&apos;s state.</FormDescription>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                            </div>
+
+                            {/* --- Separator --- */}
+                            <hr className="my-6" />
+
+                            {/* --- Temporal Conditions Section --- */}
+                            <div>
+                                <h3 className="text-md font-semibold mb-3">Temporal Conditions (and if...)</h3>
+                                <p className="text-xs text-muted-foreground mb-4">
+                                    Optionally, add conditions based on other events happening near the trigger time.
+                                </p>
+                                <div className="space-y-4">
+                                    {/* --- Map Temporal Conditions --- */}
+                                    {temporalConditionsFields.map((fieldItem, index) => (
+                                        <Card key={fieldItem.id} className="relative border border-blue-200 dark:border-blue-800 pt-8 bg-blue-50/30 dark:bg-blue-950/20">
+                                            <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 text-muted-foreground hover:text-destructive h-6 w-6" onClick={() => removeTemporalCondition(index)}><Trash2 className="h-4 w-4" /><span className="sr-only">Remove Temporal Condition</span></Button>
+                                            <CardContent className="space-y-4">
+                                                <FormField name={`config.temporalConditions.${index}.type`} render={({ field, fieldState }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Condition</FormLabel>
+                                                        <div className="flex items-start gap-2">
+                                                            <Select onValueChange={field.onChange} value={field.value}>
+                                                                <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
+                                                                <SelectContent>
+                                                                    <SelectItem value="eventOccurred">Any matching event occurred</SelectItem>
+                                                                    <SelectItem value="noEventOccurred">No matching event occurred</SelectItem>
+                                                                    <SelectItem value="eventCountEquals">Matching event count =</SelectItem>
+                                                                    <SelectItem value="eventCountLessThan">Matching event count &lt;</SelectItem>
+                                                                    <SelectItem value="eventCountGreaterThan">Matching event count &gt;</SelectItem>
+                                                                    <SelectItem value="eventCountLessThanOrEqual">Matching event count &le;</SelectItem>
+                                                                    <SelectItem value="eventCountGreaterThanOrEqual">Matching event count &ge;</SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                            {/* --- Conditionally render Count Input INLINE --- */}
+                                                            {[ 'eventCountEquals', 'eventCountLessThan', 'eventCountGreaterThan', 'eventCountLessThanOrEqual', 'eventCountGreaterThanOrEqual' ].includes(field.value) && (
+                                                                <FormControl>
+                                                                    <Input 
+                                                                        {...form.register(`config.temporalConditions.${index}.expectedEventCount`, { valueAsNumber: true })}
+                                                                        type="number" 
+                                                                        min="0" 
+                                                                        step="1" 
+                                                                        placeholder="Count" 
+                                                                        disabled={isLoading} 
+                                                                        className={cn("w-[100px]", fieldState.error && 'border-destructive')} // Adjusted width slightly
+                                                                    />
+                                                                </FormControl>
+                                                            )}
+                                                        </div>
+                                                        {/* Display description/message below the flex container */}
+                                                        <FormDescription className={descriptionStyles}>
+                                                            Select the condition type and specify count if needed.
+                                                        </FormDescription>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )} />
+
+                                                <FormField name={`config.temporalConditions.${index}.scoping`} render={({ field, fieldState }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Check Events From</FormLabel>
+                                                        <Select onValueChange={field.onChange} value={field.value ?? 'anywhere'}>
+                                                            <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
+                                                            <SelectContent>
+                                                                <SelectItem value="anywhere">Anywhere</SelectItem>
+                                                                <SelectItem value="sameArea">Devices in same area</SelectItem>
+                                                                <SelectItem value="sameLocation">Devices in same location</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                        <FormDescription className={descriptionStyles}>Scope the devices checked by this condition.</FormDescription>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )} />
+                                                <FormField name={`config.temporalConditions.${index}.eventFilter`} render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Event Filter Criteria</FormLabel>
+                                                        
+                                                        <RuleBuilder 
+                                                            value={field.value} 
+                                                            onChange={field.onChange} 
+                                                        />
+                                                        
+                                                        <FormDescription className={descriptionStyles}>Define criteria that matching events must meet.</FormDescription>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )} />
+                                               
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                                                    <FormField name={`config.temporalConditions.${index}.timeWindowSecondsBefore`} render={({ field, fieldState }) => (
+                                                        <FormItem>
+                                                            <FormLabel>Seconds Before Trigger</FormLabel>
+                                                            <FormControl>
+                                                                <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
+                                                            </FormControl>
+                                                            <FormDescription className={descriptionStyles}>Check for events up to this many seconds before the trigger.</FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )} />
+                                                    <FormField name={`config.temporalConditions.${index}.timeWindowSecondsAfter`} render={({ field, fieldState }) => (
+                                                        <FormItem>
+                                                            <FormLabel>Seconds After Trigger</FormLabel>
+                                                            <FormControl>
+                                                                <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
+                                                            </FormControl>
+                                                            <FormDescription className={descriptionStyles}>Check for events up to this many seconds after the trigger.</FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )} />
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    ))}
+                                    <Button 
+                                        type="button" 
+                                        variant="outline" 
+                                        size="sm" 
+                                        onClick={() => appendTemporalCondition({ id: crypto.randomUUID(), ...defaultTemporalCondition })} 
+                                        disabled={isLoading}
+                                    >
+                                        <Plus className="h-4 w-4" /> Add Temporal Condition
+                                    </Button>
+                                </div> 
+                            </div>
                         </CardContent>
                     </Card>
                     
@@ -633,7 +670,7 @@ export default function AutomationForm({
                                 }}
                                 disabled={isLoading}
                             >
-                                <Plus className="mr-2 h-4 w-4" /> Add Action
+                                <Plus className="h-4 w-4" /> Add Action
                             </Button>
                         </CardContent>
                     </Card>

@@ -760,13 +760,95 @@ async function evaluateTemporalCondition(
     }
 
     // --- Determine Final Result --- 
-    if (condition.type === 'eventOccurred') {
-        return matchFound;
-    } else if (condition.type === 'noEventOccurred') {
-        return !matchFound;
-    } else {
-        console.warn(`[evaluateTemporalCondition] Condition ID ${condition.id}: Unknown condition type '${(condition as any).type}'.`);
-        return false;
+    // Re-evaluate each event against the filter to get the count
+    // Note: This re-runs the engine. Could be optimized if performance becomes an issue.
+    let finalMatchCount = 0;
+    for (const event of candidateEvents) {
+        // Construct facts for *this specific candidate event*
+        const eventPayload = event.payload as any;
+        const eventFacts: Record<string, any> = {
+             event: {
+                 category: event.category ?? null,
+                 type: event.type ?? null,
+                 subtype: event.subtype ?? null,
+                 newState: eventPayload?.newState ?? null,
+                 displayState: eventPayload?.displayState ?? null,
+                 statusType: eventPayload?.statusType ?? null,
+                 rawStateValue: eventPayload?.rawStateValue ?? null,
+                 originalEventType: eventPayload?.originalEventType ?? null,
+             },
+             device: { 
+                 externalId: event.deviceId ?? null,
+                 type: event.deviceInfo?.type ?? null,
+                 subtype: event.deviceInfo?.subtype ?? null
+             },
+             connector: { id: event.connectorId ?? null },
+             area: null,
+             location: null,
+        };
+        const temporalRequiredPaths = extractReferencedFactPaths(condition.eventFilter);
+        const minimalTemporalFacts: Record<string, any> = {};
+        temporalRequiredPaths.forEach(path => {
+            const value = resolvePath(eventFacts, path);
+            minimalTemporalFacts[path] = (value === undefined ? null : value);
+        });
+        try {
+            // Create a fresh engine instance for each check
+            const filterEngine = new Engine();
+            filterEngine.addRule({ conditions: condition.eventFilter as any, event: { type: 'eventFilterMatch' } });
+            const { events: filterMatchEvents } = await filterEngine.run(minimalTemporalFacts);
+            if (filterMatchEvents.length > 0) {
+                finalMatchCount++;
+            }
+        } catch (engineError) {
+            console.error(`[evaluateTemporalCondition] Error running engine for event filter count check on event ${event.eventId}:`, engineError);
+            // Decide how to handle errors during count - skip event or fail condition?
+            // Skipping the event for now.
+        }
+    }
+
+    console.log(`[evaluateTemporalCondition] Condition ID ${condition.id}: Found ${finalMatchCount} events matching filter.`);
+
+    switch (condition.type) {
+        case 'eventOccurred':
+            return finalMatchCount > 0;
+        case 'noEventOccurred':
+            return finalMatchCount === 0;
+        case 'eventCountEquals':
+            if (condition.expectedEventCount === undefined) {
+                console.warn(`[evaluateTemporalCondition] Condition ID ${condition.id}: Missing expectedEventCount for type 'eventCountEquals'.`);
+                return false;
+            }
+            return finalMatchCount === condition.expectedEventCount;
+        case 'eventCountLessThan':
+            if (condition.expectedEventCount === undefined) {
+                console.warn(`[evaluateTemporalCondition] Condition ID ${condition.id}: Missing expectedEventCount for type 'eventCountLessThan'.`);
+                return false;
+            }
+            return finalMatchCount < condition.expectedEventCount;
+        case 'eventCountGreaterThan':
+            if (condition.expectedEventCount === undefined) {
+                console.warn(`[evaluateTemporalCondition] Condition ID ${condition.id}: Missing expectedEventCount for type 'eventCountGreaterThan'.`);
+                return false;
+            }
+            return finalMatchCount > condition.expectedEventCount;
+        case 'eventCountLessThanOrEqual':
+             if (condition.expectedEventCount === undefined) {
+                console.warn(`[evaluateTemporalCondition] Condition ID ${condition.id}: Missing expectedEventCount for type 'eventCountLessThanOrEqual'.`);
+                return false;
+             }
+             return finalMatchCount <= condition.expectedEventCount;
+        case 'eventCountGreaterThanOrEqual':
+            if (condition.expectedEventCount === undefined) {
+                console.warn(`[evaluateTemporalCondition] Condition ID ${condition.id}: Missing expectedEventCount for type 'eventCountGreaterThanOrEqual'.`);
+                return false;
+            }
+            return finalMatchCount >= condition.expectedEventCount;
+        default:
+            // Ensure exhaustive check with 'never' if using TS
+            // const _exhaustiveCheck: never = condition.type;
+            console.warn(`[evaluateTemporalCondition] Condition ID ${condition.id}: Unknown condition type '${(condition as any).type}'.`);
+            return false;
     }
 }
 

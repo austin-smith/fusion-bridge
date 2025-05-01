@@ -8,11 +8,25 @@ import { Input } from '@/components/ui/input';
 import { Trash2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { JsonRuleGroup, JsonRuleCondition, JsonRulesEngineOperatorsSchema } from '@/lib/automation-schemas';
-import { AVAILABLE_AUTOMATION_FACTS, getFactById, type AutomationFact } from '@/lib/automation-facts';
+import { AVAILABLE_AUTOMATION_FACTS, getFactById, type AutomationFact, OPERATOR_DISPLAY_MAP } from '@/lib/automation-facts';
 import { z } from 'zod';
 
 // Define the combined type for a rule node
 type RuleNode = JsonRuleGroup | JsonRuleCondition; 
+
+// Define preferred operator display order
+const PREFERRED_OPERATOR_ORDER: ReadonlyArray<z.infer<typeof JsonRulesEngineOperatorsSchema>> = [
+    'equal',
+    'notEqual',
+    'greaterThan',
+    'greaterThanInclusive',
+    'lessThan',
+    'lessThanInclusive',
+    'contains',
+    'doesNotContain',
+    'in',
+    'notIn',
+];
 
 interface RuleBuilderProps {
   value: RuleNode; // The current condition or group object
@@ -42,9 +56,6 @@ export function RuleBuilder({
     onRemove 
 }: RuleBuilderProps) {
     
-    // No longer need to get value from field
-    // const value = field.value as RuleNode; 
-
     // handleUpdate is now just the passed onChange
     // const handleUpdate = (newValue: RuleNode) => { ... };
 
@@ -96,6 +107,18 @@ export function RuleBuilder({
             ...currentConditions.slice(index + 1),
         ];
         onChange({ [groupType]: newConditions });
+    };
+
+    // --- Helper function to sort operators ---
+    const sortOperators = (operators: ReadonlyArray<z.infer<typeof JsonRulesEngineOperatorsSchema>>): z.infer<typeof JsonRulesEngineOperatorsSchema>[] => {
+        return [...operators].sort((a, b) => {
+            const indexA = PREFERRED_OPERATOR_ORDER.indexOf(a);
+            const indexB = PREFERRED_OPERATOR_ORDER.indexOf(b);
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB; // Both preferred
+            if (indexA !== -1) return -1; // Only A preferred
+            if (indexB !== -1) return 1;  // Only B preferred
+            return a.localeCompare(b); // Neither preferred
+        });
     };
 
     if (depth >= MAX_DEPTH) {
@@ -159,7 +182,7 @@ export function RuleBuilder({
                         onClick={() => addCondition(groupType, conditions)} // Pass context
                         disabled={depth >= MAX_DEPTH -1} // Disable adding if next level hits max depth
                     >
-                         <Plus className="h-3 w-3 mr-1" /> Condition
+                         <Plus className="h-3 w-3" /> Condition
                     </Button>
                     <Button 
                         variant="outline" 
@@ -167,7 +190,7 @@ export function RuleBuilder({
                         onClick={() => addGroup(groupType, conditions)} // Pass context
                         disabled={depth >= MAX_DEPTH -1} // Disable adding if next level hits max depth
                     >
-                         <Plus className="h-3 w-3 mr-1" /> Group
+                         <Plus className="h-3 w-3" /> Group
                     </Button>
                  </div>
             </div>
@@ -284,14 +307,16 @@ export function RuleBuilder({
                      disabled={!factDefinition} 
                 >
                      <SelectTrigger className="w-[150px] h-9">
-                         <SelectValue placeholder="Select Operator..." />
+                         <SelectValue placeholder="Select Operator...">
+                            {condition.operator ? OPERATOR_DISPLAY_MAP[condition.operator] : "Select Operator..."}
+                         </SelectValue>
                      </SelectTrigger>
                      <SelectContent>
-                         {factDefinition?.operators.map(op => (
-                            <SelectItem key={op} value={op}>
-                                {/* TODO: Maybe add user-friendly operator names later? */} 
-                                {op} 
-                            </SelectItem>
+                         {/* --- Sort operators using helper function --- */}
+                         {sortOperators(factDefinition?.operators ?? []).map(op => (
+                             <SelectItem key={op} value={op}>
+                                 {OPERATOR_DISPLAY_MAP[op] || op} 
+                             </SelectItem>
                          ))}
                          {!factDefinition && <SelectItem value="" disabled>Select field first</SelectItem>}
                      </SelectContent>

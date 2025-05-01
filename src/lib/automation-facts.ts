@@ -20,6 +20,21 @@ const stringOperators = ['contains', 'doesNotContain', 'equal', 'in', 'notEqual'
 const numberOperators = ['equal', 'greaterThan', 'greaterThanInclusive', 'lessThan', 'lessThanInclusive', 'notEqual'].sort() as z.infer<typeof JsonRulesEngineOperatorsSchema>[];
 // Add boolean operators if needed
 
+// --- NEW: Operator Display Mapping ---
+export const OPERATOR_DISPLAY_MAP: Record<z.infer<typeof JsonRulesEngineOperatorsSchema>, string> = {
+    equal: '=',
+    notEqual: '≠',
+    lessThan: '<',
+    lessThanInclusive: '≤',
+    greaterThan: '>',
+    greaterThanInclusive: '≥',
+    in: 'in',
+    notIn: 'not in',
+    contains: 'contains',
+    doesNotContain: 'does not contain',
+};
+// --- END NEW ---
+
 // Define Fact Value Input Types for the UI
 type FactValueInputType = 'select' | 'text' | 'number' | 'multiselect';
 
