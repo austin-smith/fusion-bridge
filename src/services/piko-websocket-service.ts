@@ -1,18 +1,21 @@
 import 'server-only';
 
-import { client as WebSocketClient, connection as WebSocketConnection, Message } from 'websocket'; 
+// --- Dynamically import https for optional TLS ignore ---
+let httpsModule: typeof import('https') | undefined;
+try {
+    // Try importing 'https' first
+    import('https')
+        .then(mod => { httpsModule = mod; })
+        .catch(e => { 
+            console.warn("[Piko WS Service] Failed to dynamically import 'https' module. TLS verification cannot be disabled.", e);
+            // Optionally try 'node:https' here if needed for specific environments
+        });
+} catch (e) {
+     console.warn("[Piko WS Service] Error setting up dynamic import for 'https' module.", e);
+}
+// --- End dynamic import --- 
 
-// --- Remove dynamic import block ---
-// let httpsModule: typeof import('https' | 'node:https') | undefined;
-// try {
-//     // Try both 'https' and 'node:https' for broader Node version compatibility
-//     Promise.any([import('https'), import('node:https')])
-//         .then(mod => { httpsModule = mod; })
-//         .catch(e => { console.warn("[Piko WS Service] Failed to dynamically import 'https' module. TLS verification cannot be disabled.", e); });
-// } catch (e) {
-//      console.warn("[Piko WS Service] Error setting up dynamic import for 'https' module.", e);
-// }
-// --- End removed dynamic import --- 
+import { client as WebSocketClient, connection as WebSocketConnection, Message } from 'websocket'; 
 
 import { db } from '@/data/db';
 import { connectors } from '@/data/db/schema';
@@ -31,8 +34,8 @@ import { ConnectorCategory, EventCategory, EventType } from '@/lib/mappings/defi
 const CONNECTION_TIMEOUT_MS = 30000; 
 // Define device refresh interval (e.g., 12 hours)
 const DEVICE_REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000; 
-// Restore Max redirects constant
-const MAX_REDIRECTS = 5; 
+// Restore Max redirects constant - NO LONGER NEEDED
+// const MAX_REDIRECTS = 5; // Comment out constant
 
 // --- Piko WebSocket Connection State ---
 
@@ -179,84 +182,6 @@ function _stopPeriodicDeviceRefresh(state: PikoWebSocketConnection | undefined):
     }
 }
 
-// +++ Restore HELPER FUNCTION +++
-/**
- * Resolves the final Piko Cloud WebSocket endpoint URL by handling 307 redirects via fetch.
- * @param initialHttpsUrl The initial HTTPS URL (e.g., https://{systemId}.relay.vmsproxy.com/jsonrpc).
- * @param accessToken The bearer token for authorization.
- * @param connectorId For logging purposes.
- * @returns Promise resolving to the final HTTPS URL after following redirects.
- * @throws PikoApiError if redirects fail or exceed the limit.
- */
-async function _resolveWebSocketUrlWithRedirects(initialHttpsUrl: string, accessToken: string, connectorId: string): Promise<string> {
-    let currentUrl = initialHttpsUrl;
-    let redirectCount = 0;
-    const logPrefix = `[${connectorId}][_resolveWebSocketUrl]`;
-
-    console.log(`${logPrefix} Starting URL resolution from: ${currentUrl}`);
-
-    while (redirectCount <= MAX_REDIRECTS) {
-        console.log(`${logPrefix} Attempt ${redirectCount + 1} to fetch: ${currentUrl}`);
-        const requestOptions: RequestInit = {
-            method: 'GET', // Use GET for URL resolution, handshake uses headers later
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                // User-Agent removed previously
-            },
-            redirect: 'manual', // Handle redirects manually
-        };
-
-        try {
-            const response = await fetch(currentUrl, requestOptions);
-            console.log(`${logPrefix} Fetch response status: ${response.status}`);
-
-            if (response.status === 307) { // Only follow 307
-                const locationHeader = response.headers.get('Location');
-                if (!locationHeader) {
-                    throw new PikoApiError(`Redirect status ${response.status} received but no Location header found.`, { statusCode: response.status });
-                }
-
-                // Resolve the new URL against the current one
-                let nextUrl: URL;
-                try {
-                    const originalUrlObj = new URL(currentUrl);
-                     nextUrl = new URL(locationHeader, originalUrlObj);
-                 } catch (urlError) {
-                     console.error(`${logPrefix} Failed to parse or construct URL from Location header '${locationHeader}' relative to '${currentUrl}':`, urlError);
-                     throw new PikoApiError(`Invalid Location header received during redirect: ${locationHeader}`, { cause: urlError });
-                 }
-                currentUrl = nextUrl.toString();
-
-                console.warn(`${logPrefix} Redirecting (${response.status}) to: ${currentUrl}`);
-                redirectCount++;
-                // Consume the response body to release resources before next fetch
-                try { await response.text(); } catch {} 
-                continue; // Next iteration
-            }
-
-             // If status is OK (2xx) or any other non-redirect status, we assume this is the final URL.
-             // We don't need the body, just the URL. Consume body.
-             try { await response.text(); } catch {} 
-
-             console.log(`${logPrefix} Resolved final URL: ${currentUrl}`);
-             return currentUrl; // Return the current URL as the final one
-
-        } catch (error) {
-             // Keep enhanced logging
-             console.error(`${logPrefix} Error during fetch for URL resolution (Type: ${typeof error}):`, error);
-             if (error instanceof Error) {
-                 console.error(`${logPrefix} Raw error properties: name=${error.name}, message=${error.message}, code=${(error as any).code}, errno=${(error as any).errno}, syscall=${(error as any).syscall}`);
-             }
-             if (error instanceof PikoApiError) throw error;
-             throw new PikoApiError(`Fetch error during WebSocket URL resolution for ${currentUrl}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-        }
-    } // End while loop
-
-    // If loop finishes, we exceeded max redirects
-    throw new PikoApiError(`Exceeded maximum redirect limit (${MAX_REDIRECTS}) resolving WebSocket URL from ${initialHttpsUrl}`, { statusCode: 508 });
-}
-// +++ END Restore HELPER FUNCTION +++
-
 // --- Core Connection Logic (Refactored for 'websocket' library) ---
 
 // Default initial state for a new connector entry
@@ -395,31 +320,20 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                     if (!accessToken) throw new Error("Failed to obtain valid access token.");
 
                     // 2. Construct URL, Headers, Origin, and potentially TLS Options
-                    // Restore logic to determine initial HTTPS URL
-                    let initialHttpsUrl: string;
+                    // Revert to original WSS URL construction
+                    let wsUrl: string;
                     if (currentState.config?.type === 'local') {
-                        initialHttpsUrl = `https://${currentState.config.host}:${currentState.config.port}/jsonrpc`; // Start with HTTPS for local too, though redirects unlikely
+                        wsUrl = `wss://${currentState.config.host}:${currentState.config.port}/jsonrpc`; // Assuming WSS
                     } else if (currentState.config?.type === 'cloud' && currentState.config.selectedSystem) {
-                        initialHttpsUrl = `https://${currentState.config.selectedSystem}.relay.vmsproxy.com/jsonrpc`;
+                        wsUrl = `wss://${currentState.config.selectedSystem}.relay.vmsproxy.com/jsonrpc`;
                     } else {
-                        throw new Error("Cannot determine initial HTTPS URL: Invalid config state.");
+                        throw new Error("Cannot determine WebSocket URL: Invalid config state.");
                     }
-
-                    // Restore logic to resolve redirects first using the helper
-                    let finalHttpsUrl: string;
-                    if (currentState.config?.type === 'cloud') {
-                        finalHttpsUrl = await _resolveWebSocketUrlWithRedirects(initialHttpsUrl, accessToken, connectorId);
-                    } else {
-                        finalHttpsUrl = initialHttpsUrl; // Assume no redirects needed for local
-                    }
-
-                    // Restore logic to convert final HTTPS URL to WSS URL
-                    const finalWssUrl = finalHttpsUrl.replace(/^https:/, 'wss:');
-                    console.log(`[${connectorId}] Final WebSocket URL resolved to: ${finalWssUrl}`);
+                    console.log(`[${connectorId}] Constructed WebSocket URL: ${wsUrl}`); // Log the URL being used
 
                     const headers = { 'Authorization': `Bearer ${accessToken}` };
-                    // Explicitly set origin based on the final WSS URL
-                    const origin = new URL(finalWssUrl).origin;
+                    // Explicitly set origin based on the wsUrl
+                    const origin = new URL(wsUrl).origin;
 
                     // Prepare TLS options ONLY if ignoring errors AND it's a local connection
                     let tlsOptions: any | undefined = undefined;
@@ -436,7 +350,7 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                     const client = currentState.client; // Local reference
 
                     // 4. Start Connection Timeout
-                    console.log(`[${connectorId}] Connecting client to: ${finalWssUrl}`); // Use finalWssUrl
+                    console.log(`[${connectorId}] Connecting client to: ${wsUrl}`); // Use wsUrl
                     connectTimeoutId = setTimeout(() => {
                         cleanupAttempt('Connection Timeout');
                         client.abort(); // Abort the connection attempt
@@ -446,7 +360,10 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                     // 5. Attach Client Event Listeners
                     client.on('connectFailed', (error) => {
                          if (connectTimeoutId) clearTimeout(connectTimeoutId);
+                         // Log the standard error string AND the full error object structure
                          console.error(`[${connectorId}][connectFailed] WebSocket connection failed:`, error.toString());
+                         console.error(`[${connectorId}][connectFailed] Full error object:`, JSON.stringify(error, Object.getOwnPropertyNames(error), 2)); // Try stringifying with all properties
+                         console.error(`[${connectorId}][connectFailed] Raw error object (for console inspection):`, error);
                          cleanupAttempt(`Connection failed: ${error.toString()}`);
                          reject(error); 
                     });
@@ -562,7 +479,7 @@ export async function initPikoWebSocket(connectorId: string): Promise<boolean> {
                     // Construct requestOptions, including tlsOptions if applicable
                     const requestOptions = { ...tlsOptions }; // Start with tlsOptions (which might be undefined or { rejectUnauthorized: false })
 
-                    client.connect(finalWssUrl, undefined, origin, headers, requestOptions); // Use finalWssUrl & Pass constructed requestOptions
+                    client.connect(wsUrl, undefined, origin, headers, requestOptions); // Use wsUrl & Pass constructed requestOptions
 
                 } catch (initialSetupError) {
                     console.error(`[${connectorId}] Error during initial WebSocket setup:`, initialSetupError);
@@ -869,4 +786,68 @@ export async function initializePikoConnections(): Promise<void> {
      } catch (err) {
          console.error('[initializePikoConnections] Error during scan:', err);
      }
-} 
+}
+
+// +++ Restore HELPER FUNCTION (Modified Purpose) +++
+/**
+ * Probes the initial Piko Cloud WebSocket endpoint URL via fetch to detect a 307 redirect.
+ * @param initialHttpsUrl The initial HTTPS URL (e.g., https://{systemId}.relay.vmsproxy.com/jsonrpc).
+ * @param accessToken The bearer token for authorization.
+ * @param connectorId For logging purposes.
+ * @returns Promise resolving to the final HTTPS URL (either original or from Location header). 
+ *          Does NOT guarantee the returned URL is connectable via fetch, only discovers the target.
+ * @throws PikoApiError if the initial fetch fails or a redirect response is missing the Location header.
+ */
+async function _resolveWebSocketUrlWithRedirects(initialHttpsUrl: string, accessToken: string, connectorId: string): Promise<string> {
+    const logPrefix = `[${connectorId}][_resolveWebSocketUrl]`;
+    console.log(`${logPrefix} Probing URL for redirects: ${initialHttpsUrl}`);
+
+    const requestOptions: RequestInit = {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+        },
+        redirect: 'manual', // We only care about the first response
+    };
+
+    try {
+        const response = await fetch(initialHttpsUrl, requestOptions);
+        console.log(`${logPrefix} Probe response status: ${response.status}`);
+        // Consume body immediately
+        try { await response.text(); } catch {} 
+
+        if (response.status === 307) { // Redirect detected
+            const locationHeader = response.headers.get('Location');
+            if (!locationHeader) {
+                throw new PikoApiError(`Redirect status ${response.status} received but no Location header found.`, { statusCode: response.status });
+            }
+
+            // Resolve the new URL against the original one
+            let nextUrl: URL;
+            try {
+                const originalUrlObj = new URL(initialHttpsUrl);
+                 nextUrl = new URL(locationHeader, originalUrlObj);
+             } catch (urlError) {
+                 console.error(`${logPrefix} Failed to parse or construct URL from Location header '${locationHeader}' relative to '${initialHttpsUrl}':`, urlError);
+                 throw new PikoApiError(`Invalid Location header received during redirect: ${locationHeader}`, { cause: urlError });
+             }
+            const resolvedRedirectUrl = nextUrl.toString();
+            console.warn(`${logPrefix} Redirect detected. Target URL: ${resolvedRedirectUrl}`);
+            return resolvedRedirectUrl; // Return the URL from the Location header
+        }
+
+        // If not 307, assume no redirect needed for WS connection
+        console.log(`${logPrefix} No redirect detected (Status: ${response.status}). Using original URL.`);
+        return initialHttpsUrl; // Return the original URL
+
+    } catch (error) {
+         console.error(`${logPrefix} Error during initial URL probe:`, error);
+         if (error instanceof Error) {
+             console.error(`${logPrefix} Raw probe error properties: name=${error.name}, message=${error.message}, code=${(error as any).code}, errno=${(error as any).errno}, syscall=${(error as any).syscall}`);
+         }
+         // Decide if PikoApiError needs to be imported/used here
+         if ((error as any)?.name === 'PikoApiError') throw error;
+         throw new Error(`Fetch probe error for ${initialHttpsUrl}: ${error instanceof Error ? error.message : String(error)}`); // Throw a generic error if needed
+    }
+}
+// +++ END Modified HELPER FUNCTION +++ 
