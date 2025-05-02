@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { toast } from 'sonner';
 import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network } from 'lucide-react';
 import { DeviceWithConnector, ConnectorWithConfig, PikoServer } from '@/types';
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { getDeviceTypeIcon, getDisplayStateIcon } from "@/lib/mappings/presentation";
 import type { DisplayState, TypedDeviceInfo } from '@/lib/mappings/definitions';
 import { useFusionStore } from '@/stores/store';
@@ -59,9 +58,9 @@ import { DeviceMappingDialogContent } from "@/components/features/devices/device
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon"; 
 import { Badge } from "@/components/ui/badge";
 import { formatConnectorCategory } from '@/lib/utils';
-// Import missing types/functions
 import type { DeviceDetailProps } from "@/components/features/devices/device-detail-dialog-content";
 import { getDeviceTypeInfo } from "@/lib/mappings/identification";
+import { PageHeader } from '@/components/layout/page-header';
 
 // Define the shape of data expected by the table, combining store data
 interface DisplayedDevice extends Omit<DeviceWithConnector, 'status' | 'type' | 'pikoServerDetails'> { 
@@ -596,85 +595,82 @@ export default function DevicesPage() {
     return Array.from(categorySet).sort();
   }, [connectors]);
 
+  // Define the actions separately for clarity
+  const pageActions = (
+    <>
+      <Select
+        defaultValue="all"
+        value={categoryFilter}
+        onValueChange={(value) => setCategoryFilter(value)}
+      >
+        <SelectTrigger className="sm:w-[180px] h-9"> 
+          <SelectValue placeholder="Filter by connector" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">
+            <div className="flex items-center gap-2">
+              <span>All Connectors</span>
+            </div>
+          </SelectItem>
+          
+          {connectorCategories.map(category => (
+            <SelectItem key={category} value={category}>
+              <div className="flex items-center gap-2">
+                <ConnectorIcon connectorCategory={category} size={16} />
+                <span>{formatConnectorCategory(category)}</span>
+              </div>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Dialog>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Network className="h-4 w-4" />
+                  <span className="sr-only">View Mappings</span>
+                </Button>
+              </DialogTrigger>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>View Device Mappings</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <DialogContent className="sm:max-w-[700px]">
+          <DeviceMappingDialogContent />
+        </DialogContent>
+      </Dialog>
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button onClick={syncDevices} disabled={isSyncing} size="sm">
+              <RefreshCwIcon className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'Syncing...' : 'Sync'}</span> {/* Added margin */} 
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Sync devices</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </>
+  );
+
   return (
     <div className="flex flex-col h-full p-4 md:p-6"> 
-      <TooltipProvider>
-        <div className="flex justify-between items-center mb-6 gap-4 flex-shrink-0">
-          <div className="flex items-center gap-4">
-            <Cpu className="h-6 w-6 text-muted-foreground" />
-            <div>
-              <h1 className="text-2xl font-semibold text-foreground">
-                Devices
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Manage and view connected devices.
-              </p>
-            </div>
-          </div>
-          <div className="flex-grow"></div>
-          <div className="flex items-center gap-2">
-            <Select
-              defaultValue="all"
-              value={categoryFilter}
-              onValueChange={(value) => setCategoryFilter(value)}
-            >
-              <SelectTrigger className="w-[180px] h-9">
-                <SelectValue placeholder="Filter by connector" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <div className="flex items-center gap-2">
-                    <span>All Connectors</span>
-                  </div>
-                </SelectItem>
-                
-                {connectorCategories.map(category => (
-                  <SelectItem key={category} value={category}>
-                    <div className="flex items-center gap-2">
-                      <ConnectorIcon connectorCategory={category} size={16} />
-                      <span>{formatConnectorCategory(category)}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Dialog>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <Network className="h-4 w-4" />
-                        <span className="sr-only">View Mappings</span>
-                      </Button>
-                    </DialogTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>View Device Mappings</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <DialogContent className="sm:max-w-[700px]">
-                <DeviceMappingDialogContent />
-              </DialogContent>
-            </Dialog>
-
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button onClick={syncDevices} disabled={isSyncing} size="sm">
-                    <RefreshCwIcon className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                    {isSyncing ? 'Syncing...' : 'Sync'}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Sync devices</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        </div>
+      <TooltipProvider> {/* Keep TooltipProvider wrapping potentially the whole page if needed */}
+        {/* Use the new PageHeader component */}
+        <PageHeader 
+          title="Devices" 
+          description="Manage and view connected devices."
+          icon={<Cpu className="h-6 w-6" />}
+          actions={pageActions}
+        />
 
         <div className="flex-shrink-0">
           {error && (
@@ -839,7 +835,7 @@ export default function DevicesPage() {
             </div>
           </div>
         )}
-      </TooltipProvider>
+      </TooltipProvider> {/* Closing TooltipProvider */}
     </div>
   );
 } 

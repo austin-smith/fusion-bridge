@@ -3,7 +3,7 @@ import { Inter } from 'next/font/google';
 import localFont from 'next/font/local';
 import '@/styles/globals.css';
 import AppShell from '@/components/layout/app-shell/AppShell';
-import { ClientLayout } from '@/components/layout/client-layout';
+import { ClientProviders } from '@/components/layout/client-providers';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -26,12 +26,12 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning> 
       <body className={`${inter.variable} ${csgFont.variable} font-sans`}>
-        {/* Wrap AppShell and children with ClientLayout */}
-        <ClientLayout>
+        {/* Wrap AppShell and children with ClientProviders */}
+        <ClientProviders>
           <AppShell>
             {children}
           </AppShell>
-        </ClientLayout>
+        </ClientProviders>
       </body>
     </html>
   );

@@ -55,6 +55,7 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { produce } from 'immer';
 import { Input } from '@/components/ui/input';
+import { PageHeader } from '@/components/layout/page-header';
 
 export default function LocationsAreasPage() {
 
@@ -729,6 +730,27 @@ export default function LocationsAreasPage() {
     }
   };
 
+  // Define page actions
+  const pageActions = (
+    <>
+      <div className="relative flex-shrink-0"> {/* Keep search relative */}
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          type="search"
+          placeholder="Search locations..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full rounded-lg bg-background pl-8 md:w-50 lg:w-60 h-9"
+        />
+      </div>
+      {!isFilteredEmptyState && (
+        <Button variant="outline" onClick={() => handleOpenLocationDialog(null)} size="sm"> {/* Size sm for consistency */}
+          <Plus className="h-4 w-4" /> Add Location
+        </Button>
+      )}
+    </>
+  );
+
   // Don't render anything until the tree view state is loaded from localStorage
   if (showTreeView === null) {
     return (
@@ -740,11 +762,11 @@ export default function LocationsAreasPage() {
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <div className="container px-0 md:px-2">
-        {/* Header with breadcrumbs */}
-        <div className="bg-background sticky top-0 z-10 mb-6 pb-4 pt-1 border-b">
-          <div className="px-4 md:px-6 pt-2">
-            <div className="flex justify-between items-center gap-4">
+      <div className="flex flex-col h-full"> 
+        <div className="p-4 md:p-6 border-b flex-shrink-0"> {/* Add padding and border */} 
+          <PageHeader 
+            title="Locations & Areas"
+            icon={(
               <div className="flex items-center gap-3">
                 <Button 
                   variant="outline" 
@@ -755,58 +777,27 @@ export default function LocationsAreasPage() {
                 >
                   {showTreeView ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
                 </Button>
-                <div>
-                  <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
-                    <Building className="h-6 w-6 text-muted-foreground" />
-                    Locations & Areas
-                  </h1>
-                </div>
+                <Building className="h-6 w-6 text-muted-foreground" />
               </div>
-              <div className="flex items-center gap-2">
-                {/* ---> ADDED: Search Input <--- */} 
-                <div className="relative">
-                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                   <Input
-                      type="search"
-                      placeholder="Search locations..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full rounded-lg bg-background pl-8 md:w-50 lg:w-60 h-9"
-                   />
-                </div>
-                {/* ---> END ADDED <--- */} 
-                {!isFilteredEmptyState && (
-                  <Button variant="outline" onClick={() => handleOpenLocationDialog(null)}>
-                      <Plus className="h-4" /> Add Location
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
+            )}
+            actions={pageActions}
+          />
         </div>
 
-        {/* Main content with optional tree view */}
-        <div className="flex">
-          {/* Tree view sidebar - conditional rendering */}
+        <div className="flex flex-grow overflow-hidden"> 
           {showTreeView && (
-            <div className="w-64 pr-2 pl-4 flex-shrink-0">
-              <div className="mb-4 pb-3 border-b">
+            <div className="w-64 pr-2 pl-4 border-r flex-shrink-0 flex flex-col"> {/* Add border and flex-col */} 
+              <div className="mb-4 pb-3 border-b pt-4"> {/* Adjust padding */}
                 <h3 className="font-medium text-sm mb-3">Locations Hierarchy</h3>
-                {/* Show Add Location button if there is original data, regardless of filter */} 
                 {hasOriginalData && (
                   <Button variant="secondary" size="sm" className="w-full" onClick={() => handleOpenLocationDialog(null)}>
                     <Plus className="h-3.5 w-3.5" /> Add Location
                   </Button>
                 )}
               </div>
-              <ScrollArea className="h-[calc(100vh-16rem)]">
-                {/* Locations with Areas */}
+              <ScrollArea className="flex-grow"> 
                 {filteredSortedLocations.map(location => renderTreeItem(location))}
-                
-                {/* Unassigned Areas */}
                 {renderUnassignedAreas()}
-                
-                {/* Empty state (simple text) */}
                 {isFilteredEmptyState && (
                   <div className="px-2 pt-4 text-center">
                     <p className="text-sm text-muted-foreground mb-1">No locations or areas found.</p>
@@ -819,129 +810,126 @@ export default function LocationsAreasPage() {
             </div>
           )}
 
-          {/* Main content */}
-          <div className={cn("flex-1 px-4", showTreeView ? "md:pr-6" : "md:px-6")}>
-            {(isLoadingLocations || isLoadingAreas) && renderLoading()}
-            {errorLocations && renderError(errorLocations, 'Locations')}
-            {errorAreas && renderError(errorAreas, 'Areas')}
-            
-            {!isLoadingLocations && !isLoadingAreas && !errorLocations && !errorAreas && (
-                <div className="space-y-6">
-                    {/* ---> UPDATED: Use filtered locations <--- */}
-                    {filteredSortedLocations.map(location => {
-                        const locationAreas = areasByLocation[location.id] || []; // Use ORIGINAL areas
-                        return (
-                            <Card 
-                              key={location.id} 
-                              id={`location-${location.id}`} 
-                            >
-                                <CardHeader className="flex flex-row items-center justify-between pb-3 bg-muted/25">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <Building className="h-5 w-5 flex-shrink-0" />
-                                      <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
-                                    </div>
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                                                <span className="sr-only">Location Actions</span>
-                                                <MoreHorizontal className="h-4 w-4" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
-                                            <DropdownMenuItem onClick={() => handleOpenLocationDialog(location)}>
-                                              <Pencil className="h-4 w-4 mr-2" />
-                                              Edit Location
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => handleOpenAreaDialog(null, location.id)}>
-                                              <Plus className="h-4 w-4 mr-2" />
-                                              Add Area
-                                            </DropdownMenuItem>
-                                            <DropdownMenuSeparator />
-                                            <DropdownMenuItem
-                                                className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                                                onClick={() => handleOpenLocationDeleteDialog(location)}
-                                            >
-                                                <Trash2 className="h-4 w-4 mr-2" />
-                                                Delete Location
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                </CardHeader>
-                                <CardContent className="pt-0 bg-muted/25 rounded-b-lg"> 
-                                    {locationAreas.length > 0 ? (
-                                        locationAreas.map(area => renderAreaCard(area))
-                                    ) : (
-                                        <div className="px-4 py-6 text-center">
-                                            <div className="rounded-full bg-muted p-3 mb-2 inline-flex">
-                                              <MapPin className="h-5 w-5 text-muted-foreground" />
-                                            </div>
-                                            <p className="text-sm text-muted-foreground mb-2">
-                                                No areas assigned to this location. 
-                                            </p>
-                                            <Button variant="outline" size="sm" onClick={() => handleOpenAreaDialog(null, location.id)}>
-                                              <Plus className="h-3.5 w-3.5 mr-1" /> Add Area
-                                            </Button>
-                                        </div>
-                                    )}
+          <ScrollArea className="flex-1"> 
+             <div className={cn("p-4 md:p-6", showTreeView ? "md:pr-6" : "md:px-6")}> {/* Add padding */} 
+               {(isLoadingLocations || isLoadingAreas) && renderLoading()}
+               {errorLocations && renderError(errorLocations, 'Locations')}
+               {errorAreas && renderError(errorAreas, 'Areas')}
+               
+               {!isLoadingLocations && !isLoadingAreas && !errorLocations && !errorAreas && (
+                   <div className="space-y-6">
+                       {filteredSortedLocations.map(location => {
+                           const locationAreas = areasByLocation[location.id] || []; // Use ORIGINAL areas
+                           return (
+                               <Card 
+                                 key={location.id} 
+                                 id={`location-${location.id}`} 
+                               >
+                                   <CardHeader className="flex flex-row items-center justify-between pb-3 bg-muted/25">
+                                       <div className="flex items-center gap-2 min-w-0">
+                                         <Building className="h-5 w-5 flex-shrink-0" />
+                                         <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
+                                       </div>
+                                       <DropdownMenu>
+                                           <DropdownMenuTrigger asChild>
+                                               <Button variant="ghost" size="icon" className="h-8 w-8">
+                                                   <span className="sr-only">Location Actions</span>
+                                                   <MoreHorizontal className="h-4 w-4" />
+                                               </Button>
+                                           </DropdownMenuTrigger>
+                                           <DropdownMenuContent align="end">
+                                               <DropdownMenuItem onClick={() => handleOpenLocationDialog(location)}>
+                                                 <Pencil className="h-4 w-4 mr-2" />
+                                                 Edit Location
+                                               </DropdownMenuItem>
+                                               <DropdownMenuItem onClick={() => handleOpenAreaDialog(null, location.id)}>
+                                                 <Plus className="h-4 w-4 mr-2" />
+                                                 Add Area
+                                               </DropdownMenuItem>
+                                               <DropdownMenuSeparator />
+                                               <DropdownMenuItem
+                                                   className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                                                   onClick={() => handleOpenLocationDeleteDialog(location)}
+                                               >
+                                                   <Trash2 className="h-4 w-4 mr-2" />
+                                                   Delete Location
+                                               </DropdownMenuItem>
+                                           </DropdownMenuContent>
+                                       </DropdownMenu>
+                                   </CardHeader>
+                                   <CardContent className="pt-0 bg-muted/25 rounded-b-lg"> 
+                                       {locationAreas.length > 0 ? (
+                                           locationAreas.map(area => renderAreaCard(area))
+                                       ) : (
+                                           <div className="px-4 py-6 text-center">
+                                               <div className="rounded-full bg-muted p-3 mb-2 inline-flex">
+                                                 <MapPin className="h-5 w-5 text-muted-foreground" />
+                                               </div>
+                                               <p className="text-sm text-muted-foreground mb-2">
+                                                   No areas assigned to this location. 
+                                               </p>
+                                               <Button variant="outline" size="sm" onClick={() => handleOpenAreaDialog(null, location.id)}>
+                                                 <Plus className="h-3.5 w-3.5" /> Add Area
+                                               </Button>
+                                           </div>
+                                       )}
+                                   </CardContent>
+                               </Card>
+                           );
+                       })}
+
+                       {searchTerm === '' && areasByLocation['unassigned'] && areasByLocation['unassigned'].length > 0 && (
+                           <Card>
+                               <CardHeader>
+                                   <CardTitle>Unassigned Areas</CardTitle>
+                                   <CardDescription>These areas are not linked to any specific location.</CardDescription>
+                               </CardHeader>
+                               <CardContent>
+                                   {areasByLocation['unassigned'].map(area => renderAreaCard(area))}
+                               </CardContent>
+                           </Card>
+                       )}
+
+                       {isFilteredEmptyState && (
+                            <Card className="border-dashed">
+                                <CardContent className="pt-10 pb-10 px-6 flex flex-col items-center text-center">
+                                  <div className="rounded-full p-6 mb-4">
+                                    <Building className="h-12 w-12 text-muted-foreground" />
+                                  </div>
+                                  <CardTitle className="mb-2 ">
+                                    {hasOriginalData && searchTerm !== '' 
+                                     ? "No locations match your search term. Try adjusting your filter."
+                                     : <>Locations represent physical buildings or sites... {/* rest of original message */}
+                                        <br/>Use them to organize your devices and control security by zone.
+                                      </>
+                                    }
+                                  </CardTitle>
+                                  <CardDescription className="mb-6 max-w-md">
+                                    {hasOriginalData && searchTerm !== ''
+                                     ? "No locations match your search term. Try adjusting your filter."
+                                     : // Locations represent physical buildings or sites...
+                                       <>
+                                        <br/>Use them to organize your devices and control security by zone.
+                                      </>
+                                    }
+                                  </CardDescription>
+                                  {!hasOriginalData && (
+                                    <Button onClick={() => handleOpenLocationDialog(null)} className="gap-2">
+                                      <Plus className="h-4 w-4" /> Add Your First Location
+                                    </Button>
+                                  )}
                                 </CardContent>
                             </Card>
-                        );
-                    })}
-
-                    {/* ---> UPDATED: Show unassigned only if search is inactive <--- */}
-                    {searchTerm === '' && areasByLocation['unassigned'] && areasByLocation['unassigned'].length > 0 && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Unassigned Areas</CardTitle>
-                                <CardDescription>These areas are not linked to any specific location.</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                {areasByLocation['unassigned'].map(area => renderAreaCard(area))}
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* ---> UPDATED: Conditional Empty State <--- */}
-                    {isFilteredEmptyState && (
-                         <Card className="border-dashed">
-                             <CardContent className="pt-10 pb-10 px-6 flex flex-col items-center text-center">
-                               <div className="rounded-full p-6 mb-4">
-                                 <Building className="h-12 w-12 text-muted-foreground" />
-                               </div>
-                               <CardTitle className="mb-2 ">
-                                 {hasOriginalData && searchTerm !== '' 
-                                  ? "No locations match your search term. Try adjusting your filter."
-                                  : <>Locations represent physical buildings or sites... {/* rest of original message */}
-                                     <br/>Use them to organize your devices and control security by zone.
-                                   </>
-                                 }
-                               </CardTitle>
-                               <CardDescription className="mb-6 max-w-md">
-                                 {hasOriginalData && searchTerm !== ''
-                                  ? "No locations match your search term. Try adjusting your filter."
-                                  : // Locations represent physical buildings or sites...
-                                    <>
-                                     <br/>Use them to organize your devices and control security by zone.
-                                   </>
-                                 }
-                               </CardDescription>
-                               {!hasOriginalData && (
-                                 <Button onClick={() => handleOpenLocationDialog(null)} className="gap-2">
-                                   <Plus className="h-4 w-4" /> Add Your First Location
-                                 </Button>
-                               )}
-                             </CardContent>
-                         </Card>
-                    )}
-                </div>
-            )}
-
-            {isLoadingAllDevices && <div className="text-sm text-muted-foreground mt-4 text-center">Loading device list...</div>}
-            {errorAllDevices && renderError(errorAllDevices, 'All Devices')}
-          </div>
+                       )}
+                   </div>
+               )}
+  
+               {isLoadingAllDevices && <div className="text-sm text-muted-foreground mt-4 text-center">Loading device list...</div>}
+               {errorAllDevices && renderError(errorAllDevices, 'All Devices')}
+             </div>
+          </ScrollArea>
         </div>
 
-        {/* Dialogs remain outside DndContext */}
         <LocationEditDialog
           isOpen={isLocationDialogOpen}
           onOpenChange={setIsLocationDialogOpen}

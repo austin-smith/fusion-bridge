@@ -6,7 +6,7 @@ import { Button, buttonVariants } from '@/components/ui/button'; // Import butto
 import { AddConnectorModal } from '@/components/features/connectors/add-connector-modal'; // Import the modal
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Pencil, Trash2, Plus, Plug, AlertCircle, X } from "lucide-react";
+import { Loader2, Pencil, Trash2, Plus, Plug, AlertCircle, X, Copy, Check } from "lucide-react";
 // Using console for messaging instead of toast
 import { ConnectorWithConfig } from '@/types'; // Renamed type
 import {
@@ -38,9 +38,9 @@ import { formatConnectorCategory } from "@/lib/utils"; // Import formatConnector
 import { formatDistanceToNow } from 'date-fns'; // <<< Import date-fns function
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'; // <<< Added SyntaxHighlighter
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'; // <<< Added style
-import { Check, Copy } from "lucide-react"; // <<< Added icons for copy button
 import { toast } from 'sonner'; // <<< Added for copy toast
 import { ConnectorRow } from '@/components/features/connectors/ConnectorRow'; // <<< Import ConnectorRow
+import { PageHeader } from '@/components/layout/page-header'; // Import PageHeader
 
 // Define structure for fetched YoLink MQTT state from API
 interface FetchedMqttState {
@@ -357,27 +357,25 @@ export default function ConnectorsPage() {
   // Find the connector being deleted to display its name in the dialog
   const connectorToDelete = connectors.find(c => c.id === connectorIdToDelete);
 
+  // Define page actions
+  const pageActions = (
+    <Button onClick={handleAddConnectorClick} size="sm">
+      <Plus className="h-4 w-4" /> 
+      Add Connector
+    </Button>
+  );
+
   return (
     <TooltipProvider> {/* Wrap page content */}
       <div className="container py-6">
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-4">
-            <Plug className="h-6 w-6 text-muted-foreground" />
-            <div>
-              <h1 className="text-2xl font-semibold text-foreground">
-                Connectors
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Manage integration connectors.
-              </p>
-            </div>
-          </div>
-          <Button onClick={handleAddConnectorClick} size="sm">
-            <Plus className="h-4 w-4" />
-            Add Connector
-          </Button>
-        </div>
-        
+        {/* Use PageHeader */}
+        <PageHeader 
+          title="Connectors"
+          description="Manage integration connectors."
+          icon={<Plug className="h-6 w-6" />}
+          actions={pageActions}
+        />
+
         {/* Error Alert */}
         {error && (
           <Alert variant="destructive" className="mb-6">
@@ -386,7 +384,7 @@ export default function ConnectorsPage() {
             <AlertDescription>
               {error}
               <button 
-                onClick={() => setError(null)} // Allow dismissing the error
+                onClick={() => setError(null)}
                 className="absolute top-2 right-2 p-1 rounded-md hover:bg-destructive/20"
                 aria-label="Dismiss error"
               >

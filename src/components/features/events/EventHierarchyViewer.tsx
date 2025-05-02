@@ -139,9 +139,9 @@ export const EventHierarchyViewer: React.FC = () => {
             <div className="flex items-center justify-end gap-2 mb-2 px-1 flex-shrink-0">
                 <Button variant="outline" size="sm" onClick={toggleAll} className="text-xs h-7">
                     {allExpanded ? (
-                        <MinusSquare className="h-3.5 w-3.5 mr-1" />
+                        <MinusSquare className="h-3.5 w-3.5" />
                     ) : (
-                        <PlusSquare className="h-3.5 w-3.5 mr-1" />
+                        <PlusSquare className="h-3.5 w-3.5" />
                     )}
                     {allExpanded ? 'Collapse All' : 'Expand All'}
                 </Button>

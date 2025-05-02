@@ -76,6 +76,7 @@ import { DeviceWithConnector, ConnectorWithConfig } from '@/types';
 import { useFusionStore } from '@/stores/store';
 import { EventHierarchyViewer } from '@/components/features/events/EventHierarchyViewer';
 import { getDeviceTypeInfo } from "@/lib/mappings/identification";
+import { PageHeader } from '@/components/layout/page-header';
 
 // Update the event interface
 interface EnrichedEvent {
@@ -780,100 +781,94 @@ export default function EventsPage() {
     });
   }, [categoryFilter, columnFilters]);
 
-  // Restore the main return structure
+  // Define page actions
+  const pageActions = (
+    <>
+      <Select
+        defaultValue="all"
+        value={categoryFilter}
+        onValueChange={(value) => setCategoryFilter(value)}
+      >
+        <SelectTrigger className="w-full sm:w-[180px] h-9">
+          <SelectValue placeholder="Filter by connector" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">
+            <div className="flex items-center gap-2">
+              <span>All Connectors</span>
+            </div>
+          </SelectItem>
+          {connectorCategories.map(category => (
+            <SelectItem key={category} value={category}>
+              <div className="flex items-center gap-2">
+                <ConnectorIcon connectorCategory={category} size={16} />
+                <span>{formatConnectorCategory(category)}</span>
+              </div>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <TooltipProvider delayDuration={100}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                const nextIsGrouped = !isGrouped;
+                setIsGrouped(nextIsGrouped);
+                setGrouping(nextIsGrouped ? ['deviceName'] : []);
+              }}
+              className="h-8 w-8 flex-shrink-0"
+            >
+              {isGrouped ? <List className="h-4 w-4" /> : <Layers className="h-4 w-4" />}
+              <span className="sr-only">{isGrouped ? 'View Details' : 'Group by Device'}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{isGrouped ? 'View Details' : 'Group by Device'}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <Dialog open={isHierarchyDialogOpen} onOpenChange={setIsHierarchyDialogOpen}>
+        <TooltipProvider delayDuration={100}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="icon" className="h-8 w-8 flex-shrink-0">
+                  <ListTree className="h-4 w-4" />
+                  <span className="sr-only">View Event Hierarchy</span>
+                </Button>
+              </DialogTrigger>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>View Event Hierarchy</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Event Hierarchy</DialogTitle>
+            <DialogDescription>
+              Defined event categories, types, and subtypes.
+            </DialogDescription>
+          </DialogHeader>
+          <EventHierarchyViewer />
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+
   return (
-    // Add flex container for overall page layout
     <div className="flex flex-col h-full p-4 md:p-6">
       <TooltipProvider>
-        {/* Header Section - Make it non-shrinkable */}
-        <div className="flex items-center justify-between mb-6 gap-4 flex-shrink-0">
-          <div className="flex items-center gap-4">
-            <Activity className="h-6 w-6 text-muted-foreground" />
-            <div>
-              <h1 className="text-2xl font-semibold text-foreground">
-                Events
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                View incoming events from connected devices.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Select
-              defaultValue="all"
-              value={categoryFilter}
-              onValueChange={(value) => setCategoryFilter(value)}
-            >
-              <SelectTrigger className="w-[180px] h-9">
-                <SelectValue placeholder="Filter by connector" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <div className="flex items-center gap-2">
-                    <span>All Connectors</span>
-                  </div>
-                </SelectItem>
-                
-                {connectorCategories.map(category => (
-                  <SelectItem key={category} value={category}>
-                    <div className="flex items-center gap-2">
-                      <ConnectorIcon connectorCategory={category} size={16} />
-                      <span>{formatConnectorCategory(category)}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <TooltipProvider delayDuration={100}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => {
-                      const nextIsGrouped = !isGrouped;
-                      setIsGrouped(nextIsGrouped);
-                      setGrouping(nextIsGrouped ? ['deviceName'] : []);
-                    }}
-                    className="h-8 w-8"
-                  >
-                    {isGrouped ? <List className="h-4 w-4" /> : <Layers className="h-4 w-4" />}
-                    <span className="sr-only">{isGrouped ? 'View Details' : 'Group by Device'}</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{isGrouped ? 'View Details' : 'Group by Device'}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <Dialog open={isHierarchyDialogOpen} onOpenChange={setIsHierarchyDialogOpen}>
-              <TooltipProvider delayDuration={100}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" size="icon" className="h-8 w-8">
-                        <ListTree className="h-4 w-4" />
-                        <span className="sr-only">View Event Hierarchy</span>
-                      </Button>
-                    </DialogTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>View Event Hierarchy</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>Event Hierarchy</DialogTitle>
-                  <DialogDescription>
-                    Defined event categories, types, and subtypes.
-                  </DialogDescription>
-                </DialogHeader>
-                <EventHierarchyViewer />
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
+        {/* Use PageHeader */}
+        <PageHeader 
+          title="Events"
+          description="View incoming events from connected devices."
+          icon={<Activity className="h-6 w-6" />}
+          actions={pageActions}
+        />
 
         {/* Device Detail Dialog */}
         <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
@@ -896,18 +891,7 @@ export default function EventsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Conditional Messages - Make non-shrinkable */}
-        <div className="flex-shrink-0 mb-4">
-          {loading && events.length === 0 ? (
-            <p className="text-muted-foreground">Loading initial events...</p>
-          ) : !loading && events.length === 0 ? (
-            <p className="text-muted-foreground">
-              No events have been received yet. This page will update periodically.
-            </p>
-          ) : null}
-        </div>
-
-        {/* Table Container - Conditionally render, make it grow and handle overflow */}
+        {/* Table Container */}
         {!loading && events.length > 0 && (
           <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
             {/* Inner container for scrollable table */}
@@ -1019,7 +1003,7 @@ export default function EventsPage() {
                 </TableBody>
               </Table>
             </div>
-            {/* Pagination - Keep at bottom, non-shrinkable */}
+            {/* Pagination */}
             <div className="flex items-center justify-between p-2 border-t flex-shrink-0">
               <div className="flex-1 text-sm text-muted-foreground">
                 Total Rows: {table.getFilteredRowModel().rows.length}

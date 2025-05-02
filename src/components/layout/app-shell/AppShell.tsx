@@ -2,45 +2,10 @@
 
 import React from 'react';
 import { useTheme } from "next-themes";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { FiSun, FiMoon, FiMenu } from "react-icons/fi";
-import FusionIcon from '@/components/icons/FusionIcon';
+import { FiMenu } from "react-icons/fi";
 import { AppSidebar } from '../app-sidebar';
 import { SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
-
-// Theme Toggle Button Component (Simplified for Header)
-const ThemeToggleButton = () => {
-  const { setTheme } = useTheme();
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-9 w-9">
-          <FiSun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-          <FiMoon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-          <span className="sr-only">Toggle theme</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setTheme("light")}>
-          Light
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("dark")}>
-          Dark
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("system")}>
-          System
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-};
+import { ThemeToggle } from '@/components/common/theme-toggle';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -60,7 +25,7 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
           
           <div className="flex-1"></div>
 
-          <ThemeToggleButton />
+          <ThemeToggle />
         </header>
 
         <div className="flex-1 p-4 md:p-6">

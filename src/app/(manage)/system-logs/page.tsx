@@ -129,88 +129,101 @@ export default function SystemLogsPage() {
     setSearchQuery('');
   }, []);
 
+  // Define actions separately for clarity, used inside CardHeader now
+  const cardHeaderActions = (
+    <div className="flex items-center gap-4 flex-wrap justify-end">
+      <div className="flex items-center gap-3">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                variant="outline"
+                size="icon"
+                onClick={clearLogs}
+                className="h-8 w-8"
+              >
+                <Eraser className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Clear Logs
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        <Toggle 
+          pressed={isLiveEnabled} 
+          onPressedChange={setIsLiveEnabled}
+          size="sm"
+          className="h-8 gap-1 data-[state=on]:bg-green-50 data-[state=on]:text-green-900 hover:bg-muted hover:text-muted-foreground data-[state=on]:hover:bg-green-100 data-[state=on]:hover:text-green-900"
+          aria-label="Toggle live updates"
+        >
+          <Activity className="h-3.5 w-3.5" />
+          <span className="text-xs font-medium">Live</span>
+        </Toggle>
+        
+        <Toggle 
+          pressed={isAutoScrollEnabled} 
+          onPressedChange={setIsAutoScrollEnabled}
+          disabled={!isLiveEnabled}
+          size="sm"
+          className="h-8 gap-1 data-[state=on]:bg-blue-50 data-[state=on]:text-blue-900 hover:bg-muted hover:text-muted-foreground data-[state=on]:hover:bg-blue-100 data-[state=on]:hover:text-blue-900"
+          aria-label="Toggle auto-scroll"
+        >
+          <ChevronsUpDown className="h-3.5 w-3.5" />
+          <span className="text-xs font-medium">Auto Scroll</span>
+        </Toggle>
+      </div>
+
+      <Badge variant={
+        connectionStatus === 'paused' ? "outline" :
+        connectionStatus === 'connected' ? "default" :
+        connectionStatus === 'connecting' ? "secondary" :
+        "destructive" // error state
+      } className="h-8 px-3 flex items-center gap-1.5 w-28 justify-center pointer-events-none">
+        <span className={`h-2 w-2 rounded-full inline-flex flex-shrink-0 animate-pulse ${
+          connectionStatus === 'paused' ? 'bg-gray-500' :
+          connectionStatus === 'connected' ? 'bg-green-400 ring-1 ring-white' :
+          connectionStatus === 'connecting' ? 'bg-yellow-400 ring-1 ring-white' :
+          'bg-red-400 ring-1 ring-white'
+        } ${connectionStatus !== 'connecting' ? 'animate-none' : ''}`} />
+        <span className="inline-flex text-white">
+          {connectionStatus === 'paused' ? 'Paused' :
+           connectionStatus === 'connected' ? 'Connected' :
+           connectionStatus === 'connecting' ? 'Connecting...' :
+           'Error'}
+        </span>
+      </Badge>
+    </div>
+  );
+
   return (
-    <div className="px-6">
-      <Card className="h-[calc(100vh-12rem)] flex flex-col">
-        <CardHeader className="flex-none pb-4">
+    // Keep h-full and padding on the root div
+    <div className="flex flex-col h-full px-4 md:px-6 py-4"> 
+      {/* Card takes full height and contains header + content */}
+      <Card className="flex-1 flex flex-col min-h-0">
+        {/* Re-introduce CardHeader */}
+        <CardHeader className="flex-none pb-4 border-b"> {/* Add border back */} 
           <div className="flex items-start justify-between gap-4">
+            {/* Title/Description Section */}
             <div className="flex items-center gap-4 flex-shrink-0">
               <Terminal className="h-6 w-6 text-muted-foreground" />
               <div>
-                <CardTitle>System Logs</CardTitle>
+                <CardTitle className="text-xl">System Logs</CardTitle> {/* Adjusted size */}
                 <p className="text-sm text-muted-foreground">
                   View real-time system messages and events.
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-4 flex-wrap justify-end">
-              <div className="flex items-center gap-3">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button 
-                        variant="outline"
-                        size="icon"
-                        onClick={clearLogs}
-                        className="h-8 w-8"
-                      >
-                        <Eraser className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Clear Logs
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-
-                <Toggle 
-                  pressed={isLiveEnabled} 
-                  onPressedChange={setIsLiveEnabled}
-                  size="sm"
-                  className="h-8 gap-1 data-[state=on]:bg-green-50 data-[state=on]:text-green-900 hover:bg-muted hover:text-muted-foreground data-[state=on]:hover:bg-green-100 data-[state=on]:hover:text-green-900"
-                  aria-label="Toggle live updates"
-                >
-                  <Activity className="h-3.5 w-3.5" />
-                  <span className="text-xs font-medium">Live</span>
-                </Toggle>
-                
-                <Toggle 
-                  pressed={isAutoScrollEnabled} 
-                  onPressedChange={setIsAutoScrollEnabled}
-                  disabled={!isLiveEnabled}
-                  size="sm"
-                  className="h-8 gap-1 data-[state=on]:bg-blue-50 data-[state=on]:text-blue-900 hover:bg-muted hover:text-muted-foreground data-[state=on]:hover:bg-blue-100 data-[state=on]:hover:text-blue-900"
-                  aria-label="Toggle auto-scroll"
-                >
-                  <ChevronsUpDown className="h-3.5 w-3.5" />
-                  <span className="text-xs font-medium">Auto Scroll</span>
-                </Toggle>
-              </div>
-
-              <Badge variant={
-                connectionStatus === 'paused' ? "outline" :
-                connectionStatus === 'connected' ? "default" :
-                connectionStatus === 'connecting' ? "secondary" :
-                "destructive" // error state
-              } className="h-8 px-3 flex items-center gap-1.5 w-28 justify-center pointer-events-none">
-                <span className={`h-2 w-2 rounded-full inline-flex flex-shrink-0 animate-pulse ${
-                  connectionStatus === 'paused' ? 'bg-gray-500' :
-                  connectionStatus === 'connected' ? 'bg-green-400 ring-1 ring-white' :
-                  connectionStatus === 'connecting' ? 'bg-yellow-400 ring-1 ring-white' :
-                  'bg-red-400 ring-1 ring-white'
-                } ${connectionStatus !== 'connecting' ? 'animate-none' : ''}`} />
-                <span className="inline-flex text-white">
-                  {connectionStatus === 'paused' ? 'Paused' :
-                   connectionStatus === 'connected' ? 'Connected' :
-                   connectionStatus === 'connecting' ? 'Connecting...' :
-                   'Error'}
-                </span>
-              </Badge>
-            </div>
+            {/* Actions Section (using the defined variable) */}
+            {cardHeaderActions}
           </div>
         </CardHeader>
-        <CardContent className="flex-1 p-0 min-h-0">
-          <div className="h-full bg-gray-950 rounded-md flex flex-col">
+        
+        {/* CardContent remains largely the same, holds the dark inset area */}
+        <CardContent className="flex-1 p-0 min-h-0"> 
+          <div className="h-full bg-gray-950 rounded-b-md flex flex-col"> {/* rounded-b-md */} 
+            {/* Search bar */}
             <div className="flex-none p-2 border-b border-gray-800">
               <div className="relative max-w-xs">
                 <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -233,6 +246,7 @@ export default function SystemLogsPage() {
                 )}
               </div>
             </div>
+            {/* Log scroll area */}
             <div 
               ref={scrollContainerRef}
               className="flex-1 overflow-auto"
