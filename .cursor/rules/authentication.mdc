@@ -1,0 +1,32 @@
+---
+description: Authentication Setup (better-auth)
+globs: 
+alwaysApply: false
+---
+# Description: Authentication Setup (better-auth)
+
+## Overview
+
+This project uses the `better-auth` library for handling user authentication.
+
+## Key Components & Configuration
+
+-   **Library:** `better-auth`
+-   **Database Adapter:** `better-auth/adapters/drizzle` configured for SQLite (`@/lib/auth/server.ts`). Assumes default table names (`user`, `account`, `session`, `verification`) as defined in `src/data/db/schema.ts`.
+-   **Authentication Methods:**
+    -   Email & Password (`emailAndPassword.enabled: true`)
+-   **API Routes:** All standard `better-auth` API operations (login, logout, callbacks, etc.) are handled by the catch-all route `src/app/api/auth/[...all]/route.ts` using `toNextJsHandler(auth)`.
+-   **Session Check API:** A custom route `src/app/api/auth/check-session/route.ts` exists to provide session status (including basic user info like id, name, email, image) for server-side checks (like middleware or page loads).
+-   **Middleware:** `src/middleware.ts` protects most routes. It checks authentication status by fetching from `/api/auth/check-session`. Unauthenticated users are redirected to `/login`. The matcher excludes `/api/auth/*`, `/api/webhooks/*`, and common static asset paths.
+-   **Client-Side Access:** Use `signIn` and `signOut` from `@/lib/auth/client.ts` and the `useSession` hook (`@/lib/auth/client`).
+-   **Server-Side Access:**
+    -   In Server Actions: Use `await auth.$context` to get session and other context (`@/lib/auth/server.ts`).
+    -   In Server Components (Pages/Layouts): Fetch user data from the internal `/api/auth/check-session` API route.
+
+## Auxiliary Auth Actions
+
+-   The file `src/lib/actions/auth-actions.ts` contains server actions related to the authentication system but separate from the core `better-auth` handlers. This includes actions like the initial user setup (`createFirstAdminUser`), which interacts with auth tables and uses `better-auth` context helpers (e.g., for password hashing).
+
+## Important Notes
+
+-   Webhooks (`/api/webhooks/*`) rely on their own authentication (e.g., signature verification within the route handler) and are *not* protected by the session middleware.
