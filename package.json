@@ -49,6 +49,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/uuid": "^10.0.0",
     "@types/websocket": "^1.0.10",
+    "better-auth": "^1.2.7",
     "better-sqlite3": "^9.4.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

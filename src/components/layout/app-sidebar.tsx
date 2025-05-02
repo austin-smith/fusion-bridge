@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import React, { useState } from 'react';
 import {
   Sidebar,
   SidebarContent,
@@ -9,70 +10,274 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { Button } from '@/components/ui/button';
+import { LogOut, Loader2, User, Settings, ChevronsUpDown, Users, Plug, Cpu, Terminal, Workflow, Building } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FiActivity } from 'react-icons/fi';
-import { Plug, Cpu, Terminal, Workflow, Network, Building } from 'lucide-react';
 import FusionIcon from '@/components/icons/FusionIcon';
+import { useSession, signOut } from '@/lib/auth/client';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
 
-// Define nav items (copied from old NavMenu)
-const navItems = [
-  { href: '/connectors', label: 'Connectors', icon: Plug },
-  { href: '/devices', label: 'Devices', icon: Cpu },
-  { href: '/locations-areas', label: 'Locations & Areas', icon: Building },
-  { href: '/events', label: 'Events', icon: FiActivity },
-  { href: '/automations', label: 'Automations', icon: Workflow },
-  { href: '/system-logs', label: 'Console', icon: Terminal },
+// --- Define Navigation Groups ---
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ElementType;
+};
+
+type NavGroup = {
+  items: NavItem[];
+};
+
+const navGroups: NavGroup[] = [
+  {
+    items: [
+      { href: '/connectors', label: 'Connectors', icon: Plug },
+      { href: '/devices', label: 'Devices', icon: Cpu },
+      { href: '/locations-areas', label: 'Locations & Areas', icon: Building },
+    ]
+  },
+  {
+    items: [
+      { href: '/events', label: 'Events', icon: FiActivity },
+      { href: '/automations', label: 'Automations', icon: Workflow },
+    ]
+  },
+  {
+    items: [
+      { href: '/users', label: 'Users', icon: Users },
+      { href: '/system-logs', label: 'Console', icon: Terminal },
+    ]
+  }
 ];
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const isActive = (href: string) => pathname === href;
+  const { data: session, isPending } = useSession();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await signOut({
+        fetchOptions: {
+          onSuccess: () => {
+            router.push('/login');
+          },
+          onError: (err) => {
+             console.error("Logout API call failed:", err);
+             setIsLoggingOut(false);
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error initiating logout:", error);
+      setIsLoggingOut(false);
+    }
+  };
+
+  if (isPending) {
+    return (
+      <Sidebar collapsible="icon" className="pointer-events-none">
+        <SidebarHeader className="flex h-[60px] items-center justify-center border-b">
+          <Link href="/" className="inline-block">
+            <div className={cn(
+               "flex items-center gap-2 font-bold text-xl",
+               "group-data-[collapsible=icon]:justify-center"
+            )}>
+               <FusionIcon className="h-6 w-6 text-primary" />
+               <span className="font-csg group-data-[collapsible=icon]:hidden">FUSION</span>
+            </div>
+          </Link>
+        </SidebarHeader>
+        <SidebarContent className="flex-grow">
+          {navGroups.map((group, groupIndex) => (
+            <React.Fragment key={`skeleton-group-fragment-${groupIndex}`}>
+             <SidebarGroup>
+                <SidebarGroupContent>
+                   <SidebarMenu>
+                    {group.items.map((_, itemIndex) => (
+                       <SidebarMenuItem key={`skeleton-item-${groupIndex}-${itemIndex}`}>
+                         <SidebarMenuButton
+                           disabled
+                           className={cn(
+                              "w-full justify-start",
+                              "group-data-[collapsible=icon]:justify-center"
+                           )}
+                         >
+                           <Skeleton className="mr-2 h-5 w-5 flex-shrink-0 group-data-[collapsible=icon]:mr-0" />
+                           <Skeleton className="h-4 w-24 group-data-[collapsible=icon]:hidden" />
+                         </SidebarMenuButton>
+                       </SidebarMenuItem>
+                    ))}
+                   </SidebarMenu>
+                </SidebarGroupContent>
+             </SidebarGroup>
+             {groupIndex < navGroups.length - 1 && (
+                 <Skeleton className="h-px w-full" />
+             )}
+            </React.Fragment>
+          ))}
+        </SidebarContent>
+        <SidebarFooter className="mt-auto">
+           <div className={cn(
+              "flex w-full items-center justify-start gap-2 p-2",
+              "min-h-14",
+              "group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:min-h-0",
+            )}>
+             <Skeleton className="size-7 rounded-full flex-shrink-0 group-data-[collapsible=icon]:size-full" />
+             <div className="flex flex-1 flex-col gap-1.5 group-data-[collapsible=icon]:hidden">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-3 w-24" />
+             </div>
+          </div>
+        </SidebarFooter>
+      </Sidebar>
+    );
+  }
+
+  const userEmail = session?.user?.email;
+  // Use the actual name from the session, fallback to email part or 'User'
+  const userName = session?.user?.name || (userEmail ? userEmail.split('@')[0] : 'User'); 
+  const userInitial = userName ? userName.charAt(0).toUpperCase() : '?';
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="flex h-[60px] items-center justify-center border-b">
-        <div className="flex items-center gap-2 font-bold text-xl">
-           <FusionIcon className="h-6 w-6 text-primary" />
-           <span className="font-csg group-data-[collapsible=icon]:hidden">FUSION</span>
-        </div>
+        <Link href="/" className="inline-block">
+          <div className={cn(
+              "flex items-center gap-2 font-bold text-xl",
+              "group-data-[collapsible=icon]:justify-center"
+          )}>
+             <FusionIcon className="h-6 w-6 text-primary" />
+             <span className="font-csg group-data-[collapsible=icon]:hidden">FUSION</span>
+          </div>
+        </Link>
       </SidebarHeader>
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.href);
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      asChild
-                      data-active={active}
-                      className={cn(
-                        "w-full justify-start",
-                        active && "bg-sidebar-accent text-sidebar-accent-foreground"
-                      )}
-                      tooltip={item.label}
-                    >
-                      <Link href={item.href}>
-                        <Icon className="mr-2 h-5 w-5 flex-shrink-0 group-data-[collapsible=icon]:mr-0" />
-                        <span className="truncate">{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+      <SidebarContent className="flex-grow">
+        {session && (
+          navGroups.map((group, groupIndex) => (
+            <React.Fragment key={`group-fragment-${groupIndex}`}>
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {group.items.map((item) => {
+                      const Icon = item.icon;
+                      const active = isActive(item.href);
+                      return (
+                        <SidebarMenuItem key={item.href}>
+                          <SidebarMenuButton
+                            asChild
+                            data-active={active}
+                            className={cn(
+                              "w-full justify-start",
+                              "group-data-[collapsible=icon]:justify-center",
+                              active && "bg-sidebar-accent text-sidebar-accent-foreground"
+                            )}
+                            tooltip={item.label}
+                          >
+                            <Link href={item.href}>
+                              <Icon className="mr-2 h-5 w-5 flex-shrink-0 group-data-[collapsible=icon]:mr-0" />
+                              <span className="truncate group-data-[collapsible=icon]:hidden">{item.label}</span>
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+              {groupIndex < navGroups.length - 1 && (
+                  <Separator className="" />
+              )}
+            </React.Fragment>
+          ))
+        )}
       </SidebarContent>
-      <SidebarFooter>
-        {/* Placeholder for footer content */}
+      <SidebarFooter className="mt-auto">
+         {session && (
+           <DropdownMenu>
+             <DropdownMenuTrigger asChild>
+               <Button
+                 variant="ghost"
+                 className={cn(
+                   "flex w-full items-center justify-start gap-2",
+                   "min-h-14",
+                   "group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:min-h-0",
+                   "group-data-[collapsible=expanded]:px-2",
+                   "data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
+                   "transition-all duration-200 ease-linear"
+                 )}
+                 aria-label="User menu"
+               >
+                 <div className={cn(
+                   "flex h-full w-full items-center gap-2"
+                 )}>
+                   <Avatar className={cn(
+                       "size-7 flex-shrink-0",
+                       "group-data-[collapsible=icon]:size-8"
+                    )}>
+                     <AvatarImage src={session.user?.image || ''} alt={userName || 'User'} className="object-cover" />
+                     <AvatarFallback>{userInitial}</AvatarFallback>
+                   </Avatar>
+                   <div className="flex flex-1 items-center justify-between group-data-[collapsible=icon]:hidden">
+                     <div className="flex flex-col items-start">
+                       <span className="text-sm font-medium leading-tight truncate max-w-[100px]">{userName}</span>
+                       <span className="text-xs text-muted-foreground leading-tight">{userEmail}</span>
+                     </div>
+                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-muted-foreground" />
+                   </div>
+                 </div>
+               </Button>
+             </DropdownMenuTrigger>
+             <DropdownMenuContent side="right" align="start" className="w-56">
+               <DropdownMenuLabel className="font-normal">
+                 <div className="flex items-center gap-3">
+                   <Avatar className="h-8 w-8">
+                     <AvatarImage src={session.user?.image || ''} alt={userName || 'User'} />
+                     <AvatarFallback>{userInitial}</AvatarFallback>
+                   </Avatar>
+                   <div className="flex flex-col space-y-1">
+                     <p className="text-sm font-medium leading-none truncate max-w-[150px]">{userName}</p>
+                     <p className="text-xs leading-none text-muted-foreground truncate max-w-[150px]">
+                       {userEmail}
+                     </p>
+                   </div>
+                 </div>
+               </DropdownMenuLabel>
+               <DropdownMenuSeparator />
+               <DropdownMenuItem onClick={() => router.push('/account/settings')} className="cursor-pointer">
+                 <Settings className="mr-2 h-4 w-4" />
+                 <span>Account Settings</span>
+               </DropdownMenuItem>
+               <DropdownMenuSeparator />
+               <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut}>
+                 {isLoggingOut ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <LogOut className="mr-2 h-4 w-4" />
+                  )}
+                 <span>Logout</span>
+               </DropdownMenuItem>
+             </DropdownMenuContent>
+           </DropdownMenu>
+          )}
       </SidebarFooter>
     </Sidebar>
   );
