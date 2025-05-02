@@ -42,6 +42,7 @@ import { type Row } from "@tanstack/react-table";
 import { getArmedStateIcon } from '@/lib/mappings/presentation';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
     DndContext,
     DragEndEvent,
@@ -83,6 +84,7 @@ export default function LocationsAreasPage() {
     assignDeviceToArea,
     removeDeviceFromArea,
     moveDeviceToArea,
+    batchUpdateAreasArmedState,
     allDevices,
     isLoadingAllDevices,
     errorAllDevices,
@@ -106,6 +108,7 @@ export default function LocationsAreasPage() {
     assignDeviceToArea: state.assignDeviceToArea,
     removeDeviceFromArea: state.removeDeviceFromArea,
     moveDeviceToArea: state.moveDeviceToArea,
+    batchUpdateAreasArmedState: state.batchUpdateAreasArmedState,
     allDevices: state.allDevices,
     isLoadingAllDevices: state.isLoadingAllDevices,
     errorAllDevices: state.errorAllDevices,
@@ -127,6 +130,9 @@ export default function LocationsAreasPage() {
   // ---> ADDED: State for search term
   const [searchTerm, setSearchTerm] = useState('');
   // <--- END ADDED
+
+  // Loading state for location-level arm actions
+  const [locationArmLoading, setLocationArmLoading] = useState<Record<string, boolean>>({});
 
   // Tree view state with localStorage persistence
   const [showTreeView, setShowTreeView] = useState<boolean | null>(null);
@@ -292,7 +298,6 @@ export default function LocationsAreasPage() {
     if (result) {
         const stateFormatted = state.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
         toast.success(`Area "${area.name}" set to ${stateFormatted}.`);
-        await fetchAreas(); // Refetch to update state
     } else {
         toast.error(`Failed to update armed state for area "${area.name}".`);
     }
@@ -528,17 +533,59 @@ export default function LocationsAreasPage() {
                  }
                 <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                 <CardTitle className="text-base font-medium truncate" title={area.name}>{area.name}</CardTitle>
+                <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs ml-2 flex-shrink-0">
+                  {deviceCount} {deviceCount === 1 ? 'Device' : 'Devices'}
+                </Badge>
                </div>
                
                {/* Adding relative and -translate-y-0.5 for manual UPWARD alignment */}
                <div className="relative flex items-center gap-2 flex-shrink-0 -translate-y-0.5">
-                 <Badge variant={badgeVariant} className="inline-flex items-center">
-                   {React.createElement(getArmedStateIcon(state), { className: "h-3.5 w-3.5 mr-1" })}
-                   <span>{ArmedStateDisplayNames[state] ?? state}</span>
-                 </Badge>
-                 <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs">
-                   {deviceCount} {deviceCount === 1 ? 'Device' : 'Devices'}
-                 </Badge>
+                 {/* Armed State Dropdown Button */}
+                 <DropdownMenu>
+                   <DropdownMenuTrigger asChild> 
+                     <Button 
+                       variant={badgeVariant === 'destructive' ? 'destructive' : 'secondary'}
+                       size="sm" 
+                       className={cn( 
+                         "h-7 px-2 py-0.5 text-xs font-normal border", // Base size/padding/font + ADDED border
+                         // Apply green styling for 'armed' state
+                         badgeVariant === 'default' &&
+                           "bg-green-600/10 text-green-700 hover:bg-green-600/20 dark:bg-green-700/20 dark:text-green-400 dark:hover:bg-green-700/30 border-green-600/30 dark:border-green-700/50", // Add specific border color for armed state
+                         // Destructive/Secondary variants will use their default border colors
+                       )}
+                     >
+                        {React.createElement(getArmedStateIcon(state), { className: "h-3.5 w-3.5" })} {/* Slightly more margin */} 
+                        <span>{ArmedStateDisplayNames[state] ?? state}</span>
+                        <ChevronDown className="h-3 w-3 text-muted-foreground" /> {/* Added dropdown indicator */} 
+                     </Button>
+                   </DropdownMenuTrigger>
+                   <DropdownMenuContent align="end" className="w-48">
+                     <DropdownMenuItem 
+                       onClick={(e) => { e.stopPropagation(); handleArmAction(area, ArmedState.ARMED_AWAY); }}
+                       disabled={state === ArmedState.ARMED_AWAY}
+                     >
+                       <ShieldCheck className="h-4 w-4" />
+                       Arm Away
+                     </DropdownMenuItem>
+                     <DropdownMenuItem 
+                       onClick={(e) => { e.stopPropagation(); handleArmAction(area, ArmedState.ARMED_STAY); }}
+                       disabled={state === ArmedState.ARMED_STAY}
+                     >
+                       <ShieldCheck className="h-4 w-4" />
+                       Arm Stay
+                     </DropdownMenuItem>
+                     <DropdownMenuSeparator />
+                     <DropdownMenuItem 
+                       onClick={(e) => { e.stopPropagation(); handleArmAction(area, ArmedState.DISARMED); }}
+                       disabled={state === ArmedState.DISARMED}
+                     >
+                       <ShieldOff className="h-4 w-4" />
+                       Disarm
+                     </DropdownMenuItem>
+                   </DropdownMenuContent>
+                 </DropdownMenu>
+                 {/* End Armed State Dropdown Button */}
+                 
                  <DropdownMenu>
                    <DropdownMenuTrigger asChild>
                      <Button variant="ghost" className="h-5 w-5 p-0">
@@ -547,56 +594,14 @@ export default function LocationsAreasPage() {
                      </Button>
                    </DropdownMenuTrigger>
                    <DropdownMenuContent align="end">
-                     <DropdownMenuItem onClick={(e) => {e.stopPropagation(); handleOpenAreaDialog(area);}}>
-                       <Pencil className="h-4 w-4 mr-2" />
-                       Edit Details
-                     </DropdownMenuItem>
                      <DropdownMenuItem onClick={(e) => {e.stopPropagation(); handleOpenAssignDevicesDialog(area);}}>
                        <Link className="h-4 w-4 mr-2" />
                        Assign Devices
                      </DropdownMenuItem>
-                     <DropdownMenuSeparator />
-                     <DropdownMenuGroup>
-                       <DropdownMenuSub>
-                           <DropdownMenuSubTrigger>
-                               <Shield className="h-4 w-4 mr-2" />
-                               Arm / Disarm
-                           </DropdownMenuSubTrigger>
-                           <DropdownMenuSubContent>
-                               <DropdownMenuItem
-                                   onClick={(e) => {
-                                       e.stopPropagation();
-                                       handleArmAction(area, ArmedState.ARMED_AWAY);
-                                   }}
-                                   disabled={state === ArmedState.ARMED_AWAY}
-                               >
-                                   <ShieldCheck className="h-4 w-4 mr-2" />
-                                   Arm Away
-                               </DropdownMenuItem>
-                               <DropdownMenuItem
-                                   onClick={(e) => {
-                                       e.stopPropagation();
-                                       handleArmAction(area, ArmedState.ARMED_STAY);
-                                   }}
-                                   disabled={state === ArmedState.ARMED_STAY}
-                               >
-                                   <ShieldCheck className="h-4 w-4 mr-2" />
-                                   Arm Stay
-                               </DropdownMenuItem>
-                               <DropdownMenuSeparator />
-                               <DropdownMenuItem
-                                   onClick={(e) => {
-                                       e.stopPropagation();
-                                       handleArmAction(area, ArmedState.DISARMED);
-                                   }}
-                                   disabled={state === ArmedState.DISARMED}
-                               >
-                                   <ShieldOff className="h-4 w-4 mr-2" />
-                                   Disarm
-                               </DropdownMenuItem>
-                           </DropdownMenuSubContent>
-                       </DropdownMenuSub>
-                     </DropdownMenuGroup>
+                     <DropdownMenuItem onClick={(e) => {e.stopPropagation(); handleOpenAreaDialog(area);}}>
+                       <Pencil className="h-4 w-4 mr-2" />
+                       Edit Area
+                     </DropdownMenuItem>
                      <DropdownMenuSeparator />
                      <DropdownMenuItem
                        className="text-destructive focus:text-destructive focus:bg-destructive/10"
@@ -760,10 +765,34 @@ export default function LocationsAreasPage() {
     ); // Or a better loading skeleton
   }
 
+  // Handler for location-level arm/disarm actions
+  const handleLocationArmAction = async (locationId: string, state: ArmedState) => {
+    setLocationArmLoading(prev => ({ ...prev, [locationId]: true }));
+    
+    // Placeholder for calling the store action (to be implemented)
+    // console.log(`TODO: Call store action batchUpdateAreasArmedState(${locationId}, ${state})`);
+    const success = await batchUpdateAreasArmedState(locationId, state); // Call the actual store action
+    
+    if (success) {
+      // Format state name for toast message
+      let stateFormatted = "Unknown State";
+      if (state === ArmedState.ARMED_AWAY) stateFormatted = "Armed Away";
+      else if (state === ArmedState.ARMED_STAY) stateFormatted = "Armed Stay";
+      else if (state === ArmedState.DISARMED) stateFormatted = "Disarmed";
+      
+      toast.success(`All areas in location set to ${stateFormatted}.`);
+      // No fetchAreas needed if store updates state correctly
+    } else {
+      toast.error(`Failed to update areas in location.`);
+    }
+    
+    setLocationArmLoading(prev => ({ ...prev, [locationId]: false }));
+  };
+
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div className="flex flex-col h-full"> 
-        <div className="p-4 md:p-6 border-b flex-shrink-0"> {/* Add padding and border */} 
+        <div className="p-4 border-b flex-shrink-0"> {/* Add padding and border */} 
           <PageHeader 
             title="Locations & Areas"
             icon={(
@@ -824,56 +853,123 @@ export default function LocationsAreasPage() {
                                <Card 
                                  key={location.id} 
                                  id={`location-${location.id}`} 
+                                 className="overflow-visible"
                                >
-                                   <CardHeader className="flex flex-row items-center justify-between pb-3 bg-muted/25">
-                                       <div className="flex items-center gap-2 min-w-0">
-                                         <Building className="h-5 w-5 flex-shrink-0" />
-                                         <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
-                                       </div>
-                                       <DropdownMenu>
-                                           <DropdownMenuTrigger asChild>
-                                               <Button variant="ghost" size="icon" className="h-8 w-8">
-                                                   <span className="sr-only">Location Actions</span>
-                                                   <MoreHorizontal className="h-4 w-4" />
-                                               </Button>
-                                           </DropdownMenuTrigger>
-                                           <DropdownMenuContent align="end">
-                                               <DropdownMenuItem onClick={() => handleOpenLocationDialog(location)}>
-                                                 <Pencil className="h-4 w-4 mr-2" />
-                                                 Edit Location
-                                               </DropdownMenuItem>
-                                               <DropdownMenuItem onClick={() => handleOpenAreaDialog(null, location.id)}>
-                                                 <Plus className="h-4 w-4 mr-2" />
-                                                 Add Area
-                                               </DropdownMenuItem>
-                                               <DropdownMenuSeparator />
-                                               <DropdownMenuItem
-                                                   className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                                                   onClick={() => handleOpenLocationDeleteDialog(location)}
-                                               >
-                                                   <Trash2 className="h-4 w-4 mr-2" />
-                                                   Delete Location
-                                               </DropdownMenuItem>
-                                           </DropdownMenuContent>
-                                       </DropdownMenu>
-                                   </CardHeader>
-                                   <CardContent className="pt-0 bg-muted/25 rounded-b-lg"> 
-                                       {locationAreas.length > 0 ? (
-                                           locationAreas.map(area => renderAreaCard(area))
-                                       ) : (
-                                           <div className="px-4 py-6 text-center">
-                                               <div className="rounded-full bg-muted p-3 mb-2 inline-flex">
-                                                 <MapPin className="h-5 w-5 text-muted-foreground" />
-                                               </div>
-                                               <p className="text-sm text-muted-foreground mb-2">
-                                                   No areas assigned to this location. 
-                                               </p>
-                                               <Button variant="outline" size="sm" onClick={() => handleOpenAreaDialog(null, location.id)}>
-                                                 <Plus className="h-3.5 w-3.5" /> Add Area
-                                               </Button>
-                                           </div>
-                                       )}
-                                   </CardContent>
+                                   <TooltipProvider delayDuration={100}> 
+                                     <CardHeader className="flex flex-row items-center justify-between pb-3 bg-muted/25">
+                                         <div className="flex items-center gap-2 min-w-0">
+                                           <Building className="h-5 w-5 flex-shrink-0" />
+                                           <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
+                                         </div>
+                                         {/* Action Buttons */} 
+                                         <div className="flex items-center gap-1 flex-shrink-0">
+                                             {/* NEW: Arm All Dropdown */} 
+                                             <DropdownMenu>
+                                               <Tooltip>
+                                                 <TooltipTrigger asChild>
+                                                   <DropdownMenuTrigger asChild>
+                                                     <Button 
+                                                       variant="ghost" 
+                                                       size="icon" 
+                                                       className="h-7 w-7 text-green-600 hover:text-green-700 hover:bg-green-100 dark:text-green-500 dark:hover:text-green-500 dark:hover:bg-green-900/50 disabled:opacity-50 disabled:pointer-events-none"
+                                                       disabled={locationArmLoading[location.id] || locationAreas.length === 0}
+                                                     >
+                                                        {locationArmLoading[location.id] ? 
+                                                         <Loader2 className="h-4 w-4 animate-spin" /> :
+                                                         <ShieldCheck className="h-4 w-4" /> 
+                                                       }
+                                                       <span className="sr-only">Arm All Areas Options</span>
+                                                     </Button>
+                                                   </DropdownMenuTrigger>
+                                                 </TooltipTrigger>
+                                                 <TooltipContent>
+                                                   <p>Arm All Areas</p>
+                                                 </TooltipContent>
+                                               </Tooltip>
+                                               <DropdownMenuContent align="end">
+                                                 <DropdownMenuItem onClick={() => handleLocationArmAction(location.id, ArmedState.ARMED_AWAY)}>
+                                                   {/* <ShieldCheck className="h-4 w-4 mr-2" /> // Icon provided by shadcn class */} 
+                                                   Arm Away
+                                                 </DropdownMenuItem>
+                                                 <DropdownMenuItem onClick={() => handleLocationArmAction(location.id, ArmedState.ARMED_STAY)}>
+                                                   {/* <ShieldCheck className="h-4 w-4 mr-2" /> // Icon provided by shadcn class */}
+                                                   Arm Stay
+                                                 </DropdownMenuItem>
+                                               </DropdownMenuContent>
+                                             </DropdownMenu>
+                                             {/* End: Arm All Dropdown */} 
+                                             
+                                             {/* Disarm All Button */} 
+                                             <Tooltip>
+                                               <TooltipTrigger asChild>
+                                                 <Button 
+                                                   variant="ghost" 
+                                                   size="icon" 
+                                                   className="h-7 w-7 disabled:opacity-50 disabled:pointer-events-none" 
+                                                   onClick={() => handleLocationArmAction(location.id, ArmedState.DISARMED)}
+                                                   disabled={locationArmLoading[location.id] || locationAreas.length === 0}
+                                                 >
+                                                   {locationArmLoading[location.id] ? 
+                                                     <Loader2 className="h-4 w-4 animate-spin" /> :
+                                                     <ShieldOff className="h-4 w-4" /> 
+                                                   }
+                                                   <span className="sr-only">Disarm All Areas</span>
+                                                 </Button>
+                                               </TooltipTrigger>
+                                               <TooltipContent>
+                                                 <p>Disarm All</p>
+                                               </TooltipContent>
+                                             </Tooltip>
+                                             
+                                             <Separator orientation="vertical" className="h-5 mx-1" /> 
+                                             
+                                             {/* Reintroduce Dropdown for Location Actions */} 
+                                             <DropdownMenu>
+                                                 <DropdownMenuTrigger asChild>
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7">
+                                                       <span className="sr-only">Location Actions</span>
+                                                       <MoreHorizontal className="h-4 w-4" />
+                                                    </Button>
+                                                 </DropdownMenuTrigger>
+                                                 <DropdownMenuContent align="end">
+                                                    <DropdownMenuItem onClick={() => handleOpenAreaDialog(null, location.id)}>
+                                                       <Plus className="h-4 w-4 mr-2" /> 
+                                                       Add Area
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleOpenLocationDialog(location)}>
+                                                       <Pencil className="h-4 w-4 mr-2" /> 
+                                                       Edit Location
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuItem
+                                                       className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                                                       onClick={() => handleOpenLocationDeleteDialog(location)}
+                                                    >
+                                                       <Trash2 className="h-4 w-4 mr-2" /> 
+                                                       Delete Location
+                                                    </DropdownMenuItem>
+                                                 </DropdownMenuContent>
+                                             </DropdownMenu>
+                                         </div>
+                                     </CardHeader>
+                                     <CardContent className="pt-0 bg-muted/25 rounded-b-lg"> 
+                                         {locationAreas.length > 0 ? (
+                                             locationAreas.map(area => renderAreaCard(area))
+                                         ) : (
+                                             <div className="px-4 py-6 text-center">
+                                                 <div className="rounded-full bg-muted p-3 mb-2 inline-flex">
+                                                   <MapPin className="h-5 w-5 text-muted-foreground" />
+                                                 </div>
+                                                 <p className="text-sm text-muted-foreground mb-2">
+                                                     No areas assigned to this location. 
+                                                 </p>
+                                                 <Button variant="outline" size="sm" onClick={() => handleOpenAreaDialog(null, location.id)}>
+                                                   <Plus className="h-3.5 w-3.5" /> Add Area
+                                                 </Button>
+                                             </div>
+                                         )}
+                                     </CardContent>
+                                 </TooltipProvider>
                                </Card>
                            );
                        })}

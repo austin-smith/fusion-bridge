@@ -159,8 +159,11 @@ interface FusionState {
   assignDeviceToArea: (areaId: string, deviceId: string) => Promise<boolean>;
   removeDeviceFromArea: (areaId: string, deviceId: string) => Promise<boolean>;
   moveDeviceToArea: (deviceId: string, targetAreaId: string) => Promise<boolean>;
-  // +++ Add action for optimistic UI update +++
+  // Optimistic UI update for single device move
   optimisticallyMoveDevice: (deviceId: string, sourceAreaId: string | undefined, targetAreaId: string) => void;
+
+  // Batch update armed state for areas in a location
+  batchUpdateAreasArmedState: (locationId: string, armedState: ArmedState) => Promise<boolean>;
 
   // NEW: Fetch all devices 
   fetchAllDevices: () => Promise<void>;
@@ -638,7 +641,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // +++ Implement optimistic action +++
+  // Optimistic UI update for single device move
   optimisticallyMoveDevice: (deviceId, sourceAreaId, targetAreaId) => 
     set(produce((draft: Draft<FusionState>) => {
       if (sourceAreaId) {
@@ -689,6 +692,86 @@ export const useFusionStore = create<FusionState>((set, get) => ({
           await get().fetchAreas(); // Keep refetch on error
           return false;
       }
+  },
+
+  // Batch update armed state for areas in a location
+  batchUpdateAreasArmedState: async (locationId, armedState) => {
+    const { areas } = get(); // Get current areas from state
+    const targetAreas = areas.filter(area => area.locationId === locationId);
+    
+    if (targetAreas.length === 0) {
+      console.log(`[Store] No areas found for location ${locationId}. Skipping batch update.`);
+      return true; // Nothing to do, consider it success
+    }
+    
+    set({ errorAreas: null }); // Clear previous errors
+    console.log(`[Store] Batch updating ${targetAreas.length} areas in location ${locationId} to state ${armedState}`);
+    
+    try {
+      // Create an array of promises for each API call
+      const updatePromises = targetAreas.map(area => 
+        fetch(`/api/areas/${area.id}/arm-state`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ armedState })
+        }).then(async (response) => {
+          const data: ApiResponse<Area> = await response.json();
+          if (!response.ok || !data.success) {
+             // Throw an error for this specific area to be caught by Promise.allSettled
+             throw new Error(data.error || `Failed to update area ${area.id}`);
+          }
+          return { areaId: area.id, success: true, updatedArea: data.data }; // Return success indicator and potentially updated data
+        })
+      );
+      
+      // Use Promise.allSettled to wait for all updates, even if some fail
+      const results = await Promise.allSettled(updatePromises);
+      
+      const successfulUpdates: string[] = [];
+      const failedUpdates: { areaId: string; reason: string }[] = [];
+      
+      results.forEach((result, index) => {
+        const areaId = targetAreas[index].id;
+        if (result.status === 'fulfilled' && result.value.success) {
+          successfulUpdates.push(areaId);
+        } else {
+          const reason = result.status === 'rejected' 
+                       ? (result.reason instanceof Error ? result.reason.message : String(result.reason))
+                       : 'Unknown failure';
+          failedUpdates.push({ areaId, reason });
+          console.error(`[Store] Failed batch update for area ${areaId}: ${reason}`);
+        }
+      });
+      
+      // Update local state only for successful updates
+      if (successfulUpdates.length > 0) {
+         set(produce((draft: Draft<FusionState>) => {
+           successfulUpdates.forEach(areaId => {
+              const areaIndex = draft.areas.findIndex(a => a.id === areaId);
+              if (areaIndex !== -1) {
+                 draft.areas[areaIndex].armedState = armedState;
+              }
+           });
+         }));
+         console.log(`[Store] Successfully updated armed state for ${successfulUpdates.length} areas.`);
+      }
+      
+      if (failedUpdates.length > 0) {
+        const errorMsg = `Failed to update ${failedUpdates.length} area(s).`;
+        set({ errorAreas: errorMsg });
+        console.warn(`[Store] Batch update completed with ${failedUpdates.length} failures.`);
+        return false; // Indicate partial or total failure
+      }
+      
+      return true; // All succeeded
+      
+    } catch (err) {
+      // Catch any unexpected errors during the process (e.g., network issues before Promise.allSettled)
+      const message = err instanceof Error ? err.message : 'Unknown error during batch update';
+      console.error(`[Store] Error during batch area update:`, message);
+      set({ errorAreas: message });
+      return false;
+    }
   },
 
   // NEW: Fetch all devices 

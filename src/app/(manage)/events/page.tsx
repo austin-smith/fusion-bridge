@@ -939,7 +939,7 @@ export default function EventsPage() {
         </Dialog>
 
         {/* Conditional Messages & Skeleton */}
-        <div className="flex-shrink-0 mb-4">
+        <div className="flex-shrink-0">
           {loading && events.length === 0 ? (
             <EventsTableSkeleton rowCount={15} columnCount={columns.length} />
           ) : !loading && events.length === 0 ? (
