@@ -41,6 +41,7 @@ import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'; // <<
 import { toast } from 'sonner'; // <<< Added for copy toast
 import { ConnectorRow } from '@/components/features/connectors/ConnectorRow'; // <<< Import ConnectorRow
 import { PageHeader } from '@/components/layout/page-header'; // Import PageHeader
+import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
 
 // Define structure for fetched YoLink MQTT state from API
 interface FetchedMqttState {
@@ -106,6 +107,43 @@ const translatePikoStatus = (
     return 'error';
   }
   return 'disconnected';
+};
+
+// Skeleton Component for Connectors Table
+const ConnectorsTableSkeleton = ({ rowCount = 5 }: { rowCount?: number }) => {
+  return (
+    <Card>
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">{
+            }<TableHead className="w-[25%]"><Skeleton className="h-5 w-24" /></TableHead>{
+            }<TableHead className="w-[15%]"><Skeleton className="h-5 w-16" /></TableHead>{
+            }<TableHead className="w-[15%]"><Skeleton className="h-5 w-16" /></TableHead>{
+            }<TableHead className="w-[15%]"><Skeleton className="h-5 w-16" /></TableHead>{
+            }<TableHead className="w-[15%]"><Skeleton className="h-5 w-20" /></TableHead>{
+            }<TableHead className="text-right w-[15%]"><Skeleton className="h-5 w-16 ml-auto" /></TableHead>{
+          }</TableRow>
+        </TableHeader>
+        <TableBody>
+          {[...Array(rowCount)].map((_, rowIndex) => (
+            <TableRow key={rowIndex}>{
+              }<TableCell><Skeleton className="h-5 w-3/4" /></TableCell>{ 
+              }<TableCell><Skeleton className="h-5 w-full" /></TableCell>{ 
+              }<TableCell><Skeleton className="h-8 w-10" /></TableCell>{ /* Switch skeleton */
+              }<TableCell><Skeleton className="h-5 w-20" /></TableCell>{ 
+              }<TableCell><Skeleton className="h-5 w-24" /></TableCell>{ 
+              }<TableCell className="text-right">
+                  <div className="flex justify-end gap-2">
+                    <Skeleton className="h-8 w-8" />
+                    <Skeleton className="h-8 w-8" />
+                  </div>
+                </TableCell>{
+            }</TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
+  );
 };
 
 export default function ConnectorsPage() {
@@ -395,9 +433,7 @@ export default function ConnectorsPage() {
         )}
 
         {isLoading ? (
-          <div className="flex justify-center items-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
+          <ConnectorsTableSkeleton rowCount={5} />
         ) : connectors.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-10 text-center">

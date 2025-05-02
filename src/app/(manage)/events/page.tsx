@@ -77,6 +77,7 @@ import { useFusionStore } from '@/stores/store';
 import { EventHierarchyViewer } from '@/components/features/events/EventHierarchyViewer';
 import { getDeviceTypeInfo } from "@/lib/mappings/identification";
 import { PageHeader } from '@/components/layout/page-header';
+import { Skeleton } from "@/components/ui/skeleton";
 
 // Update the event interface
 interface EnrichedEvent {
@@ -176,6 +177,53 @@ function DebouncedInput({
     </div>
   );
 }
+
+// Helper component for skeleton table
+const EventsTableSkeleton = ({ rowCount = 10, columnCount = 8 }: { rowCount?: number, columnCount?: number }) => {
+  return (
+    <div className="border rounded-md">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {[...Array(columnCount)].map((_, i) => (
+              <TableHead key={i} className="px-2 py-1">
+                <Skeleton className="h-5 w-20 mb-2" />
+                <Skeleton className="h-8 w-full" />
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {[...Array(rowCount)].map((_, rowIndex) => (
+            <TableRow key={rowIndex}>
+              {[...Array(columnCount)].map((_, colIndex) => (
+                <TableCell key={colIndex} className="px-2 py-2">
+                  <Skeleton className="h-5 w-full" />
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <div className="flex items-center justify-between p-2 border-t">
+        <Skeleton className="h-5 w-24" />
+        <div className="flex items-center space-x-6 lg:space-x-8">
+          <div className="flex items-center space-x-2">
+             <Skeleton className="h-5 w-20" />
+             <Skeleton className="h-8 w-[70px]" />
+          </div>
+           <Skeleton className="h-5 w-24" />
+           <div className="flex items-center space-x-2">
+             <Skeleton className="h-8 w-8" />
+             <Skeleton className="h-8 w-8" />
+             <Skeleton className="h-8 w-8" />
+             <Skeleton className="h-8 w-8" />
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default function EventsPage() {
   const [events, setEvents] = useState<EnrichedEvent[]>([]);
@@ -862,7 +910,6 @@ export default function EventsPage() {
   return (
     <div className="flex flex-col h-full p-4 md:p-6">
       <TooltipProvider>
-        {/* Use PageHeader */}
         <PageHeader 
           title="Events"
           description="View incoming events from connected devices."
@@ -890,6 +937,17 @@ export default function EventsPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Conditional Messages & Skeleton */}
+        <div className="flex-shrink-0 mb-4">
+          {loading && events.length === 0 ? (
+            <EventsTableSkeleton rowCount={15} columnCount={columns.length} />
+          ) : !loading && events.length === 0 ? (
+            <p className="text-muted-foreground">
+              No events have been received yet. This page will update periodically.
+            </p>
+          ) : null}
+        </div>
 
         {/* Table Container */}
         {!loading && events.length > 0 && (

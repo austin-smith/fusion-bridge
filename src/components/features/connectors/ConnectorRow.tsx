@@ -136,19 +136,20 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
   const eventsEnabled = connector.eventsEnabled === true;
 
   // Log the connector prop just before rendering the row
-  console.log(`[ConnectorRow] Rendering row for Connector ID: ${connector.id}, Category: ${connector.category}`, connector);
+  // console.log(`[ConnectorRow] Rendering row for Connector ID: ${connector.id}, Category: ${connector.category}`, connector);
 
   // --- Render ---
   return (
-    <TableRow key={connector.id}>
-      <TableCell className="font-medium">{connector.name}</TableCell>
-      <TableCell>
+    <TableRow key={connector.id}>{
+      /* TableCells start immediately */
+    }<TableCell className="font-medium">{connector.name}</TableCell>{ /* No space */
+    }<TableCell>
         <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
           <ConnectorIcon connectorCategory={connector.category} size={12} />
           <span className="text-xs">{formatConnectorCategory(connector.category)}</span>
         </Badge>
-      </TableCell>
-      <TableCell>
+      </TableCell>{ /* No space */
+    }<TableCell>
         {(connector.category === 'yolink' || connector.category === 'piko') ? (
           <div className="flex items-center">
             <Switch
@@ -166,8 +167,8 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
         ) : (
           <span className="text-muted-foreground">-</span>
         )}
-      </TableCell>
-      <TableCell>
+      </TableCell>{ /* No space */
+    }<TableCell>
         {isToggling ? (
           // Common Loader for both types while toggling
           <div className="flex items-center justify-start px-2.5 py-1">
@@ -215,8 +216,8 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
           // Default for other types (or if state not ready)
           <span className="text-muted-foreground">-</span>
         )}
-      </TableCell>
-      <TableCell className="text-xs text-muted-foreground">
+      </TableCell>{ /* No space */
+    }<TableCell className="text-xs text-muted-foreground">
         {/* Display lastActivityTime consistently */} 
         {lastActivityTime ? (
           <Popover>
@@ -262,8 +263,8 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
                 </div>
               </PopoverContent>
             )}
-            {/* Add simple tooltip for webhook timestamps */} 
-            {(connector.category === 'netbox' || connector.category === 'genea') && (
+            {/* Add simple tooltip for webhook timestamps */ 
+            }{(connector.category === 'netbox' || connector.category === 'genea') && (
                 <Tooltip>
                   <TooltipTrigger asChild><span></span></TooltipTrigger> {/* Dummy trigger */} 
                   <TooltipContent>
@@ -275,8 +276,8 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
         ) : (
           '-' // Display dash if no activity time
         )}
-      </TableCell>
-      <TableCell className="text-right">
+      </TableCell>{ /* No space */
+    }<TableCell className="text-right">
         <div className="flex justify-end space-x-2">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -302,7 +303,7 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
             <TooltipContent>Delete connector</TooltipContent>
           </Tooltip>
         </div>
-      </TableCell>
-    </TableRow>
+      </TableCell>{ /* No space */
+    }</TableRow>
   );
 }; 

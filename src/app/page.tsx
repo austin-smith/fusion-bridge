@@ -10,6 +10,27 @@ import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { formatConnectorCategory } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+
+// Skeleton Component for Connector Grid Card
+const ConnectorCardSkeleton = () => {
+  return (
+    <div className="p-4 border rounded-lg flex flex-col justify-between min-h-[120px]">
+      <div>
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <Skeleton className="h-5 w-32 mb-2" />
+            <Skeleton className="h-5 w-20" />
+          </div>
+          <Skeleton className="h-8 w-8 rounded" />
+        </div>
+      </div>
+      <div className="mt-auto pt-2">
+        <Skeleton className="h-4 w-40" />
+      </div>
+    </div>
+  );
+};
 
 export default function Home() {
   const { connectors, isLoading, error, setConnectors, deleteConnector, setAddConnectorOpen, setLoading, setError } = useFusionStore();
@@ -86,7 +107,11 @@ export default function Home() {
             </div>
 
             {isLoading ? (
-               <div className="flex items-center justify-center p-8">Loading...</div>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <ConnectorCardSkeleton />
+                <ConnectorCardSkeleton />
+                <ConnectorCardSkeleton />
+              </div>
             ) : error ? (
                <div className="text-destructive p-4">{error}</div>
             ) : connectors.length === 0 ? (
