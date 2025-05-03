@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "14114281-53a3-4eb6-b67a-cba147ddb9a8",
-  "prevId": "ddf5b027-6251-4d9f-aeb6-fe38b78c4c43",
+  "id": "77a8c659-81f7-4978-a432-11dc23425d6c",
+  "prevId": "14114281-53a3-4eb6-b67a-cba147ddb9a8",
   "tables": {
     "account": {
       "name": "account",
@@ -1041,6 +1041,87 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "twoFactor": {
+      "name": "twoFactor",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "userId": {
+          "name": "userId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "secret": {
+          "name": "secret",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "backupCodes": {
+          "name": "backupCodes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "twoFactor_userId_unique": {
+          "name": "twoFactor_userId_unique",
+          "columns": [
+            "userId"
+          ],
+          "isUnique": true
+        },
+        "twoFactor_user_idx": {
+          "name": "twoFactor_user_idx",
+          "columns": [
+            "userId"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "twoFactor_userId_user_id_fk": {
+          "name": "twoFactor_userId_user_id_fk",
+          "tableFrom": "twoFactor",
+          "tableTo": "user",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "user": {
       "name": "user",
       "columns": {
@@ -1078,6 +1159,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "twoFactorEnabled": {
+          "name": "twoFactorEnabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "created_at": {
           "name": "created_at",

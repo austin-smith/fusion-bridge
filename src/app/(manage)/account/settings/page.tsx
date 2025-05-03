@@ -25,7 +25,8 @@ export default async function AccountSettingsPage() {
   let user: UserSessionData | undefined | null = null;
 
   try {
-    const cookieStore = cookies(); // Get cookie store
+    // Await cookies() to get the actual store
+    const cookieStore = await cookies(); 
     
     // Construct URL from environment variable (ensure NEXTAUTH_URL or equivalent is set!)
     const baseURL = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000'; // Add fallbacks
@@ -34,10 +35,8 @@ export default async function AccountSettingsPage() {
     }
     const sessionCheckUrl = new URL('/api/auth/check-session', baseURL.startsWith('http') ? baseURL : `https://${baseURL}`); // Ensure protocol
 
-    console.log(`[Account Settings Page] Fetching session from: ${sessionCheckUrl.toString()}`);
-
-    // Get cookie string from the store
-    const cookieHeader = cookieStore.toString();
+    // Correctly construct the Cookie header string from the resolved cookie store
+    const cookieHeader = cookieStore.getAll().map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
 
     const response = await fetch(sessionCheckUrl.toString(), {
       headers: {
@@ -49,19 +48,18 @@ export default async function AccountSettingsPage() {
     if (response.ok) {
       apiResponse = await response.json();
       user = apiResponse?.user;
-      console.log("[Account Settings Page] API response OK:", JSON.stringify(apiResponse, null, 2));
     } else {
-      console.error(`[Account Settings Page] Check session API fetch failed with status: ${response.status}`);
+      console.error(`Check session API fetch failed with status: ${response.status}`);
       apiResponse = { isAuthenticated: false, error: `API fetch failed: ${response.status}` };
     }
   } catch (error) {
-    console.error("[Account Settings Page] Error fetching check session API:", error);
+    console.error("Error fetching check session API:", error);
     apiResponse = { isAuthenticated: false, error: "Fetch error" };
   }
 
   // Check authentication based on API response
   if (!apiResponse?.isAuthenticated || !user) {
-    console.error("[Account Settings Page] Not authenticated based on API response, redirecting.", apiResponse);
+    console.error("Not authenticated based on API response, redirecting.", apiResponse);
     redirect('/login');
   }
 

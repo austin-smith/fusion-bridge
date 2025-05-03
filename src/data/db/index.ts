@@ -1,4 +1,4 @@
-import 'server-only'; // Mark this module as server-only
+import 'server-only';
 
 // Use LibSQLDatabase as the unified type
 import { drizzle as drizzleLibsql, LibSQLDatabase } from 'drizzle-orm/libsql';

@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { type ColumnDef, createColumnHelper } from '@tanstack/react-table';
-import { MoreHorizontal, ArrowUpDown, Trash2, Loader2, PlusCircle, Pencil } from 'lucide-react';
+import { MoreHorizontal, ArrowUpDown, Trash2, Loader2, PlusCircle, Pencil, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -40,6 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ResetPasswordDialog } from './reset-password-dialog';
 
 // --- Column Definitions ---
 
@@ -153,6 +154,7 @@ function UserActionsCell({ user }: UserActionsCellProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false);
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -188,6 +190,10 @@ function UserActionsCell({ user }: UserActionsCellProps) {
                   <Pencil className="mr-2 h-4 w-4" />
                   Edit User
               </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setIsResetPasswordDialogOpen(true)}>
+                   <KeyRound className="mr-2 h-4 w-4" />
+                  Reset Password
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <AlertDialogTrigger asChild>
                    <DropdownMenuItem className="text-destructive focus:text-destructive focus:bg-destructive/10">
@@ -221,6 +227,12 @@ function UserActionsCell({ user }: UserActionsCellProps) {
          isOpen={isEditDialogOpen}
          onOpenChange={setIsEditDialogOpen}
       />
+      
+      <ResetPasswordDialog
+         user={user}
+         isOpen={isResetPasswordDialogOpen}
+         onOpenChange={setIsResetPasswordDialogOpen}
+       />
     </>
   );
 }
@@ -275,7 +287,7 @@ export function AddUserDialog() {
         <DialogHeader>
           <DialogTitle>Add New User</DialogTitle>
           <DialogDescription>
-            Enter the details for the new user. They will receive an email to verify their account if email services are configured.
+            Enter the details for the new user.
           </DialogDescription>
         </DialogHeader>
         <form action={formAction} ref={formRef}>
@@ -290,13 +302,13 @@ export function AddUserDialog() {
               <Label htmlFor="email" className="text-right">
                 Email
               </Label>
-              <Input id="email" name="email" type="email" className="col-span-3" required />
+              <Input id="email" name="email" type="text" className="col-span-3" required autoComplete="off" />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="password" className="text-right">
                 Password
               </Label>
-              <Input id="password" name="password" type="password" className="col-span-3" required minLength={8} />
+              <Input id="password" name="password" type="password" className="col-span-3" required minLength={8} autoComplete="new-password" />
             </div>
              {/* Display server-side error message if any */}
             {/* {!state.success && state.message && (
@@ -321,8 +333,8 @@ function AddUserSubmitButton() {
     const { pending } = useFormStatus();
     return (
         <Button type="submit" disabled={pending}>
-            {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            {pending ? 'Adding User...' : 'Add User'}
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Add User
         </Button>
     );
 }
@@ -368,7 +380,7 @@ function EditUserDialog({ user, isOpen, onOpenChange }: EditUserDialogProps) {
         <DialogHeader>
           <DialogTitle>Edit User</DialogTitle>
           <DialogDescription>
-            Update the user's details. Changes will be saved immediately.
+            Update the user&apos;s details. Changes will be saved immediately.
           </DialogDescription>
         </DialogHeader>
         <form action={formAction} ref={formRef}>
@@ -411,8 +423,8 @@ function EditUserSubmitButton() {
     const { pending } = useFormStatus();
     return (
         <Button type="submit" disabled={pending}>
-            {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            {pending ? 'Saving Changes...' : 'Save Changes'}
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Save
         </Button>
     );
 }

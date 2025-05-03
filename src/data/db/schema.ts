@@ -242,6 +242,7 @@ export const user = sqliteTable("user", {
   email: text("email").unique().notNull(),
   emailVerified: integer("emailVerified", { mode: "timestamp" }), 
   image: text("image"),
+  twoFactorEnabled: integer("twoFactorEnabled", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
@@ -296,9 +297,10 @@ export const verification = sqliteTable("verification", {
 // --- Relations for Better Auth Schema (Updated names) ---
 
 // Updated relation name and references
-export const userRelations = relations(user, ({ many }) => ({
+export const userRelations = relations(user, ({ many, one }) => ({
   accounts: many(account), // Reference updated table 'account'
   sessions: many(session), // Reference updated table 'session'
+  twoFactor: one(twoFactor),
 }));
 
 // Updated relation name and references
@@ -315,6 +317,28 @@ export const sessionRelations = relations(session, ({ one }) => ({
     fields: [session.userId],
     references: [user.id],
   }),
+}));
+
+// --- Better Auth 2FA Schema ---
+
+export const twoFactor = sqliteTable("twoFactor", {
+  id: text("id").primaryKey(),
+  userId: text("userId").notNull().unique().references(() => user.id, { onDelete: "cascade" }),
+  secret: text("secret").notNull(),
+  backupCodes: text("backupCodes", { mode: "json" }).notNull(), // Store as JSON array string
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  userIdx: index("twoFactor_user_idx").on(table.userId),
+}));
+
+// --- Relations for Better Auth 2FA Schema ---
+
+export const twoFactorRelations = relations(twoFactor, ({ one }) => ({
+    user: one(user, {
+        fields: [twoFactor.userId],
+        references: [user.id],
+    }),
 }));
 
 // No relations needed for verification table typically

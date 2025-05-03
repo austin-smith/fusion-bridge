@@ -7,6 +7,7 @@ import type { DeviceWithConnector, ConnectorWithConfig, Location, Area, ApiRespo
 import { YoLinkConfig } from '@/services/drivers/yolink';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import type { DashboardEvent } from '@/app/api/events/dashboard/route';
+import type { User } from '@/lib/actions/user-actions'; // Import User type
 
 // Enable Immer plugin for Map/Set support
 enableMapSet();
@@ -69,6 +70,16 @@ const defaultDeviceStateInfo: Partial<DeviceStateInfo> = {
     lastSeen: undefined
 };
 
+// --- User Profile Type ---
+// Define what parts of the user data we need globally
+export interface UserProfile {
+    id: string;
+    name: string | null;
+    email: string | null;
+    image: string | null;
+    twoFactorEnabled: boolean;
+}
+
 interface FusionState {
   connectors: ConnectorWithConfig[];
   isLoading: boolean;
@@ -108,6 +119,9 @@ interface FusionState {
   dashboardEvents: DashboardEvent[];
   isLoadingDashboardEvents: boolean;
   errorDashboardEvents: string | null;
+  
+  // --- Current User State ---
+  currentUser: UserProfile | null;
   
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
@@ -170,6 +184,9 @@ interface FusionState {
 
   // NEW: Fetch dashboard events
   fetchDashboardEvents: () => Promise<void>;
+
+  // --- Current User Actions ---
+  setCurrentUser: (user: UserProfile | null) => void;
 }
 
 // Initial state for MQTT (default)
@@ -236,6 +253,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   dashboardEvents: [],
   isLoadingDashboardEvents: false,
   errorDashboardEvents: null,
+  
+  // --- Current User Initial State ---
+  currentUser: null,
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -826,6 +846,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       set({ isLoadingDashboardEvents: false, errorDashboardEvents: message, dashboardEvents: [] });
     }
   },
+
+  // --- Current User Actions ---
+  setCurrentUser: (user) => set({ currentUser: user }),
 
   // REMOVE addDashboardEvent action implementation
 

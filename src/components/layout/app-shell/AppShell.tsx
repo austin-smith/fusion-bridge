@@ -14,7 +14,7 @@ interface AppShellProps {
 
 const AppShell: React.FC<AppShellProps> = ({ children }) => {
   const pathname = usePathname();
-  const showSidebar = !['/login', '/setup'].includes(pathname);
+  const showSidebar = !['/login', '/setup', '/verify-2fa'].includes(pathname);
 
   return (
     <>

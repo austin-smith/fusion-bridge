@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sidebar,
   SidebarContent,
@@ -31,6 +31,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
+import { useFusionStore, UserProfile } from '@/stores/store';
 
 // --- Define Navigation Groups ---
 type NavItem = {
@@ -71,6 +72,30 @@ export function AppSidebar() {
   const isActive = (href: string) => pathname === href;
   const { data: session, isPending } = useSession();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  
+  // Get user state and setter from Zustand
+  const { currentUser, setCurrentUser } = useFusionStore();
+
+  // Effect to populate Zustand store from useSession data on initial load/change
+  useEffect(() => {
+    if (session?.user && !currentUser) {
+        // Map session user data to UserProfile type
+        const userProfile: UserProfile = {
+            id: session.user.id,
+            name: session.user.name ?? null,
+            email: session.user.email ?? null,
+            image: session.user.image ?? null,
+        };
+        setCurrentUser(userProfile);
+        console.log("[AppSidebar] Initialized currentUser in Zustand store from session.");
+    } else if (!session && currentUser) {
+        // Clear store if session becomes null (e.g., after logout)
+        // setCurrentUser(null);
+        // Note: Depending on logout flow, this might not be necessary
+        // if the app redirects/reloads fully.
+    }
+    // Dependency array includes session and currentUser to handle changes
+  }, [session, currentUser, setCurrentUser]);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -78,6 +103,7 @@ export function AppSidebar() {
       await signOut({
         fetchOptions: {
           onSuccess: () => {
+            setCurrentUser(null); // Clear user state on logout
             router.push('/login');
           },
           onError: (err) => {
@@ -92,7 +118,7 @@ export function AppSidebar() {
     }
   };
 
-  if (isPending) {
+  if (isPending || (session && !currentUser)) {
     return (
       <Sidebar collapsible="icon" className="pointer-events-none">
         <SidebarHeader className="flex h-[60px] items-center justify-center border-b">
@@ -152,10 +178,10 @@ export function AppSidebar() {
     );
   }
 
-  const userEmail = session?.user?.email;
-  // Use the actual name from the session, fallback to email part or 'User'
-  const userName = session?.user?.name || (userEmail ? userEmail.split('@')[0] : 'User'); 
+  const userEmail = currentUser?.email;
+  const userName = currentUser?.name || (userEmail ? userEmail.split('@')[0] : 'User'); 
   const userInitial = userName ? userName.charAt(0).toUpperCase() : '?';
+  const userImage = currentUser?.image || '';
 
   return (
     <Sidebar collapsible="icon">
@@ -211,7 +237,7 @@ export function AppSidebar() {
         )}
       </SidebarContent>
       <SidebarFooter className="mt-auto">
-         {session && (
+         {session && currentUser && (
            <DropdownMenu>
              <DropdownMenuTrigger asChild>
                <Button
@@ -233,7 +259,7 @@ export function AppSidebar() {
                        "size-7 flex-shrink-0",
                        "group-data-[collapsible=icon]:size-8"
                     )}>
-                     <AvatarImage src={session.user?.image || ''} alt={userName || 'User'} className="object-cover" />
+                     <AvatarImage src={userImage} alt={userName || 'User'} className="object-cover" />
                      <AvatarFallback>{userInitial}</AvatarFallback>
                    </Avatar>
                    <div className="flex flex-1 items-center justify-between group-data-[collapsible=icon]:hidden">
@@ -250,7 +276,7 @@ export function AppSidebar() {
                <DropdownMenuLabel className="font-normal">
                  <div className="flex items-center gap-3">
                    <Avatar className="h-8 w-8">
-                     <AvatarImage src={session.user?.image || ''} alt={userName || 'User'} />
+                     <AvatarImage src={userImage} alt={userName || 'User'} />
                      <AvatarFallback>{userInitial}</AvatarFallback>
                    </Avatar>
                    <div className="flex flex-col space-y-1">
@@ -269,9 +295,9 @@ export function AppSidebar() {
                <DropdownMenuSeparator />
                <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut}>
                  {isLoggingOut ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <LogOut className="mr-2 h-4 w-4" />
+                    <LogOut className="h-4 w-4" />
                   )}
                  <span>Logout</span>
                </DropdownMenuItem>

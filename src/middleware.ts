@@ -3,10 +3,7 @@ import type { NextRequest } from 'next/server';
 // Remove direct auth import
 // import { auth } from '@/lib/auth/server'; 
 
-// Remove runtime export - run on Edge
-// export const runtime = 'nodejs';
-
-// Define SessionCheckResponse type again
+// Define SessionCheckResponse type (reverted)
 interface SessionCheckResponse {
   isAuthenticated: boolean;
   user?: { id: string };
@@ -16,28 +13,28 @@ interface SessionCheckResponse {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Skip checks for API routes, static files, etc. - relying on matcher mostly
+  // Middleware should not run on API routes, static files, OR the 2FA verification page
   const isApiAuthRoute = pathname.startsWith('/api/auth');
+  const isApiEtc = pathname.startsWith('/api/'); // Catch all /api routes
   const isStaticAsset = pathname.startsWith('/_next/') || pathname.includes('.');
-  if (isApiAuthRoute || isStaticAsset) { 
-    // Don't run session check for auth API routes or static assets
-    // Exception: Don't skip our own check-session route if called directly
-    if (pathname !== '/api/auth/check-session') {
-        return NextResponse.next();
-    }
-  }
+  const isVerify2faPage = pathname === '/verify-2fa'; // <-- ADDED check
+
+  // --- Simplified Exclusion Check --- 
+  // if (isApiAuthRoute || isStaticAsset || isVerify2faPage) { 
+  //   if (pathname !== '/api/auth/check-session') { // Allow check-session to be called
+  //       return NextResponse.next();
+  //   }
+  // }
+  // Let the matcher handle exclusions primarily.
 
   // Fetch session status from the internal API route
   let sessionStatus: SessionCheckResponse = { isAuthenticated: false }; 
   try {
     const sessionCheckUrl = new URL('/api/auth/check-session', request.url);
     const response = await fetch(sessionCheckUrl, {
-      headers: {
-        'Cookie': request.headers.get('Cookie') || '',
-      },
-      cache: 'no-store', 
+      headers: { 'Cookie': request.headers.get('Cookie') || '' },
+      cache: 'no-store',
     });
-
     if (response.ok) {
       sessionStatus = await response.json();
     } else {
@@ -45,41 +42,43 @@ export async function middleware(request: NextRequest) {
     }
   } catch (error) {
     console.error("[Middleware] Error fetching check session API:", error);
+    sessionStatus = { isAuthenticated: false };
   }
+
+  console.log("[Middleware] Received sessionStatus:", sessionStatus); // Keep log for now
 
   const isAuthenticated = sessionStatus.isAuthenticated;
   const isLoginPage = pathname === '/login';
   const isSetupPage = pathname === '/setup';
 
-  // If user is not logged in
+  // --- Reverted Logic --- 
+
   if (!isAuthenticated) {
-    // Allow access to login OR setup page
+    // User is NOT Authenticated
     if (isLoginPage || isSetupPage) { 
+      console.log(`[Middleware] Not authenticated, allowing access to ${pathname}`);
       return NextResponse.next();
     }
-    // Otherwise, redirect to login
     const loginUrl = new URL('/login', request.url);
+    console.log(`[Middleware] Not authenticated, redirecting to ${loginUrl.toString()}`);
     return NextResponse.redirect(loginUrl);
-  }
 
-  // If user IS logged in
-  if (isAuthenticated) {
-    // If trying to access login OR setup page, redirect to dashboard
+  } else {
+    // User IS Authenticated
     if (isLoginPage || isSetupPage) { 
+      console.log(`[Middleware] Authenticated, redirecting from ${pathname} to /`);
       return NextResponse.redirect(new URL('/', request.url));
     }
-    // Allow access to all other routes if logged in
+    console.log(`[Middleware] Authenticated, allowing access to ${pathname}`);
     return NextResponse.next();
   }
-
-  // Default fallback 
-  return NextResponse.next();
 }
 
 // Configuration for the middleware
 export const config = {
   matcher: [
-    // Exclude specific API routes (auth, webhooks) and static assets
-    '/((?!api/auth|api/webhooks|_next/static|_next/image|favicon.ico).*)',
+    // Exclude specific API routes (auth, webhooks, startup), 
+    // static assets, AND the original 2FA verification page path.
+    '/((?!api/auth|api/webhooks|api/startup|verify-2fa|_next/static|_next/image|favicon.ico).*)',
   ],
 }; 

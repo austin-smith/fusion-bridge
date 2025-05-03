@@ -79,7 +79,7 @@ export function SetupForm({
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl">Create Initial Admin</CardTitle>
+          <CardTitle className="text-2xl">Create Initial User</CardTitle>
           <CardDescription>
             Enter details for the first administrator account.
           </CardDescription>
@@ -97,7 +97,7 @@ export function SetupForm({
                 <Input
                   id="name"
                   type="text"
-                  placeholder="Admin User"
+                  placeholder="Admin"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -129,7 +129,7 @@ export function SetupForm({
                 />
               </div>
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Creating Account..." : "Create Admin Account"}
+                {isLoading ? "Creating Account..." : "Create Account"}
               </Button>
             </div>
           </form>

@@ -27,12 +27,15 @@ export function LoginForm({
 
   const handleCredentialsLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    console.log("[Login Form] handleCredentialsLogin triggered.");
     setIsLoading(true);
     setError(null);
     try {
+      console.log("[Login Form] Attempting signIn.email with:", { email });
       await signIn.email({ email, password, callbackURL: "/" });
+      console.log("[Login Form] signIn.email call completed without throwing error.");
     } catch (err: any) {
-      console.error("Credentials Login failed:", err);
+      console.error("[Login Form] Credentials Login failed:", err);
       setError(err?.message || "Invalid email or password. Please try again.");
       setIsLoading(false);
     }

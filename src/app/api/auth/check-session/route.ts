@@ -9,21 +9,22 @@ export async function GET(request: NextRequest) {
     // Forward necessary headers (especially Cookie) to getSession
     const session = await auth.api.getSession({ headers: request.headers });
 
-    if (session && session.user) {
-      // User is authenticated, return relevant (non-sensitive) data
+    // --- Reverted Check: Check for session and user --- 
+    if (session && session.user) { 
+      // User is fully authenticated
       return NextResponse.json({
-        isAuthenticated: true,
-        user: {
+        isAuthenticated: true, 
+        user: { // Return user details only when fully authenticated
           id: session.user.id,
-          // Include other fields needed for settings page
-          email: session.user.email ?? null, // Use nullish coalescing
+          email: session.user.email ?? null,
           name: session.user.name ?? null,
           image: session.user.image ?? null,
+          twoFactorEnabled: session.user.twoFactorEnabled ?? false,
         },
       }, { status: 200 });
     } else {
-      // User is not authenticated
-      return NextResponse.json({ isAuthenticated: false }, { status: 200 }); // Still 200 OK, just indicates no session
+      // User has no session or session lacks user (treat as unauthenticated)
+      return NextResponse.json({ isAuthenticated: false }, { status: 200 });
     }
   } catch (error) {
     console.error("[Check Session API] Error fetching session:", error);
