@@ -127,12 +127,9 @@ export const columns: ColumnDef<User>[] = [
     accessorKey: "twoFactorEnabled",
     header: ({ column }) => <SortableHeader column={column}>2FA</SortableHeader>,
     cell: ({ row }) => {
-      // Try accessing the value directly from the original data object
+      // Access the value directly from the original data object
       const user = row.original;
       const isEnabled = user.twoFactorEnabled; // Access directly
-
-      // Log the value obtained via direct access
-      console.log(`[Direct Access] User: ${user.email}, 2FA Value:`, isEnabled, typeof isEnabled);
 
       return (
         <span className={cn(
