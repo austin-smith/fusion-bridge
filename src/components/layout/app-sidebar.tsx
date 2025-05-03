@@ -175,87 +175,106 @@ export function AppSidebar() {
         }
       </SidebarContent>
 
-      {/* --- Conditionally render Footer Skeleton or Actual Footer --- */} 
+      {/* --- Footer: Render structure immediately, adapt content smoothly --- */}
       <SidebarFooter className="mt-auto">
-         {isPending ? (
-             // Skeleton only for the footer user part
-             <div className={cn(
-                 "flex w-full items-center justify-start gap-2 p-2",
-                 "min-h-14",
-                 "group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:min-h-0",
-             )}>
-                 <Skeleton className="size-7 rounded-full flex-shrink-0 group-data-[collapsible=icon]:size-full" />
-                 <div className="flex flex-1 flex-col gap-1.5 group-data-[collapsible=icon]:hidden">
-                     <Skeleton className="h-4 w-20" />
-                     <Skeleton className="h-3 w-24" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              className={cn(
+                "flex w-full items-center justify-start gap-2",
+                "min-h-14",
+                "group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:min-h-0",
+                "group-data-[collapsible=expanded]:px-2",
+                // Apply open state styles only if user exists and not loading
+                (!isPending && session?.user) && "data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
+                "transition-all duration-200 ease-linear"
+              )}
+              aria-label="User menu"
+              // Disable button if loading or no user
+              disabled={isPending || !session?.user}
+            >
+              <div className={cn("flex h-full w-full items-center gap-2")}>
+                {/* Avatar: Always render, conditionally populate */}
+                <Avatar className={cn(
+                  "size-7 flex-shrink-0",
+                  "group-data-[collapsible=icon]:size-8",
+                  // Muted background if loading or no user
+                  (isPending || !session?.user) && "bg-muted"
+                )}>
+                   {/* Only add image/fallback if session is loaded and user exists */}
+                  {!isPending && session?.user && (
+                    <>
+                      <AvatarImage src={session.user.image || ''} alt={session.user.name || 'User'} className="object-cover" />
+                      <AvatarFallback>{session.user.name?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
+                    </>
+                  )}
+                  {/* If pending or no user, the default Avatar background/fallback will show, potentially enhanced by the bg-muted above */}
+                </Avatar>
+
+                {/* Text Section (Hidden when collapsed): Adapt content based on state */}
+                <div className="flex flex-1 items-center justify-between group-data-[collapsible=icon]:hidden">
+                  {isPending ? (
+                    // Placeholder text appearance during loading
+                    <div className="flex flex-col items-start gap-1.5">
+                      <div className="h-4 w-20 rounded bg-muted" />
+                      <div className="h-3 w-24 rounded bg-muted" />
+                    </div>
+                  ) : session?.user ? (
+                    // Actual user info when loaded
+                    <>
+                      <div className="flex flex-col items-start">
+                        <span className="text-sm font-medium leading-tight truncate max-w-[100px]">{session.user.name || session.user.email?.split('@')[0] || 'User'}</span>
+                        <span className="text-xs text-muted-foreground leading-tight">{session.user.email}</span>
+                      </div>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-muted-foreground" />
+                    </>
+                  ) : (
+                    // Muted placeholder text when logged out (or simply nothing)
+                    <div className="flex flex-col items-start gap-1.5">
+                       <div className="h-4 w-20 rounded bg-muted/50" />
+                       <div className="h-3 w-24 rounded bg-muted/50" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Button>
+          </DropdownMenuTrigger>
+
+          {/* Dropdown Content - Only render content if session is loaded and user exists */}
+          {!isPending && session?.user && (
+            <DropdownMenuContent side="right" align="start" className="w-56">
+              <DropdownMenuLabel className="font-normal">
+                 <div className="flex items-center gap-3">
+                   <Avatar className="h-8 w-8">
+                     <AvatarImage src={session.user.image || ''} alt={session.user.name || 'User'} />
+                     <AvatarFallback>{session.user.name?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
+                   </Avatar>
+                   <div className="flex flex-col space-y-1">
+                     <p className="text-sm font-medium leading-none truncate max-w-[150px]">{session.user.name || session.user.email?.split('@')[0] || 'User'}</p>
+                     <p className="text-xs leading-none text-muted-foreground truncate max-w-[150px]">
+                       {session.user.email}
+                     </p>
+                   </div>
                  </div>
-             </div>
-         ) : session?.user ? (
-             // Actual footer when session is loaded
-             <DropdownMenu>
-                 <DropdownMenuTrigger asChild>
-                     <Button
-                         variant="ghost"
-                         className={cn(
-                             "flex w-full items-center justify-start gap-2",
-                             "min-h-14",
-                             "group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:min-h-0",
-                             "group-data-[collapsible=expanded]:px-2",
-                             "data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
-                             "transition-all duration-200 ease-linear"
-                         )}
-                         aria-label="User menu"
-                     >
-                         <div className={cn("flex h-full w-full items-center gap-2")}>
-                             <Avatar className={cn("size-7 flex-shrink-0", "group-data-[collapsible=icon]:size-8")}>
-                                 <AvatarImage src={session.user.image || ''} alt={session.user.name || 'User'} className="object-cover" />
-                                 <AvatarFallback>{session.user.name?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
-                             </Avatar>
-                             <div className="flex flex-1 items-center justify-between group-data-[collapsible=icon]:hidden">
-                                 <div className="flex flex-col items-start">
-                                     <span className="text-sm font-medium leading-tight truncate max-w-[100px]">{session.user.name || session.user.email?.split('@')[0] || 'User'}</span>
-                                     <span className="text-xs text-muted-foreground leading-tight">{session.user.email}</span>
-                                 </div>
-                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-muted-foreground" />
-                             </div>
-                         </div>
-                     </Button>
-                 </DropdownMenuTrigger>
-                 <DropdownMenuContent side="right" align="start" className="w-56">
-                     <DropdownMenuLabel className="font-normal">
-                         <div className="flex items-center gap-3">
-                           <Avatar className="h-8 w-8">
-                             <AvatarImage src={session.user.image || ''} alt={session.user.name || 'User'} />
-                             <AvatarFallback>{session.user.name?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
-                           </Avatar>
-                           <div className="flex flex-col space-y-1">
-                             <p className="text-sm font-medium leading-none truncate max-w-[150px]">{session.user.name || session.user.email?.split('@')[0] || 'User'}</p>
-                             <p className="text-xs leading-none text-muted-foreground truncate max-w-[150px]">
-                               {session.user.email}
-                             </p>
-                           </div>
-                         </div>
-                       </DropdownMenuLabel>
-                       <DropdownMenuSeparator />
-                       <DropdownMenuItem onClick={() => router.push('/account/settings')} className="cursor-pointer">
-                         <Settings className="mr-2 h-4 w-4" />
-                         <span>Account Settings</span>
-                       </DropdownMenuItem>
-                       <DropdownMenuSeparator />
-                       <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut}>
-                         {isLoggingOut ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <LogOut className="h-4 w-4" />
-                          )}
-                         <span>Logout</span>
-                       </DropdownMenuItem>
-                 </DropdownMenuContent>
-            </DropdownMenu>
-         ) : (
-             // Optional: Render something in footer if not pending and not logged in (e.g., login button?)
-             null // Render nothing in the footer if logged out
-         )}
+               </DropdownMenuLabel>
+               <DropdownMenuSeparator />
+               <DropdownMenuItem onClick={() => router.push('/account/settings')} className="cursor-pointer">
+                 <Settings className="mr-2 h-4 w-4" />
+                 <span>Account Settings</span>
+               </DropdownMenuItem>
+               <DropdownMenuSeparator />
+               <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut}>
+                 {isLoggingOut ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <LogOut className="h-4 w-4" />
+                  )}
+                 <span>Logout</span>
+               </DropdownMenuItem>
+            </DropdownMenuContent>
+          )}
+        </DropdownMenu>
       </SidebarFooter>
     </Sidebar>
   );

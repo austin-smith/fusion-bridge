@@ -6,90 +6,78 @@ import { Settings } from 'lucide-react';
 import { AccountSettingsForm } from "@/components/features/account/account-settings-form";
 
 // Define the expected shape of the user data from the API
-interface UserSessionData {
+// This now directly matches the /api/auth/profile response structure
+interface UserProfileData {
   id: string;
   name: string | null;
   email: string | null;
   image: string | null;
-  twoFactorEnabled?: boolean; // Add optional twoFactorEnabled field
-}
-
-// Define the expected shape of the API response
-interface SessionApiResponse {
-  isAuthenticated: boolean;
-  user?: UserSessionData;
-  error?: string;
+  twoFactorEnabled: boolean; // Now boolean, non-optional from profile endpoint
 }
 
 // Define the component as async
 export default async function AccountSettingsPage() {
-  let apiResponse: SessionApiResponse | null = null;
-  let user: UserSessionData | undefined | null = null;
-  let sessionCheckUrl: URL | null = null;
+  let user: UserProfileData | null = null;
+  let profileApiUrl: URL | null = null;
+  let fetchError: string | null = null;
 
   try {
-    // Await cookies() FIRST to get the actual store
     const cookieStore = await cookies();
     
-    // --- Construct internal URL using localhost and PORT --- 
     const port = process.env.PORT;
     if (port) {
       try {
-          sessionCheckUrl = new URL(`http://localhost:${port}/api/auth/check-session`);
+          // Update URL to point to the new profile endpoint
+          profileApiUrl = new URL(`http://localhost:${port}/api/auth/profile`); 
       } catch (e) {
           console.error("[AccountSettingsPage] Failed to construct URL with localhost:PORT", e);
-          // Set error state or throw to prevent rendering potentially broken page
-          apiResponse = { isAuthenticated: false, error: 'Internal Server Configuration Error (URL Port)' };
+          fetchError = 'Internal Server Configuration Error (URL Port)';
       }
     } else {
         console.error("[AccountSettingsPage] PORT environment variable not found. Cannot fetch session.");
-        // Set error state or throw - cannot proceed without PORT
-        apiResponse = { isAuthenticated: false, error: 'Internal Server Configuration Error (Missing PORT)' };
+        fetchError = 'Internal Server Configuration Error (Missing PORT)';
     }
 
-    // Proceed only if URL construction was successful
-    if (sessionCheckUrl && !apiResponse?.error) { 
-        // Correctly construct the Cookie header string from the RESOLVED cookie store
-        const allCookies = cookieStore.getAll(); // Now call getAll on the resolved store
+    if (profileApiUrl && !fetchError) { 
+        const allCookies = cookieStore.getAll(); 
         const cookieHeader = allCookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
-        console.log(`[AccountSettingsPage] Fetching session from ${sessionCheckUrl.toString()}`);
+        console.log(`[AccountSettingsPage] Fetching user profile from ${profileApiUrl.toString()}`);
 
-        const response = await fetch(sessionCheckUrl.toString(), {
-          headers: {
-            'Cookie': cookieHeader,
-          },
-          cache: 'no-store', 
+        const response = await fetch(profileApiUrl.toString(), {
+          headers: { 'Cookie': cookieHeader },
+          cache: 'no-store',
         });
 
         if (response.ok) {
-          apiResponse = await response.json();
-          user = apiResponse?.user;
+          // Directly parse the user profile data
+          user = await response.json(); 
+        } else if (response.status === 401) {
+            // Handle unauthorized specifically - user needs to log in
+            console.log("[AccountSettingsPage] Profile API returned 401 Unauthorized. Redirecting to login.");
+            fetchError = 'Unauthorized'; // Set error to trigger redirect below
         } else {
-          console.error(`[AccountSettingsPage] Check session API fetch failed with status: ${response.status}`);
-          apiResponse = { isAuthenticated: false, error: `API fetch failed: ${response.status}` };
+          console.error(`[AccountSettingsPage] Profile API fetch failed with status: ${response.status}`);
+          fetchError = `API fetch failed: ${response.status}`;
         }
     }
   } catch (error) {
     console.error("[AccountSettingsPage] Error during page load fetch:", error);
-    // Ensure apiResponse reflects the error
-    if (!apiResponse || !apiResponse.error) {
-      apiResponse = { isAuthenticated: false, error: (error instanceof Error) ? error.message : "Fetch error" };
-    }
+    fetchError = (error instanceof Error) ? error.message : "Fetch error";
   }
 
-  // Check authentication based on API response
-  if (!apiResponse?.isAuthenticated || !user) {
-    console.error("[AccountSettingsPage] Not authenticated based on API response, redirecting.", apiResponse);
+  // If there was any fetch error OR user data is null, redirect to login
+  if (fetchError || !user) {
+    console.error(`[AccountSettingsPage] Fetch error ('${fetchError}') or user data missing, redirecting to login.`);
     redirect('/login');
   }
 
-  // Prepare user data for the form using fetched data
+  // Prepare user data for the form, ensuring correct types
   const userData = {
-    id: user.id,
-    name: user.name ?? '',
-    email: user.email ?? '', // Should always exist if authenticated
+    id: user.id, // id is guaranteed by successful fetch
+    name: user.name ?? '', // Ensure name is string
+    email: user.email ?? '', // Ensure email is string (though it should always exist)
     image: user.image ?? null,
-    twoFactorEnabled: user.twoFactorEnabled ?? false, // Include twoFactorEnabled, default to false
+    twoFactorEnabled: user.twoFactorEnabled, // Already boolean
   };
 
   return (

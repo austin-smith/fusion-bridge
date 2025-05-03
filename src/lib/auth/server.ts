@@ -14,11 +14,6 @@ import { twoFactor } from "better-auth/plugins"; // Import the twoFactor plugin
 if (!process.env.BETTER_AUTH_SECRET) {
   throw new Error("Missing BETTER_AUTH_SECRET environment variable");
 }
-if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET) {
-    console.warn("Missing GitHub client ID or secret. GitHub login will not work.");
-    // Decide if you want to throw an error here or allow the app to run without GitHub auth
-    // throw new Error("Missing GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET environment variable");
-}
 
 // Remove direct sqlite instance creation
 // const dbPath = getDbPath();

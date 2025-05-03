@@ -11,15 +11,11 @@ export async function GET(request: NextRequest) {
 
     // --- Reverted Check: Check for session and user --- 
     if (session && session.user) { 
-      // User is fully authenticated
+      // User is fully authenticated, return minimal info
       return NextResponse.json({
         isAuthenticated: true, 
-        user: { // Return user details only when fully authenticated
+        user: { // Return only the user ID
           id: session.user.id,
-          email: session.user.email ?? null,
-          name: session.user.name ?? null,
-          image: session.user.image ?? null,
-          twoFactorEnabled: session.user.twoFactorEnabled ?? false,
         },
       }, { status: 200 });
     } else {

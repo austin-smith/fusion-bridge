@@ -74,7 +74,9 @@ export async function middleware(request: NextRequest) {
        sessionStatus = { isAuthenticated: false, error: 'Internal URL configuration error' };
   }
 
-  console.log("[Middleware] Received sessionStatus:", sessionStatus); // Keep log for now
+  console.log(
+      `[Middleware] Received sessionStatus: isAuthenticated=${sessionStatus.isAuthenticated}${sessionStatus.user ? ', userId=' + sessionStatus.user.id : ''}${sessionStatus.error ? ', error=' + sessionStatus.error : ''}`
+  ); // Log selectively
 
   const isAuthenticated = sessionStatus.isAuthenticated;
   const isLoginPage = pathname === '/login';

@@ -52,7 +52,7 @@ function getDbInstance(): DrizzleInstance {
     console.log(`Connecting to Turso: ${dbUrl}`); // Specific to Turso
     const tursoClient = createClient({ url: dbUrl, authToken: dbAuthToken });
     clientInstance = tursoClient;
-    dbInstance = drizzleLibsql(tursoClient, { schema, logger: new DefaultLogger() });
+    dbInstance = drizzleLibsql(tursoClient, { schema });
     console.log('Turso database instance created.'); // Specific to Turso
   } else {
     // --- SQLite Setup (Default) ---
