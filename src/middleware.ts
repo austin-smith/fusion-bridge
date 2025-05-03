@@ -27,25 +27,51 @@ export async function middleware(request: NextRequest) {
   // }
   // Let the matcher handle exclusions primarily.
 
-  // Fetch session status from the internal API route
   let sessionStatus: SessionCheckResponse = { isAuthenticated: false }; 
-  try {
-    // Construct URL using request.nextUrl.origin
-    const sessionCheckUrl = new URL('/api/auth/check-session', origin);
-    console.log(`[Middleware] Fetching session status from: ${sessionCheckUrl.toString()}`); // Log URL
+  let sessionCheckUrl: URL | null = null;
 
-    const response = await fetch(sessionCheckUrl, {
-      headers: { 'Cookie': request.headers.get('Cookie') || '' },
-      cache: 'no-store',
-    });
-    if (response.ok) {
-      sessionStatus = await response.json();
-    } else {
-      console.error(`[Middleware] Check session API failed with status: ${response.status}`);
-    }
-  } catch (error) {
-    console.error("[Middleware] Error fetching check session API:", error); // Keep basic error log
-    sessionStatus = { isAuthenticated: false }; // Assume not authenticated on fetch error
+  // --- Try constructing internal URL using localhost and PORT --- 
+  const port = process.env.PORT;
+  if (port) {
+      try {
+          sessionCheckUrl = new URL(`http://localhost:${port}/api/auth/check-session`);
+      } catch (e) {
+          console.error("[Middleware] Failed to construct URL with localhost:PORT", e);
+          // Fallback or handle error - perhaps try origin again or assume unauthenticated?
+          // For now, let it proceed to the fetch attempt which will likely fail if URL is null
+      }
+  } else {
+      console.warn("[Middleware] PORT environment variable not found. Falling back to using origin for session check URL.");
+      try {
+        sessionCheckUrl = new URL('/api/auth/check-session', origin);
+      } catch (e) {
+          console.error("[Middleware] Failed to construct URL with origin", e);
+      }
+  }
+
+  if (sessionCheckUrl) {
+      console.log(`[Middleware] Attempting to fetch session status from: ${sessionCheckUrl.toString()}`);
+      try {
+        const response = await fetch(sessionCheckUrl, {
+          headers: { 'Cookie': request.headers.get('Cookie') || '' },
+          cache: 'no-store',
+          // Optionally add a timeout? Be careful with middleware performance.
+          // signal: AbortSignal.timeout(2000) // Example: 2 second timeout
+        });
+        if (response.ok) {
+          sessionStatus = await response.json();
+        } else {
+          console.error(`[Middleware] Check session API fetch failed with status: ${response.status} ${response.statusText}`);
+        }
+      } catch (error) {
+        console.error("[Middleware] Error during fetch to check session API:", error);
+        // Ensure sessionStatus remains { isAuthenticated: false } on fetch error
+        sessionStatus = { isAuthenticated: false, error: (error instanceof Error) ? error.message : 'Fetch failed' };
+      }
+  } else {
+       console.error("[Middleware] Could not determine a valid URL to fetch check-session API.");
+       // Default to unauthenticated if URL construction failed
+       sessionStatus = { isAuthenticated: false, error: 'Internal URL configuration error' };
   }
 
   console.log("[Middleware] Received sessionStatus:", sessionStatus); // Keep log for now
@@ -63,7 +89,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.next();
     }
     const loginUrl = new URL('/login', origin);
-    console.log(`[Middleware] Not authenticated, redirecting to ${loginUrl.toString()}`);
+    console.log(`[Middleware] Not authenticated (status reason: ${sessionStatus.error || 'no session'}), redirecting to ${loginUrl.toString()}`);
     return NextResponse.redirect(loginUrl);
 
   } else {
