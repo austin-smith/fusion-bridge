@@ -212,7 +212,7 @@ function UserActionsCell({ user }: UserActionsCellProps) {
                   Edit User
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setIsResetPasswordDialogOpen(true)}>
-                   <KeyRound className="h-4 w-4" />
+                   <KeyRound className="mr-2 h-4 w-4" />
                   Reset Password
               </DropdownMenuItem>
               <DropdownMenuSeparator />

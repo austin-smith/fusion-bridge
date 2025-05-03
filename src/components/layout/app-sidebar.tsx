@@ -125,7 +125,7 @@ export function AppSidebar() {
       <SidebarHeader className="flex h-[60px] items-center justify-center border-b">
         <Link href="/" className="inline-block">
           <div className={cn(
-              "flex items-center gap-2 font-bold text-xl",
+              "flex items-start gap-2 font-bold text-xl py-1",
               "group-data-[collapsible=icon]:justify-center"
           )}>
              <FusionIcon className="h-6 w-6 text-primary" />
