@@ -230,7 +230,7 @@ export function AppSidebar() {
                 </SidebarGroupContent>
               </SidebarGroup>
               {groupIndex < navGroups.length - 1 && (
-                  <Separator className="" />
+                  <Separator className="w-[80%] mx-auto" />
               )}
             </React.Fragment>
           ))

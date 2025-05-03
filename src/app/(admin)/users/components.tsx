@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ResetPasswordDialog } from './reset-password-dialog';
+import { cn } from '@/lib/utils';
 
 // --- Column Definitions ---
 
@@ -121,6 +122,23 @@ export const columns: ColumnDef<User>[] = [
         </div>
     ),
     size: 250,
+  },
+  {
+    accessorKey: "twoFactorEnabled",
+    header: ({ column }) => <SortableHeader column={column}>2FA</SortableHeader>,
+    cell: ({ row }) => {
+      const isEnabled = row.getValue("twoFactorEnabled");
+      return (
+        <span className={cn(
+          "px-2 py-0.5 rounded-full text-xs font-medium",
+          isEnabled ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
+        )}>
+          {isEnabled ? "Enabled" : "Disabled"}
+        </span>
+      );
+    },
+    size: 100, // Adjust size as needed
+    enableSorting: true,
   },
   {
     accessorKey: "createdAt",

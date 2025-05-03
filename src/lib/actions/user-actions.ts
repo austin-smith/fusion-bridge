@@ -85,6 +85,7 @@ export async function getUsers(): Promise<User[]> {
         name: user.name,
         email: user.email,
         image: user.image,
+        twoFactorEnabled: user.twoFactorEnabled,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
     }).from(user);
