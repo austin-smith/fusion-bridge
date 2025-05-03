@@ -124,7 +124,10 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                 setImageUrlToSubmit(profileState.updatedUser.image ?? ''); // Update image URL state used by Avatar
                 setPopoverImageUrl(profileState.updatedUser.image ?? ''); // Sync popover input
                 // Update global store - Ensure updatedUser includes 2FA status if changed
-                useFusionStore.getState().setCurrentUser(profileState.updatedUser);
+                useFusionStore.getState().setCurrentUser({
+                    ...profileState.updatedUser,
+                    twoFactorEnabled: profileState.updatedUser.twoFactorEnabled ?? false, // Ensure boolean
+                });
                 console.log("[AccountSettingsForm] Updated currentUser in Zustand store.");
             } else {
                  // If for some reason updatedUser isn't returned, sync with local state

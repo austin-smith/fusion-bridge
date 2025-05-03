@@ -85,6 +85,7 @@ export function AppSidebar() {
             name: session.user.name ?? null,
             email: session.user.email ?? null,
             image: session.user.image ?? null,
+            twoFactorEnabled: false,
         };
         setCurrentUser(userProfile);
         console.log("[AppSidebar] Initialized currentUser in Zustand store from session.");
