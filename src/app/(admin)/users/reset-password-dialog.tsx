@@ -148,7 +148,7 @@ function ResetPasswordSubmitButton() {
 
     return (
         <Button type="submit" disabled={pending} size="sm">
-            {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4"/>}
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4"/>}
             {pending ? 'Resetting...' : 'Reset Password'}
         </Button>
     );
