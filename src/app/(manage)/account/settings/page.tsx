@@ -11,6 +11,7 @@ interface UserSessionData {
   name: string | null;
   email: string | null;
   image: string | null;
+  twoFactorEnabled?: boolean; // Add optional twoFactorEnabled field
 }
 
 // Define the expected shape of the API response
@@ -69,6 +70,7 @@ export default async function AccountSettingsPage() {
     name: user.name ?? '',
     email: user.email ?? '', // Should always exist if authenticated
     image: user.image ?? null,
+    twoFactorEnabled: user.twoFactorEnabled ?? false, // Include twoFactorEnabled, default to false
   };
 
   return (

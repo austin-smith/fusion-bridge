@@ -78,7 +78,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // Exclude specific API routes (auth, webhooks, startup), 
-    // static assets, AND the original 2FA verification page path.
+    // static assets, AND the /verify-2fa page itself.
     '/((?!api/auth|api/webhooks|api/startup|verify-2fa|_next/static|_next/image|favicon.ico).*)',
   ],
 }; 

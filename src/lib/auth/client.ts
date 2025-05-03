@@ -7,7 +7,18 @@ export const authClient = createAuthClient({
     plugins: [
         twoFactorClient({
             onTwoFactorRedirect(){
-                window.location.href = "/verify-2fa";
+                // Preserve callbackUrl when redirecting to 2FA page
+                const currentUrl = new URL(window.location.href);
+                const callbackUrl = currentUrl.searchParams.get('callbackUrl');
+                const verifyUrl = new URL("/verify-2fa", window.location.origin);
+                
+                // Add callbackUrl if it exists
+                if (callbackUrl) {
+                    verifyUrl.searchParams.set("callbackUrl", callbackUrl);
+                }
+                
+                // Redirect with preserved callbackUrl
+                window.location.href = verifyUrl.toString();
             }
         })
     ]

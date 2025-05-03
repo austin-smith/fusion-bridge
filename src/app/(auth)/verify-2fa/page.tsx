@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { authClient } from '@/lib/auth/client';
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,15 @@ import { Label } from "@/components/ui/label";
 import { AlertCircle, Loader2, KeyRound } from "lucide-react";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"; // Using shadcn InputOTP
 
+// Define type for OTP input ref (needed for focusing)
+type OtpInputHandle = {
+    focus: () => void;
+};
+
 export default function Verify2faPage() {
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get('callbackUrl') || '/';
+
   const [code, setCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,32 +33,73 @@ export default function Verify2faPage() {
   const [isUsingBackupCode, setIsUsingBackupCode] = useState(false); 
   const [backupCode, setBackupCode] = useState('');
 
-  const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/'; // Get callbackUrl from query params or default
+  // Ref for the OTP input container to manage focus
+  const otpInputRef = useRef<HTMLInputElement>(null); // Ref for the main InputOTP component
 
-  const handleVerifyOtp = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsLoading(true);
-    setError(null);
+  // Function to handle the verification logic using onError callback
+  const triggerVerification = async (currentCode: string) => {
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      if (isUsingBackupCode) {
-          console.log(`Verifying backup code: ${backupCode}`);
-          await authClient.twoFactor.verifyBackupCode({ code: backupCode });
-      } else {
-          console.log(`Verifying TOTP code: ${code}`);
-          await authClient.twoFactor.verifyTotp({ code: code });
+      const handleVerificationError = (errorMessage: string) => {
+          setIsLoading(false); 
+          setCode(''); 
+          setError(errorMessage || "Invalid code. Please try again.");
+      };
+
+      const handleVerificationSuccess = () => {
+           console.log("2FA verification successful, redirecting...");
+           // Explicitly redirect on success
+           window.location.href = callbackUrl; 
+      };
+
+      try { // Keep outer try/catch for unexpected network/config errors
+          if (isUsingBackupCode) {
+              console.log(`Verifying backup code: ${backupCode}`);
+              await authClient.twoFactor.verifyBackupCode({ code: backupCode }, {
+                  onSuccess: handleVerificationSuccess,
+                  onError: (ctx) => handleVerificationError(ctx.error.message)
+              });
+          } else {
+              console.log(`Verifying TOTP code: ${currentCode}`);
+              await authClient.twoFactor.verifyTotp({ code: currentCode }, {
+                  onSuccess: handleVerificationSuccess,
+                  onError: (ctx) => handleVerificationError(ctx.error.message)
+              });
+          }
+      } catch (err: any) {
+            // Catch unexpected errors not handled by onError (e.g., network fail)
+            console.error("Unexpected error during 2FA verification:", err);
+            handleVerificationError("An unexpected error occurred. Please try again.");
       }
-      // Success! Better-Auth client will handle the redirect automatically.
-      console.log("2FA verification successful, redirecting...");
-      // Redirect to the originally intended destination or dashboard
-      window.location.href = callbackUrl; 
-    } catch (err: any) {
-      console.error("2FA Verification failed:", err);
-      setError(err?.message || "Invalid code. Please try again.");
-      setIsLoading(false);
-    }
   };
+
+  // Handler for form submission (can be triggered by button or auto-submit)
+  const handleVerifySubmit = (event?: React.FormEvent<HTMLFormElement>) => {
+      event?.preventDefault(); // Prevent default form submission if triggered by form
+      if (!isLoading) { // Only proceed if not already loading
+          triggerVerification(code);
+      }
+  };
+
+  // Handle changes in the OTP input
+  const handleOtpChange = (value: string) => {
+      setCode(value);
+      
+      // Auto-submit when 6 digits are entered
+      if (value.length === 6 && !isUsingBackupCode) {
+          console.log("OTP complete, triggering verification...");
+          triggerVerification(value);
+      }
+  };
+
+  // Effect to focus the first OTP input on mount if not using backup code
+  useEffect(() => {
+    if (!isUsingBackupCode && otpInputRef.current) {
+        // Directly focus the InputOTP component itself, which should handle the first slot
+        otpInputRef.current.focus();
+    }
+  }, [isUsingBackupCode]); // Re-run if the mode changes
 
   return (
     <div className="flex justify-center items-center min-h-screen bg-background">
@@ -70,7 +119,7 @@ export default function Verify2faPage() {
               <span className="font-medium text-destructive">{error}</span>
             </div>
           )}
-          <form onSubmit={handleVerifyOtp} className="space-y-6">
+          <form onSubmit={handleVerifySubmit} className="space-y-6">
             {isUsingBackupCode ? (
                 <div className="space-y-2">
                     <Label htmlFor="backup-code">Backup Code</Label>
@@ -82,16 +131,18 @@ export default function Verify2faPage() {
                         disabled={isLoading}
                         placeholder="Enter backup code"
                         autoComplete="off"
+                        autoFocus // Auto-focus backup code field when visible
                     />
                 </div>
             ) : (
                 <div className="space-y-2 flex flex-col items-center">
                   <Label htmlFor="otp-code">Authentication Code</Label>
                   <InputOTP 
+                     ref={otpInputRef} 
                      id="otp-code" 
                      maxLength={6} 
                      value={code} 
-                     onChange={(value: string) => setCode(value)}
+                     onChange={handleOtpChange} 
                      disabled={isLoading}
                      autoComplete="one-time-code"
                   >
@@ -107,9 +158,9 @@ export default function Verify2faPage() {
                 </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={isLoading || (isUsingBackupCode ? !backupCode : code.length < 6)}>
+            <Button type="submit" className="w-full" disabled={isLoading || (isUsingBackupCode ? !backupCode : code.length < 6 && !isLoading)}>
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Verify Code
+              {isLoading ? 'Verifying...' : 'Verify Code'}
             </Button>
           </form>
             
@@ -118,7 +169,7 @@ export default function Verify2faPage() {
             className="w-full text-sm text-muted-foreground" 
             onClick={() => {
                 setIsUsingBackupCode(!isUsingBackupCode); 
-                setError(null); // Clear error when switching mode
+                setError(null); 
                 setCode(''); 
                 setBackupCode('');
             }}

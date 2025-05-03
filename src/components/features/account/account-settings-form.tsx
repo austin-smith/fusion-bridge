@@ -124,7 +124,11 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                 setImageUrlToSubmit(profileState.updatedUser.image ?? ''); // Update image URL state used by Avatar
                 setPopoverImageUrl(profileState.updatedUser.image ?? ''); // Sync popover input
                 // Update global store - Ensure updatedUser includes 2FA status if changed
-                useFusionStore.getState().setCurrentUser(profileState.updatedUser);
+                useFusionStore.getState().setCurrentUser({
+                    ...profileState.updatedUser,
+                    // Ensure twoFactorEnabled is always a boolean
+                    twoFactorEnabled: profileState.updatedUser.twoFactorEnabled ?? false 
+                });
                 console.log("[AccountSettingsForm] Updated currentUser in Zustand store.");
             } else {
                  // If for some reason updatedUser isn't returned, sync with local state
@@ -164,8 +168,9 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
     }
 
     // --- Password Confirmation Handler ---
-    const handlePasswordConfirm = async () => {
-        if (!intendedAction) return; // Should not happen
+    const handlePasswordConfirm = async (event?: React.FormEvent<HTMLFormElement>) => {
+        event?.preventDefault();
+        if (!intendedAction) return;
         if (!currentPassword) {
             setPasswordError("Password is required.");
             return;
@@ -445,30 +450,34 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                             {intendedAction === 'regenerate' && ' regenerating backup codes.'}
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="py-4 space-y-2">
-                        <Label htmlFor="confirm-password">Current Password</Label>
-                        <Input 
-                            id="confirm-password"
-                            type="password"
-                            value={currentPassword}
-                            onChange={(e) => setCurrentPassword(e.target.value)}
-                            disabled={is2faLoading}
-                            required
-                            autoComplete="current-password"
-                        />
-                        {passwordError && (
-                            <p className="text-sm text-destructive">{passwordError}</p>
-                        )}
-                    </div>
-                    <DialogFooter>
-                        <DialogClose asChild>
-                             <Button variant="outline" onClick={resetTwoFactorState}>Cancel</Button>
-                        </DialogClose>
-                        <Button onClick={handlePasswordConfirm} disabled={is2faLoading || !currentPassword}>
-                             {is2faLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                             Confirm Password
-                        </Button>
-                    </DialogFooter>
+                    {/* Wrap content in a form */}
+                    <form onSubmit={handlePasswordConfirm}>
+                        <div className="py-4 space-y-2">
+                            <Label htmlFor="confirm-password">Current Password</Label>
+                            <Input 
+                                id="confirm-password"
+                                type="password"
+                                value={currentPassword}
+                                onChange={(e) => setCurrentPassword(e.target.value)}
+                                disabled={is2faLoading}
+                                required
+                                autoComplete="current-password"
+                            />
+                            {passwordError && (
+                                <p className="text-sm text-destructive">{passwordError}</p>
+                            )}
+                        </div>
+                        <DialogFooter>
+                            <DialogClose asChild>
+                                <Button variant="outline" onClick={resetTwoFactorState}>Cancel</Button>
+                            </DialogClose>
+                            {/* Change type to submit and remove onClick */}
+                            <Button type="submit" disabled={is2faLoading || !currentPassword}>
+                                {is2faLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                Confirm Password
+                            </Button>
+                        </DialogFooter>
+                    </form>
                 </DialogContent>
             </Dialog>
 
@@ -642,7 +651,7 @@ function SubmitButton() {
     return (
         <Button type="submit" disabled={pending} className="ml-auto" size="sm">
             {/* Only show loader when pending, otherwise just text */}
-            {pending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+            {pending && <Loader2 className="h-4 w-4 animate-spin" />}
             Save Changes
         </Button>
     );
