@@ -1,0 +1,1 @@
+ALTER TABLE `devices` ADD `raw_device_data` text;

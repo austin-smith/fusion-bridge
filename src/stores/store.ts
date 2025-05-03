@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { produce, Draft, enableMapSet } from 'immer';
+import { toast } from 'sonner'; // <-- Import toast
 import { PikoServer } from '@/types';
 import type { StandardizedEvent } from '@/types/events';
-import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, ArmedState } from '@/lib/mappings/definitions';
+import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, ArmedState, ActionableState, ON, OFF } from '@/lib/mappings/definitions';
 import type { DeviceWithConnector, ConnectorWithConfig, Location, Area, ApiResponse } from '@/types/index';
 import { YoLinkConfig } from '@/services/drivers/yolink';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
@@ -123,6 +124,9 @@ interface FusionState {
   // --- Current User State ---
   currentUser: UserProfile | null;
   
+  // --- NEW: Device Action Loading State ---
+  deviceActionLoading: Map<string, boolean>; // Key: internalDeviceId, Value: true if loading
+  
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
   addConnector: (connector: ConnectorWithConfig) => void;
@@ -187,6 +191,12 @@ interface FusionState {
 
   // --- Current User Actions ---
   setCurrentUser: (user: UserProfile | null) => void;
+
+  // --- NEW: Action to manually update a single device's state ---
+  updateSingleDeviceState: (internalDeviceId: string, newDisplayState: DisplayState) => void;
+
+  // --- NEW: Centralized Action to execute device state change ---
+  executeDeviceAction: (internalDeviceId: string, newState: ActionableState) => Promise<void>;
 }
 
 // Initial state for MQTT (default)
@@ -256,6 +266,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   
   // --- Current User Initial State ---
   currentUser: null,
+  
+  // --- NEW: Device Action Loading Initial State ---
+  deviceActionLoading: new Map<string, boolean>(),
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -372,35 +385,56 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   // Action to bulk update device states after a sync operation
   setDeviceStatesFromSync: (syncedDevices) => set((state) => {
       console.log('[Store] setDeviceStatesFromSync received:', syncedDevices);
-      const newDeviceStates = new Map<string, DeviceStateInfo>();
-
-      for (const syncedDevice of syncedDevices) {
-          const key = `${syncedDevice.connectorId}:${syncedDevice.deviceId}`;
-          const updated: DeviceStateInfo = {
-              // Keep existing properties for DeviceStateInfo
-              connectorId: syncedDevice.connectorId,
-              deviceId: syncedDevice.deviceId,
-              name: syncedDevice.name,
-              rawType: syncedDevice.type,
-              vendor: syncedDevice.vendor ?? undefined,
-              model: syncedDevice.model ?? undefined,
-              url: syncedDevice.url ?? undefined,
-              deviceInfo: getDeviceTypeInfo(syncedDevice.connectorCategory, syncedDevice.type),
-              lastSeen: new Date(), // Update lastSeen on sync
-              serverId: syncedDevice.serverId ?? undefined,
-              serverName: syncedDevice.serverName ?? undefined,
-              pikoServerDetails: syncedDevice.pikoServerDetails ?? undefined,
-              // Add other DeviceStateInfo specific fields if they exist from previous state or default
-              // ... potentially merge with existing state if needed ...
-          };
-          newDeviceStates.set(key, updated);
-      }
       
-      console.log('[Store] setDeviceStatesFromSync updated state:', newDeviceStates);
-      // *** Update both deviceStates AND allDevices ***
+      // Use produce for safe immutable updates within the map
+      const newDeviceStates = produce(state.deviceStates, (draft: Draft<Map<string, DeviceStateInfo>>) => {
+          // Optional: Create a set of keys from the sync for potential removal later if needed
+          // const syncedKeys = new Set(syncedDevices.map(d => `${d.connectorId}:${d.deviceId}`));
+          
+          for (const syncedDevice of syncedDevices) {
+              const key = `${syncedDevice.connectorId}:${syncedDevice.deviceId}`;
+              const existing = draft.get(key); // Get existing state from the draft
+              
+              const updated: DeviceStateInfo = {
+                  // --- Base info always taken from syncedDevice --- 
+                  connectorId: syncedDevice.connectorId,
+                  deviceId: syncedDevice.deviceId,
+                  name: syncedDevice.name,
+                  rawType: syncedDevice.type,
+                  vendor: syncedDevice.vendor ?? undefined,
+                  model: syncedDevice.model ?? undefined,
+                  url: syncedDevice.url ?? undefined,
+                  deviceInfo: getDeviceTypeInfo(syncedDevice.connectorCategory, syncedDevice.type),
+                  serverId: syncedDevice.serverId ?? undefined,
+                  serverName: syncedDevice.serverName ?? undefined,
+                  pikoServerDetails: syncedDevice.pikoServerDetails ?? undefined,
+                  
+                  // --- Merge stateful/event-driven fields --- 
+                  lastSeen: new Date(), // Always update lastSeen on sync
+                  
+                  // Prioritize incoming displayState, fallback to existing
+                  displayState: syncedDevice.displayState ?? existing?.displayState ?? undefined, 
+                  
+                  // Preserve last known events if not overwritten by sync (keep existing for now)
+                  lastStateEvent: existing?.lastStateEvent, 
+                  lastStatusEvent: existing?.lastStatusEvent,
+              };
+              draft.set(key, updated); // Update the draft map
+          }
+          
+          // Optional: Remove devices from the map that are no longer present in the sync
+          // for (const key of draft.keys()) {
+          //    if (!syncedKeys.has(key)) {
+          //        draft.delete(key);
+          //    }
+          // }
+      });
+      
+      console.log('[Store] setDeviceStatesFromSync updated state map:', newDeviceStates);
+      // Update allDevices with the full list, but deviceStates map uses merged data
       return { 
           deviceStates: newDeviceStates, 
-          allDevices: syncedDevices // Update allDevices with the full list
+          allDevices: syncedDevices // Update allDevices with the full list as it represents the latest full snapshot
       };
   }),
 
@@ -849,6 +883,80 @@ export const useFusionStore = create<FusionState>((set, get) => ({
 
   // --- Current User Actions ---
   setCurrentUser: (user) => set({ currentUser: user }),
+
+  // --- NEW: Action to manually update a single device's state ---
+  updateSingleDeviceState: (internalDeviceId: string, newDisplayState: DisplayState) => {
+    console.log(`[Store] updateSingleDeviceState called for internal ID: ${internalDeviceId}, New State: ${newDisplayState}`);
+    set(produce((draft: Draft<FusionState>) => {
+        // Find the device details from allDevices using the internal DB ID
+        const targetDevice = draft.allDevices.find(d => d.id === internalDeviceId);
+        
+        if (!targetDevice) {
+            console.warn(`[Store] updateSingleDeviceState: Device with internal ID ${internalDeviceId} not found in allDevices.`);
+            return; // Exit if we can't find the device details
+        }
+        
+        // Construct the key for the deviceStates map
+        const key = `${targetDevice.connectorId}:${targetDevice.deviceId}`;
+        const existingState = draft.deviceStates.get(key);
+
+        if (existingState) {
+            // Update the existing state entry
+            console.log(`[Store] Found existing state for key ${key}, updating displayState.`);
+            existingState.displayState = newDisplayState;
+            existingState.lastSeen = new Date(); // Also update lastSeen
+            draft.deviceStates.set(key, existingState); // Set the modified state back
+        } else {
+            // If somehow the device is in allDevices but not deviceStates, log a warning.
+            // We could potentially create a new entry, but it might lack other info.
+            console.warn(`[Store] updateSingleDeviceState: Device found in allDevices but not in deviceStates map (key: ${key}). State not updated in map.`);
+        }
+    }));
+  },
+
+  // --- NEW: Centralized Action to execute device state change ---
+  executeDeviceAction: async (internalDeviceId: string, newState: ActionableState) => {
+    const stateDesc = newState === ActionableState.SET_ON ? 'on' : 'off';
+    // 1. Set Loading State
+    set(produce((draft: Draft<FusionState>) => {
+      draft.deviceActionLoading.set(internalDeviceId, true);
+    }));
+    const loadingToastId = toast.loading(`Turning device ${stateDesc}...`);
+
+    try {
+      // 2. Make API Call
+      const response = await fetch(`/api/devices/${internalDeviceId}/state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: newState }),
+      });
+      const data: ApiResponse<any> = await response.json(); // Assume ApiResponse structure
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || `Failed to turn device ${stateDesc}`);
+      }
+
+      // 3. Optimistic UI Update (using existing action)
+      const newDisplayState = newState === ActionableState.SET_ON ? ON : OFF;
+      get().updateSingleDeviceState(internalDeviceId, newDisplayState); // Call existing action
+      console.log(`[Store] executeDeviceAction: Manually updated store for ${internalDeviceId} to ${newDisplayState}`);
+
+      // 4. Success Feedback
+      toast.success(`Device command sent successfully. State updated.`);
+
+    } catch (err) {
+      // 5. Error Handling
+      console.error(`[Store] Error setting device state for ${internalDeviceId}:`, err);
+      const message = err instanceof Error ? err.message : `Failed to turn device ${stateDesc}.`;
+      toast.error(message);
+    } finally {
+      // 6. Clear Loading State
+      toast.dismiss(loadingToastId);
+      set(produce((draft: Draft<FusionState>) => {
+        draft.deviceActionLoading.delete(internalDeviceId);
+      }));
+    }
+  },
 
   // REMOVE addDashboardEvent action implementation
 

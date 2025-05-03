@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 // Remove the direct import of DeviceWithConnector if not needed elsewhere
 // import { DeviceWithConnector } from '@/types';
 import type { DisplayState, TypedDeviceInfo } from '@/lib/mappings/definitions';
+import { ActionableState } from '@/lib/mappings/definitions';
+import { DeviceType, ON, OFF } from '@/lib/mappings/definitions';
 import { getDisplayStateIcon } from '@/lib/mappings/presentation';
 import { getDeviceTypeIcon } from "@/lib/mappings/presentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon, PowerIcon, PowerOffIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   DialogHeader,
@@ -43,18 +45,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import Image from 'next/image';
 import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
 import { useFusionStore } from '@/stores/store'; // Import the store
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'; // Import Tooltip
 import type { PikoConfig } from '@/services/drivers/piko'; // Import PikoConfig type
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 // Define the shape of the expected prop, compatible with DisplayedDevice from page.tsx
 // It needs all fields used internally, *excluding* the original 'status' field.
 export interface DeviceDetailProps {
-  id: string; // Internal ID used for keys?
+  internalId: string; // Use internal database ID
   deviceId: string;
   connectorId: string;
   name: string;
   connectorName: string;
   connectorCategory: string;
-  deviceTypeInfo?: TypedDeviceInfo;
+  deviceTypeInfo: TypedDeviceInfo;
   displayState?: DisplayState;
   lastSeen?: Date;
   associationCount?: number | null;
@@ -65,6 +70,8 @@ export interface DeviceDetailProps {
   serverName?: string;
   serverId?: string;
   pikoServerDetails?: PikoServer;
+  createdAt: Date;
+  updatedAt: Date;
   // Add lastStateEvent / lastStatusEvent if needed in dialog?
 }
 
@@ -204,9 +211,23 @@ const PlayButton = memo(({ onPlayClick, isDisabled }: {
 PlayButton.displayName = 'PlayButton';
 
 export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps> = ({ device }) => {
-  // Get connectors from the store
+  // Get store state and actions
   const connectors = useFusionStore((state) => state.connectors);
+  const deviceStates = useFusionStore((state) => state.deviceStates);
+  const { executeDeviceAction, deviceActionLoading } = useFusionStore(state => ({
+    executeDeviceAction: state.executeDeviceAction,
+    deviceActionLoading: state.deviceActionLoading,
+  }));
 
+  // Subscribe to device state changes from the store
+  const deviceStateKey = `${device.connectorId}:${device.deviceId}`;
+  const currentDeviceState = deviceStates.get(deviceStateKey);
+  
+  // Use the latest state from the store, falling back to the prop when not available
+  const displayState = currentDeviceState?.displayState || device.displayState;
+  const isOn = displayState === ON;
+  const isOff = displayState === OFF;
+  
   // No need for internal casting anymore
   // const displayDevice = device as ...;
 
@@ -641,6 +662,14 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     ? getDeviceTypeIcon(device.deviceTypeInfo.type) 
     : HelpCircle; // Use HelpCircle if type is missing
 
+  // --- BEGIN Action Button Logic --- 
+  const isActionable = 
+    device.connectorCategory === 'yolink' && 
+    (device.deviceTypeInfo.type === DeviceType.Switch || device.deviceTypeInfo.type === DeviceType.Outlet);
+  
+  const isLoadingAction = deviceActionLoading.get(device.internalId) ?? false;
+  // --- END Action Button Logic --- 
+
   // --- Handle clicking the thumbnail to show video --- 
   const handleThumbnailClick = () => {
     if (thumbnailUrl && !thumbnailError) {
@@ -648,6 +677,26 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     }
   };
   
+  // --- BEGIN Power Control Component --- //
+  // REMOVED: DevicePowerControl component is no longer needed
+  // --- END Power Control Component --- //
+
+  // --- BEGIN Status Badge Component --- //
+  const DeviceStatusBadge = () => {
+    // Only show simple status badge for non-actionable devices
+    if (isActionable) return null;
+    
+    return displayState ? (
+      <Badge variant="outline" className="inline-flex items-center gap-1 px-2 py-0.5 font-normal">
+        {React.createElement(getDisplayStateIcon(displayState)!, { className: "h-3 w-3 flex-shrink-0" })}
+        <span className="text-xs">{displayState}</span>
+      </Badge>
+    ) : (
+      <Badge variant="outline">Unknown State</Badge>
+    );
+  };
+  // --- END Status Badge Component --- //
+
   // --- Simple Media Thumbnail Component ---
   const MediaThumbnail: React.FC<{ 
       src: string; 
@@ -767,25 +816,17 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
       <img ref={preloaderImgRef} alt="" style={{ display: 'none' }} /> 
 
       <DialogHeader className="pb-4 border-b">
+        {/* First Row: Icon, Title, Status */}
         <div className="flex items-center gap-2">
           <DeviceIcon className="h-5 w-5 text-muted-foreground" /> 
           <DialogTitle>{device.name}</DialogTitle>
-          {device.displayState ? (
-            <div className="flex items-center gap-1.5">
-              <Badge variant="outline" className="px-1.5 py-0.5">
-                 {getDisplayStateIcon(device.displayState) && (
-                     React.createElement(getDisplayStateIcon(device.displayState)!, { className: "h-3 w-3" })
-                 )}
-              </Badge>
-              <span className="text-sm text-muted-foreground">{device.displayState}</span>
-            </div>
-          ) : (
-            <Badge variant="outline">Unknown State</Badge>
-          )}
+          <DeviceStatusBadge />
         </div>
+        {/* Second Row (Description Area): Badges and Action Switch */}
         <DialogDescription className="pt-1" asChild>
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-4">
+            {/* Left side: Badges */}
+            <div className="flex items-center gap-2 flex-wrap">
               {/* 1. Connector Badge */}
               <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
                 <ConnectorIcon connectorCategory={device.connectorCategory} size={12} />
@@ -804,11 +845,42 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                 </Badge>
               )}
             </div>
+            {/* Right side: Action Switch (Conditional) */}
+            {isActionable && (
+              <div className="flex-shrink-0">
+                <TooltipProvider delayDuration={100}> 
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-2">
+                        {isLoadingAction && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />} 
+                        <Switch
+                          id={`header-action-switch-${device.internalId}`}
+                          checked={isOn}
+                          onCheckedChange={(checked) => {
+                            executeDeviceAction(
+                              device.internalId,
+                              checked ? ActionableState.SET_ON : ActionableState.SET_OFF
+                            );
+                          }}
+                          disabled={isLoadingAction}
+                          aria-label={isLoadingAction ? 'Processing' : (isOn ? 'Turn Off' : 'Turn On')}
+                        />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{isLoadingAction ? 'Processing...' : (isOn ? 'Turn Off' : 'Turn On')}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            )}
           </div>
         </DialogDescription>
       </DialogHeader>
       
       <div className="py-4 space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+        {/* Power Control Section - REMOVED */}
+        
         {/* --- START: Piko Camera Media Section --- */}
         {device.connectorCategory === 'piko' && device.deviceTypeInfo?.type === 'Camera' && (
            <div className="mb-4">
@@ -978,7 +1050,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                       Select Piko cameras related to this YoLink device.
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                      <Popover open={pikoCameraPopoverOpen} onOpenChange={setPikoCameraPopoverOpen}>
+                      <Popover open={pikoCameraPopoverOpen} Change={setPikoCameraPopoverOpen}>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"

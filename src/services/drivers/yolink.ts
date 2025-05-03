@@ -119,8 +119,7 @@ interface YoLinkDeviceRaw {
  */
 async function callYoLinkApi<T>(
   accessToken: string, 
-  method: string, 
-  params: Record<string, unknown> = {},
+  requestBody: Record<string, unknown>,
   operationName: string
 ): Promise<T> {
   console.log(`YoLink ${operationName} called with token present:`, !!accessToken);
@@ -131,7 +130,7 @@ async function callYoLinkApi<T>(
   }
 
   try {
-    console.log(`Preparing to execute YoLink ${operationName} with URL:`, YOLINK_API_URL);
+    console.log(`Preparing to execute YoLink ${operationName} with URL:`, YOLINK_API_URL, 'Body:', requestBody);
     
     const response = await fetch(YOLINK_API_URL, {
       method: 'POST',
@@ -139,10 +138,7 @@ async function callYoLinkApi<T>(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`
       },
-      body: JSON.stringify({
-        method,
-        params
-      })
+      body: JSON.stringify(requestBody)
     });
 
     console.log(`YoLink ${operationName} response status:`, response.status);
@@ -240,8 +236,7 @@ export async function getHomeInfo(accessToken: string): Promise<string> {
   try {
     const data = await callYoLinkApi<{ id: string }>(
       accessToken,
-      "Home.getGeneralInfo",
-      {},
+      { method: "Home.getGeneralInfo", params: {} },
       "getHomeInfo"
     );
     
@@ -267,8 +262,7 @@ export async function getDeviceList(accessToken: string): Promise<YoLinkDeviceRa
   try {
     const data = await callYoLinkApi<{ devices: YoLinkDeviceRaw[] }>(
       accessToken,
-      "Home.getDeviceList",
-      {},
+      { method: "Home.getDeviceList", params: {} },
       "getDeviceList"
     );
     
@@ -355,4 +349,165 @@ export async function testConnection(cfg: YoLinkConfig): Promise<boolean> {
     console.error("YoLink connection test failed with unexpected error:", error);
     return false;
   }
-} 
+}
+
+// --- BEGIN Add setDeviceState Function ---
+/**
+ * Sets the state of a YoLink device (Switch or Outlet).
+ * @param config YoLink configuration (uaid, clientSecret)
+ * @param deviceId The target device's YoLink ID (deviceId from API)
+ * @param deviceToken The target device's specific token (token from API)
+ * @param rawDeviceType The raw type string of the device (e.g., 'Switch', 'Outlet')
+ * @param targetState The desired state ('open' or 'close')
+ * @returns Promise resolving to the API response data on success.
+ * @throws Error if the operation fails or device type is unsupported.
+ */
+export async function setDeviceState(
+  config: YoLinkConfig,
+  deviceId: string,
+  deviceToken: string,
+  rawDeviceType: string,
+  targetState: 'open' | 'close'
+): Promise<any> { // Can be typed more specifically if needed
+  console.log(`setDeviceState called for device ${deviceId}, type: ${rawDeviceType}, target: ${targetState}`);
+
+  if (!config.uaid || !config.clientSecret) {
+    console.error('Missing YoLink UAID or Client Secret for setDeviceState.');
+    throw new Error('Missing YoLink UAID or Client Secret.');
+  }
+  if (!deviceId || !deviceToken) {
+    console.error(`Missing deviceId (${deviceId}) or deviceToken (${!!deviceToken}) for setDeviceState.`);
+    throw new Error('Missing YoLink deviceId or deviceToken for state change.');
+  }
+
+  let method: string;
+  switch (rawDeviceType) {
+    case 'Switch':
+      method = 'Switch.setState';
+      break;
+    case 'Outlet':
+    case 'MultiOutlet': // MultiOutlet uses the Outlet API endpoint
+      method = 'Outlet.setState';
+      break;
+    default:
+      console.error(`Unsupported device type for setDeviceState: ${rawDeviceType}`);
+      throw new Error(`Cannot set state for unsupported device type: ${rawDeviceType}`);
+  }
+
+  try {
+    // Get access token
+    const accessToken = await getAccessToken(config);
+
+    // Construct the full request body
+    const requestBody = {
+      method: method,
+      targetDevice: deviceId,
+      token: deviceToken,
+      params: {
+        state: targetState
+      }
+    };
+
+    // Call the API using the refactored helper
+    const operationName = `setDeviceState (${method})`;
+    console.log(`Calling callYoLinkApi for ${operationName}`);
+    const result = await callYoLinkApi<any>(
+      accessToken,
+      requestBody,
+      operationName
+    );
+
+    console.log(`Successfully executed ${operationName} for device ${deviceId}. Result:`, result);
+    return result; // Return the data part of the response
+
+  } catch (error) {
+    // Errors from getAccessToken or callYoLinkApi are already logged
+    // Re-throw the error to be handled by the caller
+    console.error(`Error during ${method} for device ${deviceId}:`, error);
+    // Ensure the thrown error is an Error instance
+    if (error instanceof Error) {
+      throw new Error(`Failed to set YoLink device state: ${error.message}`);
+    } else {
+      throw new Error('Failed to set YoLink device state due to an unknown error.');
+    }
+  }
+}
+// --- END Add setDeviceState Function --- 
+
+// --- BEGIN Add getDeviceState Function ---
+/**
+ * Gets the current state of a YoLink device (Switch or Outlet).
+ * @param config YoLink configuration (uaid, clientSecret)
+ * @param deviceId The target device's YoLink ID (deviceId from API)
+ * @param deviceToken The target device's specific token (token from API)
+ * @param rawDeviceType The raw type string of the device (e.g., 'Switch', 'Outlet')
+ * @returns Promise resolving to the state data (e.g., { state: 'open' }) from the API response.
+ * @throws Error if the operation fails or device type is unsupported.
+ */
+export async function getDeviceState(
+  config: YoLinkConfig,
+  deviceId: string,
+  deviceToken: string,
+  rawDeviceType: string
+): Promise<any> { // Can be typed more specifically later
+  console.log(`getDeviceState called for device ${deviceId}, type: ${rawDeviceType}`);
+
+  if (!config.uaid || !config.clientSecret) {
+    console.error('Missing YoLink UAID or Client Secret for getDeviceState.');
+    throw new Error('Missing YoLink UAID or Client Secret.');
+  }
+  if (!deviceId || !deviceToken) {
+    console.error(`Missing deviceId (${deviceId}) or deviceToken (${!!deviceToken}) for getDeviceState.`);
+    throw new Error('Missing YoLink deviceId or deviceToken for getting state.');
+  }
+
+  let method: string;
+  switch (rawDeviceType) {
+    case 'Switch':
+      method = 'Switch.getState';
+      break;
+    case 'Outlet':
+    case 'MultiOutlet': // MultiOutlet uses the Outlet API endpoint for state
+      method = 'Outlet.getState';
+      break;
+    default:
+      console.error(`Unsupported device type for getDeviceState: ${rawDeviceType}`);
+      throw new Error(`Cannot get state for unsupported device type: ${rawDeviceType}`);
+  }
+
+  try {
+    // Get access token
+    const accessToken = await getAccessToken(config);
+
+    // Construct the full request body (no params needed for getState)
+    const requestBody = {
+      method: method,
+      targetDevice: deviceId,
+      token: deviceToken,
+    };
+
+    // Call the API using the refactored helper
+    const operationName = `getDeviceState (${method})`;
+    console.log(`Calling callYoLinkApi for ${operationName}`);
+    const resultData = await callYoLinkApi<any>(
+      accessToken,
+      requestBody,
+      operationName
+    );
+
+    console.log(`Successfully executed ${operationName} for device ${deviceId}. Result data:`, resultData);
+    return resultData; // Return the data part of the response
+
+  } catch (error) {
+    // Errors from getAccessToken or callYoLinkApi are already logged
+    // Re-throw the error to be handled by the caller
+    console.error(`Error during ${method} for device ${deviceId}:`, error);
+    // Ensure the thrown error is an Error instance
+    if (error instanceof Error) {
+      throw new Error(`Failed to get YoLink device state: ${error.message}`);
+    } else {
+      throw new Error('Failed to get YoLink device state due to an unknown error.');
+    }
+  }
+}
+// --- END Add getDeviceState Function --- 

@@ -4,10 +4,17 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from "@/components/ui/input";
 import { toast } from 'sonner';
-import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network } from 'lucide-react';
+import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network, PowerIcon, PowerOffIcon, HelpCircle, MoreHorizontal, InfoIcon } from 'lucide-react';
 import { DeviceWithConnector, ConnectorWithConfig, PikoServer } from '@/types';
 import { getDeviceTypeIcon, getDisplayStateIcon } from "@/lib/mappings/presentation";
-import type { DisplayState, TypedDeviceInfo } from '@/lib/mappings/definitions';
+import { 
+  type DisplayState,
+  type TypedDeviceInfo,
+  ActionableState,
+  DeviceType,
+  ON,
+  OFF
+} from '@/lib/mappings/definitions';
 import { useFusionStore } from '@/stores/store';
 import {
   Select,
@@ -62,14 +69,21 @@ import type { DeviceDetailProps } from "@/components/features/devices/device-det
 import { getDeviceTypeInfo } from "@/lib/mappings/identification";
 import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
 
 // Define the shape of data expected by the table, combining store data
-interface DisplayedDevice extends Omit<DeviceWithConnector, 'status' | 'type' | 'pikoServerDetails'> { 
-  displayState?: DisplayState; // Use imported DisplayState type
+interface DisplayedDevice extends Omit<DeviceWithConnector, 'status' | 'type' | 'pikoServerDetails' | 'id'> { // Also omit original id
+  internalId: string; // Internal database ID (devices.id)
+  displayState?: DisplayState; // Keep for potential future use
   lastSeen?: Date; 
   deviceTypeInfo: TypedDeviceInfo; // Ensure this is included and required
   // Explicitly add back required fields omitted by Omit or needed for compatibility
-  id: string; // Unique internal ID (can be deviceId or derived)
   type: string; // Add back raw device type string
   // Add server details explicitly
   pikoServerDetails?: PikoServer; // <-- Add the field here
@@ -183,8 +197,11 @@ const DevicesTableSkeleton = ({ rowCount = 10, columnCount = 6 }: { rowCount?: n
 export default function DevicesPage() {
   // Fetch data from Zustand store - use connectors
   const deviceStates = useFusionStore(state => state.deviceStates);
-  const setDeviceStatesFromSync = useFusionStore(state => state.setDeviceStatesFromSync); 
-  // const fetchConnectors = useFusionStore(state => state.fetchConnectors); 
+  const { setDeviceStatesFromSync, executeDeviceAction, deviceActionLoading } = useFusionStore(state => ({
+    setDeviceStatesFromSync: state.setDeviceStatesFromSync,
+    executeDeviceAction: state.executeDeviceAction,
+    deviceActionLoading: state.deviceActionLoading,
+  }));
   // Use connectors state variable
   const connectors = useFusionStore(state => state.connectors as ConnectorWithConfig<any>[]); 
   // Fetch allDevices from the store
@@ -205,6 +222,11 @@ export default function DevicesPage() {
     pageSize: 50,
   });
   
+  // --- BEGIN Dialog State ---
+  const [selectedDevice, setSelectedDevice] = useState<DeviceDetailProps | null>(null);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  // --- END Dialog State ---
+
   // Set page title
   useEffect(() => { document.title = 'Devices // Fusion'; }, []);
 
@@ -284,7 +306,7 @@ export default function DevicesPage() {
             const rawDeviceType = state.rawType ?? state.deviceInfo?.type ?? 'Unknown'; 
 
             const displayDevice: DisplayedDevice = {
-                id: `${state.connectorId}:${state.deviceId}`, 
+                internalId: fullDevice.id, // Use the internal ID from the full device record
                 deviceId: state.deviceId,
                 connectorId: state.connectorId,
                 name: deviceName, 
@@ -318,7 +340,7 @@ export default function DevicesPage() {
   }, [deviceStates, connectors, allDevices]);
 
   // Filter devices based on the category toggle
-  const filteredTableData = useMemo(() => {
+  const filteredTableData = useMemo<DisplayedDevice[]>(() => {
     if (categoryFilter === 'all') {
       console.log('[DevicesPage] Filtered Data (all):', tableData);
       return tableData;
@@ -399,11 +421,10 @@ export default function DevicesPage() {
   // Define columns for TanStack Table
   const columns = useMemo<ColumnDef<DisplayedDevice>[]>(() => [
       {
-        accessorKey: 'connectorName',
+        accessorKey: 'connectorName', // Keep Connector column first
         header: "Connector",
         enableSorting: true,
         enableColumnFilter: true,
-        // Filter function now only handles text input
         filterFn: (row, columnId, value) => {
           const name = row.getValue(columnId) as string;
           return name.toLowerCase().includes(String(value).toLowerCase());
@@ -429,7 +450,7 @@ export default function DevicesPage() {
         },
       },
       {
-        accessorKey: 'name',
+        accessorKey: 'name', // Device Name column second
         header: "Device Name",
         enableSorting: true,
         enableColumnFilter: true,
@@ -448,40 +469,7 @@ export default function DevicesPage() {
           </TooltipProvider>
         ),
       },
-      {
-        id: 'state',
-        accessorKey: 'displayState', 
-        header: "State",
-        enableSorting: true,
-        cell: ({ row }) => {
-          // No need to cast here if tableData uses DisplayState correctly
-          const state = row.original.displayState;
-          const lastSeen = row.original.lastSeen;
-          const StateIcon = getDisplayStateIcon(state);
-          return (
-             <TooltipProvider delayDuration={100}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                      <div className="flex items-center gap-1.5 max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap">
-                          {state ? (
-                            <>
-                              <StateIcon className="h-4 w-4 text-muted-foreground shrink-0" /> 
-                              <span className="text-xs">{state}</span>
-                            </>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">Unknown</span>
-                          )}
-                      </div>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                      <p>State: {state || 'Unknown'}</p>
-                      <p>Last seen: {lastSeen ? new Date(lastSeen).toLocaleString() : 'Never'}</p>
-                  </TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
-          );
-        }
-      },
+      // --- Device Type Column (Moved to third) --- //
       {
         accessorKey: 'deviceTypeInfo', 
         header: "Device Type",
@@ -496,9 +484,8 @@ export default function DevicesPage() {
             return type.toLowerCase().includes(String(value).toLowerCase());
         },
         cell: ({ row }) => {
-          const typeInfo = row.original.deviceTypeInfo; // Use the object from combined data
+          const typeInfo = row.original.deviceTypeInfo; 
           const IconComponent = getDeviceTypeIcon(typeInfo.type);
-          const fullText = typeInfo.subtype ? `${typeInfo.type} / ${typeInfo.subtype}` : typeInfo.type;
           
           return (
             <TooltipProvider delayDuration={100}>
@@ -518,6 +505,42 @@ export default function DevicesPage() {
           );
         },
       },
+      // --- State Column (Now fourth) --- //
+      {
+        id: 'state',
+        accessorKey: 'displayState', 
+        header: "State",
+        enableSorting: true,
+        cell: ({ row }) => {
+          const state = row.original.displayState;
+          const lastSeen = row.original.lastSeen;
+          const StateIcon = getDisplayStateIcon(state); 
+
+          return (
+             <TooltipProvider delayDuration={100}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                      <div className="max-w-32 whitespace-nowrap overflow-hidden text-ellipsis cursor-default">
+                          {state ? (
+                            <Badge variant="outline" className="inline-flex items-center gap-1 px-2 py-0.5 font-normal">
+                              {React.createElement(StateIcon, { className: "h-3 w-3 flex-shrink-0" })}
+                              <span className="text-xs">{state}</span>
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Unknown</span>
+                          )}
+                      </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                      <p>State: {state || 'Unknown'}</p>
+                      <p>Last seen: {lastSeen ? new Date(lastSeen).toLocaleString() : 'Never'}</p>
+                  </TooltipContent>
+                </Tooltip>
+            </TooltipProvider>
+          );
+        }
+      },
+      // --- Associated Column (remains after Device Type) --- //
       {
         accessorKey: 'associationCount',
         header: "Associated",
@@ -569,48 +592,88 @@ export default function DevicesPage() {
           );
         },
       },
+      // --- Actions Column (remains last) --- //
       {
         id: 'actions',
         header: "Actions",
         cell: ({ row }) => {
           const device = row.original; 
+          // --- BEGIN Action Button Logic ---
+          const isActionable = 
+            device.connectorCategory === 'yolink' && 
+            (device.deviceTypeInfo.type === DeviceType.Switch || device.deviceTypeInfo.type === DeviceType.Outlet);
+          
+          // Read loading state from the store
+          const isLoading = deviceActionLoading.get(device.internalId) ?? false;
+          // --- BEGIN Revert State Check ---
+          // Revert to checking displayState, acknowledging it's not yet populated correctly
+          const isOn = device.displayState === ON; 
+          const isOff = device.displayState === OFF;
+          // --- END Revert State Check ---
+
           const dialogProps: DeviceDetailProps = {
             ...device,
-            // Ensure potentially nullable string props are string | undefined
+            internalId: device.internalId, // Explicitly ensure internalId is correct
             url: device.url ?? undefined, 
             model: device.model ?? undefined, 
             vendor: device.vendor ?? undefined, 
             serverName: device.serverName ?? undefined,
             serverId: device.serverId ?? undefined,
-            // Ensure required string props have fallbacks
             connectorName: device.connectorName ?? 'Unknown', 
-            // Ensure required object props have fallbacks
             deviceTypeInfo: device.deviceTypeInfo ?? getDeviceTypeInfo('unknown', 'unknown'),
+            createdAt: device.createdAt, // Assuming these exist on DisplayedDevice
+            updatedAt: device.updatedAt, // Assuming these exist on DisplayedDevice
           };
+          
           return (
-            <Dialog>
-              <TooltipProvider delayDuration={100}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DialogTrigger asChild>
-                      <Button variant="ghost" size="icon"><EyeIcon className="h-4 w-4" /></Button>
-                    </DialogTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>View device details</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <DialogContent className="sm:max-w-[600px]">
-                <DeviceDetailDialogContent device={dialogProps} />
-              </DialogContent>
-            </Dialog>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="h-8 w-8 p-0" disabled={isLoading}>
+                  <span className="sr-only">Open menu</span>
+                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />} 
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSelectedDevice(dialogProps);
+                    setIsDetailDialogOpen(true);
+                  }}
+                >
+                  <InfoIcon className="mr-2 h-4 w-4" />
+                  View Details
+                </DropdownMenuItem>
+                
+                {isActionable && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => {
+                        executeDeviceAction(
+                          device.internalId, 
+                          isOn ? ActionableState.SET_OFF : ActionableState.SET_ON
+                        );
+                      }}
+                      disabled={isLoading} // Disable while action is processing
+                    >
+                      {/* Conditionally show icon based on state */}
+                      {isOn ? (
+                        <PowerOffIcon className="mr-2 h-4 w-4 text-red-600" /> 
+                      ) : (
+                        <PowerIcon className="mr-2 h-4 w-4 text-green-600" />
+                      )}
+                      {isOn ? 'Turn Off' : 'Turn On'}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           );
         },
       },
     ],
-    // Add dependencies back to the columns useMemo hook
-    [fetchAssociatedDevices, loadingAssociatedDevices, associatedDevices, activeDeviceId]
+    // Update dependencies for columns useMemo
+    [fetchAssociatedDevices, loadingAssociatedDevices, associatedDevices, activeDeviceId, deviceActionLoading, executeDeviceAction]
   );
 
   // Initialize the table with TanStack
@@ -722,20 +785,20 @@ export default function DevicesPage() {
 
         <div className="flex-shrink-0">
           {error && (
-            <div className="mb-4 p-4 bg-destructive/10 text-destructive rounded-md">
+            <div className="mb-4 p-3 bg-destructive/10 text-destructive text-sm rounded-md">
               <p>Error: {error}</p>
             </div>
           )}
         </div>
 
         {/* Show Skeleton Loader OR Content */}
-        {isLoadingInitial ? (
+        {isLoadingInitial && !error ? ( // Only show skeleton if loading AND no error
           <DevicesTableSkeleton rowCount={15} columnCount={columns.length} />
         ) : (
           <> 
             {/* Show "No devices found" only AFTER load and if conditions met */} 
             {tableData.length === 0 && !isSyncing && !error && categoryFilter === 'all' && (
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground text-center py-10">
                 No devices found in store. Try syncing connectors.
               </p>
             )}
@@ -883,6 +946,20 @@ export default function DevicesPage() {
           </>
         )}
       </TooltipProvider> {/* Closing TooltipProvider */}
+
+      {/* --- BEGIN Single Dialog Instance --- */} 
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent 
+          className="sm:max-w-[600px]"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          {/* Render content only when a device is selected */}
+          {selectedDevice && (
+            <DeviceDetailDialogContent device={selectedDevice} />
+          )}
+        </DialogContent>
+      </Dialog>
+      {/* --- END Single Dialog Instance --- */} 
     </div>
   );
 } 

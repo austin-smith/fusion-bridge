@@ -101,6 +101,15 @@ export enum LockStatus {
   Unlocked = 'UNLOCKED',
 }
 
+// --- BEGIN Add ActionableState Enum ---
+// Represents desired abstract state changes, independent of vendor commands
+export enum ActionableState {
+  SET_ON = 'SET_ON',
+  SET_OFF = 'SET_OFF',
+  // Future: SET_LOCKED = 'SET_LOCKED', SET_UNLOCKED = 'SET_UNLOCKED', SET_BRIGHTNESS = 'SET_BRIGHTNESS', etc.
+}
+// --- END Add ActionableState Enum ---
+
 // Union type for all possible intermediate states
 export type IntermediateState = BinaryState | ContactState | SensorAlertState | LockStatus;
 

@@ -16,12 +16,13 @@ This project uses the `better-auth` library for handling user authentication.
 -   **Authentication Methods:**
     -   Email & Password (`emailAndPassword.enabled: true`)
 -   **API Routes:** All standard `better-auth` API operations (login, logout, callbacks, etc.) are handled by the catch-all route `src/app/api/auth/[...all]/route.ts` using `toNextJsHandler(auth)`.
--   **Session Check API:** A custom route `src/app/api/auth/check-session/route.ts` exists to provide session status (including basic user info like id, name, email, image) for server-side checks (like middleware or page loads).
+-   **Session Check API:** A lightweight route `src/app/api/auth/check-session/route.ts` exists ONLY to provide basic session status (`isAuthenticated`, `user.id`). Primarily used by middleware.
+-   **User Profile API:** A separate route `src/app/api/auth/profile/route.ts` provides detailed authenticated user information (`id`, `name`, `email`, `image`, `twoFactorEnabled`). Used by pages/components needing profile data.
 -   **Middleware:** `src/middleware.ts` protects most routes. It checks authentication status by fetching from `/api/auth/check-session`. Unauthenticated users are redirected to `/login`. The matcher excludes `/api/auth/*`, `/api/webhooks/*`, and common static asset paths.
 -   **Client-Side Access:** Use `signIn` and `signOut` from `@/lib/auth/client.ts` and the `useSession` hook (`@/lib/auth/client`).
 -   **Server-Side Access:**
     -   In Server Actions: Use `await auth.$context` to get session and other context (`@/lib/auth/server.ts`).
-    -   In Server Components (Pages/Layouts): Fetch user data from the internal `/api/auth/check-session` API route.
+    -   In Server Components (Pages/Layouts): Fetch user data from the internal `/api/auth/profile` API route using cookies.
 
 ## Auxiliary Auth Actions
 

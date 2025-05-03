@@ -2,6 +2,7 @@ import { sqliteTable, text, integer, primaryKey, uniqueIndex, index, type AnySQL
 import { relations, sql } from "drizzle-orm";
 import type { AutomationConfig } from "@/lib/automation-schemas"; // Import the config type
 import { ArmedState } from '@/lib/mappings/definitions'; // <-- Import the enum
+import type { DeviceType, DeviceSubtype } from '@/lib/mappings/definitions'; 
 
 export const connectors = sqliteTable("connectors", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -63,14 +64,14 @@ export const devices = sqliteTable("devices", {
   connectorId: text("connector_id").notNull().references(() => connectors.id, { onDelete: 'cascade' }),
   name: text("name").notNull(),
   type: text("type").notNull(), // Raw type from connector
-  // Standardized type info (populated by sync logic)
-  standardizedDeviceType: text("standardized_device_type"), // Mapped DeviceType enum value
-  standardizedDeviceSubtype: text("standardized_device_subtype"), // Mapped DeviceSubtype enum value (nullable)
+  standardizedDeviceType: text("standardized_device_type").$type<DeviceType>(), // Mapped DeviceType enum value
+  standardizedDeviceSubtype: text("standardized_device_subtype").$type<DeviceSubtype | null>(), // Mapped DeviceSubtype enum value (nullable)
   status: text("status"),
   serverId: text("server_id"), // Optional: e.g., Piko Server ID
   vendor: text("vendor"),
   model: text("model"),
   url: text("url"),
+  rawDeviceData: text("raw_device_data", { mode: "json" }).$type<Record<string, unknown> | null>(), // Store the raw device data object from the API as JSON string
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({

@@ -9,7 +9,8 @@ import {
     LockStatus,
     DeviceSubtype, // Keep subtype for mapping keys
     EventCategory, // <-- Import from definitions
-    EventType      // <-- Import from definitions
+    EventType,      // <-- Import from definitions
+    DisplayState // <-- Import DisplayState
 } from '@/lib/mappings/definitions';
 import {
     StandardizedEvent,
@@ -19,6 +20,11 @@ import {
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
 import crypto from 'crypto'; // Import crypto for UUID generation
+// --- BEGIN DB Imports ---
+import { db } from '@/data/db';
+import { devices } from '@/data/db/schema';
+import { eq, and } from 'drizzle-orm';
+// --- END DB Imports ---
 
 // --- YoLink Intermediate State Mapping (Internal to this parser) ---
 // This map is based on the previous translation logic and is necessary
@@ -83,15 +89,16 @@ interface RawYoLinkEventPayload {
  * Parses a raw event object received from the YoLink connector
  * into one or more StandardizedEvent objects, based on the confirmed structure.
  * Attempts to parse known state changes, otherwise returns an UNKNOWN_EXTERNAL_EVENT.
+ * Updates the device status in the database if a displayable state change is parsed.
  *
  * @param connectorId The ID of the YoLink connector instance.
  * @param rawEvent The raw event object.
- * @returns An array of StandardizedEvent objects derived from the raw event.
+ * @returns A Promise resolving to an array of StandardizedEvent objects derived from the raw event.
  */
-export function parseYoLinkEvent(
+export async function parseYoLinkEvent(
     connectorId: string, 
     rawEvent: unknown
-): StandardizedEvent[] {
+): Promise<StandardizedEvent[]> {
 
     // --- Basic Validation ---
     if (
@@ -132,6 +139,25 @@ export function parseYoLinkEvent(
         if (intermediateState) {
             const displayState = intermediateStateToDisplayString(intermediateState, deviceInfo);
             if (displayState) {
+                // <<< --- BEGIN DB UPDATE LOGIC --- >>>
+                try {
+                    console.log(`[YoLink Parser] Updating DB status for ${event.deviceId} to '${displayState}'`);
+                    await db.update(devices)
+                      .set({ 
+                          status: displayState, // Store the final display string
+                          updatedAt: new Date() 
+                      })
+                      .where(and(
+                          eq(devices.connectorId, connectorId),
+                          eq(devices.deviceId, event.deviceId) // Match on external ID
+                      ));
+                    console.log(`[YoLink Parser] DB status updated successfully for ${event.deviceId}`);
+                } catch (dbError) {
+                    console.error(`[YoLink Parser] Failed to update DB status for ${event.deviceId}:`, dbError);
+                    // Log error but continue processing the event for the store/UI
+                }
+                // <<< --- END DB UPDATE LOGIC --- >>>
+                
                 const payload: StateChangedPayload = {
                     intermediateState: intermediateState,
                     displayState: displayState,

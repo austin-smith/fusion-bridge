@@ -1,15 +1,15 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/data/db';
 import { devices, connectors, pikoServers, cameraAssociations } from '@/data/db/schema';
-import { eq, count } from 'drizzle-orm';
+import { eq, count, and } from 'drizzle-orm';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import * as pikoDriver from '@/services/drivers/piko';
 import * as geneaDriver from '@/services/drivers/genea';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import type { DeviceWithConnector, PikoServer } from '@/types';
 import { useFusionStore } from '@/stores/store';
-import type { TypedDeviceInfo } from '@/lib/mappings/definitions';
-import { DeviceType } from '@/lib/mappings/definitions';
+import type { TypedDeviceInfo, IntermediateState, DisplayState } from '@/lib/mappings/definitions';
+import { DeviceType, BinaryState, ON, OFF, CANONICAL_STATE_MAP } from '@/lib/mappings/definitions';
 
 // Helper function to get association count
 async function getAssociationCount(
@@ -33,6 +33,23 @@ async function getAssociationCount(
   return result?.[0]?.value ?? null;
 }
 
+// --- BEGIN Re-add Helper to map IntermediateState to DisplayState ---
+function mapIntermediateToDisplay(state: IntermediateState | undefined | null): DisplayState | undefined {
+    if (!state) return undefined;
+
+    // Simple direct mappings first
+    const simpleMap = CANONICAL_STATE_MAP.simple as Record<IntermediateState, DisplayState>;
+    if (simpleMap[state]) {
+        return simpleMap[state];
+    }
+
+    // Context-dependent mappings (add later if needed for sensors)
+
+    console.warn(`[API Devices] No display mapping found for IntermediateState: ${state}`);
+    return undefined; // Or return a default like 'Unknown'
+}
+// --- END Re-add Helper to map IntermediateState to DisplayState ---
+
 // GET /api/devices – returns devices with connector information and association count
 // Optionally filters by deviceId query parameter
 export async function GET(request: NextRequest) {
@@ -41,27 +58,23 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const requestedDeviceId = searchParams.get('deviceId');
 
-    let devicesToProcess: typeof devices.$inferSelect[] = [];
+    // --- Fix: Ensure correct query type --- //
+    let devicesToProcessQuery = db.select().from(devices).$dynamic(); // Use .$dynamic() for type safety when adding clauses
 
     if (requestedDeviceId) {
       // Fetch specific device by deviceId
-      const specificDevice = await db.select()
-        .from(devices)
-        .where(eq(devices.deviceId, requestedDeviceId))
-        .limit(1);
-      
-      if (specificDevice.length > 0) {
-        devicesToProcess = specificDevice;
-      } else {
-        // Device not found
-        return NextResponse.json(
-          { success: false, error: 'Device not found' },
-          { status: 404 }
-        );
-      }
-    } else {
-      // Fetch all devices if no specific ID requested
-      devicesToProcess = await db.select().from(devices);
+      devicesToProcessQuery = devicesToProcessQuery.where(eq(devices.deviceId, requestedDeviceId)).limit(1);
+    } 
+    
+    const devicesToProcess = await devicesToProcessQuery;
+    // --- End Fix --- //
+
+    if (requestedDeviceId && devicesToProcess.length === 0) {
+      // Device not found
+      return NextResponse.json(
+        { success: false, error: 'Device not found' },
+        { status: 404 }
+      );
     }
 
     // Map device rows into DeviceWithConnector objects
@@ -73,9 +86,10 @@ export async function GET(request: NextRequest) {
         let pikoServerDetails: PikoServer | undefined = undefined;
         let associationCount: number | null = null;
         let deviceTypeInfo: TypedDeviceInfo | undefined = undefined;
+        let displayState: DisplayState | undefined = undefined; 
 
+        // Fetch connector info
         try {
-          // Fetch connector info
           const connector = await db
             .select({ name: connectors.name, category: connectors.category })
             .from(connectors)
@@ -85,11 +99,11 @@ export async function GET(request: NextRequest) {
             connectorName = connector[0].name;
             connectorCategory = connector[0].category;
           }
-        } catch (e) { console.error(`Error fetching connector for device ${deviceRow.id}:`, e); }
+        } catch { /* ignore lookup errors */ }
 
-        try {
-          // Fetch Piko server details if applicable
-          if (connectorCategory === 'piko' && deviceRow.serverId) {
+        // Fetch Piko server details if applicable
+        if (connectorCategory === 'piko' && deviceRow.serverId) {
+          try {
             const serverResult = await db
               .select() 
               .from(pikoServers)
@@ -99,46 +113,49 @@ export async function GET(request: NextRequest) {
               pikoServerDetails = serverResult[0] as PikoServer;
               serverName = pikoServerDetails.name; 
             }
-          }
-        } catch (e) { console.error(`Error fetching piko server ${deviceRow.serverId} for device ${deviceRow.id}:`, e); }
-        
-        try {
-          associationCount = await getAssociationCount(deviceRow.id, connectorCategory);
-        } catch (e) { console.error(`Error fetching association count for device ${deviceRow.id}:`, e); associationCount = null; }
-
-        try {
-          deviceTypeInfo = getDeviceTypeInfo(connectorCategory, deviceRow.type);
-        } catch (e) { 
-          console.error(`Error getting device type info for device ${deviceRow.id} (Category: ${connectorCategory}, Type: ${deviceRow.type}):`, e); 
-          deviceTypeInfo = getDeviceTypeInfo('Unmapped', 'Unknown'); 
+          } catch { /* ignore server lookup errors */ }
         }
+        
+        // Fetch association count using the internal device ID
+        associationCount = await getAssociationCount(deviceRow.id, connectorCategory);
+
+        // Map device type/subtype
+        deviceTypeInfo = getDeviceTypeInfo(connectorCategory, deviceRow.type);
+        
+        // --- BEGIN Use status column from DB for displayState --- //
+        // The 'status' column is updated by the event processor AND the sync process.
+        displayState = deviceRow.status as DisplayState | undefined; // Cast assumes status holds 'On', 'Off', etc.
+        if (displayState) {
+            console.log(`[API GET] Device ${deviceRow.deviceId}: Read displayState '${displayState}' from DB status.`);
+        } else {
+             console.log(`[API GET] Device ${deviceRow.deviceId}: No displayState found in DB status column.`);
+        }
+        // --- END Use status column --- //
 
         return {
-          // original device fields
           id: deviceRow.id,
           deviceId: deviceRow.deviceId,
           connectorId: deviceRow.connectorId,
           name: deviceRow.name,
           type: deviceRow.type,
-          status: deviceRow.status,
-          model: deviceRow.model ?? undefined, // Convert null to undefined for type compatibility
-          vendor: deviceRow.vendor ?? undefined, // Ensure vendor is included
-          url: deviceRow.url ?? undefined,       // Ensure url is included
+          status: deviceRow.status, // Keep raw status 
+          model: deviceRow.model ?? undefined, 
+          vendor: deviceRow.vendor ?? undefined, 
+          url: deviceRow.url ?? undefined,       
           createdAt: deviceRow.createdAt,
           updatedAt: deviceRow.updatedAt,
-          // enriched
           connectorName,
           connectorCategory,
           serverName, 
           pikoServerDetails, 
-          associationCount, // Include association count
-          // Mapped type info object
-          deviceTypeInfo: deviceTypeInfo!, // Use non-null assertion as we provide a fallback
-        } satisfies DeviceWithConnector;
+          associationCount, 
+          deviceTypeInfo: deviceTypeInfo!, 
+          displayState, 
+        } satisfies DeviceWithConnector; 
       })
     );
 
-    // If a specific device was requested, return the single object, otherwise the array
+    // Return response
     if (requestedDeviceId) {
       return NextResponse.json({ success: true, data: devicesWithConnector[0] });
     } else {
@@ -183,6 +200,7 @@ export async function POST() {
             errors.push({ connectorName: connector.name, error: 'Incomplete YoLink configuration.' });
             continue;
           }
+          // Sync now fetches state AND updates DB status, returns only count
           const count = await syncYoLinkDevices(connector.id, connectorConfig);
           syncedCount += count;
         } else if (connector.category === 'piko') {
@@ -209,15 +227,18 @@ export async function POST() {
     }
     
     // Fetch updated device list to return (and update store)
+    // This list now reflects status updates made during the syncYoLinkDevices call
     const allDevices = await db.select().from(devices);
     const devicesWithConnector = await Promise.all(
       allDevices.map(async (deviceRow) => {
+        // --- Logic is identical to GET handler --- //
         let connectorName = 'Unknown';
         let connectorCategory = 'Unknown';
         let serverName: string | undefined = undefined;
         let pikoServerDetails: PikoServer | undefined = undefined;
         let associationCount: number | null = null;
         let deviceTypeInfo: TypedDeviceInfo | undefined = undefined;
+        let displayState: DisplayState | undefined = undefined; 
 
         // Fetch connector info
         try {
@@ -232,7 +253,7 @@ export async function POST() {
           }
         } catch { /* ignore lookup errors */ }
 
-        // If it's a Piko device and has a serverId, fetch full server details
+        // Fetch Piko server details if applicable
         if (connectorCategory === 'piko' && deviceRow.serverId) {
           try {
             const serverResult = await db
@@ -252,36 +273,43 @@ export async function POST() {
 
         // Map device type/subtype
         deviceTypeInfo = getDeviceTypeInfo(connectorCategory, deviceRow.type);
+        
+        // Use status column from DB for displayState 
+        displayState = deviceRow.status as DisplayState | undefined; 
+        if (displayState) {
+            console.log(`[API POST] Device ${deviceRow.deviceId}: Read displayState '${displayState}' from DB status.`);
+        } else {
+             console.log(`[API POST] Device ${deviceRow.deviceId}: No displayState found in DB status column.`);
+        }
+        // --- End Logic identical to GET handler --- //
 
         return {
-          // original device fields
           id: deviceRow.id,
           deviceId: deviceRow.deviceId,
           connectorId: deviceRow.connectorId,
           name: deviceRow.name,
           type: deviceRow.type,
-          status: deviceRow.status,
-          model: deviceRow.model ?? undefined, // Convert null to undefined for type compatibility
-          vendor: deviceRow.vendor ?? undefined, // Ensure vendor is included
-          url: deviceRow.url ?? undefined,       // Ensure url is included
+          status: deviceRow.status, // Keep raw status 
+          model: deviceRow.model ?? undefined, 
+          vendor: deviceRow.vendor ?? undefined, 
+          url: deviceRow.url ?? undefined,       
           createdAt: deviceRow.createdAt,
           updatedAt: deviceRow.updatedAt,
-          // enriched
           connectorName,
           connectorCategory,
           serverName, 
           pikoServerDetails, 
-          associationCount, // Include association count
-          // Mapped type info object
-          deviceTypeInfo: deviceTypeInfo!, // Use non-null assertion as we provide a fallback
-        } satisfies DeviceWithConnector;
+          associationCount, 
+          deviceTypeInfo: deviceTypeInfo!, 
+          displayState, // Add displayState read from status
+        } satisfies DeviceWithConnector; 
       })
     );
     
     // Update Zustand store
     try {
       useFusionStore.getState().setDeviceStatesFromSync(devicesWithConnector);
-      console.log('[API Sync] Successfully updated FusionStore with synced devices.');
+      console.log('[API Sync] Successfully updated FusionStore with synced devices (state read from DB). ');
     } catch (storeError) {
       console.error('[API Sync] Failed to update FusionStore:', storeError);
     }
@@ -302,73 +330,134 @@ export async function POST() {
 }
 
 /**
- * Syncs YoLink devices, populating standardized types.
+ * Syncs YoLink devices, fetching live state and updating the DB status.
  */
-async function syncYoLinkDevices(connectorId: string, config: yolinkDriver.YoLinkConfig): Promise<number> {
+// --- BEGIN Restore state fetching and DB update in syncYoLinkDevices ---
+// --- BEGIN Modify syncYoLinkDevices signature and remove state fetching ---
+async function syncYoLinkDevices(
+    connectorId: string, 
+    config: yolinkDriver.YoLinkConfig
+): Promise<number> { // Return only count
+// --- END Modify syncYoLinkDevices signature ---
   let processedCount = 0;
+  // REMOVE fetchedStates map
   try {
-    console.log(`Syncing YoLink devices for connector ${connectorId}`);
+    console.log(`Syncing YoLink devices metadata for connector ${connectorId}`);
     const driverConfig = { uaid: config.uaid, clientSecret: config.clientSecret };
     const accessToken = await yolinkDriver.getAccessToken(driverConfig);
     const yolinkDevicesFromApi = await yolinkDriver.getDeviceList(accessToken);
-    console.log(`Found ${yolinkDevicesFromApi.length} YoLink devices from API.`);
+    console.log(`Found ${yolinkDevicesFromApi.length} YoLink devices from API for metadata sync.`);
 
-    if (yolinkDevicesFromApi.length === 0) return 0; 
+    if (yolinkDevicesFromApi.length === 0) return 0; // Return count directly
 
-    console.log(`Upserting ${yolinkDevicesFromApi.length} YoLink devices...`);
+    console.log(`Upserting ${yolinkDevicesFromApi.length} YoLink devices metadata...`);
     for (const device of yolinkDevicesFromApi) {
       if (!device.deviceId || !device.name || !device.type) continue;
 
-      let deviceStatusString: string | null = null;
+      // --- BEGIN Extract token for state fetch --- //
+      const deviceToken = device.token;
+      // --- END Extract token --- //
+      
+      // --- BEGIN Get basic info from getDeviceList --- //
+      let initialStatusFromList: string | null = null;
       if (typeof device.state === 'object' && device.state !== null) {
-        deviceStatusString = (device.state as any).state ?? (device.state as any).power ?? null;
+        initialStatusFromList = (device.state as any).state ?? (device.state as any).power ?? null;
       }
+      // --- END Get basic info --- //
 
       // Get Standardized Type Info
       const stdTypeInfo = getDeviceTypeInfo('yolink', device.type);
+      
+      // --- BEGIN Declare calculatedDisplayState earlier --- //
+      let calculatedDisplayState: DisplayState | undefined = undefined;
+      // --- END Declare calculatedDisplayState earlier --- //
+
+      // --- BEGIN Fetch State --- //
+      if ((device.type === 'Switch' || device.type === 'Outlet' || device.type === 'MultiOutlet') && deviceToken) {
+          try {
+              console.log(`[API Sync] Fetching state for ${device.type} ${device.deviceId}...`);
+              const stateData = await yolinkDriver.getDeviceState(
+                  driverConfig, 
+                  device.deviceId, 
+                  deviceToken, 
+                  device.type
+              );
+              
+              const rawState = stateData?.state; // e.g., 'open', 'closed'
+              let intermediateState: IntermediateState | undefined = undefined;
+              if (rawState === 'open') {
+                  intermediateState = BinaryState.On;
+              } else if (rawState === 'closed') {
+                  intermediateState = BinaryState.Off;
+              }
+              
+              if (intermediateState) {
+                  calculatedDisplayState = mapIntermediateToDisplay(intermediateState); // Assign here
+                  console.log(`[API Sync] Device ${device.deviceId} fetched state: ${rawState} -> ${intermediateState} -> ${calculatedDisplayState}`);
+              } else {
+                   console.warn(`[API Sync] Unknown raw state '${rawState}' received for ${device.deviceId}`);
+              }
+          } catch (stateError) {
+              console.error(`  [Error] Failed to fetch state for ${device.type} ${device.deviceId}:`, stateError instanceof Error ? stateError.message : stateError);
+              // Do not update status if state fetch fails, rely on event processor
+          }
+      }
+      // --- END Fetch State --- //
 
       const deviceData = {
         deviceId: device.deviceId,
         connectorId: connectorId,
         name: device.name,
-        type: device.type, // Raw type
+        type: device.type, 
         standardizedDeviceType: stdTypeInfo.type, 
         standardizedDeviceSubtype: stdTypeInfo.subtype ?? null,
-        status: deviceStatusString,
         model: device.modelName,
         serverId: null,
         vendor: null, 
         url: null, 
+        rawDeviceData: device, 
+        // STATUS is set in the upsert based on calculatedDisplayState
         updatedAt: new Date()
       };
 
       try {
+        // Upsert device info, including fetched state in the status column
         await db.insert(devices)
-          .values({ ...deviceData, createdAt: new Date() }) // Add std types on insert
+          .values({ 
+              ...deviceData, 
+              // --- CORRECTED: Use calculatedDisplayState --- //
+              status: calculatedDisplayState ?? undefined, // Set status to the calculated state if available
+              createdAt: new Date() 
+          }) 
           .onConflictDoUpdate({
             target: [devices.connectorId, devices.deviceId],
-            set: { // Update std types on conflict
+            set: { // Update metadata AND status from fetched state
               name: deviceData.name,
               type: deviceData.type,
               standardizedDeviceType: deviceData.standardizedDeviceType,
               standardizedDeviceSubtype: deviceData.standardizedDeviceSubtype,
-              status: deviceData.status,
+              // --- CORRECTED: Use calculatedDisplayState --- //
+              status: calculatedDisplayState ?? undefined, // Update status with calculated state if available
               model: deviceData.model,
               serverId: null,
               vendor: null,
               url: null,
+              rawDeviceData: device, 
               updatedAt: deviceData.updatedAt
             }
           });
         processedCount++;
+
       } catch (upsertError: unknown) {
         console.error(`  [Error] Failed YoLink upsert for deviceId ${deviceData.deviceId}:`, upsertError);
       }
     }
-    console.log(`YoLink Sync finished for ${connectorId}. Processed: ${processedCount}`);
+    console.log(`YoLink sync finished for ${connectorId}. Processed ${processedCount} devices.`);
+    // --- BEGIN Return only count ---
     return processedCount;
+    // --- END Return only count ---
   } catch (error: unknown) {
-    console.error(`Error syncing YoLink devices for connector ${connectorId}:`, error);
+    console.error(`Error syncing YoLink devices metadata for ${connectorId}:`, error);
     throw error; 
   }
 }

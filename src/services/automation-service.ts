@@ -184,7 +184,6 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
                         category: stdEvent.category ?? null,
                         type: stdEvent.type ?? null,
                         subtype: stdEvent.subtype ?? null,
-                        newState: payload?.newState ?? null,
                         displayState: payload?.displayState ?? null,
                         statusType: payload?.statusType ?? null,
                         rawStateValue: payload?.rawStateValue ?? null,
@@ -505,7 +504,6 @@ function resolveTokens(
             connectorId: stdEvent.connectorId,
             // Flatten relevant payload fields from event payload
             ...(stdEvent.payload && typeof stdEvent.payload === 'object' ? {
-                newState: (stdEvent.payload as any).newState,
                 displayState: (stdEvent.payload as any).displayState,
                 statusType: (stdEvent.payload as any).statusType,
                 detectionType: (stdEvent.payload as any).detectionType,
@@ -711,7 +709,6 @@ async function evaluateTemporalCondition(
                  category: event.category ?? null,
                  type: event.type ?? null,
                  subtype: event.subtype ?? null,
-                 newState: eventPayload?.newState ?? null,
                  displayState: eventPayload?.displayState ?? null,
                  statusType: eventPayload?.statusType ?? null,
                  rawStateValue: eventPayload?.rawStateValue ?? null,
@@ -771,7 +768,6 @@ async function evaluateTemporalCondition(
                  category: event.category ?? null,
                  type: event.type ?? null,
                  subtype: event.subtype ?? null,
-                 newState: eventPayload?.newState ?? null,
                  displayState: eventPayload?.displayState ?? null,
                  statusType: eventPayload?.statusType ?? null,
                  rawStateValue: eventPayload?.rawStateValue ?? null,

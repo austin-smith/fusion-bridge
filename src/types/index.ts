@@ -1,6 +1,7 @@
 // Common interfaces used throughout the application
 import { TypedDeviceInfo } from '@/lib/mappings/definitions';
 import { ArmedState } from '@/lib/mappings/definitions'; // <-- Import the enum
+import { DisplayState } from '@/lib/mappings/definitions'; // <-- Import DisplayState
 // import { ConnectorCategory } from '@/lib/mappings/connector-categories'; // <-- Removed potentially incorrect import
 // import { PikoServer } from './piko'; // <-- Removed potentially incorrect import
 import { YoLinkConfig } from '@/services/drivers/yolink'; // Example config type
@@ -64,6 +65,7 @@ export type DeviceWithConnector = {
   areaIds?: string[]; // <-- NEW: Optional list of Area IDs this device belongs to
   associationCount?: number | null; // <<< ADD Optional association count
   deviceTypeInfo?: TypedDeviceInfo;  // <<< ADD Optional mapped type info
+  displayState?: DisplayState; // <-- ADD Optional display state from sync/events
 };
 
 // Interface for Piko Server details (based on DB schema)

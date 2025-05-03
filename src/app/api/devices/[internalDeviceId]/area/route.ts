@@ -12,9 +12,9 @@ const updateDeviceAreaSchema = z.object({
 // PUT handler to update the area assignment for a device
 export async function PUT(
   request: Request, 
-  { params }: { params: Promise<{ id: string }> } // id here is the deviceId
+  { params }: { params: Promise<{ internalDeviceId: string }> } // Use internalDeviceId
 ) {
-  const { id: deviceId } = await params; // Await params promise
+  const { internalDeviceId: deviceId } = await params; // Destructure internalDeviceId
 
   // Validate Device ID format
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(deviceId)) {
