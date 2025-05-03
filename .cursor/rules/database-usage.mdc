@@ -1,5 +1,5 @@
 ---
-description: 
+description: Database usage (SQLite + Drizzle ORM)
 globs: 
 alwaysApply: false
 ---

@@ -1,12 +1,15 @@
 packages:
-  - '.'
-
+  - .
+ignoredBuiltDependencies: null
 onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
   - better-sqlite3
   - bufferutil
   - core-js
   - es5-ext
   - esbuild
+  - prisma
   - sharp
   - unrs-resolver
   - utf-8-validate

@@ -1,4 +1,4 @@
-import 'server-only'; // Mark this module as server-only
+import 'server-only';
 
 // Use LibSQLDatabase as the unified type
 import { drizzle as drizzleLibsql, LibSQLDatabase } from 'drizzle-orm/libsql';
@@ -12,6 +12,7 @@ import Database from 'better-sqlite3';
 import { getDbPath, ensureDbDir } from './utils';
 
 import * as schema from './schema';
+import { DefaultLogger } from 'drizzle-orm'; // Import only DefaultLogger
 
 type DBSchema = typeof schema;
 // Define the unified instance type as the async one (LibSQL)
@@ -40,8 +41,8 @@ if (dbDriver === 'turso') {
   console.log(`Connecting to Turso: ${dbUrl}`);
   const tursoClient = createClient({ url: dbUrl, authToken: dbAuthToken });
   clientInstance = tursoClient;
-  // Assign directly - drizzleLibsql returns the target type LibSQLDatabase<DBSchema>
-  dbInstance = drizzleLibsql(tursoClient, { schema });
+  // Add logger to Turso/libsql instance if desired (assuming it supports logger option)
+  dbInstance = drizzleLibsql(tursoClient, { schema, logger: new DefaultLogger() });
   console.log('Turso database instance created.');
 } else {
   // --- SQLite Setup (Default) ---
@@ -50,8 +51,16 @@ if (dbDriver === 'turso') {
   ensureDbDir(); // Ensure directory exists
   const sqlite = new Database(sqlitePath);
   clientInstance = sqlite;
-  // Create the SQLite-specific drizzle instance...
-  const sqliteDb = drizzleSqlite(sqlite, { schema });
+
+  // Define a logger instance
+  const logger = new DefaultLogger({ writer: { write: (message) => console.log(`[DB Query] ${message}`) }});
+
+  // Create the SQLite-specific drizzle instance WITH the logger
+  const sqliteDb = drizzleSqlite(sqlite, { 
+      schema, 
+      // Enable detailed logging
+      logger: true // Or pass the custom logger instance: logger 
+  });
   // ...then CAST it to the unified async type (LibSQLDatabase) for export.
   // This assumes the core API methods (select, insert, etc.) are compatible enough.
   // `as unknown` is used to bridge the potential deep type differences before the final assertion.

@@ -883,7 +883,7 @@ export default function LocationsAreasPage() {
                                                    </DropdownMenuTrigger>
                                                  </TooltipTrigger>
                                                  <TooltipContent>
-                                                   <p>Arm All Areas</p>
+                                                   <p>Arm All</p>
                                                  </TooltipContent>
                                                </Tooltip>
                                                <DropdownMenuContent align="end">
