@@ -11,7 +11,7 @@ interface SessionCheckResponse {
 }
 
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const { pathname, origin } = request.nextUrl;
 
   // Middleware should not run on API routes, static files, OR the 2FA verification page
   const isApiAuthRoute = pathname.startsWith('/api/auth');
@@ -30,7 +30,10 @@ export async function middleware(request: NextRequest) {
   // Fetch session status from the internal API route
   let sessionStatus: SessionCheckResponse = { isAuthenticated: false }; 
   try {
-    const sessionCheckUrl = new URL('/api/auth/check-session', request.url);
+    // Construct URL using request.nextUrl.origin
+    const sessionCheckUrl = new URL('/api/auth/check-session', origin);
+    console.log(`[Middleware] Fetching session status from: ${sessionCheckUrl.toString()}`); // Log URL
+
     const response = await fetch(sessionCheckUrl, {
       headers: { 'Cookie': request.headers.get('Cookie') || '' },
       cache: 'no-store',
@@ -41,8 +44,8 @@ export async function middleware(request: NextRequest) {
       console.error(`[Middleware] Check session API failed with status: ${response.status}`);
     }
   } catch (error) {
-    console.error("[Middleware] Error fetching check session API:", error);
-    sessionStatus = { isAuthenticated: false };
+    console.error("[Middleware] Error fetching check session API:", error); // Keep basic error log
+    sessionStatus = { isAuthenticated: false }; // Assume not authenticated on fetch error
   }
 
   console.log("[Middleware] Received sessionStatus:", sessionStatus); // Keep log for now
@@ -59,7 +62,7 @@ export async function middleware(request: NextRequest) {
       console.log(`[Middleware] Not authenticated, allowing access to ${pathname}`);
       return NextResponse.next();
     }
-    const loginUrl = new URL('/login', request.url);
+    const loginUrl = new URL('/login', origin);
     console.log(`[Middleware] Not authenticated, redirecting to ${loginUrl.toString()}`);
     return NextResponse.redirect(loginUrl);
 
@@ -67,7 +70,7 @@ export async function middleware(request: NextRequest) {
     // User IS Authenticated
     if (isLoginPage || isSetupPage) { 
       console.log(`[Middleware] Authenticated, redirecting from ${pathname} to /`);
-      return NextResponse.redirect(new URL('/', request.url));
+      return NextResponse.redirect(new URL('/', origin));
     }
     console.log(`[Middleware] Authenticated, allowing access to ${pathname}`);
     return NextResponse.next();

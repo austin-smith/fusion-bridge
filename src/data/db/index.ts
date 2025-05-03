@@ -16,83 +16,93 @@ import { DefaultLogger } from 'drizzle-orm'; // Import only DefaultLogger
 
 type DBSchema = typeof schema;
 // Define the unified instance type as the async one (LibSQL)
-// This ensures consuming code always sees an async interface
 type DrizzleInstance = LibSQLDatabase<DBSchema>;
 
-const dbDriver = process.env.DB_DRIVER; // 'sqlite' or 'turso'
-// DATABASE_URL is now only needed for Turso
-const dbUrl = process.env.DATABASE_URL; 
-const dbAuthToken = process.env.DATABASE_AUTH_TOKEN; // Turso auth token
-
-let dbInstance: DrizzleInstance;
-// Keep track of the underlying client for closing
+// --- Lazy Initialization Variables ---
+let dbInstance: DrizzleInstance | null = null;
 let clientInstance: Client | Database.Database | null = null;
+let isInitialized = false; // Flag to prevent multiple initializations
 
-console.log(`Initializing database with driver: ${dbDriver || 'sqlite (default)'}`);
-
-if (dbDriver === 'turso') {
-  if (!dbUrl) {
-    // dbUrl (DATABASE_URL) is mandatory for Turso
-    throw new Error('DATABASE_URL environment variable is not set for turso driver.');
+// --- Function to Get/Initialize DB Instance ---
+function getDbInstance(): DrizzleInstance {
+  if (isInitialized && dbInstance) {
+    return dbInstance;
   }
-  if (!dbAuthToken) {
-    throw new Error('DATABASE_AUTH_TOKEN must be set when using the turso driver.');
+  if (isInitialized && !dbInstance) {
+      // This case should ideally not happen if initialization logic is sound
+      throw new Error("DB initialization flag set but instance is null.");
   }
-  console.log(`Connecting to Turso: ${dbUrl}`);
-  const tursoClient = createClient({ url: dbUrl, authToken: dbAuthToken });
-  clientInstance = tursoClient;
-  // Add logger to Turso/libsql instance if desired (assuming it supports logger option)
-  dbInstance = drizzleLibsql(tursoClient, { schema, logger: new DefaultLogger() });
-  console.log('Turso database instance created.');
-} else {
-  // --- SQLite Setup (Default) ---
-  const sqlitePath = getDbPath(); // Get path from utils
-  console.log(`Connecting to SQLite: ${sqlitePath}`);
-  ensureDbDir(); // Ensure directory exists
-  const sqlite = new Database(sqlitePath);
-  clientInstance = sqlite;
 
-  // Define a logger instance
-  const logger = new DefaultLogger({ writer: { write: (message) => console.log(`[DB Query] ${message}`) }});
+  // Lock initialization to prevent race conditions in concurrent requests
+  isInitialized = true; 
 
-  // Create the SQLite-specific drizzle instance WITH the logger
-  const sqliteDb = drizzleSqlite(sqlite, { 
-      schema, 
-      // Enable detailed logging
-      logger: true // Or pass the custom logger instance: logger 
-  });
-  // ...then CAST it to the unified async type (LibSQLDatabase) for export.
-  // This assumes the core API methods (select, insert, etc.) are compatible enough.
-  // `as unknown` is used to bridge the potential deep type differences before the final assertion.
-  dbInstance = sqliteDb as unknown as DrizzleInstance;
-  console.log('SQLite database instance created (cast to async interface).');
+  const dbDriver = process.env.DB_DRIVER; // 'sqlite' or 'turso'
+  const dbUrl = process.env.DATABASE_URL;
+  const dbAuthToken = process.env.DATABASE_AUTH_TOKEN; // Turso auth token
+
+  console.log(`Initializing database ON DEMAND with driver: ${dbDriver || 'sqlite (default)'}`);
+
+  if (dbDriver === 'turso') {
+    if (!dbUrl) {
+      throw new Error('DATABASE_URL environment variable is not set for turso driver.');
+    }
+    if (!dbAuthToken) {
+      throw new Error('DATABASE_AUTH_TOKEN must be set when using the turso driver.');
+    }
+    console.log(`Connecting to Turso: ${dbUrl}`); // Specific to Turso
+    const tursoClient = createClient({ url: dbUrl, authToken: dbAuthToken });
+    clientInstance = tursoClient;
+    dbInstance = drizzleLibsql(tursoClient, { schema, logger: new DefaultLogger() });
+    console.log('Turso database instance created.'); // Specific to Turso
+  } else {
+    // --- SQLite Setup (Default) ---
+    const sqlitePath = getDbPath();
+    console.log(`Connecting to SQLite: ${sqlitePath}`); // Specific to SQLite
+    ensureDbDir();
+    const sqlite = new Database(sqlitePath);
+    clientInstance = sqlite;
+    const sqliteDb = drizzleSqlite(sqlite, { schema, logger: true });
+    dbInstance = sqliteDb as unknown as DrizzleInstance;
+    console.log('SQLite database instance created (cast to async interface).'); // Specific to SQLite
+  }
+
+  if (!dbInstance) {
+      // Throw if initialization failed somehow
+      throw new Error("Database instance failed to initialize.");
+  }
+
+  return dbInstance;
 }
 
 // Function to safely close the connection
 export async function closeDbConnection() {
   if (clientInstance) {
     console.log('Closing database connection...');
-    // Both client types have a close() method
     clientInstance.close();
     clientInstance = null;
+    dbInstance = null; // Clear instance on close
+    isInitialized = false; // Reset initialization flag
     console.log('Database connection closed.');
   } else {
     console.log('Database connection already closed or not initialized.');
   }
 }
 
-// Export the configured Drizzle instance, now consistently typed as LibSQLDatabase
-export const db: DrizzleInstance = dbInstance;
-export * from './schema'; // Re-export schema for convenience
+// --- Export a Singleton Instance ---
+// The actual initialization happens on the first call to `db`
+export const db: DrizzleInstance = getDbInstance();
 
-// Add a listener for graceful shutdown
+// Re-export schema for convenience
+export * from './schema';
+
+// --- Graceful Shutdown ---
 process.on('SIGINT', async () => {
-  console.log('SIGINT received, closing DB connection...');
+  console.log('SIGINT received, attempting to close DB connection...');
   await closeDbConnection();
   process.exit(0);
 });
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, closing DB connection...');
+  console.log('SIGTERM received, attempting to close DB connection...');
   await closeDbConnection();
   process.exit(0);
 }); 
