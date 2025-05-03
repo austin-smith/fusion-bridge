@@ -13,14 +13,17 @@ const StateChangeRequestSchema = z.object({
 });
 
 // Define context type for params
-interface RouteContext {
-    params: { 
-        internalDeviceId: string; 
-    }
-}
+// interface RouteContext {
+//     params: { 
+//         internalDeviceId: string; 
+//     }
+// }
 
-export async function POST(request: NextRequest, context: RouteContext) {
-    const { internalDeviceId } = context.params;
+export async function POST(
+    request: NextRequest, 
+    context: any // Let TypeScript infer or temporarily use any
+) {
+    const { internalDeviceId } = context.params; // Revert to accessing via context.params
 
     if (!internalDeviceId) {
         return NextResponse.json(

@@ -2,7 +2,7 @@ import { db } from '@/data/db';
 import { events, devices, connectors } from '@/data/db/schema';
 import { desc, asc, count, eq, sql, and, gte, lte, or, inArray, type SQL, isNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
-import { EventCategory, EventType, EventSubtype } from '@/lib/mappings/definitions';
+import { EventCategory, EventType, EventSubtype, DeviceType, DeviceSubtype } from '@/lib/mappings/definitions';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
 
@@ -92,12 +92,12 @@ export async function findEventsInWindow(filter: FindEventsFilter): Promise<Stan
 
             const deviceFilterConditions: SQL[] = [];
             if (types.length > 0) {
-                deviceFilterConditions.push(inArray(devices.standardizedDeviceType, types));
+                deviceFilterConditions.push(inArray(devices.standardizedDeviceType, types as DeviceType[]));
                 let subtypeCondition: SQL | undefined = undefined;
                  if (hasSubtypeFilter && hasTypeOnlyFilter) {
-                    subtypeCondition = or(inArray(devices.standardizedDeviceSubtype, subtypes), isNull(devices.standardizedDeviceSubtype));
+                    subtypeCondition = or(inArray(devices.standardizedDeviceSubtype, subtypes as DeviceSubtype[]), isNull(devices.standardizedDeviceSubtype));
                 } else if (hasSubtypeFilter) {
-                    subtypeCondition = inArray(devices.standardizedDeviceSubtype, subtypes);
+                    subtypeCondition = inArray(devices.standardizedDeviceSubtype, subtypes as DeviceSubtype[]);
                 } else if (hasTypeOnlyFilter) {
                     subtypeCondition = isNull(devices.standardizedDeviceSubtype);
                 }

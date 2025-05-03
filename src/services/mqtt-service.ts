@@ -330,7 +330,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
                       }
 
                       try {
-                          const standardizedEvents = parseYoLinkEvent(associatedConnectorId, rawEvent);
+                          const standardizedEvents = await parseYoLinkEvent(associatedConnectorId, rawEvent);
                           for (const stdEvent of standardizedEvents) {
                               try { await eventsRepository.storeStandardizedEvent(stdEvent); } catch (e) { console.error(`Store error for ${stdEvent.eventId}:`, e); continue; }
                               try { useFusionStore.getState().processStandardizedEvent(stdEvent); } catch (e) { console.error(`Zustand error for ${stdEvent.eventId}:`, e); }

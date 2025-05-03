@@ -373,7 +373,7 @@ export default function EventsPage() {
           serverId: deviceData.serverId ?? undefined,
           // Ensure required object props have fallbacks
           deviceTypeInfo: deviceData.deviceTypeInfo ?? getDeviceTypeInfo('unknown', 'unknown'),
-          id: `${deviceData.connectorId}:${deviceData.deviceId}` // Construct the required ID
+          internalId: deviceData.id // Use the internal DB ID
         };
         setSelectedDeviceForDialog(deviceForDialog);
       } else {

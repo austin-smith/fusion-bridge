@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
+import { getDeviceTypeInfo } from "@/lib/mappings/identification";
 
 interface AreaDevicesSubRowProps {
   row: Row<Area>;
@@ -80,6 +81,8 @@ const DraggableDeviceItem: React.FC<DraggableDeviceItemProps> = ({ device, sourc
                         <DialogContent className="sm:max-w-[600px]">
                             <DeviceDetailDialogContent device={{
                                ...device,
+                               internalId: device.id,
+                               deviceTypeInfo: device.deviceTypeInfo ?? getDeviceTypeInfo('unknown', 'unknown'),
                                connectorName: device.connectorName ?? device.connectorCategory, 
                                url: device.url ?? undefined,
                                model: device.model ?? undefined,

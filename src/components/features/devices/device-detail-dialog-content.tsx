@@ -1050,7 +1050,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                       Select Piko cameras related to this YoLink device.
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                      <Popover open={pikoCameraPopoverOpen} Change={setPikoCameraPopoverOpen}>
+                      <Popover open={pikoCameraPopoverOpen} onOpenChange={setPikoCameraPopoverOpen}>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
