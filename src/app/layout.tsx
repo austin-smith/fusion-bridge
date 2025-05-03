@@ -17,11 +17,6 @@ const csgFont = localFont({
 export const metadata: Metadata = {
   title: 'Fusion',
   description: 'Scurity integration platform',
-  openGraph: {
-    title: 'Fusion',
-    description: 'Security integration platform',
-    type: 'website',
-  },
 };
 
 export default function RootLayout({
