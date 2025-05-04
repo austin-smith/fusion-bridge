@@ -121,3 +121,77 @@
     overflow-x: hidden;
   }
 }
+
+/* Modern React Grid Layout Styles */
+.react-resizable-handle {
+  opacity: 0 !important;
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background-repeat: no-repeat;
+  background-origin: content-box;
+  box-sizing: border-box;
+  background-image: none !important;
+  border: none !important;
+}
+
+/* Hide resize handles completely even on hover */
+.react-grid-item:hover .react-resizable-handle {
+  opacity: 0 !important;
+  border: none !important;
+}
+
+/* Hide resize handles completely even when active */
+.react-resizable-handle:active {
+  opacity: 0 !important;
+  border: none !important;
+}
+
+/* Remove all borders from resize handles */
+.react-resizable-handle-se,
+.react-resizable-handle-sw,
+.react-resizable-handle-nw,
+.react-resizable-handle-ne,
+.react-resizable-handle-w,
+.react-resizable-handle-e,
+.react-resizable-handle-n,
+.react-resizable-handle-s {
+  border: none !important;
+}
+
+/* Set cursors for resize handles */
+.react-resizable-handle-se { bottom: 0; right: 0; cursor: se-resize; }
+.react-resizable-handle-sw { bottom: 0; left: 0; cursor: sw-resize; }
+.react-resizable-handle-nw { top: 0; left: 0; cursor: nw-resize; }
+.react-resizable-handle-ne { top: 0; right: 0; cursor: ne-resize; }
+.react-resizable-handle-w { top: 50%; margin-top: -10px; left: 0; cursor: ew-resize; height: 20px; }
+.react-resizable-handle-e { top: 50%; margin-top: -10px; right: 0; cursor: ew-resize; height: 20px; }
+.react-resizable-handle-n { left: 50%; margin-left: -10px; top: 0; cursor: ns-resize; width: 20px; }
+.react-resizable-handle-s { left: 50%; margin-left: -10px; bottom: 0; cursor: ns-resize; width: 20px; }
+
+/* Improve drag handle appearance */
+.react-grid-item.react-draggable-dragging {
+  @apply ring-2 ring-muted/40 shadow-lg;
+  z-index: 10;
+}
+
+/* Camera Wall Grid Specific Styles */
+.camera-wall-grid .react-grid-item {
+  @apply transition-shadow duration-200 rounded-lg overflow-hidden;
+  transition: box-shadow 0.2s, transform 0.15s;
+}
+
+.camera-wall-grid .react-grid-item:hover {
+  @apply shadow-md;
+  z-index: 1;
+}
+
+.camera-wall-grid .react-grid-item.react-draggable-dragging {
+  @apply shadow-xl ring-2 ring-muted/30;
+  z-index: 10;
+  transform: scale(1.02);
+}
+
+.camera-wall-grid .react-grid-item.react-grid-placeholder {
+  @apply bg-muted/20 border border-muted rounded-lg;
+}

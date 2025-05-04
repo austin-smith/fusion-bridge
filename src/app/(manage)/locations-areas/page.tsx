@@ -3,10 +3,12 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Terminal, Loader2, Plus, MoreHorizontal, ChevronDown, ChevronRight, ArrowUpDown, ArrowDown, ArrowUp, Building, MapPin, Settings, Link, ShieldCheck, ShieldOff, ShieldAlert, Trash2, Shield, Pencil, PanelLeftOpen, PanelLeftClose, Move, Search } from 'lucide-react';
+import { Terminal, Loader2, Plus, MoreHorizontal, ChevronDown, ChevronRight, ArrowUpDown, ArrowDown, ArrowUp, Building, MapPin, Settings, Link, ShieldCheck, ShieldOff, ShieldAlert, Trash2, Shield, Pencil, PanelLeftOpen, PanelLeftClose, Move, Search, Video } from 'lucide-react';
 import { LocationEditDialog } from '@/components/features/locations/location-edit-dialog';
 import { AreaEditDialog } from '@/components/features/areas/area-edit-dialog';
 import { AreaDeviceAssignmentDialog } from '@/components/features/areas/area-device-assignment-dialog';
+import { AreaCameraWallDialog } from '@/components/features/areas/AreaCameraWallDialog';
+import { AreaCard } from '@/components/features/areas/AreaCard';
 import type { Area, Location, DeviceWithConnector } from "@/types/index";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +35,7 @@ import {
   AlertDialogTrigger
 } from "@/components/ui/alert-dialog";
 import { toast } from 'sonner';
-import { ArmedState, ArmedStateDisplayNames } from "@/lib/mappings/definitions";
+import { ArmedState, ArmedStateDisplayNames, DeviceType } from "@/lib/mappings/definitions";
 import { AreaDevicesSubRow } from '@/components/features/areas/AreaDevicesSubRow';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -125,6 +127,8 @@ export default function LocationsAreasPage() {
   const [areaToDelete, setAreaToDelete] = useState<Area | null>(null);
   const [isAssignDevicesDialogOpen, setIsAssignDevicesDialogOpen] = useState(false);
   const [areaToAssignDevices, setAreaToAssignDevices] = useState<Area | null>(null);
+  const [isCameraWallDialogOpen, setIsCameraWallDialogOpen] = useState(false);
+  const [selectedAreaForCameraWall, setSelectedAreaForCameraWall] = useState<Area | null>(null);
   const [expandedAreaDevices, setExpandedAreaDevices] = useState<Record<string, boolean>>({});
   
   // ---> ADDED: State for search term
@@ -472,7 +476,7 @@ export default function LocationsAreasPage() {
   const AreaCardWrapper = ({ area, children }: { area: Area; children: React.ReactNode }) => {
       const { setNodeRef, isOver } = useDroppable({
           id: area.id, // Use area ID as the droppable identifier
-          data: { type: 'area' } // Optional: Add data to distinguish drop zones
+          data: { type: 'area' } 
       });
       const isSelected = selectedArea?.id === area.id; // Keep isSelected logic here for use below
 
@@ -480,163 +484,10 @@ export default function LocationsAreasPage() {
           <div
               ref={setNodeRef}
               id={`area-${area.id}`}
-              // Remove conditional classes from here
-              className="mb-3" // Keep basic margin
+              className="mb-3"
           >
               {React.cloneElement(children as React.ReactElement, { isSelected, isOver })}
           </div>
-      );
-  };
-
-  const renderAreaCard = (area: Area) => {
-    const state = area.armedState;
-    let badgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
-    if (state === ArmedState.ARMED_AWAY || state === ArmedState.ARMED_STAY) {
-      badgeVariant = "default";
-    } else if (state === ArmedState.TRIGGERED) {
-      badgeVariant = "destructive";
-    }
-    const deviceCount = area.deviceIds?.length ?? 0;
-    const isDevicesExpanded = expandedAreaDevices[area.id] ?? false;
-
-    // Receive isSelected and isOver from the wrapper via cloneElement props
-    // Apply conditional classes directly to the Card
-    const AreaCard = ({ isSelected, isOver }: { isSelected?: boolean, isOver?: boolean }) => (
-        <Card
-          className={cn(
-             "transition-all duration-150 ease-in-out", // Base transition
-             isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background", // Apply ring directly
-             isOver && "bg-primary/10 ring-2 ring-primary ring-opacity-70 scale-[1.01]" // Highlight when dragging over
-          )}
-        >
-            <CardHeader
-              className={cn(
-                "flex flex-row items-center justify-between py-3 px-4", 
-                "cursor-pointer hover:bg-muted/50 transition-colors rounded-t-lg"
-              )}
-              onClick={() => {
-                toggleAreaDevices(area.id);
-                setSelectedArea(area);
-                if (area.locationId) {
-                  const parentLocation = locations.find(loc => loc.id === area.locationId);
-                  if (parentLocation) setSelectedLocation(parentLocation);
-                } else {
-                  setSelectedLocation(null);
-                }
-              }}
-              title={isDevicesExpanded ? "Collapse details" : "Expand details"}
-            >
-               <div className="flex items-center gap-2 min-w-0">
-                 {isDevicesExpanded ? 
-                     <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" /> : 
-                     <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                 }
-                <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                <CardTitle className="text-base font-medium truncate" title={area.name}>{area.name}</CardTitle>
-                <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs ml-2 flex-shrink-0">
-                  {deviceCount} {deviceCount === 1 ? 'Device' : 'Devices'}
-                </Badge>
-               </div>
-               
-               {/* Adding relative and -translate-y-0.5 for manual UPWARD alignment */}
-               <div className="relative flex items-center gap-2 flex-shrink-0 -translate-y-0.5">
-                 {/* Armed State Dropdown Button */}
-                 <DropdownMenu>
-                   <DropdownMenuTrigger asChild> 
-                     <Button 
-                       variant={badgeVariant === 'destructive' ? 'destructive' : 'secondary'}
-                       size="sm" 
-                       className={cn( 
-                         "h-7 px-2 py-0.5 text-xs font-normal border", // Base size/padding/font + ADDED border
-                         // Apply green styling for 'armed' state
-                         badgeVariant === 'default' &&
-                           "bg-green-600/10 text-green-700 hover:bg-green-600/20 dark:bg-green-700/20 dark:text-green-400 dark:hover:bg-green-700/30 border-green-600/30 dark:border-green-700/50", // Add specific border color for armed state
-                         // Destructive/Secondary variants will use their default border colors
-                       )}
-                     >
-                        {React.createElement(getArmedStateIcon(state), { className: "h-3.5 w-3.5" })} {/* Slightly more margin */} 
-                        <span>{ArmedStateDisplayNames[state] ?? state}</span>
-                        <ChevronDown className="h-3 w-3 text-muted-foreground" /> {/* Added dropdown indicator */} 
-                     </Button>
-                   </DropdownMenuTrigger>
-                   <DropdownMenuContent align="end" className="w-48">
-                     <DropdownMenuItem 
-                       onClick={(e) => { e.stopPropagation(); handleArmAction(area, ArmedState.ARMED_AWAY); }}
-                       disabled={state === ArmedState.ARMED_AWAY}
-                     >
-                       <ShieldCheck className="h-4 w-4" />
-                       Arm Away
-                     </DropdownMenuItem>
-                     <DropdownMenuItem 
-                       onClick={(e) => { e.stopPropagation(); handleArmAction(area, ArmedState.ARMED_STAY); }}
-                       disabled={state === ArmedState.ARMED_STAY}
-                     >
-                       <ShieldCheck className="h-4 w-4" />
-                       Arm Stay
-                     </DropdownMenuItem>
-                     <DropdownMenuSeparator />
-                     <DropdownMenuItem 
-                       onClick={(e) => { e.stopPropagation(); handleArmAction(area, ArmedState.DISARMED); }}
-                       disabled={state === ArmedState.DISARMED}
-                     >
-                       <ShieldOff className="h-4 w-4" />
-                       Disarm
-                     </DropdownMenuItem>
-                   </DropdownMenuContent>
-                 </DropdownMenu>
-                 {/* End Armed State Dropdown Button */}
-                 
-                 <DropdownMenu>
-                   <DropdownMenuTrigger asChild>
-                     <Button variant="ghost" className="h-5 w-5 p-0">
-                       <span className="sr-only">Area Actions</span>
-                       <MoreHorizontal className="h-4 w-4" />
-                     </Button>
-                   </DropdownMenuTrigger>
-                   <DropdownMenuContent align="end">
-                     <DropdownMenuItem onClick={(e) => {e.stopPropagation(); handleOpenAssignDevicesDialog(area);}}>
-                       <Link className="h-4 w-4 mr-2" />
-                       Assign Devices
-                     </DropdownMenuItem>
-                     <DropdownMenuItem onClick={(e) => {e.stopPropagation(); handleOpenAreaDialog(area);}}>
-                       <Pencil className="h-4 w-4 mr-2" />
-                       Edit Area
-                     </DropdownMenuItem>
-                     <DropdownMenuSeparator />
-                     <DropdownMenuItem
-                       className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                       onClick={(e) => {
-                           e.stopPropagation();
-                           handleOpenAreaDeleteDialog(area);
-                       }}
-                     >
-                       <Trash2 className="h-4 w-4 mr-2" />
-                       Delete Area
-                     </DropdownMenuItem>
-                   </DropdownMenuContent>
-                 </DropdownMenu>
-               </div>
-            </CardHeader>
-            {isDevicesExpanded && (
-                <CardContent
-                  className="p-0 rounded-b-lg"
-                >
-                    <AreaDevicesSubRow
-                      row={{ original: area } as Row<Area>}
-                      allDevices={allDevices}
-                      onAssignDevices={handleOpenAssignDevicesDialog}
-                      areaId={area.id}
-                    />
-                </CardContent>
-            )}
-        </Card>
-    );
-
-    // Pass AreaCard component to the wrapper
-    return (
-        <AreaCardWrapper key={area.id} area={area}>
-            <AreaCard />
-        </AreaCardWrapper>
     );
   };
 
@@ -663,7 +514,7 @@ export default function LocationsAreasPage() {
                 setSelectedArea(area);
                 setSelectedLocation(null);
                 
-                // Find the area card element
+                // Find the area card element using the ID from AreaCardWrapper
                 const areaElement = document.getElementById(`area-${area.id}`);
                 if (areaElement) {
                   areaElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -788,6 +639,21 @@ export default function LocationsAreasPage() {
     
     setLocationArmLoading(prev => ({ ...prev, [locationId]: false }));
   };
+
+  // --- ADDED: Handlers for Camera Wall Dialog ---
+  const handleOpenCameraWallDialog = (area: Area | null) => {
+    if (!area) return;
+    setSelectedAreaForCameraWall(area);
+    setIsCameraWallDialogOpen(true);
+  };
+
+  const handleCameraWallDialogChange = (isOpen: boolean) => {
+    setIsCameraWallDialogOpen(isOpen);
+    if (!isOpen) {
+      setSelectedAreaForCameraWall(null); 
+    }
+  };
+  // --- END ADDED ---
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -954,7 +820,24 @@ export default function LocationsAreasPage() {
                                      </CardHeader>
                                      <CardContent className="pt-0 bg-muted/25 rounded-b-lg"> 
                                          {locationAreas.length > 0 ? (
-                                             locationAreas.map(area => renderAreaCard(area))
+                                             locationAreas.map(area => (
+                                                 <AreaCardWrapper key={area.id} area={area}>
+                                                     <AreaCard 
+                                                         area={area}
+                                                         allDevices={allDevices}
+                                                         isSelected={selectedArea?.id === area.id}
+                                                         isDevicesExpanded={expandedAreaDevices[area.id] ?? false}
+                                                         locationArmLoading={locationArmLoading[location.id]}
+                                                         onToggleDetails={toggleAreaDevices}
+                                                         onAssignDevices={handleOpenAssignDevicesDialog}
+                                                         onEditArea={handleOpenAreaDialog}
+                                                         onDeleteArea={handleOpenAreaDeleteDialog}
+                                                         onArmAction={handleArmAction}
+                                                         onViewCameras={handleOpenCameraWallDialog}
+                                                         // isOver is managed by AreaCardWrapper and passed down
+                                                     />
+                                                 </AreaCardWrapper>
+                                             ))
                                          ) : (
                                              <div className="px-4 py-6 text-center">
                                                  <div className="rounded-full bg-muted p-3 mb-2 inline-flex">
@@ -981,7 +864,24 @@ export default function LocationsAreasPage() {
                                    <CardDescription>These areas are not linked to any specific location.</CardDescription>
                                </CardHeader>
                                <CardContent>
-                                   {areasByLocation['unassigned'].map(area => renderAreaCard(area))}
+                                   {areasByLocation['unassigned'].map(area => (
+                                       <AreaCardWrapper key={area.id} area={area}>
+                                           <AreaCard 
+                                               area={area}
+                                               allDevices={allDevices}
+                                               isSelected={selectedArea?.id === area.id}
+                                               isDevicesExpanded={expandedAreaDevices[area.id] ?? false}
+                                               locationArmLoading={false} // Unassigned areas don't belong to a location
+                                               onToggleDetails={toggleAreaDevices}
+                                               onAssignDevices={handleOpenAssignDevicesDialog}
+                                               onEditArea={handleOpenAreaDialog}
+                                               onDeleteArea={handleOpenAreaDeleteDialog}
+                                               onArmAction={handleArmAction}
+                                               onViewCameras={handleOpenCameraWallDialog}
+                                               // isOver is managed by AreaCardWrapper and passed down
+                                           />
+                                       </AreaCardWrapper>
+                                   ))}
                                </CardContent>
                            </Card>
                        )}
@@ -1094,6 +994,22 @@ export default function LocationsAreasPage() {
           assignDeviceAction={assignDeviceToArea}
           removeDeviceAction={removeDeviceFromArea}
         />
+
+        {/* --- ADDED: Camera Wall Dialog --- */} 
+        {/* Render dialog only when an area is selected */} 
+        {selectedAreaForCameraWall && ( 
+          <AreaCameraWallDialog
+            isOpen={isCameraWallDialogOpen}
+            onOpenChange={handleCameraWallDialogChange}
+            areaName={selectedAreaForCameraWall.name}
+            // Pass only the relevant camera devices for the selected area
+            cameraDevices={allDevices.filter(device => 
+              selectedAreaForCameraWall.deviceIds?.includes(device.id) && 
+              device.deviceTypeInfo?.type === DeviceType.Camera
+            )}
+          />
+        )} 
+        {/* --- END ADDED --- */} 
       </div>
     </DndContext>
   );

@@ -150,28 +150,30 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
       if (mediaType === 'hls' && Hls.isSupported()) {
           // --- HLS Setup ---
           setIsLoadingMediaInfo(false); // HLS setup is synchronous for the element
-          const hls = new Hls({ /* Add HLS config here if needed */ });
+          const hls = new Hls({
+              fragLoadingMaxRetry: 2,       // Lower max retries on fragment load error
+              fragLoadingTimeOut: 10000,   // Timeout for fragment loading (ms) - adjust as needed
+              // Consider fragLoadingMaxRetryTimeout as well if needed
+          });
           hls.loadSource(streamUrl); // streamUrl should be the direct M3U8 path or proxy
           hls.attachMedia(videoElement);
           hls.on(Hls.Events.ERROR, async (event, data) => {
               console.error('PikoVideoPlayer: HLS.js Error:', data);
               let detailedErrorMessage = `HLS Error: ${data.type} - ${data.details}`;
-              if (data.type === Hls.ErrorTypes.NETWORK_ERROR &&
-                  (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR) &&
-                  data.networkDetails?.status &&
-                  data.networkDetails.status >= 400)
-              {
-                  try {
-                      const xhr = data.networkDetails as XMLHttpRequest;
-                      if (xhr?.responseText) {
-                           const errorJson = JSON.parse(xhr.responseText);
-                           if (errorJson.details) {
-                               detailedErrorMessage = `${errorJson.details}`; // Use the specific details
-                           } else if (errorJson.error) {
-                               detailedErrorMessage = `${errorJson.error}`; // Fallback to main error
-                           }
-                      }
-                  } catch (parseError) { /* Keep default HLS error */ }
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                  if (data.networkDetails?.status && data.networkDetails.status >= 400) {
+                     // Try to get more specific error from response if possible
+                     // (Note: Accessing responseText might depend on CORS and error type)
+                     const responseText = (data.networkDetails as XMLHttpRequest)?.responseText;
+                     if (responseText) {
+                        try {
+                            const errorJson = JSON.parse(responseText);
+                            detailedErrorMessage = errorJson.details || errorJson.error || detailedErrorMessage;
+                        } catch (parseError) { /* Keep original HLS error message */ }
+                     } else {
+                         detailedErrorMessage = `${detailedErrorMessage} (Status: ${data.networkDetails.status})`;
+                     }
+                  }
               }
               toast.error(`Video Error: ${detailedErrorMessage}`);
               setMediaInfoError(`Playback error: ${detailedErrorMessage}`); // Show error in UI
@@ -192,9 +194,16 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
           fetch(streamUrl) 
             .then(async response => {
                 if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}`, details: 'Could not parse error response.' }));
+                    let errorData: { error?: string; details?: string } = {};
+                    try {
+                        errorData = await response.json();
+                    } catch (parseError) {
+                        console.warn('PikoVideoPlayer: Could not parse error response JSON.');
+                    }
                     console.error(`PikoVideoPlayer: API returned error fetching ${mediaType} stream:`, errorData);
-                    throw new Error(errorData.details || errorData.error || `API error ${response.status}`);
+                    // Use details, then error, then status text as fallback
+                    const message = errorData.details || errorData.error || response.statusText || `API error ${response.status}`;
+                    throw new Error(message); 
                 }
                 // Check content type
                 const contentType = response.headers.get('Content-Type');

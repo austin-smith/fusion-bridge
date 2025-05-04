@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   openGraph: {
     images: [
       {
-        url: '/opengraph-image2.png',
+        url: '/opengraph-image.png',
         width: 1200,
         height: 630,
       },
