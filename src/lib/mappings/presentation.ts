@@ -158,6 +158,39 @@ export function getEventCategoryIcon(category: EventCategory | undefined): Lucid
     return eventCategoryIcons[category] || HelpCircle; // Fallback to Unknown icon
 }
 
+// --- RE-ADD: Display State to Color Mapping ---
+// Used for coloring icons or other elements based on state
+export const getDisplayStateColorClass = (state?: DisplayState): string => {
+    if (!state) return 'text-muted-foreground'; // Default to muted
+    
+    // Use three states: active (brighter gray), inactive/normal (muted), unknown (muted)
+    switch(state) {
+        // Active States -> Brighter Gray
+        case ON:
+        case OPEN:
+        case UNLOCKED:
+        case MOTION_DETECTED:
+        case LEAK_DETECTED:
+        case VIBRATION_DETECTED:
+            // Use a distinct but not overly bright color
+            return 'text-gray-700 dark:text-gray-300'; 
+
+        // Inactive/Normal States -> Muted Text Color
+        case OFF:
+        case CLOSED:
+        case LOCKED:
+        case NO_MOTION:
+        case DRY:
+        case NO_VIBRATION:
+            return 'text-muted-foreground'; 
+
+        default:
+            // Default to muted for any unknown states
+            console.warn(`[getDisplayStateColorClass] Unknown state: ${state}, using default muted color.`);
+            return 'text-muted-foreground'; 
+    }
+};
+// --- END RE-ADD ---
 
 // --- Intermediate State to Display String Conversion ---
 
