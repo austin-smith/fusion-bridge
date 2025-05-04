@@ -13,6 +13,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { LogOut, Loader2, User, Settings, ChevronsUpDown, Users, Plug, Cpu, Terminal, Workflow, Building } from 'lucide-react';
@@ -75,6 +76,7 @@ export function AppSidebar() {
   
   // Get setter from Zustand, but we won't rely on currentUser for rendering here
   const { setCurrentUser } = useFusionStore();
+  const { isMobile, setOpenMobile, state } = useSidebar();
 
   // Effect to populate Zustand store from useSession data - KEEP THIS for other components
   useEffect(() => {
@@ -156,7 +158,14 @@ export function AppSidebar() {
                             )}
                             tooltip={item.label}
                           >
-                            <Link href={item.href}>
+                            <Link
+                              href={item.href}
+                              onClick={() => {
+                                if (isMobile) {
+                                  setOpenMobile(false);
+                                }
+                              }}
+                            >
                               <Icon className="mr-2 h-5 w-5 flex-shrink-0 group-data-[collapsible=icon]:mr-0" />
                               <span className="truncate group-data-[collapsible=icon]:hidden">{item.label}</span>
                             </Link>
@@ -243,7 +252,12 @@ export function AppSidebar() {
 
           {/* Dropdown Content - Only render content if session is loaded and user exists */}
           {!isPending && session?.user && (
-            <DropdownMenuContent side="right" align="start" className="w-56">
+            <DropdownMenuContent
+              side={isMobile ? 'bottom' : 'right'}
+              align="end"
+              sideOffset={4}
+              className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
+            >
               <DropdownMenuLabel className="font-normal">
                  <div className="flex items-center gap-3">
                    <Avatar className="h-8 w-8">
@@ -266,9 +280,9 @@ export function AppSidebar() {
                <DropdownMenuSeparator />
                <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut}>
                  {isLoggingOut ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
-                    <LogOut className="h-4 w-4" />
+                    <LogOut className="h-4 w-4 mr-2" />
                   )}
                  <span>Logout</span>
                </DropdownMenuItem>
