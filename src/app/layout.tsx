@@ -15,8 +15,21 @@ const csgFont = localFont({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://fusion-bridge-production.up.railway.app'),
   title: 'Fusion',
   description: 'Scurity integration platform',
+  openGraph: {
+    images: [
+      {
+        url: '/opengraph-image.png',
+        width: 1200,
+        height: 630,
+      },
+    ],
+    title: 'Fusion',
+    description: 'Unify. Automate. Protect.',
+    type: 'website',
+  },
 };
 
 export default function RootLayout({
