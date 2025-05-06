@@ -4,16 +4,12 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle"; // Import Drizzle adapter again
 import { db } from "@/data/db"; // Import the Drizzle db instance
 import { twoFactor } from "better-auth/plugins"; // Import the twoFactor plugin
+import { nextCookies } from "better-auth/next-js"; // <-- ADDED IMPORT
 // We don't need the direct driver or utils here anymore
 // import Database from 'better-sqlite3'; 
 // import { getDbPath } from "@/data/db/utils"; 
 // No longer need individual import if passing the whole schema
 // import { verificationTokens } from "@/data/db/schema";
-
-// Ensure environment variables are defined, potentially throwing an error if not
-if (!process.env.BETTER_AUTH_SECRET) {
-  throw new Error("Missing BETTER_AUTH_SECRET environment variable");
-}
 
 // Remove direct sqlite instance creation
 // const dbPath = getDbPath();
@@ -36,7 +32,8 @@ export const auth = betterAuth({
   socialProviders: {
   },
   plugins: [
-      twoFactor() // Add the twoFactor plugin
+      twoFactor(), // Add the twoFactor plugin
+      nextCookies() // <-- ADDED PLUGIN
   ],
   // Add other global better-auth configurations if needed
   // Example: Set a custom base path if not using /api/auth

@@ -264,6 +264,9 @@ importers:
       husky:
         specifier: ^9.0.7
         version: 9.1.7
+      next-postman:
+        specifier: ^0.0.1
+        version: 0.0.1
       postcss:
         specifier: ^8.4.35
         version: 8.5.3
@@ -3450,6 +3453,10 @@ packages:
 
   natural-compare@1.4.0:
     resolution: {integrity: sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==}
+
+  next-postman@0.0.1:
+    resolution: {integrity: sha512-2Qb10VfgYBaDN+s04jrzKWbv/X0zigdpq9sjx+Ju6qkC/lPQC4QZY5U55GkgWe8jdJBoXrRDrIWrM3FgGlLjNA==}
+    hasBin: true
 
   next-themes@0.4.6:
     resolution: {integrity: sha512-pZvgD5L0IEvX5/9GWyHMf3m8BKiVQwsCMHfoFosXtXBMnaS0ZnIJ9ST4b4NqLVKDEm8QBxoNNGNaBv2JNF6XNA==}
@@ -7679,6 +7686,8 @@ snapshots:
   napi-postinstall@0.2.3: {}
 
   natural-compare@1.4.0: {}
+
+  next-postman@0.0.1: {}
 
   next-themes@0.4.6(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:

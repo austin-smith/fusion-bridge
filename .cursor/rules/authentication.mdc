@@ -7,27 +7,39 @@ alwaysApply: false
 
 ## Overview
 
-This project uses the `better-auth` library for handling user authentication.
+This project uses the `better-auth` library for handling user authentication, secured using a layered approach involving middleware, API route wrappers, and client-side checks.
 
 ## Key Components & Configuration
 
 -   **Library:** `better-auth`
--   **Database Adapter:** `better-auth/adapters/drizzle` configured for SQLite (`@/lib/auth/server.ts`). Assumes default table names (`user`, `account`, `session`, `verification`) as defined in `src/data/db/schema.ts`.
+-   **Server Instance:** Configured in `src/lib/auth/server.ts`.
+    -   **Database Adapter:** `better-auth/adapters/drizzle` (SQLite).
+    -   **Plugins:** Includes `twoFactor()` and `nextCookies()` (for automatic cookie handling in Server Actions).
+-   **Client Instance:** Configured in `src/lib/auth/client.ts` using `createAuthClient`.
 -   **Authentication Methods:**
-    -   Email & Password (`emailAndPassword.enabled: true`)
--   **API Routes:** All standard `better-auth` API operations (login, logout, callbacks, etc.) are handled by the catch-all route `src/app/api/auth/[...all]/route.ts` using `toNextJsHandler(auth)`.
--   **Session Check API:** A lightweight route `src/app/api/auth/check-session/route.ts` exists ONLY to provide basic session status (`isAuthenticated`, `user.id`). Primarily used by middleware.
--   **User Profile API:** A separate route `src/app/api/auth/profile/route.ts` provides detailed authenticated user information (`id`, `name`, `email`, `image`, `twoFactorEnabled`). Used by pages/components needing profile data.
--   **Middleware:** `src/middleware.ts` protects most routes. It checks authentication status by fetching from `/api/auth/check-session`. Unauthenticated users are redirected to `/login`. The matcher excludes `/api/auth/*`, `/api/webhooks/*`, and common static asset paths.
--   **Client-Side Access:** Use `signIn` and `signOut` from `@/lib/auth/client.ts` and the `useSession` hook (`@/lib/auth/client`).
+    -   Email & Password (`emailAndPassword.enabled: true`).
+-   **Core Auth API Routes:** Handled by `src/app/api/auth/[...all]/route.ts` via `toNextJsHandler(auth)`.
+-   **Middleware (`src/middleware.ts`):**
+    -   Provides global page protection by checking for the session cookie directly using `getSessionCookie` from `better-auth/cookies` (no API fetch/DB hit).
+    -   Redirects unauthenticated users to `/login`.
+    -   The `config.matcher` excludes specific API routes (`/api/auth/*`, `/api/webhooks/*`, `/api/startup/*`), static assets (`/_next/*`, `favicon.ico`), and files with extensions (`.*\.\w+`). Public marketing/content pages may need explicit checks within the middleware function to allow access.
+-   **Custom API Route Protection:**
+    -   Secure custom API routes requiring authentication by wrapping their handlers with the `withAuthApi` Higher-Order Function (HOF) found in `src/lib/auth/withAuthApi.ts`. This HOF verifies the session using `auth.api.getSession`.
+-   **User Profile API (`src/app/api/auth/profile/route.ts`):**
+    -   Provides detailed authenticated user information (`id`, `name`, `email`, etc.). Used by server components or client components needing full profile data.
+    -   *Note:* This route itself should be protected, likely using `withAuthApi`.
+-   **Client-Side Access & Protection:**
+    -   Use standard hooks like `signIn`, `signOut`, and `useSession` exported from `src/lib/auth/client.ts`.
+    -   For components/pages that *require* authentication to render, wrap them with the `withPageAuth` Higher-Order Component (HOC) from `src/lib/auth/withPageAuth.tsx`. This HOC uses `useSession` internally and handles loading states and redirects.
 -   **Server-Side Access:**
-    -   In Server Actions: Use `await auth.$context` to get session and other context (`@/lib/auth/server.ts`).
-    -   In Server Components (Pages/Layouts): Fetch user data from the internal `/api/auth/profile` API route using cookies.
+    -   In Server Actions: Use `await auth.api.getSession()` or `await auth.$context`. The `nextCookies` plugin handles cookie operations automatically.
+    -   In Server Components (Pages/Layouts): If only basic session status is needed, check cookies directly. If full user profile is needed, fetch from the internal `/api/auth/profile` API route (passing cookies).
 
 ## Auxiliary Auth Actions
 
--   The file `src/lib/actions/auth-actions.ts` contains server actions related to the authentication system but separate from the core `better-auth` handlers. This includes actions like the initial user setup (`createFirstAdminUser`), which interacts with auth tables and uses `better-auth` context helpers (e.g., for password hashing).
+-   The file `src/lib/actions/auth-actions.ts` contains server actions related to authentication but separate from core `better-auth` handlers (e.g., `createFirstAdminUser`).
 
 ## Important Notes
 
--   Webhooks (`/api/webhooks/*`) rely on their own authentication (e.g., signature verification within the route handler) and are *not* protected by the session middleware.
+-   Webhooks (`/api/webhooks/*`) are explicitly excluded by the middleware and rely on their own authentication (e.g., signature verification) implemented within their specific route handlers.
+-   The `/api/startup` route (if used for initial checks) is also excluded by the middleware.

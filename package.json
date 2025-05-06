@@ -105,6 +105,7 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.0.0",
     "husky": "^9.0.7",
+    "next-postman": "^0.0.1",
     "postcss": "^8.4.35",
     "prettier": "^3.2.5",
     "tailwindcss": "^3.4.1",

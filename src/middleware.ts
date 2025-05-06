@@ -1,116 +1,71 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getSessionCookie } from 'better-auth/cookies';
 // Remove direct auth import
 // import { auth } from '@/lib/auth/server'; 
 
 // Define SessionCheckResponse type (reverted)
-interface SessionCheckResponse {
-  isAuthenticated: boolean;
-  user?: { id: string };
-  error?: string;
-}
+// interface SessionCheckResponse {
+//   isAuthenticated: boolean;
+//   user?: { id: string };
+//   error?: string;
+// }
 
-export async function middleware(request: NextRequest) {
-  const { pathname, origin } = request.nextUrl;
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const loginUrl = new URL('/login', request.url);
+  const homeUrl = new URL('/', request.url);
 
-  // Middleware should not run on API routes, static files, OR the 2FA verification page
-  const isApiAuthRoute = pathname.startsWith('/api/auth');
-  const isApiEtc = pathname.startsWith('/api/'); // Catch all /api routes
-  const isStaticAsset = pathname.startsWith('/_next/') || pathname.includes('.');
-  const isVerify2faPage = pathname === '/verify-2fa'; // <-- ADDED check
+  // Check for the session cookie directly
+  const sessionCookie = getSessionCookie(request);
+  const isAuthenticated = !!sessionCookie;
 
-  // --- Simplified Exclusion Check --- 
-  // if (isApiAuthRoute || isStaticAsset || isVerify2faPage) { 
-  //   if (pathname !== '/api/auth/check-session') { // Allow check-session to be called
-  //       return NextResponse.next();
-  //   }
-  // }
-  // Let the matcher handle exclusions primarily.
-
-  let sessionStatus: SessionCheckResponse = { isAuthenticated: false }; 
-  let sessionCheckUrl: URL | null = null;
-
-  // --- Try constructing internal URL using localhost and PORT --- 
-  const port = process.env.PORT;
-  if (port) {
-      try {
-          sessionCheckUrl = new URL(`http://localhost:${port}/api/auth/check-session`);
-      } catch (e) {
-          console.error("[Middleware] Failed to construct URL with localhost:PORT", e);
-          // Fallback or handle error - perhaps try origin again or assume unauthenticated?
-          // For now, let it proceed to the fetch attempt which will likely fail if URL is null
-      }
-  } else {
-      console.warn("[Middleware] PORT environment variable not found. Falling back to using origin for session check URL.");
-      try {
-        sessionCheckUrl = new URL('/api/auth/check-session', origin);
-      } catch (e) {
-          console.error("[Middleware] Failed to construct URL with origin", e);
-      }
-  }
-
-  if (sessionCheckUrl) {
-      console.log(`[Middleware] Attempting to fetch session status from: ${sessionCheckUrl.toString()}`);
-      try {
-        const response = await fetch(sessionCheckUrl, {
-          headers: { 'Cookie': request.headers.get('Cookie') || '' },
-          cache: 'no-store',
-          // Optionally add a timeout? Be careful with middleware performance.
-          // signal: AbortSignal.timeout(2000) // Example: 2 second timeout
-        });
-        if (response.ok) {
-          sessionStatus = await response.json();
-        } else {
-          console.error(`[Middleware] Check session API fetch failed with status: ${response.status} ${response.statusText}`);
-        }
-      } catch (error) {
-        console.error("[Middleware] Error during fetch to check session API:", error);
-        // Ensure sessionStatus remains { isAuthenticated: false } on fetch error
-        sessionStatus = { isAuthenticated: false, error: (error instanceof Error) ? error.message : 'Fetch failed' };
-      }
-  } else {
-       console.error("[Middleware] Could not determine a valid URL to fetch check-session API.");
-       // Default to unauthenticated if URL construction failed
-       sessionStatus = { isAuthenticated: false, error: 'Internal URL configuration error' };
-  }
-
-  console.log(
-      `[Middleware] Received sessionStatus: isAuthenticated=${sessionStatus.isAuthenticated}${sessionStatus.user ? ', userId=' + sessionStatus.user.id : ''}${sessionStatus.error ? ', error=' + sessionStatus.error : ''}`
-  ); // Log selectively
-
-  const isAuthenticated = sessionStatus.isAuthenticated;
+  console.log(`[Middleware] Path: ${pathname}, Authenticated: ${isAuthenticated}`);
+  
   const isLoginPage = pathname === '/login';
   const isSetupPage = pathname === '/setup';
-
-  // --- Reverted Logic --- 
+  const isVerify2faPage = pathname === '/verify-2fa';
 
   if (!isAuthenticated) {
     // User is NOT Authenticated
-    if (isLoginPage || isSetupPage) { 
-      console.log(`[Middleware] Not authenticated, allowing access to ${pathname}`);
+    // Allow access to login, setup, AND the verify-2fa page
+    if (isLoginPage || isSetupPage || isVerify2faPage) {
+      console.log(`[Middleware] Not authenticated, allowing access to public/auth path: ${pathname}`);
       return NextResponse.next();
     }
-    const loginUrl = new URL('/login', origin);
-    console.log(`[Middleware] Not authenticated (status reason: ${sessionStatus.error || 'no session'}), redirecting to ${loginUrl.toString()}`);
+    // Redirect all other paths to login
+    console.log(`[Middleware] Not authenticated, redirecting non-public path to ${loginUrl.toString()}`);
     return NextResponse.redirect(loginUrl);
-
   } else {
     // User IS Authenticated
-    if (isLoginPage || isSetupPage) { 
-      console.log(`[Middleware] Authenticated, redirecting from ${pathname} to /`);
-      return NextResponse.redirect(new URL('/', origin));
+    // If trying to access login or setup page, redirect to home
+    if (isLoginPage || isSetupPage) {
+      console.log(`[Middleware] Authenticated, redirecting from auth page ${pathname} to ${homeUrl.toString()}`);
+      return NextResponse.redirect(homeUrl);
     }
-    console.log(`[Middleware] Authenticated, allowing access to ${pathname}`);
+    // Allow access to all other protected pages (including /verify-2fa if needed, though unlikely to hit here)
+    console.log(`[Middleware] Authenticated, allowing access to protected path: ${pathname}`);
     return NextResponse.next();
   }
 }
 
 // Configuration for the middleware
 export const config = {
+  /*
+   * Match all request paths except for the ones starting with:
+   * - api/auth (better-auth routes)
+   * - api/webhooks (webhook handlers)
+   * - api/startup (initial setup check route)
+   * - _next/static (static files)
+   * - _next/image (image optimization files)
+   * - favicon.ico (favicon file)
+   * - Any paths with a file extension (e.g., .png, .jpg)
+   * - The root path '/' IF it should be public (optional)
+   *
+   * Adjust the negative lookaheads as needed.
+   * If the root path ('/') should be protected, remove it from matcher or handle in middleware logic.
+   */
   matcher: [
-    // Exclude specific API routes (auth, webhooks, startup),
-    // static assets, AND the /verify-2fa page itself.
-    // Also exclude opengraph-image.png to allow crawlers access.
-    '/((?!api/auth|api/webhooks|api/startup|verify-2fa|_next/static|_next/image|favicon.ico|opengraph-image\.png).*)', 
+    '/((?!api/auth|api/webhooks|api/startup|_next/static|_next/image|favicon.ico|.*\.\w+).*)',
   ],
 }; 
