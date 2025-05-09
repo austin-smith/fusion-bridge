@@ -91,6 +91,7 @@ import { EventViewToggle } from '@/components/features/events/EventViewToggle';
 import { EventsTableView } from '@/components/features/events/EventsTableView';
 import type { EnrichedEvent } from '@/types/events';
 import { EventCardView } from '@/components/features/events/EventCardView';
+import { EventCardViewSkeleton } from '@/components/features/events/event-card-view-skeleton';
 
 // --- ADDED BACK EventTag --- 
 const EventTag = ({ 
@@ -1019,9 +1020,10 @@ export default function EventsPage() {
 
         {/* Conditional Messages & Skeleton */}
         <div className="flex-shrink-0">
-           {/* Show Skeleton if main loading OR if areas/devices are still loading */}
            {(loading || (displayedEvents.length > 0 && (areas.length === 0 || allDevices.length === 0))) && displayedEvents.length === 0 ? (
-            <EventsTableSkeleton rowCount={15} columnCount={columns.length} />
+            viewMode === 'card' 
+              ? <EventCardViewSkeleton segmentCount={2} cardsPerSegment={4} />
+              : <EventsTableSkeleton rowCount={15} columnCount={columns.length} />
           ) : !loading && displayedEvents.length === 0 ? (
             <p className="text-muted-foreground">
               No events match your current filters or no events have been received yet.
@@ -1029,12 +1031,12 @@ export default function EventsPage() {
           ) : null}
         </div>
 
-        {/* Conditional Rendering for View Mode (remains largely unchanged, but now within default view) */}
+        {/* Conditional Rendering for View Mode */}
         {!loading && displayedEvents.length > 0 && areas.length > 0 && allDevices.length > 0 ? (
           <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
             {viewMode === 'table' ? (
               <EventsTableView table={table} columns={columns} />
-            ) : viewMode === 'card' ? ( // This path is taken when NOT full screen
+            ) : viewMode === 'card' ? (
               <EventCardView events={displayedEvents} areas={areas} allDevices={allDevices} /> 
             ) : null}
           </div>
