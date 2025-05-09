@@ -9,6 +9,10 @@ const SUPPORTED_ACTIONS = [ActionableState.SET_ON, ActionableState.SET_OFF];
 export class YoLinkActionHandler implements IDeviceActionHandler {
     readonly category = 'yolink';
 
+    public getControllableRawTypes(): string[] {
+        return SUPPORTED_YOLINK_TYPES;
+    }
+
     canHandle(device: DeviceContext, newState: ActionableState): boolean {
         const isSupportedType = SUPPORTED_YOLINK_TYPES.includes(device.type);
         const isSupportedAction = SUPPORTED_ACTIONS.includes(newState);

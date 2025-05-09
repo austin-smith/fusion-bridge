@@ -1,4 +1,6 @@
 import { z } from 'zod';
+// --- Add import for ActionableState ---
+import { ActionableState } from '@/lib/mappings/definitions';
 
 // --- START: json-rules-engine Schemas ---
 
@@ -127,6 +129,15 @@ export const SendHttpRequestActionParamsSchema = z.object({
 });
 // --- END: Add Schema for Send HTTP Request action ---
 
+// --- BEGIN Add SetDeviceStateActionParamsSchema ---
+export const SetDeviceStateActionParamsSchema = z.object({
+  targetDeviceInternalId: z.string().uuid("Target device ID must be a valid UUID"),
+  targetState: z.nativeEnum(ActionableState, {
+    errorMap: () => ({ message: "Invalid target state selected" })
+  }),
+});
+// --- END Add SetDeviceStateActionParamsSchema ---
+
 // Schema for a single action within an automation
 // Using discriminatedUnion allows easy extension with new action types later
 export const AutomationActionSchema = z.discriminatedUnion("type", [
@@ -141,6 +152,11 @@ export const AutomationActionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("sendHttpRequest"),
     params: SendHttpRequestActionParamsSchema
+  }),
+  // --- Add new setDeviceState action type ---
+  z.object({
+    type: z.literal("setDeviceState"),
+    params: SetDeviceStateActionParamsSchema
   }),
   // Add future action types here, e.g.:
   // z.object({ type: z.literal("sendNotification"), params: SendNotificationParamsSchema }),

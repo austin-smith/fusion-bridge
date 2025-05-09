@@ -1,15 +1,17 @@
 import React from 'react';
 import { db } from '@/data/db';
-import { automations, connectors } from '@/data/db/schema';
-import { eq } from 'drizzle-orm';
+import { automations, connectors, devices } from '@/data/db/schema';
+import { eq, inArray, asc } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import AutomationForm from '@/components/automations/AutomationForm';
-import type { AutomationConfig } from '@/lib/automation-schemas';
+import type { AutomationConfig, AutomationAction, TemporalCondition } from '@/lib/automation-schemas';
 import { deviceIdentifierMap } from '@/lib/mappings/identification';
 import type { MultiSelectOption } from '@/components/ui/multi-select-combobox';
 import { DeviceType, DeviceSubtype } from '@/lib/mappings/definitions';
 import type { Connector } from '@/lib/types';
 import { getDeviceTypeIconName } from '@/lib/mappings/presentation';
+import { Separator } from "@/components/ui/separator";
+import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions";
 
 // Type definition for the data needed by this page/form
 // Should align with what getAutomationData returns and AutomationForm expects
@@ -133,6 +135,45 @@ async function getAutomationData(id: string): Promise<AutomationPageData | null>
     }
 }
 
+// Copied getAvailableTargetDevices function (ensure it's identical to the tested one)
+async function getAvailableTargetDevices() {
+    const allSupportedRawTypesByAnyHandler = new Set<string>();
+    actionHandlers.forEach((handler: IDeviceActionHandler) => {
+        if (typeof handler.getControllableRawTypes === 'function') {
+            const rawTypes = handler.getControllableRawTypes();
+            rawTypes.forEach((rawType: string) => {
+                allSupportedRawTypesByAnyHandler.add(rawType);
+            });
+        } 
+    });
+    const rawTypesArray = Array.from(allSupportedRawTypesByAnyHandler);
+
+    if (rawTypesArray.length === 0) {
+        console.warn("[AutomationForm Data /settings] No controllable raw types found. No devices will be targetable.");
+        return [];
+    }
+    const actionableDbDevices = await db.query.devices.findMany({
+        columns: {
+            id: true,
+            name: true,
+            standardizedDeviceType: true,
+            type: true 
+        },
+        where: inArray(devices.type, rawTypesArray),
+        orderBy: [asc(devices.name)]
+    });
+    const mappedDevices = actionableDbDevices.map((d: typeof actionableDbDevices[number]) => {
+        const stdType = d.standardizedDeviceType as DeviceType;
+        return {
+            id: d.id,
+            name: d.name,
+            displayType: d.standardizedDeviceType || d.type || 'Unknown Type',
+            iconName: d.standardizedDeviceType ? getDeviceTypeIconName(stdType) : getDeviceTypeIconName(DeviceType.Unmapped) 
+        };
+    });
+    return mappedDevices;
+}
+
 // Page Component for editing or creating an automation
 export default async function AutomationSettingsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: automationId } = await params; 
@@ -179,7 +220,8 @@ export default async function AutomationSettingsPage({ params }: { params: Promi
         initialData={formData as any} 
         availableConnectors={availableConnectors} 
         sourceDeviceTypeOptions={standardizedDeviceTypes}
-       />
+        availableTargetDevices={await getAvailableTargetDevices()}
+      />
     </div>
   );
 } 

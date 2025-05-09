@@ -640,7 +640,7 @@ export default function DevicesPage() {
                     setIsDetailDialogOpen(true);
                   }}
                 >
-                  <InfoIcon className="mr-2 h-4 w-4" />
+                  <InfoIcon className="h-4 w-4" />
                   View Details
                 </DropdownMenuItem>
                 
@@ -658,9 +658,9 @@ export default function DevicesPage() {
                     >
                       {/* Conditionally show icon based on state */}
                       {isOn ? (
-                        <PowerOffIcon className="mr-2 h-4 w-4 text-red-600" /> 
+                        <PowerOffIcon className="h-4 w-4 text-red-600" /> 
                       ) : (
-                        <PowerIcon className="mr-2 h-4 w-4 text-green-600" />
+                        <PowerIcon className="h-4 w-4 text-green-600" />
                       )}
                       {isOn ? 'Turn Off' : 'Turn On'}
                     </DropdownMenuItem>

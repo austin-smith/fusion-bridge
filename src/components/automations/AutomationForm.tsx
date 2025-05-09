@@ -21,8 +21,9 @@ import {
     type JsonRuleGroup,
     type TemporalCondition,
     JsonRuleGroupSchema,
+    SetDeviceStateActionParamsSchema,
 } from '@/lib/automation-schemas';
-import { EventType, EVENT_TYPE_DISPLAY_MAP, EventSubtype, EVENT_SUBTYPE_DISPLAY_MAP } from '@/lib/mappings/definitions';
+import { EventType, EVENT_TYPE_DISPLAY_MAP, EventSubtype, EVENT_SUBTYPE_DISPLAY_MAP, ActionableState } from '@/lib/mappings/definitions';
 import type { connectors } from '@/data/db/schema';
 import {
   Form,
@@ -43,6 +44,8 @@ import { TokenInserter } from '@/components/automations/TokenInserter';
 import { AVAILABLE_AUTOMATION_TOKENS } from '@/lib/automation-tokens';
 import { SendHttpRequestActionFields } from './SendHttpRequestActionFields';
 import { RuleBuilder } from './RuleBuilder';
+import { getIconComponentByName } from '@/lib/mappings/presentation';
+import { HelpCircle } from 'lucide-react';
 
 interface AutomationFormData {
     id: string;
@@ -68,6 +71,7 @@ interface AutomationFormProps {
     initialData: AutomationFormData;
     availableConnectors: Pick<ConnectorSelect, 'id' | 'name' | 'category'>[];
     sourceDeviceTypeOptions: MultiSelectOption[];
+    availableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; }>;
 }
 
 export type InsertableFieldNames = 
@@ -118,6 +122,11 @@ const defaultTemporalCondition: Omit<TemporalCondition, 'id'> = {
     timeWindowSecondsAfter: 60,
 };
 
+const ACTIONABLE_STATE_DISPLAY_MAP: Record<ActionableState, string> = {
+    [ActionableState.SET_ON]: "Turn On",
+    [ActionableState.SET_OFF]: "Turn Off",
+};
+
 const defaultAction: AutomationAction = {
     type: 'createEvent', 
     params: { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' }
@@ -126,7 +135,8 @@ const defaultAction: AutomationAction = {
 export default function AutomationForm({
     initialData,
     availableConnectors,
-    sourceDeviceTypeOptions
+    sourceDeviceTypeOptions,
+    availableTargetDevices = []
 }: AutomationFormProps) {
 
     const router = useRouter();
@@ -288,9 +298,8 @@ export default function AutomationForm({
     };
 
     const pikoTargetConnectors = availableConnectors.filter(c => c.category === 'piko');
-
-    // --- Sort connectors for dropdown ---
     const sortedPikoConnectors = [...pikoTargetConnectors].sort((a, b) => a.name.localeCompare(b.name));
+    const sortedAvailableTargetDevices = [...availableTargetDevices].sort((a, b) => a.name.localeCompare(b.name));
 
     return (
         <FormProvider {...form}>
@@ -501,20 +510,26 @@ export default function AutomationForm({
                                                                     // --- Add Console Log Here --- 
                                                                     console.log(`Action type changed at index ${index} to:`, value);
                                                                     const newType = value as AutomationAction['type'];
-                                                                    let newAction: AutomationAction;
+                                                                    let newActionParams: AutomationAction['params'];
                                                                     if (newType === 'createEvent') { 
-                                                                        newAction = { type: 'createEvent', params: { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' } };
+                                                                        newActionParams = { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' };
                                                                     } else if (newType === 'createBookmark') { 
-                                                                        newAction = { type: 'createBookmark', params: { nameTemplate: '', descriptionTemplate: '', durationMsTemplate: '5000', tagsTemplate: '', targetConnectorId: '' } };
+                                                                        newActionParams = { nameTemplate: '', descriptionTemplate: '', durationMsTemplate: '5000', tagsTemplate: '', targetConnectorId: '' };
                                                                     } else if (newType === 'sendHttpRequest') { 
-                                                                        newAction = { type: 'sendHttpRequest', params: { urlTemplate: '', method: 'GET', headers: [], contentType: 'text/plain', bodyTemplate: '' } };
+                                                                        newActionParams = { urlTemplate: '', method: 'GET', headers: [], contentType: 'text/plain', bodyTemplate: '' };
+                                                                    } else if (newType === 'setDeviceState') {
+                                                                        newActionParams = {
+                                                                            targetDeviceInternalId: sortedAvailableTargetDevices.length > 0 ? sortedAvailableTargetDevices[0].id : '',
+                                                                            targetState: ActionableState.SET_ON
+                                                                        };
                                                                     } else { 
                                                                         console.warn(`Unexpected action type: ${value}. Defaulting to minimal sendHttpRequest.`); 
-                                                                        newAction = { type: "sendHttpRequest", params: { urlTemplate: '', method: 'GET'} }; 
+                                                                        newActionParams = { urlTemplate: '', method: 'GET'} as any; // Cast if necessary for default
                                                                     }
                                                                     // --- Add Console Log Here ---
-                                                                    console.log(`Setting value for config.actions.${index} to:`, newAction);
-                                                                    form.setValue(`config.actions.${index}`, newAction, { shouldValidate: false, shouldDirty: true });
+                                                                    console.log(`Setting value for config.actions.${index} to:`, newActionParams);
+                                                                    form.setValue(`config.actions.${index}.params` as any, newActionParams, { shouldValidate: true, shouldDirty: true });
+                                                                    field.onChange(newType); // Ensure the type field itself is also updated
                                                                 }}
                                                                 value={field.value ?? 'createEvent'}
                                                             >
@@ -525,6 +540,7 @@ export default function AutomationForm({
                                                                     <SelectItem value="createBookmark">Create Piko Bookmark</SelectItem>
                                                                     <SelectItem value="createEvent">Create Piko Event</SelectItem>
                                                                     <SelectItem value="sendHttpRequest">Send HTTP Request</SelectItem>
+                                                                    <SelectItem value="setDeviceState">Set Device State</SelectItem>
                                                                 </SelectContent>
                                                             </Select>
                                                         </FormControl>
@@ -564,7 +580,7 @@ export default function AutomationForm({
                                             )}
                                             <div className="space-y-2 border-l-2 pl-4 ml-1 border-muted">
                                                 <h3 className="text-sm font-medium text-muted-foreground mb-2">Action Parameters</h3>
-                                                 <p className="text-xs text-muted-foreground"> {actionType === 'createBookmark' && "Creates a bookmark on related Piko cameras."} {actionType === 'createEvent' && "Creates an event in the target Piko system."} {actionType === 'sendHttpRequest' && "Sends an HTTP request."} </p>
+                                                 <p className="text-xs text-muted-foreground"> {actionType === 'createBookmark' && "Creates a bookmark on related Piko cameras."} {actionType === 'createEvent' && "Creates an event in the target Piko system."} {actionType === 'sendHttpRequest' && "Sends an HTTP request."} {actionType === 'setDeviceState' && "Changes the state of a specified device (e.g., turn on/off)."} </p>
                                                 {actionType === 'createEvent' && ( <>
                                                      {/* --- Restore sourceTemplate Field --- */}
                                                      <FormField control={form.control} name={`config.actions.${index}.params.sourceTemplate`} render={({ field, fieldState }) => (
@@ -653,7 +669,71 @@ export default function AutomationForm({
                                                         }}
                                                     /> 
                                                 )}
-                                                {!['createEvent', 'createBookmark', 'sendHttpRequest'].includes(actionType || '') && ( <p className="text-sm text-muted-foreground">Select an action type.</p> )}
+                                                {actionType === 'setDeviceState' && (
+                                                    <>
+                                                        <FormField
+                                                            control={form.control}
+                                                            name={`config.actions.${index}.params.targetDeviceInternalId`}
+                                                            render={({ field, fieldState }) => (
+                                                                <FormItem>
+                                                                    <FormLabel>Target Device</FormLabel>
+                                                                    <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
+                                                                        <FormControl>
+                                                                            <SelectTrigger className={cn(fieldState.error && 'border-destructive')}>
+                                                                                <SelectValue placeholder="Select Target Device" />
+                                                                            </SelectTrigger>
+                                                                        </FormControl>
+                                                                        <SelectContent>
+                                                                            {sortedAvailableTargetDevices.map(device => {
+                                                                                const IconComponent = getIconComponentByName(device.iconName) || HelpCircle;
+                                                                                return (
+                                                                                    <SelectItem key={device.id} value={device.id}>
+                                                                                        <div className="flex items-center">
+                                                                                            <IconComponent className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+                                                                                            <span>{device.name} <span className="text-xs text-muted-foreground">({device.displayType})</span></span>
+                                                                                        </div>
+                                                                                    </SelectItem>
+                                                                                );
+                                                                            })}
+                                                                            {sortedAvailableTargetDevices.length === 0 && (
+                                                                                <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                                                                                    No controllable devices found.
+                                                                                </div>
+                                                                            )}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                    <FormDescription className={descriptionStyles}>
+                                                                        Select the device to control.
+                                                                    </FormDescription>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                        <FormField
+                                                            control={form.control}
+                                                            name={`config.actions.${index}.params.targetState`}
+                                                            render={({ field, fieldState }) => (
+                                                                <FormItem>
+                                                                    <FormLabel>Target State</FormLabel>
+                                                                    <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
+                                                                        <FormControl>
+                                                                            <SelectTrigger className={cn(fieldState.error && 'border-destructive')}>
+                                                                                <SelectValue placeholder="Select Target State" />
+                                                                            </SelectTrigger>
+                                                                        </FormControl>
+                                                                        <SelectContent>
+                                                                            {Object.entries(ACTIONABLE_STATE_DISPLAY_MAP).map(([value, label]) => (
+                                                                                <SelectItem key={value} value={value}>{label}</SelectItem>
+                                                                            ))}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                    </>
+                                                )}
+                                                {!['createEvent', 'createBookmark', 'sendHttpRequest', 'setDeviceState'].includes(actionType || '') && ( <p className="text-sm text-muted-foreground">Select an action type.</p> )}
                                             </div>
                                         </CardContent>
                                     </Card>

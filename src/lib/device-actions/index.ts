@@ -23,6 +23,11 @@ const actionHandlers: IDeviceActionHandler[] = [
 ];
 // --- END Handler Registry ---
 
+// --- BEGIN Export actionHandlers and types ---
+export { actionHandlers };
+export type { IDeviceActionHandler, DeviceContext }; // Also export types
+// --- END Export actionHandlers and types ---
+
 /**
  * Attempts to change the state of a device via its connector driver.
  * This acts as an abstraction layer over different vendor APIs, using a handler registry.

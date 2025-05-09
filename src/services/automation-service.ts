@@ -6,7 +6,7 @@ import { eq, and, inArray } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
 import * as piko from '@/services/drivers/piko'; // Assuming Piko driver functions are here
-import { type AutomationConfig, AutomationConfigSchema, type AutomationAction, type TemporalCondition } from '@/lib/automation-schemas';
+import { type AutomationConfig, AutomationConfigSchema, type AutomationAction, type TemporalCondition, SetDeviceStateActionParamsSchema } from '@/lib/automation-schemas';
 import pRetry from 'p-retry'; // Import p-retry
 import type { PikoCreateBookmarkPayload } from '@/services/drivers/piko'; // Import the specific payload type
 // Import other necessary drivers or services as needed
@@ -16,6 +16,8 @@ import * as eventsRepository from '@/data/repositories/events'; // Import the ev
 import { findEventsInWindow } from '@/data/repositories/events'; // Import the specific function
 import { Engine } from 'json-rules-engine';
 import type { JsonRuleCondition, JsonRuleGroup } from '@/lib/automation-schemas'; // Import rule types
+import { requestDeviceStateChange } from '@/lib/device-actions';
+import { ActionableState } from '@/lib/mappings/definitions';
 
 // --- Moved Type Definition Earlier ---
 // Define structure for trigger device context, including nested location
@@ -332,12 +334,14 @@ async function executeActionWithRetry(
     console.log(`[Automation Service] Attempting action type '${action.type}' for rule ${rule.id} (${rule.name})`);
     
     const runAction = async () => {
-        // Pass the full context to resolveTokens
-        const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as AutomationAction['params'];
+        // Token resolution is generally for string templates.
+        // For setDeviceState, targetDeviceInternalId is a direct UUID, targetState is an enum.
+        // So, we use action.params directly for setDeviceState after type casting.
+        // For other actions that use templates, resolveTokens is still needed.
         
         switch (action.type) {
-            // Case 'createEvent'
             case 'createEvent': {
+                const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof import('@/lib/automation-schemas').CreateEventActionParamsSchema>;
                 if (!('sourceTemplate' in resolvedParams && 'captionTemplate' in resolvedParams && 'descriptionTemplate' in resolvedParams && 'targetConnectorId' in resolvedParams)) {
                     throw new Error(`Invalid/missing parameters for createEvent action.`);
                 }
@@ -376,8 +380,8 @@ async function executeActionWithRetry(
                 } else { console.warn(`[Rule ${rule.id}][Action createEvent] Unsupported target connector category ${targetConnector.category}`); }
                 break;
             }
-            // Case 'createBookmark'
             case 'createBookmark': {
+                const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof import('@/lib/automation-schemas').CreateBookmarkParamsSchema>;
                 if (!('nameTemplate' in resolvedParams && 'durationMsTemplate' in resolvedParams && 'targetConnectorId' in resolvedParams)) {
                     throw new Error(`Invalid/missing parameters for createBookmark action.`);
                 }
@@ -421,12 +425,11 @@ async function executeActionWithRetry(
                 } else { console.warn(`[Rule ${rule.id}][Action createBookmark] Unsupported target connector category ${targetConnector.category}`); }
                 break;
             }
-            // Case 'sendHttpRequest'
             case 'sendHttpRequest': {
-                const httpParams = resolvedParams as z.infer<typeof SendHttpRequestActionParamsSchema>; 
+                const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof SendHttpRequestActionParamsSchema>;
                 const headers = new Headers({ 'User-Agent': 'FusionBridge Automation/1.0' });
-                if (Array.isArray(httpParams.headers)) {
-                    for (const header of httpParams.headers) {
+                if (Array.isArray(resolvedParams.headers)) {
+                    for (const header of resolvedParams.headers) {
                         if (header.keyTemplate && typeof header.keyTemplate === 'string' && typeof header.valueTemplate === 'string') {
                             const key = header.keyTemplate.trim();
                             if (key) {
@@ -439,12 +442,12 @@ async function executeActionWithRetry(
                         }
                     }
                 }
-                const fetchOptions: RequestInit = { method: httpParams.method, headers: headers };
-                if (['POST', 'PUT', 'PATCH'].includes(httpParams.method) && httpParams.bodyTemplate) {
-                    if (!headers.has('Content-Type') && httpParams.bodyTemplate.trim().startsWith('{')) headers.set('Content-Type', 'application/json');
-                    fetchOptions.body = httpParams.bodyTemplate;
+                const fetchOptions: RequestInit = { method: resolvedParams.method, headers: headers };
+                if (['POST', 'PUT', 'PATCH'].includes(resolvedParams.method) && resolvedParams.bodyTemplate) {
+                    if (!headers.has('Content-Type') && resolvedParams.bodyTemplate.trim().startsWith('{')) headers.set('Content-Type', 'application/json');
+                    fetchOptions.body = resolvedParams.bodyTemplate;
                 }
-                const response = await fetch(httpParams.urlTemplate, fetchOptions);
+                const response = await fetch(resolvedParams.urlTemplate, fetchOptions);
                 if (!response.ok) {
                     let responseBody = '';
                     try { responseBody = await response.text(); console.error(`[Rule ${rule.id}][Action sendHttpRequest] Response body (error): ${responseBody.substring(0, 500)}...`); } catch { console.error(`[Rule ${rule.id}][Action sendHttpRequest] Could not read response body on error.`); }
@@ -452,7 +455,24 @@ async function executeActionWithRetry(
                 }
                 break;
             }
-            // Default case
+            case 'setDeviceState': {
+                const params = action.params as z.infer<typeof SetDeviceStateActionParamsSchema>;
+
+                // Basic validation (Zod handles schema validation, this is an extra check)
+                if (!params.targetDeviceInternalId || typeof params.targetDeviceInternalId !== 'string') {
+                    throw new Error(`Invalid or missing targetDeviceInternalId for setDeviceState action.`);
+                }
+                if (!params.targetState || !Object.values(ActionableState).includes(params.targetState as ActionableState)) {
+                    throw new Error(`Invalid or missing targetState for setDeviceState action.`);
+                }
+
+                console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Executing setDeviceState. Target: ${params.targetDeviceInternalId}, State: ${params.targetState}`);
+                
+                await requestDeviceStateChange(params.targetDeviceInternalId, params.targetState as ActionableState);
+                
+                console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Successfully requested state change for ${params.targetDeviceInternalId} to ${params.targetState}`);
+                break;
+            }
             default: {
                 const _exhaustiveCheck: never = action;
                 console.warn(`[Rule ${rule.id}] Unknown or unhandled action type: ${(_exhaustiveCheck as any)?.type}`);

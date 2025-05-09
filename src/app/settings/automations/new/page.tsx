@@ -1,15 +1,17 @@
+import React from 'react';
 import { Separator } from "@/components/ui/separator";
-import React from "react";
 import AutomationForm from "@/components/automations/AutomationForm";
-import { db } from "@/data/db";
-import { connectors, devices } from "@/data/db/schema"; // Import devices
 import { type AutomationConfig } from '@/lib/automation-schemas';
-import { DeviceType } from "@/lib/mappings/definitions"; 
 import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
-import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions"; // Import actionHandlers and IDeviceActionHandler
-import { inArray, asc } from "drizzle-orm"; // Import inArray and asc
 import type { Metadata } from 'next';
-import { getDeviceTypeIconName } from '@/lib/mappings/presentation'; // Use getDeviceTypeIconName instead of getDeviceTypeIcon directly
+
+// Core imports that were potentially missing from the broader file context
+import { db } from "@/data/db";
+import { devices, connectors } from "@/data/db/schema";
+import { inArray, asc } from "drizzle-orm";
+import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions";
+import { DeviceType } from "@/lib/mappings/definitions";
+import { getDeviceTypeIconName } from "@/lib/mappings/presentation";
 
 // Define AutomationFormData to match the structure expected by the form
 interface AutomationFormData {
@@ -21,15 +23,7 @@ interface AutomationFormData {
     updatedAt: Date; 
 }
 
-// Update MultiSelectOption to expect iconName (align with combobox definition change later)
-// Note: Could import MultiSelectOption from combobox and extend/omit, but simple interface is fine here.
-interface PageMultiSelectOption {
-  value: string;
-  label: string;
-  iconName?: string;
-}
-
-// Set page title metadata
+// Set page title metadata (assuming this is desired here)
 export const metadata: Metadata = {
   title: 'Add Automation // Fusion',
 };
@@ -53,8 +47,6 @@ async function getAvailableTargetDevices() {
         }
     });
     const rawTypesArray = Array.from(allSupportedRawTypesByAnyHandler);
-    console.log(`[DEBUG NEW_PAGE] Collected rawTypesArray for DB query:`, rawTypesArray);
-
     if (rawTypesArray.length === 0) {
         console.warn("[AutomationForm Data] No controllable raw types found. No devices will be targetable.");
         return [];
@@ -69,19 +61,15 @@ async function getAvailableTargetDevices() {
         where: inArray(devices.type, rawTypesArray),
         orderBy: [asc(devices.name)]
     });
-    const mappedDevices = actionableDbDevices.map((d: typeof actionableDbDevices[number]) => {
-        const stdType = d.standardizedDeviceType as DeviceType;
+    return actionableDbDevices.map((d: typeof actionableDbDevices[number]) => {
+        const stdType = d.standardizedDeviceType as DeviceType; 
         return {
             id: d.id,
             name: d.name,
             displayType: d.standardizedDeviceType || d.type || 'Unknown Type',
-            iconName: d.standardizedDeviceType
-                ? getDeviceTypeIconName(stdType)
-                : getDeviceTypeIconName(DeviceType.Unmapped)
+            iconName: d.standardizedDeviceType ? getDeviceTypeIconName(stdType) : getDeviceTypeIconName(DeviceType.Unmapped) 
         };
     });
-    console.log(`[DEBUG NEW_PAGE] Returning devices for dropdown (count: ${mappedDevices.length}):`, JSON.stringify(mappedDevices.slice(0,3)));
-    return mappedDevices;
 }
 
 function getSourceDeviceTypeOptions(): MultiSelectOption[] {
@@ -96,21 +84,20 @@ function getSourceDeviceTypeOptions(): MultiSelectOption[] {
 // --- END: Data fetching functions ---
 
 export default async function NewAutomationPage() {
-  // Fetch data concurrently
   const [availableConnectorsData, availableTargetDevicesData, sourceDeviceTypeOptionsData] = await Promise.all([
     getAvailableConnectors(),
     getAvailableTargetDevices(),
-    Promise.resolve(getSourceDeviceTypeOptions()) // Wrap sync function for Promise.all
+    Promise.resolve(getSourceDeviceTypeOptions()) 
   ]);
 
   const initialData: AutomationFormData = {
-    id: 'new', // Special ID for new automations
-    name: '', // Start with an empty name
-    enabled: true, // Default to enabled
+    id: 'new',
+    name: '',
+    enabled: true,
     configJson: { 
-      conditions: { any: [] }, // Default conditions
-      actions: [], // Default to no actions
-      temporalConditions: [] // Default to no temporal conditions
+      conditions: { any: [] },
+      actions: [],
+      temporalConditions: []
     },
     createdAt: new Date(),
     updatedAt: new Date(),

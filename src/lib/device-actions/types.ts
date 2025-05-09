@@ -40,4 +40,10 @@ export interface IDeviceActionHandler {
         connectorConfig: any, // Type can be refined if needed
         newState: ActionableState
     ): Promise<boolean>;
+
+    /**
+     * Returns an array of raw device types that this handler can control.
+     * @returns An array of raw device type strings.
+     */
+    getControllableRawTypes(): string[];
 } 
