@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Hls from 'hls.js';
 import { Loader2, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
 // Define structure for the getInfo API response
@@ -31,136 +32,156 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
   const [mediaType, setMediaType] = useState<'hls' | 'webm' | 'mp4' | null>(null);
   const [isLoadingMediaInfo, setIsLoadingMediaInfo] = useState(true); // Start loading immediately
   const [mediaInfoError, setMediaInfoError] = useState<string | null>(null);
+  const [retryAttempt, setRetryAttempt] = useState(0); // <-- NEW: State for retry attempts
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
 
-  // Effect to fetch media info when props change
+  // Effect to fetch media info when props or retryAttempt change
   useEffect(() => {
-    // Reset state on prop change
+    console.log("PikoVideoPlayer: Media info useEffect triggered. RetryAttempt:", retryAttempt, "Props:", {connectorId, cameraId, positionMs});
+    
+    // 1. Signal a reset by nullifying streamUrl and mediaType.
+    // This will trigger the cleanup in the HLS setup useEffect.
     setStreamUrl(null);
     setMediaType(null);
+    
+    // 2. Set loading/error states for the new fetch attempt
     setIsLoadingMediaInfo(true);
     setMediaInfoError(null);
 
-    // MODIFIED: Validate only required props. Live stream omits positionMs.
+    // 3. Validate props
     if (!connectorId || !cameraId) {
-      console.error("PikoVideoPlayer: Missing required props (connectorId, cameraId).");
+      console.error("PikoVideoPlayer: Missing required props (connectorId, cameraId). Halting fetch.");
       setMediaInfoError("Required information missing to load video.");
       setIsLoadingMediaInfo(false);
-      return;
+      return; 
     }
 
-    // Construct URL for the getInfo action
+    // 4. Define and call fetchMediaInfo
+    let isFetchCancelled = false; // Renamed from isCancelled to avoid confusion with a potential outer scope
     const infoApiUrl = new URL('/api/piko/media', window.location.origin);
     infoApiUrl.searchParams.append('connectorId', connectorId);
-    // Conditionally add pikoSystemId if present (indicates cloud)
     if (pikoSystemId) {
         infoApiUrl.searchParams.append('pikoSystemId', pikoSystemId);
     }
     infoApiUrl.searchParams.append('cameraId', cameraId);
-    // MODIFIED: Only append positionMs if it's provided (for recorded video)
     if (positionMs !== undefined && positionMs !== null) {
         infoApiUrl.searchParams.append('positionMs', String(positionMs));
-    } // If positionMs is missing, the API route will interpret as live HLS
-
-    console.log("PikoVideoPlayer: Fetching media info from:", infoApiUrl.toString());
-
-    let isCancelled = false;
+    }
 
     const fetchMediaInfo = async () => {
+      console.log("PikoVideoPlayer: Fetching media info from:", infoApiUrl.toString());
       try {
         const response = await fetch(infoApiUrl.toString());
+        if (isFetchCancelled) return;
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}` }));
           throw new Error(errorData.details || errorData.error || `Failed to fetch media info (${response.status})`);
         }
         const data: MediaInfoResponse = await response.json();
+        if (isFetchCancelled) return;
 
-        if (!isCancelled) {
-           if (data.mediaType && data.streamUrl) {
-               console.log(`PikoVideoPlayer: Media info received: Type=${data.mediaType}, URL=${data.streamUrl}`);
-               setMediaType(data.mediaType);
-               // The streamUrl from getInfo already contains action=getStream and all necessary params
-               setStreamUrl(data.streamUrl);
-               setMediaInfoError(null);
-           } else {
-               throw new Error("Invalid media info received from API.");
-           }
+        if (data.mediaType && data.streamUrl) {
+            console.log(`PikoVideoPlayer: Media info received: Type=${data.mediaType}, URL=${data.streamUrl}`);
+            setMediaType(data.mediaType);
+            setStreamUrl(data.streamUrl);
+        } else {
+            throw new Error("Invalid media info received from API.");
         }
       } catch (error) {
-          if (!isCancelled) {
-              console.error("PikoVideoPlayer: Failed to fetch media info:", error);
-              const errorMsg = error instanceof Error ? error.message : "Unknown error fetching media info";
-              setMediaInfoError(errorMsg);
-              toast.error(`Error loading video: ${errorMsg}`);
-              setStreamUrl(null);
-              setMediaType(null);
-          }
+          if (isFetchCancelled) return;
+          console.error("PikoVideoPlayer: Failed to fetch media info:", error);
+          const errorMsg = error instanceof Error ? error.message : "Unknown error fetching media info";
+          setMediaInfoError(errorMsg);
+          toast.error(`Error loading video: ${errorMsg}`);
+          // Ensure streamUrl/mediaType remain null if fetch fails
+          setStreamUrl(null); 
+          setMediaType(null);
       } finally {
-          if (!isCancelled) {
-              setIsLoadingMediaInfo(false);
-          }
+          if (isFetchCancelled) return;
+          setIsLoadingMediaInfo(false);
       }
     };
 
     fetchMediaInfo();
 
-    // Cleanup function
     return () => {
-        isCancelled = true;
-        console.log("PikoVideoPlayer: Cancelling media info fetch.");
-         // Ensure HLS instance is destroyed on unmount or prop change cancel
-         if (hlsRef.current) {
-            hlsRef.current.destroy();
-            hlsRef.current = null;
-        }
+        isFetchCancelled = true;
+        console.log("PikoVideoPlayer: [MediaInfoEffect] fetchMediaInfo cancelled / effect cleanup.");
     };
-    // Re-run effect if any critical prop changes
-  }, [connectorId, pikoSystemId, cameraId, positionMs]); // Keep positionMs in dependency array
-
+  }, [connectorId, pikoSystemId, cameraId, positionMs, retryAttempt]);
 
   // Effect to setup hls.js or native player based on fetched info
   useEffect(() => {
     const videoElement = videoRef.current;
-    let objectUrl: string | null = null; // Keep track of Object URL for cleanup
+    let objectUrl: string | null = null; 
 
     const cleanup = () => {
+      console.log("PikoVideoPlayer: [HLSEffect] Cleanup running.");
       if (hlsRef.current) {
-        console.log("PikoVideoPlayer: Destroying HLS instance.");
+        console.log("PikoVideoPlayer: [HLSEffect] Destroying HLS instance.");
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
       if (objectUrl) {
-        console.log("PikoVideoPlayer: Revoking Object URL.");
+        console.log("PikoVideoPlayer: [HLSEffect] Revoking Object URL.");
         URL.revokeObjectURL(objectUrl);
         objectUrl = null;
       }
       if (videoElement) {
+        console.log("PikoVideoPlayer: [HLSEffect] Resetting video element src.");
         videoElement.removeAttribute('src');
-        videoElement.load(); // Reset video element state
+        videoElement.load(); 
       }
     };
 
+    // Only proceed if we have a valid streamUrl and mediaType
     if (videoElement && streamUrl && mediaType) {
-      cleanup(); // Clean previous instance/source before setting up new one
-
-      console.log(`PikoVideoPlayer: Setting up player: Type=${mediaType}, URL=${streamUrl}`);
+      console.log(`PikoVideoPlayer: [HLSEffect] Setting up player: Type=${mediaType}, URL=${streamUrl}`);
+      
+      // No need to call cleanup() here explicitly at the start of the effect body,
+      // because this effect re-runs when streamUrl/mediaType change. 
+      // Its previous run's cleanup function would have already executed.
 
       if (mediaType === 'hls' && Hls.isSupported()) {
           // --- HLS Setup ---
           setIsLoadingMediaInfo(false); // HLS setup is synchronous for the element
           const hls = new Hls({
-              fragLoadingMaxRetry: 2,       // Lower max retries on fragment load error
-              fragLoadingTimeOut: 10000,   // Timeout for fragment loading (ms) - adjust as needed
-              // Consider fragLoadingMaxRetryTimeout as well if needed
+              debug: true,
+              // OLD, DEPRECATED CONFIG:
+              // fragLoadingMaxRetry: 2, 
+              // fragLoadingTimeOut: 35000, 
+              // NEW fragLoadPolicy based on HLS.js v1.6.2+ recommendations
+              fragLoadPolicy: {
+                default: {
+                  maxTimeToFirstByteMs: 35000, // Wait up to 35s for the first byte
+                  maxLoadTimeMs: 60000,      // Allow up to 60s for the whole fragment to load
+                  timeoutRetry: {
+                    maxNumRetry: 2,        // Retry 2 times on timeout
+                    retryDelayMs: 1000,    // Wait 1s before first retry
+                    maxRetryDelayMs: 5000  // Max delay for subsequent retries (if HLS.js uses backoff)
+                  },
+                  errorRetry: {
+                    maxNumRetry: 2,        // Retry 2 times on other network/parsing errors
+                    retryDelayMs: 1000,
+                    maxRetryDelayMs: 5000
+                  }
+                }
+              }
           });
           hls.loadSource(streamUrl); // streamUrl should be the direct M3U8 path or proxy
           hls.attachMedia(videoElement);
           hls.on(Hls.Events.ERROR, async (event, data) => {
               console.error('PikoVideoPlayer: HLS.js Error:', data);
               let detailedErrorMessage = `HLS Error: ${data.type} - ${data.details}`;
+              let userFriendlyMessage = "A video playback error occurred.";
+
               if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                  userFriendlyMessage = "Network connection issue while streaming.";
+                  if (data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT) {
+                      userFriendlyMessage = "Video stream timed out. Check connection or try again.";
+                  }
                   if (data.networkDetails?.status && data.networkDetails.status >= 400) {
                      // Try to get more specific error from response if possible
                      // (Note: Accessing responseText might depend on CORS and error type)
@@ -174,10 +195,23 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
                          detailedErrorMessage = `${detailedErrorMessage} (Status: ${data.networkDetails.status})`;
                      }
                   }
+              } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                  userFriendlyMessage = "Error with video stream data.";
+                  if (data.details === Hls.ErrorDetails.FRAG_PARSING_ERROR) {
+                      userFriendlyMessage = "Problem decoding video data. The stream might be corrupted.";
+                  }
               }
-              toast.error(`Video Error: ${detailedErrorMessage}`);
-              setMediaInfoError(`Playback error: ${detailedErrorMessage}`); // Show error in UI
-              setStreamUrl(null); // Clear stream URL
+              
+              toast.error(userFriendlyMessage);
+              setMediaInfoError(userFriendlyMessage + (data.details ? ` (Details: ${data.details})` : ''));
+              
+              // Explicitly destroy HLS instance here before nulling out URL/type
+              if (hlsRef.current) {
+                console.log("PikoVideoPlayer: [HLS Error Handler] Explicitly destroying HLS instance.");
+                hlsRef.current.destroy();
+                hlsRef.current = null;
+              }
+              setStreamUrl(null); 
               setMediaType(null);
           });
           hlsRef.current = hls;
@@ -196,13 +230,16 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
                 if (!response.ok) {
                     let errorData: { error?: string; details?: string } = {};
                     try {
-                        errorData = await response.json();
+                        // Attempt to parse JSON first, as our API route should return structured errors
+                        errorData = await response.json(); 
                     } catch (parseError) {
-                        console.warn('PikoVideoPlayer: Could not parse error response JSON.');
+                        // If JSON parsing fails, try to get text, then fall back to statusText
+                        console.warn('PikoVideoPlayer: Could not parse error response as JSON for non-OK fetch.');
+                        const rText = await response.text().catch(() => response.statusText);
+                        errorData = { details: rText.substring(0, 200) }; // Use details for generic text
                     }
-                    console.error(`PikoVideoPlayer: API returned error fetching ${mediaType} stream:`, errorData);
-                    // Use details, then error, then status text as fallback
-                    const message = errorData.details || errorData.error || response.statusText || `API error ${response.status}`;
+                    console.error(`PikoVideoPlayer: API returned error fetching ${mediaType} stream: Status ${response.status}`, errorData);
+                    const message = errorData.details || errorData.error || `API error ${response.status}`;
                     throw new Error(message); 
                 }
                 // Check content type
@@ -268,6 +305,20 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
           <div className="absolute inset-0 flex flex-col items-center justify-center text-destructive text-center p-4 z-10 bg-muted">
             <AlertCircle className="h-8 w-8 mb-2" />
             <span className="text-sm mt-1 font-medium">{mediaInfoError}</span>
+            <Button 
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={() => {
+                console.log("PikoVideoPlayer: Retry button clicked.");
+                setRetryAttempt(prev => prev + 1);
+                // Reset error and loading here to show loading spinner immediately on retry
+                setMediaInfoError(null);
+                setIsLoadingMediaInfo(true);
+              }}
+            >
+              Retry Playback
+            </Button>
           </div>
         )}
         {/* Video Element (render if info loaded successfully, source set by useEffect) */}

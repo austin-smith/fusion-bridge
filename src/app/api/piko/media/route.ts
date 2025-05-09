@@ -42,55 +42,74 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: `Camera device not found: ${cameraId}` }, { status: 404 });
     }
 
-    // --- Determine Transport Type ---
-    let determinedMediaType: 'hls' | 'webm' | 'mp4';
+    // --- Determine Transport Type --- (and check for unsupported local live)
+    let determinedMediaType: 'hls' | 'webm' | 'mp4' | 'unsupported' = 'webm'; // Default for safety
+
     if (config.type === 'local') {
-        // Local Connector
-        // No live format needed here now as play button is disabled
-        // Defaulting recorded local to WebM
-        determinedMediaType = 'webm'; 
         if (positionMs === null) {
-            console.log(`[API Media] Connector type is local, positionMs is null. (Live view disabled in UI, defaulting type to WebM for consistency)`);
+            // Local live is not supported with current WebM fetching logic
+            determinedMediaType = 'unsupported'; 
+            console.log(`[API Media] Connector type is local, positionMs is null. This is unsupported for WebM live streaming via current driver.`);
         } else {
-             console.log(`[API Media] Connector type is local, positionMs is ${positionMs}. Forcing media type to WebM.`);
+            determinedMediaType = 'webm'; // Local recorded is WebM
+            console.log(`[API Media] Connector type is local, positionMs is ${positionMs}. Forcing media type to WebM.`);
         }
-    } else {
-        // Cloud Connector (HLS for live, HLS/WebM for recorded)
+    } else { // Cloud Connector
         if (positionMs === null) {
             determinedMediaType = 'hls';
             console.log(`[API Media] Cloud connector, positionMs is null. Forcing media type to HLS.`);
         } else {
-             // Cloud Recorded -> Check capabilities
+            // Cloud Recorded -> Check capabilities for HLS, fallback to WebM
             let useHls = false;
             if (deviceDetails.mediaStreams && Array.isArray(deviceDetails.mediaStreams)) {
                 const streamConfig = deviceDetails.mediaStreams[0];
                 if (streamConfig) {
                     useHls = streamConfig.transports?.includes('hls') ?? false;
                 }
-                console.log(`[API Media] Cloud connector with positionMs=${positionMs}. HLS available: ${useHls}`);
-            } else {
-                console.warn(`[API Media] Cloud connector with positionMs=${positionMs} - mediaStreams data missing. Defaulting to WebM.`);
             }
             determinedMediaType = useHls ? 'hls' : 'webm';
+            console.log(`[API Media] Cloud connector with positionMs=${positionMs}. Determined type: ${determinedMediaType}`);
         }
     }
 
     // --- Execute Action --- 
     if (action === 'getInfo') {
-        // --- Action: getInfo ---
-        console.log(`[API Media/getInfo] Determined type: ${determinedMediaType}`);
+        console.log(`[API Media/getInfo] Final determined type: ${determinedMediaType}`);
         
-        // Construct the URL for the getStream action
+        if (determinedMediaType === 'unsupported') {
+            return NextResponse.json(
+                { 
+                    error: "Unsupported Media Request", 
+                    details: "Live video streaming for local Piko connectors is not currently supported."
+                }, 
+                { status: 400 }
+            );
+        }
+        
         const streamUrl = new URL(request.url);
         streamUrl.searchParams.set('action', 'getStream'); 
         
         return NextResponse.json({ 
-            mediaType: determinedMediaType, 
-            streamUrl: streamUrl.pathname + streamUrl.search, // Return relative path + params
+            mediaType: determinedMediaType as 'hls' | 'webm' | 'mp4', // Cast because 'unsupported' is handled
+            streamUrl: streamUrl.pathname + streamUrl.search,
         });
 
     } else if (action === 'getStream') {
         // --- Action: getStream ---
+        // The specific check for (config.type === 'local' && positionMs === null && determinedMediaType === 'webm')
+        // can be removed or simplified now, as getInfo should prevent this call for 'unsupported' types.
+        // However, keeping a safeguard is fine.
+        if (determinedMediaType === 'unsupported' || (config.type === 'local' && positionMs === null && determinedMediaType === 'webm')) {
+            console.error("[API Media/getStream] Attempting to stream an unsupported media type or configuration.");
+            return NextResponse.json(
+                { 
+                    error: "Unsupported Stream Request", 
+                    details: "This media stream configuration is not supported (e.g., live local WebM)."
+                }, 
+                { status: 400 }
+            );
+        }
+
         console.log(`[API Media/getStream] Proceeding with type: ${determinedMediaType}`);
         
         let pikoResponse: Response;
@@ -102,10 +121,11 @@ export async function GET(request: NextRequest) {
             pikoResponse = await pikoDriver.getPikoHlsStream(config, accessToken, cameraId);
             finalContentType = pikoResponse.headers.get('Content-Type') || 'application/vnd.apple.mpegurl';
         } else {
+            // If not the above specific unsupported case, then positionMs is required for WebM/MP4
             if (positionMs === null) {
-                // Safeguard: Should not happen for WebM based on logic above
-                console.error("[API Media/WebM] Inconsistency: Reached WebM case with null positionMs.");
-                throw { status: 500, message: "Internal logic error determining media type for WebM." };
+                // This safeguard should now ideally only be hit if cloud logic incorrectly determined WebM/MP4 for live
+                console.error("[API Media/Stream] Inconsistency: Reached WebM/MP4 case with null positionMs for a non-local or misconfigured setup.");
+                throw { status: 500, message: "Internal Server Error: Media type and position mismatch for streaming.", details: "positionMs is required for recorded WebM/MP4 streams." };
             }
             console.log(`[API Media/getStream/WebM] Preparing WebM stream request (Recorded).`);
             const serverId = deviceDetails.serverId;

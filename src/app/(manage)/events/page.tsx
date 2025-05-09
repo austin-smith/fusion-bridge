@@ -864,7 +864,6 @@ export default function EventsPage() {
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>{isCardViewFullScreen ? 'Exit Full Screen' : 'Enter Full Screen'}</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
