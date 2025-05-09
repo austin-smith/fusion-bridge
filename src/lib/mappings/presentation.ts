@@ -150,6 +150,7 @@ const eventCategoryIcons: Record<EventCategory, LucideIcon> = {
     [EventCategory.DEVICE_STATE]: Activity,
     [EventCategory.ACCESS_CONTROL]: KeyRound,
     [EventCategory.ANALYTICS]: PersonStanding,
+    [EventCategory.DIAGNOSTICS]: LucideIcons.Server,
     [EventCategory.UNKNOWN]: HelpCircle,
 };
 

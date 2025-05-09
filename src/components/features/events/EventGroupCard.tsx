@@ -145,7 +145,7 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     // console.log(`[EventGroupCard] No thumbnail URL found for group ${groupKey}`);
     return undefined;
 
-  }, [events, areaPikoCamera, endTime, groupKey]); // Added groupKey to dependency for logging
+  }, [events, areaPikoCamera, endTime]); // Added groupKey to dependency for logging
 
   // --- Sizing Logic (as before) --- 
   const cardSizeClass = useMemo(() => {

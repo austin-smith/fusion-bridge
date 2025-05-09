@@ -40,6 +40,12 @@ const AreaCameraGrid: React.FC<AreaCameraGridProps> = ({ cameraDevices }) => {
   const [layouts, setLayouts] = useState<Layouts>({});
   const [isInitialLayoutGenerated, setIsInitialLayoutGenerated] = useState(false);
 
+  // --- Grid Properties ---
+  const breakpoints = useMemo(() => ({ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }), []);
+  const cols = useMemo(() => ({ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }), []);
+  const rowHeight = 100; // Adjust this for desired aspect ratio based on width
+  const margin: [number, number] = useMemo(() => [10, 10], []);
+
   // --- Generate Initial Layout ---
   useEffect(() => {
     if (validPikoCameras.length > 0 && !isInitialLayoutGenerated) {
@@ -79,7 +85,7 @@ const AreaCameraGrid: React.FC<AreaCameraGridProps> = ({ cameraDevices }) => {
         setIsInitialLayoutGenerated(false);
         setLayouts({});
     }
-  }, [validPikoCameras, isInitialLayoutGenerated]); // Rerun when cameras change or flag changes
+  }, [validPikoCameras, isInitialLayoutGenerated, cols]); // Rerun when cameras change or flag changes
 
   // --- Layout Change Handler ---
   const onLayoutChange = (currentLayout: Layout[], allLayouts: Layouts) => {
@@ -90,12 +96,6 @@ const AreaCameraGrid: React.FC<AreaCameraGridProps> = ({ cameraDevices }) => {
         setLayouts(allLayouts);
     }
   };
-
-  // --- Grid Properties ---
-  const breakpoints = { lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 };
-  const cols = { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 };
-  const rowHeight = 100; // Adjust this for desired aspect ratio based on width
-  const margin: [number, number] = [10, 10];
 
   if (validPikoCameras.length === 0) {
     return (

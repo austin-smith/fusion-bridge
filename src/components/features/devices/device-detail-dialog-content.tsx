@@ -428,34 +428,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   }, [preloaderImgRef, handlePreloadComplete, handlePreloadError]); // Include handler functions
 
   // Fetch Thumbnail, manage preloading and refresh interval
-  useEffect(() => {
-    if (device.connectorCategory !== 'piko' || device.deviceTypeInfo?.type !== 'Camera') {
-      // Not a Piko camera, clear any existing state if necessary
-      return;
-    }
-    
-    // Skip thumbnail fetching when live video is being shown
-    if (showLiveVideo) {
-      console.log('Thumbnail refreshing paused while live video is playing');
-      return;
-    }
-    
-    // Initial fetch
-    fetchThumbnail();
-    
-    // Set up auto-refresh interval
-    const intervalId = setInterval(fetchThumbnail, 10000);
-    return () => {
-      clearInterval(intervalId);
-      // Clean up any object URLs still in memory
-      if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
-      if (preloadingUrlRef.current) URL.revokeObjectURL(preloadingUrlRef.current);
-      if (urlToRevokeRef.current) URL.revokeObjectURL(urlToRevokeRef.current);
-    };
-  }, [device.connectorId, device.deviceId, device.connectorCategory, device.deviceTypeInfo?.type, showLiveVideo]); // Added showLiveVideo to dependencies
-
-  // Clean up the fetchThumbnail function to avoid duplicated checks
-  async function fetchThumbnail() {
+  const fetchThumbnail = useCallback(async () => {
     if (device.connectorCategory !== 'piko' || device.deviceTypeInfo?.type !== 'Camera') {
        // Not a Piko camera, clear any existing timer/state if necessary
        setThumbnailUrl(null);
@@ -506,7 +479,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         // Fallback: Directly set the image, potentially causing flicker
         URL.revokeObjectURL(newObjectUrl);
         preloadingUrlRef.current = null;
-        urlToRevokeRef.current = null; 
+        urlToRevokeRef.current = null;
         setIsThumbnailLoading(false);
         setThumbnailError("Internal error: Preloader not ready.");
         // Or maybe try setting it directly?
@@ -518,7 +491,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
       setLastThumbnailRefreshTime(new Date());
       // Only switch to thumbnail view if not already showing video
       // This prevents interrupting video playback
-      
+
     } catch (err: unknown) {
       console.error("Error fetching device thumbnail:", err);
       const message = err instanceof Error ? err.message : 'Failed to load thumbnail';
@@ -531,7 +504,33 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
       urlToRevokeRef.current = null;
     }
     // No finally block for setIsThumbnailLoading(false) - handled by preload events
-  }
+  }, [device.connectorCategory, device.deviceTypeInfo, device.connectorId, device.deviceId, showLiveVideo, thumbnailUrl, preloaderImgRef, setThumbnailUrl, setLastThumbnailRefreshTime, preloadingUrlRef, urlToRevokeRef, setIsThumbnailLoading, setThumbnailError]);
+
+  useEffect(() => {
+    if (device.connectorCategory !== 'piko' || device.deviceTypeInfo?.type !== 'Camera') {
+      // Not a Piko camera, clear any existing state if necessary
+      return;
+    }
+
+    // Skip thumbnail fetching when live video is being shown
+    if (showLiveVideo) {
+      console.log('Thumbnail refreshing paused while live video is playing');
+      return;
+    }
+
+    // Initial fetch
+    fetchThumbnail();
+
+    // Set up auto-refresh interval
+    const intervalId = setInterval(fetchThumbnail, 10000);
+    return () => {
+      clearInterval(intervalId);
+      // Clean up any object URLs still in memory
+      if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
+      if (preloadingUrlRef.current) URL.revokeObjectURL(preloadingUrlRef.current);
+      if (urlToRevokeRef.current) URL.revokeObjectURL(urlToRevokeRef.current);
+    };
+  }, [device.connectorCategory, device.deviceTypeInfo?.type, showLiveVideo, fetchThumbnail, thumbnailUrl, device.connectorId, device.deviceId]);
 
   // --- Handle Saving Associations ---
   const handleSaveAssociations = async () => {
@@ -813,6 +812,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   return (
     <>
       {/* Add hidden image for preloading */} 
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img ref={preloaderImgRef} alt="" style={{ display: 'none' }} /> 
 
       <DialogHeader className="pb-4 border-b">
