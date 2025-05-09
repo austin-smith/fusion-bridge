@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Play, Loader2, ListTree } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Play, Loader2, ListTree, Maximize, Minimize } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -184,6 +184,9 @@ export default function EventsPage() {
     }
     return 'table'; // Default to table view
   });
+
+  const [isCardViewFullScreen, setIsCardViewFullScreen] = useState(false);
+  const cardViewContainerRef = useRef<HTMLDivElement>(null);
 
   const connectors = useFusionStore(state => state.connectors);
   const setConnectors = useFusionStore(state => state.setConnectors);
@@ -397,6 +400,41 @@ export default function EventsPage() {
       localStorage.setItem('eventsViewModePreference', viewMode);
     }
   }, [viewMode]);
+
+  const toggleCardViewFullScreen = () => { // Simpler toggle, actual API calls in useEffect
+    if (!document.fullscreenElement) {
+      // Intention is to enter fullscreen: set state, useEffect will handle API call
+      setIsCardViewFullScreen(true); 
+    } else {
+      // Intention is to exit fullscreen: call API, event listener will update state
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(err => console.error("Error exiting fullscreen:", err));
+      }
+    }
+  };
+
+  // Effect to handle entering fullscreen AFTER the container is rendered
+  useEffect(() => {
+    if (isCardViewFullScreen && cardViewContainerRef.current && !document.fullscreenElement) {
+      cardViewContainerRef.current.requestFullscreen()
+        .catch(err => {
+          console.error("Error attempting to enable full-screen mode:", err);
+          toast.error("Could not enter full-screen mode. Browser might have denied the request.");
+          setIsCardViewFullScreen(false); // Revert state if request failed
+        });
+    }
+  }, [isCardViewFullScreen]); // Run when isCardViewFullScreen changes
+
+  // Effect to listen for browser fullscreen changes (e.g., Esc key)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsCardViewFullScreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
 
   // Define columns for TanStack Table
   const columns = useMemo<ColumnDef<EnrichedEvent>[]>(() => [
@@ -815,6 +853,22 @@ export default function EventsPage() {
   const pageActions = (
     <>
       <EventViewToggle viewMode={viewMode} onViewModeChange={setViewMode} />
+      {/* Conditional Full-Screen Button - only shows in card view */}
+      {viewMode === 'card' && (
+        <TooltipProvider delayDuration={100}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="icon" className="h-8 w-8 flex-shrink-0" onClick={toggleCardViewFullScreen}>
+                {isCardViewFullScreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+                <span className="sr-only">{isCardViewFullScreen ? 'Exit Full Screen' : 'Full Screen'}</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{isCardViewFullScreen ? 'Exit Full Screen' : 'Enter Full Screen'}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
       <Select
         value={connectorCategoryFilter}
         onValueChange={(value) => setConnectorCategoryFilter(value)}
@@ -903,14 +957,44 @@ export default function EventsPage() {
     </>
   );
 
+  // RETURN STATEMENT MODIFICATION
+  if (isCardViewFullScreen && viewMode === 'card') {
+    return (
+      <div ref={cardViewContainerRef} className="fixed inset-0 bg-background z-50 h-screen w-screen overflow-hidden">
+        {/* Minimal header for full screen with exit button */}
+        <div className="absolute top-0 left-0 right-0 p-2 flex justify-end bg-background/80 backdrop-blur-sm z-10">
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                 {/* This button will now primarily rely on the Escape key or browser UI to exit, 
+                     but can still call toggleCardViewFullScreen to programmatically exit */}
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleCardViewFullScreen}>
+                  <Minimize className="h-5 w-5" />
+                  <span className="sr-only">Exit Full Screen</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Exit Full Screen (or press Esc)</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+        <div className="pt-12 h-full">
+            <EventCardView events={displayedEvents} areas={areas} allDevices={allDevices} />
+        </div>
+      </div>
+    );
+  }
+
+  // Default page rendering (when not in full-screen card view)
   return (
     <div className="flex flex-col h-full p-4 md:p-6">
-      <TooltipProvider>
+      <TooltipProvider> {/* TooltipProvider for the main page content */}
         <PageHeader 
           title="Events"
           description="View incoming events from connected devices."
           icon={<Activity className="h-6 w-6" />}
-          actions={pageActions}
+          actions={pageActions} // pageActions now includes the full-screen toggle
         />
 
         {/* Device Detail Dialog */}
@@ -946,17 +1030,16 @@ export default function EventsPage() {
           ) : null}
         </div>
 
-        {/* Conditional Rendering for View Mode */}
+        {/* Conditional Rendering for View Mode (remains largely unchanged, but now within default view) */}
         {!loading && displayedEvents.length > 0 && areas.length > 0 && allDevices.length > 0 ? (
           <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
             {viewMode === 'table' ? (
               <EventsTableView table={table} columns={columns} />
-            ) : viewMode === 'card' ? (
+            ) : viewMode === 'card' ? ( // This path is taken when NOT full screen
               <EventCardView events={displayedEvents} areas={areas} allDevices={allDevices} /> 
-            ) : null /* Should not happen with current toggle logic */}
+            ) : null}
           </div>
         ) : !loading && displayedEvents.length > 0 ? (
-          // Show a loading state if events are loaded but areas/devices aren't yet
           <div className="flex items-center justify-center flex-grow">
               <Loader2 className="mr-2 h-6 w-6 animate-spin" /> Loading supporting data...
           </div>
