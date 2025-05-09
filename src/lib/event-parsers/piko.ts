@@ -91,6 +91,15 @@ export function parsePikoEvent(
     const inputPortId = rawEventParams.inputPortId?.toLowerCase(); // Normalize for reliable checking
     const pikoEventType = rawEventParams.eventType;
 
+    // Define allowed Piko event types
+    const allowedPikoEventTypes = ['analyticsSdkObjectDetected', 'analyticsSdkEvent'];
+
+    // Filter out events not matching the allowed Piko event types
+    if (!pikoEventType || !allowedPikoEventTypes.includes(pikoEventType)) {
+        console.warn(`[Piko Parser][${connectorId}] Received Piko event with eventType '${pikoEventType || 'undefined'}'. This type is not one of the allowed types (${allowedPikoEventTypes.join(', ')}), so the event will be discarded.`);
+        return [];
+    }
+
     // 1. Handle specific inputPortId mappings first
     if (inputPortId === 'cvedia.rt.loitering') {
         specificEventType = EventType.LOITERING;

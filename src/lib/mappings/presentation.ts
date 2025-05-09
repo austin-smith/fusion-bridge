@@ -24,6 +24,9 @@ import {
     LucideProps, // Needed if we want to strongly type the map value?
 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react'; // Import the namespace
+import { SeverityLevel } from './severity'; // <-- Import SeverityLevel
+import type { VariantProps } from "class-variance-authority";
+import { badgeVariants } from "@/components/ui/badge";
 
 
 // --- Device Type Icon Mapping ---
@@ -227,4 +230,50 @@ export function intermediateStateToDisplayString(
     // No mapping found
     console.warn(`[intermediateStateToDisplayString] No display mapping found for state '${state}' with device info:`, deviceInfo);
     return undefined;
-} 
+}
+
+// --- NEW: Severity Level to Badge Variant/Style Mapping ---
+
+// Defines return type to allow specific variants or Tailwind classes
+type SeverityStyle = VariantProps<typeof badgeVariants>["variant"] | string;
+
+export const getSeverityBadgeStyle = (level: SeverityLevel): SeverityStyle => {
+    switch (level) {
+        case SeverityLevel.CRITICAL:
+            return 'destructive'; 
+        case SeverityLevel.WARNING:
+            return 'border-transparent bg-amber-500 text-amber-foreground hover:bg-amber-500/80 dark:bg-amber-600 dark:text-amber-50 dark:hover:bg-amber-600/80';
+        case SeverityLevel.DEFAULT:
+        default:
+            return 'secondary'; 
+    }
+};
+
+// Helper function to get the display name for a severity level
+export const getSeverityDisplayName = (level: SeverityLevel): string => {
+    switch (level) {
+        case SeverityLevel.CRITICAL: return 'Critical';
+        case SeverityLevel.WARNING: return 'Warning';
+        case SeverityLevel.DEFAULT: return 'Default';
+        default: return 'Unknown';
+    }
+};
+
+// --- NEW: Severity Level to Card Style Mapping ---
+interface SeverityCardStyle {
+    borderClass: string;
+    // Add bgClass later if needed
+}
+
+export const getSeverityCardStyles = (level: SeverityLevel): SeverityCardStyle => {
+    switch (level) {
+        case SeverityLevel.CRITICAL:
+            return { borderClass: 'border-destructive' }; 
+        case SeverityLevel.WARNING:
+            return { borderClass: 'border-amber-500 dark:border-amber-600' }; 
+        case SeverityLevel.DEFAULT:
+        default:
+            return { borderClass: 'border-transparent' }; 
+    }
+};
+// --- END NEW --- 

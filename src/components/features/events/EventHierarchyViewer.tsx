@@ -10,7 +10,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { getEventCategoryIcon } from '@/lib/mappings/presentation';
+import { getEventCategoryIcon, getSeverityBadgeStyle, getSeverityDisplayName } from '@/lib/mappings/presentation';
 import { 
     Collapsible, 
     CollapsibleContent, 
@@ -18,6 +18,16 @@ import {
 } from '@/components/ui/collapsible';
 import { ChevronRight, PlusSquare, MinusSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SeverityLevel, getEventSeverity } from '@/lib/mappings/severity';
+import { cn } from '@/lib/utils';
+import type { VariantProps } from 'class-variance-authority';
+import { badgeVariants } from '@/components/ui/badge';
+
+// Define the type for standard badge variants used
+type StandardBadgeVariant = VariantProps<typeof badgeVariants>["variant"];
+
+// List of known standard badge variants used for severity
+const standardSeverityVariants: StandardBadgeVariant[] = ['destructive', 'secondary', 'default', 'outline'];
 
 // Manually define the hierarchy based on the comments/grouping in definitions.ts
 // This avoids complex type manipulation and keeps the display logic clear.
@@ -167,30 +177,49 @@ export const EventHierarchyViewer: React.FC = () => {
                                         />
                                         {IconComponent && <IconComponent className="h-5 w-5 text-muted-foreground" />} 
                                         <span className="text-md font-semibold">{categoryData.displayName}</span>
-                                        <Badge variant="secondary" className="ml-1 font-mono text-xs">{categoryKey}</Badge>
+                                        <Badge variant="secondary" className="ml-auto font-mono text-xs">{categoryKey}</Badge>
                                     </CollapsibleTrigger>
                                     <CollapsibleContent className="pl-8 pr-2 pb-2">
                                         <div className="space-y-4 pl-4 border-l-2 border-muted/80">
-                                            {Object.entries(categoryData.types).map(([typeKey, typeData]) => (
-                                                <div key={typeKey} className="relative pt-2">
-                                                    <div className="absolute -left-[9px] top-[18px] h-px w-2 bg-muted/80"></div>
-                                                    <h4 className="text-sm font-medium mb-1">
-                                                        {typeData.displayName} <Badge variant="outline" className="ml-1.5 font-mono text-xs">{typeKey}</Badge>
-                                                    </h4>
-                                                    {typeData.subtypes.length > 0 ? (
-                                                        <ul className="list-disc list-inside space-y-1 pl-4 text-xs text-muted-foreground">
-                                                            {typeData.subtypes.map((subtypeKey: EventSubtype) => (
-                                                                <li key={subtypeKey}>
-                                                                    {EVENT_SUBTYPE_DISPLAY_MAP[subtypeKey] || subtypeKey}
-                                                                    <Badge variant="outline" className="ml-1 font-mono text-xs">{subtypeKey}</Badge>
-                                                                </li>
-                                                            ))}
-                                                        </ul>
-                                                    ) : (
-                                                        <p className="text-xs text-muted-foreground pl-4 italic">No defined subtypes</p>
-                                                    )}
-                                                </div>
-                                            ))}
+                                            {Object.entries(categoryData.types).map(([typeKey, typeData]) => {
+                                                // --- Calculate Severity --- 
+                                                const severity = getEventSeverity({ eventType: typeKey } as any); 
+                                                const severityStyle = getSeverityBadgeStyle(severity);
+                                                const severityName = getSeverityDisplayName(severity);
+                                                // --- Determine if it's a standard variant --- 
+                                                const isStandardVariant = typeof severityStyle === 'string' && standardSeverityVariants.includes(severityStyle as StandardBadgeVariant);
+                                                // --- End Calculate Severity --- 
+                                                return (
+                                                    <div key={typeKey} className="relative pt-2">
+                                                        <div className="absolute -left-[9px] top-[18px] h-px w-2 bg-muted/80"></div>
+                                                        <h4 className="text-sm font-medium mb-1 inline-flex items-center gap-1.5 flex-wrap">
+                                                            <span>{typeData.displayName}</span>
+                                                            <Badge variant="outline" className="font-mono text-[10px] px-1 py-0">{typeKey}</Badge>
+                                                            <Badge 
+                                                               className={cn(
+                                                                   "font-mono text-[10px] px-1 py-0 uppercase", 
+                                                                   !isStandardVariant && typeof severityStyle === 'string' ? severityStyle : ''
+                                                               )}
+                                                               variant={isStandardVariant ? (severityStyle as StandardBadgeVariant) : undefined}
+                                                            >
+                                                                {severityName}
+                                                            </Badge>
+                                                        </h4>
+                                                        {typeData.subtypes.length > 0 ? (
+                                                            <ul className="list-disc list-inside space-y-1 pl-4 text-xs text-muted-foreground">
+                                                                {typeData.subtypes.map((subtypeKey: EventSubtype) => (
+                                                                    <li key={subtypeKey}>
+                                                                        {EVENT_SUBTYPE_DISPLAY_MAP[subtypeKey] || subtypeKey}
+                                                                        <Badge variant="outline" className="ml-1 font-mono text-[10px] px-1 py-0">{subtypeKey}</Badge>
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                        ) : (
+                                                            <p className="text-xs text-muted-foreground pl-4 italic">No defined subtypes</p>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </CollapsibleContent>
                                 </Collapsible>

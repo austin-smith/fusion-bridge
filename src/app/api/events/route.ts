@@ -26,6 +26,8 @@ interface RepoEnrichedEvent {
   connectorName: string | null; // Field from JOIN
   connectorCategory: string | null; // Field from JOIN
   connectorConfig: string | null;
+  areaId: string | null; // <-- RE-ADDED: From areaDevices table via eventsRepository
+  areaName: string | null; // <-- RE-ADDED: From areas table via eventsRepository
 }
 
 // Interface for the final enriched event data returned by the API
@@ -37,6 +39,8 @@ interface ApiEnrichedEvent {
   connectorId: string;
   connectorName?: string;
   connectorCategory: string;
+  areaId?: string; // <-- RE-ADDED: Optional Area ID
+  areaName?: string; // <-- RE-ADDED: Optional Area Name
   timestamp: number; // Epoch ms
   eventCategory: string;
   eventType: string;
@@ -155,6 +159,8 @@ export async function GET() {
         rawPayload: rawPayload,
         rawEventType: event.rawEventType ?? undefined,
         bestShotUrlComponents: bestShotUrlComponents,
+        areaId: event.areaId ?? undefined, // <-- RE-ADDED: Map from repo event
+        areaName: event.areaName ?? undefined, // <-- RE-ADDED: Map from repo event
       };
 
       return finalEventObject;

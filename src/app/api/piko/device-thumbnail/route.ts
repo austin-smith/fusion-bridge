@@ -6,52 +6,77 @@ export const dynamic = 'force-dynamic'; // Ensure fresh data
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const connectorId = searchParams.get('connectorId');
-  const deviceId = searchParams.get('deviceId');
-  // Optional params from Piko API, pass them along if present
-  const timestampMs = searchParams.get('timestampMs');
+  const cameraId = searchParams.get('cameraId'); // <-- CORRECTED: Read 'cameraId' param
+  const timestampMsStr = searchParams.get('timestamp'); // Use 'timestamp' as sent by frontend
   const size = searchParams.get('size');
 
-  if (!connectorId || !deviceId) {
-    return NextResponse.json({ success: false, error: 'Missing connectorId or deviceId' }, { status: 400 });
+  // --- DEBUG LOG: Incoming Params ---
+  console.log(`[API Thumb] Req Params - ConnID: ${connectorId}, CameraID: ${cameraId}, Timestamp: ${timestampMsStr}, Size: ${size}`); // <-- Use cameraId in log
+  // --- END DEBUG --- 
+
+  if (!connectorId || !cameraId) { // <-- Check cameraId
+    console.error('[API Thumb] Error: Missing connectorId or cameraId'); // <-- Update error log
+    return NextResponse.json({ success: false, error: 'Missing connectorId or cameraId' }, { status: 400 }); // <-- Update error message
   }
-  
-  console.log(`[API Device Thumbnail] Request for connector: ${connectorId}, device: ${deviceId}, size: ${size}, ts: ${timestampMs}`);
 
   try {
     // --- Use Helper from piko.ts ---
-    const { config, token } = await pikoDriver.getTokenAndConfig(connectorId); // Use the function from the driver
+    const { config, token } = await pikoDriver.getTokenAndConfig(connectorId); 
+    // --- DEBUG LOG: Config & Token ---
+    console.log(`[API Thumb] Fetched Config Type: ${config?.type}, Token Access Token Present: ${!!token?.accessToken}`);
+    // --- END DEBUG --- 
 
     // --- Fetch Thumbnail ---
+    const timestampNum = timestampMsStr ? parseInt(timestampMsStr, 10) : undefined;
+    console.log(`[API Thumb] Calling getPikoDeviceThumbnail with: CameraID=${cameraId}, Timestamp=${timestampNum}, Size=${size}`); // <-- Use cameraId in log
+    
     const thumbnailBlob = await pikoDriver.getPikoDeviceThumbnail(
       config,
       token.accessToken,
-      deviceId,
-      timestampMs ? parseInt(timestampMs, 10) : undefined,
-      size ?? undefined // Pass size if provided
+      cameraId, // <-- Pass cameraId to the driver function
+      timestampNum, 
+      size ?? undefined
     );
+
+    // --- DEBUG LOG: Blob Result ---
+    if (thumbnailBlob instanceof Blob) {
+        console.log(`[API Thumb] Received Blob - Size: ${thumbnailBlob.size}, Type: ${thumbnailBlob.type}`);
+    } else {
+        console.log(`[API Thumb] Received Non-Blob Result:`, thumbnailBlob);
+    }
+    // --- END DEBUG --- 
+
+    // Ensure we actually received a Blob before attempting to return it
+    if (!(thumbnailBlob instanceof Blob)) {
+        console.error(`[API Thumb] Error: getPikoDeviceThumbnail did not return a Blob for CameraID: ${cameraId}.`); // <-- Use cameraId in log
+        throw new Error("Failed to retrieve image data from source.");
+    }
 
     // Return the blob directly with appropriate headers
     return new NextResponse(thumbnailBlob, {
       status: 200,
       headers: {
-        'Content-Type': thumbnailBlob.type || 'image/jpeg', // Default to jpeg if type is missing
-        'Cache-Control': 'no-cache, no-store, must-revalidate', // Prevent caching
+        'Content-Type': thumbnailBlob.type || 'image/jpeg',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
       },
     });
 
   } catch (error: unknown) {
+    // --- Enhanced Error Logging ---
     let errorMessage = 'Failed to fetch device thumbnail';
     let statusCode = 500;
+    console.error(`[API Thumb] Error occurred for ConnID: ${connectorId}, CameraID: ${cameraId}, Timestamp: ${timestampMsStr}`); // <-- Use cameraId in log
     if (error instanceof pikoDriver.PikoApiError) {
         errorMessage = `Piko API Error: ${error.message}`;
         statusCode = error.statusCode || 500;
-        console.error(`[API Device Thumbnail] Piko API Error (${statusCode}) for device ${deviceId}:`, error.errorString, error.rawError);
+        console.error(`[API Thumb] Piko API Error Details (${statusCode}):`, error.errorString, error.rawError);
     } else if (error instanceof Error) {
         errorMessage = error.message;
-         console.error(`[API Device Thumbnail] Error fetching thumbnail for device ${deviceId}:`, error);
+         console.error(`[API Thumb] Generic Error:`, error);
     } else {
-        console.error(`[API Device Thumbnail] Unknown error fetching thumbnail for device ${deviceId}:`, error);
+        console.error(`[API Thumb] Unknown Error Type:`, error);
     }
+    // --- End Enhanced Error Logging ---
     return NextResponse.json({ success: false, error: errorMessage }, { status: statusCode });
   }
 } 

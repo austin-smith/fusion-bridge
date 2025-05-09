@@ -34,3 +34,47 @@ export interface StandardizedEvent {
   payload: Record<string, any>; // Generic payload. Specific data goes here.
   originalEvent: any; // The raw event from the source connector
 }
+
+// Event structure used on the frontend, enriched with details needed for display
+export interface EnrichedEvent {
+  id: number; 
+  eventUuid: string; 
+  timestamp: number; // Epoch ms
+  payload?: Record<string, unknown> | null; 
+  rawPayload?: Record<string, any> | null; 
+  deviceId: string;
+  deviceName?: string;
+  connectorName?: string;
+  deviceTypeInfo: TypedDeviceInfo;
+  connectorCategory: string;
+  connectorId: string; 
+  eventCategory: string; 
+  eventType: string; 
+  eventSubtype?: EventSubtype; 
+  rawEventType?: string; 
+  displayState?: DisplayState | undefined;
+  areaId?: string;
+  areaName?: string;
+  thumbnailUrl?: string; // Keep for placeholder use
+  videoUrl?: string; // Keep for placeholder use
+  // Uncommenting bestShotUrlComponents as it's used in page.tsx
+  bestShotUrlComponents?: {
+    type: 'cloud' | 'local'; // Need type for API call logic
+    pikoSystemId?: string; 
+    connectorId: string;
+    objectTrackId: string;
+    cameraId: string;
+  };
+}
+
+// --- ADD EventGroup Interface --- 
+// Structure for a group of events used in the Card View
+export interface EventGroup {
+  groupKey: string;
+  areaId?: string;
+  areaName?: string;
+  startTime: Date; // Earliest event time in the group
+  endTime: Date; // Latest event time in the group
+  events: EnrichedEvent[];
+}
+// --- END EventGroup --- 

@@ -1,5 +1,5 @@
 import { db } from '@/data/db';
-import { events, devices, connectors } from '@/data/db/schema';
+import { events, devices, connectors, areaDevices, areas } from '@/data/db/schema';
 import { desc, asc, count, eq, sql, and, gte, lte, or, inArray, type SQL, isNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
 import { EventCategory, EventType, EventSubtype, DeviceType, DeviceSubtype } from '@/lib/mappings/definitions';
@@ -218,20 +218,16 @@ export async function storeStandardizedEvent(stdEvent: StandardizedEvent) {
 }
 
 /**
- * Gets recent events from the database, enriched with device and connector info.
+ * Gets recent events from the database, enriched with device, connector, and area info.
  */
 export async function getRecentEvents(limit = 100) {
   try {
-    // Remove warning, as we are updating it now
-    // console.warn('[getRecentEvents] Function needs review/update for new events schema columns.');
-    
-    // Select required fields from events and joined tables
     const recentEnrichedEvents = await db
       .select({
         // Event fields
         id: events.id,
         eventUuid: events.eventUuid,
-        deviceId: events.deviceId,
+        deviceId: events.deviceId, // Keep selecting the original event deviceId
         timestamp: events.timestamp,
         standardizedEventCategory: events.standardizedEventCategory,
         standardizedEventType: events.standardizedEventType,
@@ -240,27 +236,30 @@ export async function getRecentEvents(limit = 100) {
         rawPayload: events.rawPayload,
         rawEventType: events.rawEventType,
         connectorId: events.connectorId,
-        // Joined Device fields (nullable due to LEFT JOIN)
+        // Joined Device fields
         deviceName: devices.name,
-        rawDeviceType: devices.type, // The crucial raw identifier
-        // Joined Connector fields (use connectors table)
+        rawDeviceType: devices.type, 
+        // Joined Connector fields
         connectorName: connectors.name,
         connectorCategory: connectors.category,
-        connectorConfig: connectors.cfg_enc
+        connectorConfig: connectors.cfg_enc,
+        // Joined Area fields (nullable due to LEFT JOINs)
+        areaId: areaDevices.areaId,
+        areaName: areas.name 
       })
       .from(events)
-      // Left Join with devices ON matching connectorId AND deviceId
+      // Join device info (needed to bridge to areaDevices)
       .leftJoin(devices, and(
           eq(devices.connectorId, events.connectorId),
-          eq(devices.deviceId, events.deviceId) 
+          eq(devices.deviceId, events.deviceId) // Join based on external deviceId
       ))
-      // Left Join with connectors (use connectors table)
+      // Join connector info
       .leftJoin(connectors, eq(connectors.id, events.connectorId))
+      .leftJoin(areaDevices, eq(areaDevices.deviceId, devices.id)) // Use devices.id (internal UUID)
+      .leftJoin(areas, eq(areas.id, areaDevices.areaId))
       .orderBy(desc(events.timestamp))
       .limit(limit);
 
-    // Return the enriched rows directly
-    // The structure should align better with what the API route needs.
     return recentEnrichedEvents;
     
   } catch (err) {

@@ -22,11 +22,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   flexRender,
   getCoreRowModel,
   getSortedRowModel,
   getFilteredRowModel,
-  getGroupedRowModel,
   ExpandedState,
   getExpandedRowModel,
   ColumnDef,
@@ -78,36 +85,14 @@ import { EventHierarchyViewer } from '@/components/features/events/EventHierarch
 import { getDeviceTypeInfo } from "@/lib/mappings/identification";
 import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Area } from '@/types/index'; 
+import { Separator } from "@/components/ui/separator";
+import { EventViewToggle } from '@/components/features/events/EventViewToggle';
+import { EventsTableView } from '@/components/features/events/EventsTableView';
+import type { EnrichedEvent } from '@/types/events';
+import { EventCardView } from '@/components/features/events/EventCardView';
 
-// Update the event interface
-interface EnrichedEvent {
-  id: number; // Added ID from API response
-  eventUuid: string; // Added from API response
-  timestamp: number; // ADD this (epoch ms)
-  payload?: Record<string, unknown> | null; // Use the payload from API
-  rawPayload?: Record<string, any> | null; // Add rawPayload from API
-  deviceId: string;
-  deviceName?: string;
-  connectorName?: string;
-  deviceTypeInfo: TypedDeviceInfo;
-  connectorCategory: string;
-  connectorId: string; // Added from API response
-  eventCategory: string; // Added from API response
-  eventType: string; // Added from API response
-  eventSubtype?: EventSubtype; // <-- Add optional subtype field
-  rawEventType?: string; // Add optional rawEventType from API
-  displayState?: DisplayState | undefined;
-  thumbnailUrl?: string; // KEEP For single video placeholder FOR NOW
-  videoUrl?: string; // KEEP For single video placeholder FOR NOW
-  bestShotUrlComponents?: {
-    pikoSystemId: string;
-    connectorId: string;
-    objectTrackId: string;
-    cameraId: string;
-  };
-}
-
-// Define a cleaner tag component for the dialog
+// --- ADDED BACK EventTag --- 
 const EventTag = ({ 
   icon, 
   label,
@@ -122,61 +107,7 @@ const EventTag = ({
     <span>{label}</span>
   </Badge>
 );
-
-// A simple component for sort indicators
-function SortIcon({ isSorted }: { isSorted: false | 'asc' | 'desc' }) {
-  if (!isSorted) return <ArrowUpDown className="ml-2 h-4 w-4 opacity-30" />;
-  return isSorted === 'asc' ? 
-    <ArrowUp className="ml-2 h-4 w-4" /> : 
-    <ArrowDown className="ml-2 h-4 w-4" />;
-}
-
-// A debounced input component for filtering
-function DebouncedInput({
-  value: initialValue,
-  onChange,
-  debounce = 300,
-  ...props
-}: {
-  value: string
-  onChange: (value: string) => void
-  debounce?: number
-} & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'>) {
-  const [value, setValue] = useState(initialValue);
-
-  useEffect(() => {
-    setValue(initialValue);
-  }, [initialValue]);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (value !== initialValue) {
-        onChange(value);
-      }
-    }, debounce);
-
-    return () => clearTimeout(timeout);
-  }, [value, initialValue, debounce, onChange]);
-
-  return (
-    <div className="relative">
-      <Input
-        {...props}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        className="text-xs px-2 py-1 h-8"
-      />
-      {value && (
-        <button
-          onClick={() => setValue('')}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      )}
-    </div>
-  );
-}
+// --- END ADDED BACK --- 
 
 // Helper component for skeleton table
 const EventsTableSkeleton = ({ rowCount = 10, columnCount = 8 }: { rowCount?: number, columnCount?: number }) => {
@@ -232,16 +163,34 @@ export default function EventsPage() {
     { id: 'timestamp', desc: true }
   ]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-  const [grouping, setGrouping] = useState<GroupingState>([]);
-  const [isGrouped, setIsGrouped] = useState(false);
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 50,
   });
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const connectors = useFusionStore(state => state.connectors); // Get connectors from store
-  const setConnectors = useFusionStore(state => state.setConnectors); // Get setter from store
+  const [connectorCategoryFilter, setConnectorCategoryFilter] = useState('all');
+  const initialEventCategories = Object.keys(EVENT_CATEGORY_DISPLAY_MAP).filter(
+    categoryKey => categoryKey !== EventCategory.DIAGNOSTICS
+  );
+  const [eventCategoryFilter, setEventCategoryFilter] = useState<string[]>(initialEventCategories);
+  
+  // State for view mode with localStorage persistence
+  const [viewMode, setViewMode] = useState<'table' | 'card'>(() => {
+    if (typeof window !== 'undefined') {
+      const storedPreference = localStorage.getItem('eventsViewModePreference');
+      if (storedPreference === 'table' || storedPreference === 'card') {
+        return storedPreference;
+      }
+    }
+    return 'table'; // Default to table view
+  });
+
+  const connectors = useFusionStore(state => state.connectors);
+  const setConnectors = useFusionStore(state => state.setConnectors);
+  const areas = useFusionStore(state => state.areas);
+  const fetchAreas = useFusionStore(state => state.fetchAreas);
+  const allDevices = useFusionStore(state => state.allDevices);
+  const fetchAllDevices = useFusionStore(state => state.fetchAllDevices);
   
   // Extract unique connector categories from connectors state
   const connectorCategories = useMemo(() => {
@@ -393,6 +342,42 @@ export default function EventsPage() {
     }
   }, []);
 
+  // <-- ADDED: useEffect to fetch areas if needed -->
+  useEffect(() => {
+    console.log("[EventsPage] Running useEffect for areas. Current areas.length:", areas.length); // Log hook run and length
+    const fetchAreasIfNeeded = async () => {
+      if (areas.length === 0) { 
+        console.log('[EventsPage] Areas store is empty, fetching...');
+        try {
+          await fetchAreas(); // Use the action from the store
+          console.log('[EventsPage] Areas loaded into store.');
+        } catch (err) {
+          console.error('[EventsPage] Error fetching initial areas:', err);
+        }
+      }
+    };
+    fetchAreasIfNeeded();
+  }, [areas.length, fetchAreas]); // Depend on length and action
+  // <-- END ADDED -->
+
+  // <-- ADDED: useEffect to fetch all devices if needed -->
+  useEffect(() => {
+    console.log("[EventsPage] Running useEffect for allDevices. Current allDevices.length:", allDevices.length); // Log hook run and length
+    const fetchAllDevicesIfNeeded = async () => {
+      if (allDevices.length === 0) { 
+        console.log('[EventsPage] All Devices store is empty, fetching...');
+        try {
+          await fetchAllDevices(); // Use the action from the store
+          console.log('[EventsPage] All Devices loaded into store.');
+        } catch (err) {
+          console.error('[EventsPage] Error fetching initial all devices:', err);
+        }
+      }
+    };
+    fetchAllDevicesIfNeeded();
+  }, [allDevices.length, fetchAllDevices]); // Depend on length and action
+  // <-- END ADDED -->
+
   useEffect(() => {
     setLoading(true);
     fetchEvents(true);
@@ -405,6 +390,13 @@ export default function EventsPage() {
       clearInterval(intervalId);
     };
   }, [fetchEvents]);
+
+  // Effect to save viewMode to localStorage when it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('eventsViewModePreference', viewMode);
+    }
+  }, [viewMode]);
 
   // Define columns for TanStack Table
   const columns = useMemo<ColumnDef<EnrichedEvent>[]>(() => [
@@ -791,54 +783,48 @@ export default function EventsPage() {
     state: {
       sorting,
       columnFilters,
-      grouping,
       expanded,
       pagination,
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
-    onGroupingChange: setGrouping,
     onExpandedChange: setExpanded,
     onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    getGroupedRowModel: getGroupedRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     enableMultiSort: true,
     getRowId: (originalRow) => originalRow.eventUuid,
   });
 
-  // Effect to update column filters based on category filter
-  useEffect(() => {
-    const currentCategoryFilter = columnFilters.find(f => f.id === 'connectorCategory');
-    const newCategoryFilterValue = categoryFilter === 'all' ? undefined : categoryFilter;
-
-    if (currentCategoryFilter?.value === newCategoryFilterValue) {
-      return;
-    }
-
-    setColumnFilters(prev => {
-      const otherFilters = prev.filter(f => f.id !== 'connectorCategory');
-      if (newCategoryFilterValue) {
-        return [...otherFilters, { id: 'connectorCategory', value: newCategoryFilterValue }];
-      } else {
-        return otherFilters;
-      }
+  // --- BEGIN NEW: displayedEvents memo for global filtering ---
+  const displayedEvents = useMemo(() => {
+    return events.filter(event => {
+      const connectorMatch = connectorCategoryFilter === 'all' || event.connectorCategory === connectorCategoryFilter;
+      const eventCatMatch = eventCategoryFilter.length > 0
+                            ? eventCategoryFilter.includes(event.eventCategory)
+                            : false;
+      return connectorMatch && eventCatMatch;
     });
-  }, [categoryFilter, columnFilters]);
+  }, [events, connectorCategoryFilter, eventCategoryFilter]);
+  // --- END NEW: displayedEvents memo ---
 
   // Define page actions
   const pageActions = (
     <>
+      <EventViewToggle viewMode={viewMode} onViewModeChange={setViewMode} />
       <Select
-        defaultValue="all"
-        value={categoryFilter}
-        onValueChange={(value) => setCategoryFilter(value)}
+        value={connectorCategoryFilter}
+        onValueChange={(value) => setConnectorCategoryFilter(value)}
       >
-        <SelectTrigger className="w-full sm:w-[180px] h-9">
-          <SelectValue placeholder="Filter by connector" />
+        <SelectTrigger className="w-full sm:w-[180px] h-9 justify-between">
+          <span>
+            Connectors ({connectorCategoryFilter === 'all' 
+              ? 'All' 
+              : formatConnectorCategory(connectorCategoryFilter)})
+          </span>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">
@@ -856,28 +842,38 @@ export default function EventsPage() {
           ))}
         </SelectContent>
       </Select>
-      <TooltipProvider delayDuration={100}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => {
-                const nextIsGrouped = !isGrouped;
-                setIsGrouped(nextIsGrouped);
-                setGrouping(nextIsGrouped ? ['deviceName'] : []);
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" className="w-full sm:w-[180px] h-9 justify-between">
+            <span>
+              Categories ({eventCategoryFilter.length === Object.keys(EVENT_CATEGORY_DISPLAY_MAP).length
+                ? 'All' 
+                : eventCategoryFilter.length})
+            </span>
+            <ChevronDown className="h-4 w-4 opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-56">
+          <DropdownMenuLabel>Filter by Event Category</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {Object.entries(EVENT_CATEGORY_DISPLAY_MAP).map(([categoryKey, displayName]) => (
+            <DropdownMenuCheckboxItem
+              key={categoryKey}
+              checked={eventCategoryFilter.includes(categoryKey)}
+              onCheckedChange={(checked) => {
+                setEventCategoryFilter(prev => 
+                  checked 
+                    ? [...prev, categoryKey] 
+                    : prev.filter(item => item !== categoryKey)
+                );
               }}
-              className="h-8 w-8 flex-shrink-0"
+              onSelect={(e) => e.preventDefault()}
             >
-              {isGrouped ? <List className="h-4 w-4" /> : <Layers className="h-4 w-4" />}
-              <span className="sr-only">{isGrouped ? 'View Details' : 'Group by Device'}</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{isGrouped ? 'View Details' : 'Group by Device'}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+              {displayName}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <Dialog open={isHierarchyDialogOpen} onOpenChange={setIsHierarchyDialogOpen}>
         <TooltipProvider delayDuration={100}>
           <Tooltip>
@@ -940,199 +936,31 @@ export default function EventsPage() {
 
         {/* Conditional Messages & Skeleton */}
         <div className="flex-shrink-0">
-          {loading && events.length === 0 ? (
+           {/* Show Skeleton if main loading OR if areas/devices are still loading */}
+           {(loading || (displayedEvents.length > 0 && (areas.length === 0 || allDevices.length === 0))) && displayedEvents.length === 0 ? (
             <EventsTableSkeleton rowCount={15} columnCount={columns.length} />
-          ) : !loading && events.length === 0 ? (
+          ) : !loading && displayedEvents.length === 0 ? (
             <p className="text-muted-foreground">
-              No events have been received yet. This page will update periodically.
+              No events match your current filters or no events have been received yet.
             </p>
           ) : null}
         </div>
 
-        {/* Table Container */}
-        {!loading && events.length > 0 && (
+        {/* Conditional Rendering for View Mode */}
+        {!loading && displayedEvents.length > 0 && areas.length > 0 && allDevices.length > 0 ? (
           <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
-            {/* Inner container for scrollable table */}
-            <div className="flex-grow overflow-auto">
-              <Table>
-                <TableHeader className="sticky top-0 bg-background z-10">
-                  {table.getHeaderGroups().map((headerGroup) => (
-                    <TableRow key={headerGroup.id}>
-                      {headerGroup.headers.map((header) => {
-                        // Get the full header text (or use accessorKey as fallback)
-                        const headerText = typeof header.column.columnDef.header === 'string' 
-                          ? header.column.columnDef.header 
-                          : header.column.id;
-                        
-                        return (
-                          <TableHead 
-                            key={header.id}
-                            className="px-2 py-1"
-                          >
-                            <TooltipProvider delayDuration={100}>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <div 
-                                    className={header.column.getCanSort() ? "cursor-pointer select-none" : undefined}
-                                    onClick={header.column.getToggleSortingHandler()}
-                                  >
-                                    <div className="flex items-center">
-                                      {/* Truncated header text */}
-                                      <span className="block max-w-[100px] overflow-hidden text-ellipsis whitespace-nowrap">
-                                        {header.isPlaceholder
-                                          ? null
-                                          : flexRender(
-                                              header.column.columnDef.header,
-                                              header.getContext()
-                                            )}
-                                      </span>
-                                      {header.column.getCanSort() && (
-                                        <SortIcon isSorted={header.column.getIsSorted()} />
-                                      )}
-                                    </div>
-                                  </div>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  {/* Full header text in tooltip */}
-                                  <p>{headerText}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                            
-                            {/* Filter input remains below */}
-                            <div className="mt-1 h-8">
-                              {header.column.getCanFilter() && (
-                                <DebouncedInput
-                                  value={(header.column.getFilterValue() ?? '') as string}
-                                  onChange={value => header.column.setFilterValue(value)}
-                                  placeholder=""
-                                />
-                              )}
-                            </div>
-                          </TableHead>
-                        );
-                      })}
-                    </TableRow>
-                  ))}
-                </TableHeader>
-                <TableBody>
-                  {table.getRowModel().rows?.length ? (
-                    table.getRowModel().rows.map((row) => (
-                      row.getIsGrouped() ? (
-                        <TableRow key={row.id + '-group'} className="bg-muted/50 hover:bg-muted/60">
-                          <TableCell 
-                            colSpan={columns.length} 
-                            className="p-2 font-medium text-sm capitalize cursor-pointer"
-                            onClick={row.getToggleExpandedHandler()}
-                          >
-                            <div className="flex items-center gap-2">
-                              {row.getIsExpanded() ? (
-                                <ChevronDown className="h-4 w-4" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4" />
-                              )}
-                              {row.groupingColumnId}:
-                              <span className="font-normal">
-                                {row.groupingValue as React.ReactNode}
-                              </span>
-                              <span className="ml-1 text-xs text-muted-foreground font-normal">
-                                ({row.subRows.length} items)
-                              </span>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
-                          {row.getVisibleCells().map((cell) => (
-                            <TableCell key={cell.id} className="px-2 py-1">
-                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      )
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={columns.length} className="h-24 text-center">
-                        No results match your filters or no events received yet.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-            {/* Pagination */}
-            <div className="flex items-center justify-between p-2 border-t flex-shrink-0">
-              <div className="flex-1 text-sm text-muted-foreground">
-                Total Rows: {table.getFilteredRowModel().rows.length}
-              </div>
-              <div className="flex items-center space-x-6 lg:space-x-8">
-                <div className="flex items-center space-x-2">
-                  <p className="text-sm font-medium">Rows per page</p>
-                  <Select
-                    value={`${table.getState().pagination.pageSize}`}
-                    onValueChange={(value) => {
-                      table.setPageSize(Number(value))
-                    }}
-                  >
-                    <SelectTrigger className="h-8 w-[70px]">
-                      <SelectValue placeholder={table.getState().pagination.pageSize} />
-                    </SelectTrigger>
-                    <SelectContent side="top">
-                      {[10, 25, 50, 100].map((pageSize) => (
-                        <SelectItem key={pageSize} value={`${pageSize}`}>
-                          {pageSize}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex w-[100px] items-center justify-center text-sm font-medium">
-                  Page {table.getState().pagination.pageIndex + 1} of{" "}
-                  {table.getPageCount()}
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Button
-                    variant="outline"
-                    className="hidden h-8 w-8 p-0 lg:flex"
-                    onClick={() => table.setPageIndex(0)}
-                    disabled={!table.getCanPreviousPage()}
-                  >
-                    <span className="sr-only">Go to first page</span>
-                    <ChevronsLeftIcon className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-8 w-8 p-0"
-                    onClick={() => table.previousPage()}
-                    disabled={!table.getCanPreviousPage()}
-                  >
-                    <span className="sr-only">Go to previous page</span>
-                    <ChevronLeftIcon className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-8 w-8 p-0"
-                    onClick={() => table.nextPage()}
-                    disabled={!table.getCanNextPage()}
-                  >
-                    <span className="sr-only">Go to next page</span>
-                    <ChevronRightIcon className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="hidden h-8 w-8 p-0 lg:flex"
-                    onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                    disabled={!table.getCanNextPage()}
-                  >
-                    <span className="sr-only">Go to last page</span>
-                    <ChevronsRightIcon className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
+            {viewMode === 'table' ? (
+              <EventsTableView table={table} columns={columns} />
+            ) : viewMode === 'card' ? (
+              <EventCardView events={displayedEvents} areas={areas} allDevices={allDevices} /> 
+            ) : null /* Should not happen with current toggle logic */}
           </div>
-        )}
+        ) : !loading && displayedEvents.length > 0 ? (
+          // Show a loading state if events are loaded but areas/devices aren't yet
+          <div className="flex items-center justify-center flex-grow">
+              <Loader2 className="mr-2 h-6 w-6 animate-spin" /> Loading supporting data...
+          </div>
+        ) : null}
       </TooltipProvider>
     </div>
   );

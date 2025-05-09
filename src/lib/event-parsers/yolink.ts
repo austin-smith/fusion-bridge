@@ -129,6 +129,28 @@ export async function parseYoLinkEvent(
 
     // --- Attempt to Parse Specific Known Event Types ---
 
+    // --- BEGIN Check for Diagnostic Report --- 
+    if (event.event.endsWith('.Report')) {
+        console.log(`[YoLink Parser] Detected Diagnostic Report: ${event.event} for device ${event.deviceId}`);
+        const payload: UnknownEventPayload = { 
+            originalEventType: event.event,
+            message: `YoLink Diagnostic Report: ${event.event}`,
+            rawEventPayload: event.data
+        };
+        return [{
+            eventId: crypto.randomUUID(),
+            timestamp: timestamp,
+            connectorId: connectorId,
+            deviceId: event.deviceId,
+            deviceInfo: deviceInfo, 
+            category: EventCategory.DIAGNOSTICS,
+            type: EventType.DEVICE_CHECK_IN,    
+            payload: payload,
+            originalEvent: event,
+        }];
+    }
+    // --- END Check for Diagnostic Report ---
+
     let successfullyParsed = false;
 
     // 1. Check for State Change
