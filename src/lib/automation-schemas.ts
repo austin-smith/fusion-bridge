@@ -105,26 +105,32 @@ export const SendHttpRequestActionParamsSchema = z.object({
   // Body template: Relevant for POST, PUT, PATCH
   bodyTemplate: z.string().optional(),
 }).refine(data => {
-    // Body is only relevant for certain methods
+    // Body is only relevant for POST, PUT, PATCH methods
     if (!['POST', 'PUT', 'PATCH'].includes(data.method)) {
-        return true; // No body validation needed for GET, DELETE etc.
+        return true; // No body validation needed for other methods like GET, DELETE
     }
-    // If content type is JSON, body must be provided and be valid JSON (or empty/whitespace)
+
+    // If method is POST, PUT, or PATCH:
     if (data.contentType === 'application/json') {
-        if (!data.bodyTemplate || data.bodyTemplate.trim() === '') return true; // Allow empty body
+        if (data.bodyTemplate === undefined || data.bodyTemplate === null) {
+            // If bodyTemplate is undefined or null, it's a valid optional body
+            return true;
+        }
+        // If bodyTemplate is a string (even an empty one), it must be parseable as JSON
         try {
             JSON.parse(data.bodyTemplate);
             return true;
         } catch {
-            return false; // Invalid JSON
+            return false; // Invalid JSON (includes empty string, whitespace-only, or malformed JSON)
         }
     }
-    return true; // No specific validation for other content types yet
+    // For other content types (e.g., text/plain) or if contentType is not application/json,
+    // and method is POST/PUT/PATCH, any string bodyTemplate (including empty) is considered valid by this refine. 
+    // Specific validation for those types could be added if needed.
+    return true; 
 }, {
-    // Custom error message for JSON validation
-    message: "Body must be valid JSON if Content-Type is application/json",
-    path: ["bodyTemplate"], // Apply error to bodyTemplate field
-    // Only apply this refinement logic when method requires a body and content type is JSON
+    message: "Body must be valid JSON if Content-Type is application/json. For other types, it must be a string.",
+    path: ["bodyTemplate"],
     params: { dependsOn: ["method", "contentType"] }
 });
 // --- END: Add Schema for Send HTTP Request action ---

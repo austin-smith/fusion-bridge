@@ -55,6 +55,14 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { TriangleAlert, Bookmark, Globe, Power } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
 import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
+import { 
+  getActionTitle, 
+  getActionIcon, 
+  getActionIconProps, 
+  getActionStyling, 
+  formatActionDetail 
+} from '@/lib/automation-types';
+import { AutomationActionType } from '@/lib/automation-types';
 
 interface AutomationFormData {
     id: string;
@@ -137,7 +145,7 @@ const ACTIONABLE_STATE_DISPLAY_MAP: Record<ActionableState, string> = {
 };
 
 const defaultAction: AutomationAction = {
-    type: 'createEvent', 
+    type: AutomationActionType.CREATE_EVENT, 
     params: { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' }
 };
 
@@ -182,14 +190,34 @@ export default function AutomationForm({
             return action;
         }) || [];
 
-        const initialTemporalConditions = (config?.temporalConditions ?? []).map(cond => ({
-            id: cond.id ?? crypto.randomUUID(), 
-            type: cond.type ?? 'eventOccurred',
-            scoping: cond.scoping ?? 'anywhere',
-            eventFilter: cond.eventFilter && (cond.eventFilter.all || cond.eventFilter.any) ? cond.eventFilter : defaultEventFilterRuleGroup,
-            timeWindowSecondsBefore: cond.timeWindowSecondsBefore ?? 60,
-            timeWindowSecondsAfter: cond.timeWindowSecondsAfter ?? 60,
-        }));
+        const initialTemporalConditions = (config?.temporalConditions ?? []).map(cond => {
+            const type = cond.type ?? 'eventOccurred'; // Determine type, default if necessary
+            let expectedCount = cond.expectedEventCount;
+            
+            // If the condition type is count-based and expectedEventCount is null or undefined,
+            // default it to 0 to ensure initial form validity.
+            if ([
+                'eventCountEquals', 
+                'eventCountLessThan', 
+                'eventCountGreaterThan', 
+                'eventCountLessThanOrEqual', 
+                'eventCountGreaterThanOrEqual'
+            ].includes(type)) {
+                if (expectedCount === null || expectedCount === undefined) {
+                    expectedCount = 0;
+                }
+            }
+
+            return {
+                id: cond.id ?? crypto.randomUUID(), 
+                type: type,
+                scoping: cond.scoping ?? 'anywhere',
+                expectedEventCount: expectedCount, // Use the potentially defaulted count
+                eventFilter: cond.eventFilter && (cond.eventFilter.all || cond.eventFilter.any) ? cond.eventFilter : defaultEventFilterRuleGroup,
+                timeWindowSecondsBefore: cond.timeWindowSecondsBefore ?? 60,
+                timeWindowSecondsAfter: cond.timeWindowSecondsAfter ?? 60,
+            };
+        });
 
         return {
             id: data.id,
@@ -265,37 +293,42 @@ export default function AutomationForm({
 
     const onSubmit = async (data: AutomationFormValues) => {
         setIsLoading(true);
-        console.log("Submitting form data (raw validated):", data);
+        console.log("Form values received by onSubmit:", data);
         
-        const processedData = { 
-            ...data, 
-            config: { 
-                ...data.config, 
-                actions: data.config.actions.map((action: AutomationAction) => {
-                    if (action.type === 'sendHttpRequest' && !['POST', 'PUT', 'PATCH'].includes(action.params.method)) {
-                        const { bodyTemplate, contentType, ...restParams } = action.params;
-                        return { ...action, params: { ...restParams, bodyTemplate: undefined, contentType: undefined } };
-                    }
-                    if ((action.type === 'createEvent' || action.type === 'createBookmark') && !action.params.targetConnectorId) {
-                         console.warn(`Action type ${action.type} requires targetConnectorId, but it's empty.`);
-                    }
-                    return action;
-                }),
-                temporalConditions: data.config.temporalConditions?.map(cond => {
-                    const { entityTypeFilter, ...restCond } = cond as any;
-                    return {
-                        id: restCond.id,
-                        type: restCond.type,
-                        scoping: restCond.scoping,
-                        eventFilter: restCond.eventFilter,
-                        timeWindowSecondsBefore: restCond.timeWindowSecondsBefore ? Number(restCond.timeWindowSecondsBefore) : undefined,
-                        timeWindowSecondsAfter: restCond.timeWindowSecondsAfter ? Number(restCond.timeWindowSecondsAfter) : undefined,
-                    }
-                })
-            }
+        const processedConfig = { 
+            ...data.config, 
+            actions: data.config.actions.map((action: AutomationAction) => {
+                if (action.type === 'sendHttpRequest' && !['POST', 'PUT', 'PATCH'].includes(action.params.method)) {
+                    const { bodyTemplate, contentType, ...restParams } = action.params;
+                    return { ...action, params: { ...restParams, bodyTemplate: undefined, contentType: undefined } };
+                }
+                if ((action.type === 'createEvent' || action.type === 'createBookmark') && !action.params.targetConnectorId) {
+                     console.warn(`Action type ${action.type} requires targetConnectorId, but it's empty and should be a UUID.`);
+                }
+                return action;
+            }),
+            temporalConditions: data.config.temporalConditions?.map(cond => {
+                // Ensure all fields from TemporalCondition type are preserved or correctly transformed
+                const { entityTypeFilter, ...restCond } = cond as any; // Assuming entityTypeFilter is deprecated/handled
+                return {
+                    id: restCond.id || crypto.randomUUID(), // Ensure ID exists for schema
+                    type: restCond.type,
+                    scoping: restCond.scoping,
+                    expectedEventCount: restCond.expectedEventCount ? Number(restCond.expectedEventCount) : undefined,
+                    eventFilter: restCond.eventFilter,
+                    timeWindowSecondsBefore: restCond.timeWindowSecondsBefore ? Number(restCond.timeWindowSecondsBefore) : undefined,
+                    timeWindowSecondsAfter: restCond.timeWindowSecondsAfter ? Number(restCond.timeWindowSecondsAfter) : undefined,
+                };
+            }) || [] // Ensure temporalConditions is an array if data.config.temporalConditions is undefined
         };
         
-        console.log("Submitting form data (processed for API):", processedData);
+        const payloadForApi = {
+            name: data.name,
+            enabled: data.enabled,
+            config: processedConfig
+        };
+        
+        console.log("Submitting data to API:", payloadForApi);
         
         const isEditing = initialData.id !== 'new';
         const apiUrl = isEditing ? `/api/automations/${initialData.id}` : '/api/automations';
@@ -307,11 +340,23 @@ export default function AutomationForm({
             const response = await fetch(apiUrl, { 
                 method: httpMethod, 
                 headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify(processedData) 
+                body: JSON.stringify(payloadForApi) // Send only the cleaned payload
             });
             if (!response.ok) {
                 let errorDetails = `API Error: ${response.status} ${response.statusText}`;
-                try { const errorJson = await response.json(); errorDetails = errorJson.message || errorJson.error || errorDetails; } catch { /* Ignore */ }
+                try { 
+                    const errorJson = await response.json(); 
+                    // Log the full error from server if available
+                    console.error("Server error details:", errorJson);
+                    errorDetails = errorJson.message || errorJson.error || errorDetails; 
+                    if (errorJson.errors) {
+                        // Attempt to stringify Zod errors for better toast messages
+                        const zodErrorMessages = Object.entries(errorJson.errors.fieldErrors || {})
+                            .map(([field, messages]) => `${field}: ${(messages as string[]).join(', ')}`)
+                            .join('; ');
+                        if (zodErrorMessages) errorDetails += ` (${zodErrorMessages})`;
+                    }
+                } catch { /* Ignore if response isn't JSON */ }
                 console.error(errorMessage, errorDetails);
                 throw new Error(errorDetails);
             }
@@ -328,35 +373,20 @@ export default function AutomationForm({
     const sortedPikoConnectors = [...pikoTargetConnectors].sort((a, b) => a.name.localeCompare(b.name));
     const sortedAvailableTargetDevices = [...availableTargetDevices].sort((a, b) => a.name.localeCompare(b.name));
 
-    // Helper function to render collapsed action detail
+    // Helper function to render collapsed action detail - use the shared formatter
     const getActionDetailText = (actionType: string, index: number): string => {
-        if (actionType === 'sendHttpRequest') {
-            const method = form.watch(`config.actions.${index}.params.method`);
-            const url = form.watch(`config.actions.${index}.params.urlTemplate`) || '(URL not set)';
-            return `→ ${method} ${url}`;
-        }
+        // Get params for the action
+        const params = form.watch(`config.actions.${index}.params`);
         
-        if (actionType === 'setDeviceState') {
-            const deviceId = form.watch(`config.actions.${index}.params.targetDeviceInternalId`);
-            const state = form.watch(`config.actions.${index}.params.targetState`);
-            const deviceName = sortedAvailableTargetDevices.find(d => d.id === deviceId)?.name || 'Unknown device';
-            const stateDisplay = ACTIONABLE_STATE_DISPLAY_MAP[state as ActionableState] || state;
-            return `→ ${stateDisplay} ${deviceName}`;
-        }
-        
-        if (actionType === 'createEvent') {
-            const connectorId = form.watch(`config.actions.${index}.params.targetConnectorId`);
-            const connectorName = sortedPikoConnectors.find(c => c.id === connectorId)?.name || '(No connector)';
-            return `→ ${connectorName}`;
-        }
-        
-        if (actionType === 'createBookmark') {
-            const connectorId = form.watch(`config.actions.${index}.params.targetConnectorId`);
-            const connectorName = sortedPikoConnectors.find(c => c.id === connectorId)?.name || '(No connector)';
-            return `→ ${connectorName}`;
-        }
-        
-        return '';
+        // Use the shared formatter to maintain consistency
+        return formatActionDetail(
+            actionType, 
+            params, 
+            {
+                connectors: sortedPikoConnectors,
+                devices: sortedAvailableTargetDevices
+            }
+        );
     };
 
     return (
@@ -578,45 +608,23 @@ export default function AutomationForm({
                                 {actionsFields.map((fieldItem, index) => {
                                     const actionType = form.watch(`config.actions.${index}.type`);
                                     
-                                    // Get simplified title based on action type
-                                    let actionTitle = "Action";
-                                    if (actionType === 'createEvent') actionTitle = "Create Event";
-                                    if (actionType === 'createBookmark') actionTitle = "Create Bookmark";
-                                    if (actionType === 'sendHttpRequest') actionTitle = "Send HTTP Request";
-                                    if (actionType === 'setDeviceState') actionTitle = "Set Device State";
+                                    // Get action title using the shared function
+                                    const actionTitle = getActionTitle(actionType);
                                     
-                                    // Get the appropriate icon for the action type
+                                    // Get icon using the shared function
                                     const ActionIcon = () => {
-                                        if (actionType === 'createEvent') return <TriangleAlert className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />;
-                                        if (actionType === 'createBookmark') return <Bookmark className="h-4 w-4 mr-2 text-green-600 dark:text-green-400" />;
-                                        if (actionType === 'sendHttpRequest') return <Globe className="h-4 w-4 mr-2 text-purple-600 dark:text-purple-400" />;
-                                        if (actionType === 'setDeviceState') return <Power className="h-4 w-4 mr-2 text-amber-600 dark:text-amber-400" />;
-                                        return <HelpCircle className="h-4 w-4 mr-2 text-muted-foreground" />;
+                                        const { icon: IconComponent, className } = getActionIconProps(actionType);
+                                        return <IconComponent className={`${className} mr-2`} />;
                                     };
                                     
-                                    // Add background color based on action type for visual distinction
-                                    let actionBgColor = "bg-background";
-                                    let actionBorderColor = "border-border";
-                                    
-                                    if (actionType === 'createEvent') {
-                                        actionBgColor = "bg-blue-50/40 dark:bg-blue-950/20";
-                                        actionBorderColor = "border-blue-200 dark:border-blue-800";
-                                    } else if (actionType === 'createBookmark') {
-                                        actionBgColor = "bg-green-50/40 dark:bg-green-950/20";
-                                        actionBorderColor = "border-green-200 dark:border-green-800";
-                                    } else if (actionType === 'sendHttpRequest') {
-                                        actionBgColor = "bg-purple-50/40 dark:bg-purple-950/20";
-                                        actionBorderColor = "border-purple-200 dark:border-purple-800";
-                                    } else if (actionType === 'setDeviceState') {
-                                        actionBgColor = "bg-amber-50/40 dark:bg-amber-950/20";
-                                        actionBorderColor = "border-amber-200 dark:border-amber-800";
-                                    }
+                                    // Get colors using the shared function
+                                    const { bgColor, borderColor } = getActionStyling(actionType);
                                     
                                     return (
                                         <AccordionItem 
                                             key={fieldItem.id} 
                                             value={`action-${index}`}
-                                            className={`${actionBgColor} border-2 ${actionBorderColor} rounded-md overflow-hidden shadow-sm`}
+                                            className={`${bgColor} border-2 ${borderColor} rounded-md overflow-hidden shadow-sm`}
                                         >
                                             <div className="relative">
                                                 <AccordionTrigger className="px-4 py-3 hover:no-underline">
@@ -629,7 +637,15 @@ export default function AutomationForm({
                                                         {(!openActionItems.includes(`action-${index}`)) && 
                                                             <div className="ml-2 overflow-hidden flex-1 w-0 flex items-center">
                                                                 <span className="text-xs text-muted-foreground truncate inline-block w-full">
-                                                                    {getActionDetailText(actionType, index)}
+                                                                    {formatActionDetail(
+                                                                        actionType,
+                                                                        form.watch(`config.actions.${index}.params`),
+                                                                        {
+                                                                            connectors: sortedPikoConnectors,
+                                                                            devices: sortedAvailableTargetDevices
+                                                                        },
+                                                                        { includeType: false }
+                                                                    )}
                                                                 </span>
                                                             </div>
                                                         }
@@ -662,13 +678,13 @@ export default function AutomationForm({
                                                                         onValueChange={(value) => {
                                                                             const newType = value as AutomationAction['type'];
                                                                             let newActionParams: AutomationAction['params'];
-                                                                            if (newType === 'createEvent') { 
+                                                                            if (newType === AutomationActionType.CREATE_EVENT) { 
                                                                                 newActionParams = { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' };
-                                                                            } else if (newType === 'createBookmark') { 
+                                                                            } else if (newType === AutomationActionType.CREATE_BOOKMARK) { 
                                                                                 newActionParams = { nameTemplate: '', descriptionTemplate: '', durationMsTemplate: '5000', tagsTemplate: '', targetConnectorId: '' };
-                                                                            } else if (newType === 'sendHttpRequest') { 
+                                                                            } else if (newType === AutomationActionType.SEND_HTTP_REQUEST) { 
                                                                                 newActionParams = { urlTemplate: '', method: 'GET', headers: [], contentType: 'text/plain', bodyTemplate: '' };
-                                                                            } else if (newType === 'setDeviceState') {
+                                                                            } else if (newType === AutomationActionType.SET_DEVICE_STATE) {
                                                                                 newActionParams = {
                                                                                     targetDeviceInternalId: sortedAvailableTargetDevices.length > 0 ? sortedAvailableTargetDevices[0].id : '',
                                                                                     targetState: ActionableState.SET_ON
@@ -680,16 +696,16 @@ export default function AutomationForm({
                                                                             form.setValue(`config.actions.${index}.params` as any, newActionParams, { shouldValidate: true, shouldDirty: true });
                                                                             field.onChange(newType);
                                                                         }}
-                                                                        value={field.value ?? 'createEvent'}
+                                                                        value={field.value ?? AutomationActionType.CREATE_EVENT}
                                                                     >
                                                                         <SelectTrigger className={cn("w-[220px]", fieldState.error && 'border-destructive')}>
                                                                             <SelectValue placeholder="Select Action Type" />
                                                                         </SelectTrigger>
                                                                         <SelectContent>
-                                                                            <SelectItem value="createBookmark">Create Piko Bookmark</SelectItem>
-                                                                            <SelectItem value="createEvent">Create Piko Event</SelectItem>
-                                                                            <SelectItem value="sendHttpRequest">Send HTTP Request</SelectItem>
-                                                                            <SelectItem value="setDeviceState">Set Device State</SelectItem>
+                                                                            <SelectItem value={AutomationActionType.CREATE_BOOKMARK}>{getActionTitle(AutomationActionType.CREATE_BOOKMARK)}</SelectItem>
+                                                                            <SelectItem value={AutomationActionType.CREATE_EVENT}>{getActionTitle(AutomationActionType.CREATE_EVENT)}</SelectItem>
+                                                                            <SelectItem value={AutomationActionType.SEND_HTTP_REQUEST}>{getActionTitle(AutomationActionType.SEND_HTTP_REQUEST)}</SelectItem>
+                                                                            <SelectItem value={AutomationActionType.SET_DEVICE_STATE}>{getActionTitle(AutomationActionType.SET_DEVICE_STATE)}</SelectItem>
                                                                         </SelectContent>
                                                                     </Select>
                                                                 </FormControl>
@@ -699,7 +715,7 @@ export default function AutomationForm({
                                                     />
                                                     
                                                     {/* Target Connector for Event and Bookmark */}
-                                                    {(actionType === 'createEvent' || actionType === 'createBookmark') && (
+                                                    {(actionType === AutomationActionType.CREATE_EVENT || actionType === AutomationActionType.CREATE_BOOKMARK) && (
                                                         <FormField
                                                             control={form.control}
                                                             name={`config.actions.${index}.params.targetConnectorId`}
@@ -714,13 +730,13 @@ export default function AutomationForm({
                                                                             <Select 
                                                                                 onValueChange={field.onChange} 
                                                                                 value={field.value ?? ''} 
-                                                                                disabled={isLoading || !(actionType === 'createEvent' || actionType === 'createBookmark')}
+                                                                                disabled={isLoading || !(actionType === AutomationActionType.CREATE_EVENT || actionType === AutomationActionType.CREATE_BOOKMARK)}
                                                                             >
                                                                                 <SelectTrigger 
                                                                                     className={cn(
                                                                                         "flex items-center w-[220px]",
                                                                                         fieldState.error && 'border-destructive', 
-                                                                                        !(actionType === 'createEvent' || actionType === 'createBookmark') && 'hidden'
+                                                                                        !(actionType === AutomationActionType.CREATE_EVENT || actionType === AutomationActionType.CREATE_BOOKMARK) && 'hidden'
                                                                                     )}
                                                                                 >
                                                                                     <SelectValue placeholder="Select Target Connector">
@@ -762,7 +778,7 @@ export default function AutomationForm({
                                                                             </Select>
                                                                         </FormControl>
                                                                         <FormDescription className={descriptionStyles}>
-                                                                            {actionType === 'createEvent' 
+                                                                            {actionType === AutomationActionType.CREATE_EVENT 
                                                                                 ? 'Select the Piko system to create an event in.'
                                                                                 : 'Select the Piko system to create a bookmark in.'}
                                                                         </FormDescription>
@@ -775,21 +791,21 @@ export default function AutomationForm({
                                                     
                                                     {/* Parameters section with vertical line styling */}
                                                     <div className={`space-y-2 border-l-2 pl-4 ml-1 rounded-sm p-2 mt-2 bg-white/50 dark:bg-black/10
-                                                        ${actionType === 'createEvent' ? 'border-blue-300 dark:border-blue-700' : 
-                                                          actionType === 'createBookmark' ? 'border-green-300 dark:border-green-700' : 
-                                                          actionType === 'sendHttpRequest' ? 'border-purple-300 dark:border-purple-700' : 
-                                                          actionType === 'setDeviceState' ? 'border-amber-300 dark:border-amber-700' : 
+                                                        ${actionType === AutomationActionType.CREATE_EVENT ? 'border-blue-300 dark:border-blue-700' : 
+                                                          actionType === AutomationActionType.CREATE_BOOKMARK ? 'border-green-300 dark:border-green-700' : 
+                                                          actionType === AutomationActionType.SEND_HTTP_REQUEST ? 'border-purple-300 dark:border-purple-700' : 
+                                                          actionType === AutomationActionType.SET_DEVICE_STATE ? 'border-amber-300 dark:border-amber-700' : 
                                                           'border-muted'}`}>
                                                         <h3 className="text-sm font-medium text-muted-foreground mb-2">Action Parameters</h3>
                                                         <p className="text-xs text-muted-foreground mb-2"> 
-                                                            {actionType === 'createBookmark' && "Creates a bookmark on related Piko cameras."} 
-                                                            {actionType === 'createEvent' && "Creates an event in the target Piko system."} 
-                                                            {actionType === 'sendHttpRequest' && "Sends an HTTP request."} 
-                                                            {actionType === 'setDeviceState' && "Changes the state of a specified device (e.g., turn on/off)."}
+                                                            {actionType === AutomationActionType.CREATE_BOOKMARK && "Creates a bookmark on related Piko cameras."} 
+                                                            {actionType === AutomationActionType.CREATE_EVENT && "Creates an event in the target Piko system."} 
+                                                            {actionType === AutomationActionType.SEND_HTTP_REQUEST && "Sends an HTTP request."} 
+                                                            {actionType === AutomationActionType.SET_DEVICE_STATE && "Changes the state of a specified device (e.g., turn on/off)."}
                                                         </p>
                                                         
                                                         {/* Action type specific fields */}
-                                                        {actionType === 'createEvent' && (
+                                                        {actionType === AutomationActionType.CREATE_EVENT && (
                                                             <>
                                                                 <FormField control={form.control} name={`config.actions.${index}.params.sourceTemplate`} render={({ field, fieldState }) => (
                                                                     <FormItem>
@@ -824,7 +840,7 @@ export default function AutomationForm({
                                                             </>
                                                         )}
                                                         
-                                                        {actionType === 'createBookmark' && (
+                                                        {actionType === AutomationActionType.CREATE_BOOKMARK && (
                                                             <>
                                                                 <FormField control={form.control} name={`config.actions.${index}.params.nameTemplate`} render={({ field, fieldState }) => (
                                                                     <FormItem>
@@ -893,7 +909,7 @@ export default function AutomationForm({
                                                             </>
                                                         )}
                                                         
-                                                        {actionType === 'sendHttpRequest' && (
+                                                        {actionType === AutomationActionType.SEND_HTTP_REQUEST && (
                                                             <SendHttpRequestActionFields 
                                                                 actionIndex={index} 
                                                                 handleInsertToken={(fieldName, actIndex, token, headerIndex) => {
@@ -902,7 +918,7 @@ export default function AutomationForm({
                                                             /> 
                                                         )}
                                                         
-                                                        {actionType === 'setDeviceState' && (
+                                                        {actionType === AutomationActionType.SET_DEVICE_STATE && (
                                                             <>
                                                                 <div className="flex flex-col space-y-2 mt-2">
                                                                     <FormLabel className="mb-1 mt-2">Device Control Flow</FormLabel>
@@ -914,7 +930,7 @@ export default function AutomationForm({
                                                                                 <FormItem className="flex-grow-0 m-0">
                                                                                     <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
                                                                                         <FormControl>
-                                                                                            <SelectTrigger className={cn("w-[200px]", fieldState.error && 'border-destructive')}>
+                                                                                            <SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}>
                                                                                                 <SelectValue placeholder="Select Device..." />
                                                                                             </SelectTrigger>
                                                                                         </FormControl>
@@ -975,7 +991,7 @@ export default function AutomationForm({
                                                             </>
                                                         )}
                                                         
-                                                        {!['createEvent', 'createBookmark', 'sendHttpRequest', 'setDeviceState'].includes(actionType || '') && (
+                                                        {!Object.values(AutomationActionType).includes(actionType as any) && (
                                                             <p className="text-sm text-muted-foreground">Select an action type.</p>
                                                         )}
                                                     </div>
@@ -1011,4 +1027,4 @@ export default function AutomationForm({
             </Form>
         </FormProvider>
     );
-} 
+}

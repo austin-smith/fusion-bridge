@@ -2,7 +2,7 @@
 
 import { Separator } from "@/components/ui/separator";
 import React, { useEffect } from "react";
-import { AutomationTable } from "@/components/automations/AutomationTable";
+import { AutomationCardView } from "@/components/automations/AutomationCardView";
 import { Button } from "@/components/ui/button";
 import { PlusCircle, Workflow } from "lucide-react";
 import Link from 'next/link';
@@ -30,7 +30,7 @@ export default function AutomationsPage() {
         icon={<Workflow className="h-6 w-6" />}
         actions={pageActions}
       />
-      <AutomationTable />
+      <AutomationCardView />
     </div>
   );
 } 
