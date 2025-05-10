@@ -620,15 +620,18 @@ export default function AutomationForm({
                                         >
                                             <div className="relative">
                                                 <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                                                    <div className="flex items-center">
-                                                        {/* Remove the numbered badge */}
-                                                        <ActionIcon />
-                                                        <span className="text-sm font-semibold">{actionTitle}</span>
+                                                    <div className="flex items-center w-full pr-14">
+                                                        <div className="flex items-center flex-shrink-0">
+                                                            <ActionIcon />
+                                                            <span className="text-sm font-semibold">{actionTitle}</span>
+                                                        </div>
                                                         {/* Show details when action is collapsed */}
                                                         {(!openActionItems.includes(`action-${index}`)) && 
-                                                            <span className="text-xs text-muted-foreground ml-2">
-                                                                {getActionDetailText(actionType, index)}
-                                                            </span>
+                                                            <div className="ml-2 overflow-hidden flex-1 w-0 flex items-center">
+                                                                <span className="text-xs text-muted-foreground truncate inline-block w-full">
+                                                                    {getActionDetailText(actionType, index)}
+                                                                </span>
+                                                            </div>
                                                         }
                                                     </div>
                                                 </AccordionTrigger>
@@ -637,7 +640,10 @@ export default function AutomationForm({
                                                     variant="ghost" 
                                                     size="icon" 
                                                     className="absolute right-12 top-2.5 h-6 w-6 text-destructive hover:bg-destructive/10"
-                                                    onClick={() => removeAction(index)}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        removeAction(index);
+                                                    }}
                                                 >
                                                     <Trash2 className="h-4 w-4" />
                                                     <span className="sr-only">Delete action</span>

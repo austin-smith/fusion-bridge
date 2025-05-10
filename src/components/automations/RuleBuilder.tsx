@@ -237,7 +237,7 @@ export function RuleBuilder({
         // Determine which value input component to render
         const renderValueInput = () => {
             if (!factDefinition) {
-                return <Input placeholder="Select field first..." className="flex-grow h-9" disabled />;
+                return <Input placeholder="Select field first..." className="w-full h-9" disabled />;
             }
 
             switch (factDefinition.valueInputType) {
@@ -247,8 +247,8 @@ export function RuleBuilder({
                             value={String(condition.value ?? '')} 
                             onValueChange={handleValueChange} 
                         >
-                            <SelectTrigger className="flex-grow h-9">
-                                <SelectValue placeholder="Select Value..." />
+                            <SelectTrigger className="w-full h-9">
+                                <SelectValue placeholder="Select Value..." className="truncate" />
                             </SelectTrigger>
                             <SelectContent>
                                 {(factDefinition.valueOptions && factDefinition.valueOptions.length > 0) ? (
@@ -268,7 +268,7 @@ export function RuleBuilder({
                     return (
                         <Input 
                             placeholder="Enter value..." 
-                            className="flex-grow h-9" 
+                            className="w-full h-9" 
                             value={condition.value ?? ''} 
                             onChange={(e) => handleValueChange(e.target.value)} 
                         />
@@ -277,60 +277,67 @@ export function RuleBuilder({
         };
 
         return (
-            <div className="flex items-center space-x-2 p-2 border rounded bg-background">
-                 {/* --- Fact Select --- */}
-                <Select value={condition.fact} onValueChange={handleFactChange}>
-                    <SelectTrigger className="w-[180px] h-9">
-                        <SelectValue placeholder="Select Field..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                         {Object.entries(groupedFacts).map(([groupName, facts]) => (
-                             <SelectGroup key={groupName}>
-                                 <SelectLabel>{groupName}</SelectLabel>
-                                 {facts.map(fact => (
-                                     <SelectItem key={fact.id} value={fact.id}>
-                                         {fact.label}
-                                     </SelectItem>
-                                 ))}
-                             </SelectGroup>
-                         ))}
-                    </SelectContent>
-                </Select>
+            <div className="flex flex-col w-full sm:inline-flex sm:flex-row gap-2 p-2 border rounded bg-background">
+                {/* --- Fact Select --- */}
+                <div className="w-full sm:w-1/4">
+                    <Select value={condition.fact} onValueChange={handleFactChange}>
+                        <SelectTrigger className="w-full h-9">
+                            <SelectValue placeholder="Select Field..." className="truncate" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {Object.entries(groupedFacts).map(([groupName, facts]) => (
+                                <SelectGroup key={groupName}>
+                                    <SelectLabel>{groupName}</SelectLabel>
+                                    {facts.map(fact => (
+                                        <SelectItem key={fact.id} value={fact.id}>
+                                            {fact.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectGroup>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
                 
-                 {/* --- Operator Select --- */}
-                <Select 
-                    value={condition.operator} 
-                    onValueChange={(newOperator: z.infer<typeof JsonRulesEngineOperatorsSchema>) => { 
-                        onChange({ ...condition, operator: newOperator });
-                     }}
-                     // Disable if factDefinition is missing (shouldn't happen often)
-                     disabled={!factDefinition} 
-                >
-                     <SelectTrigger className="w-[150px] h-9">
-                         <SelectValue placeholder="Select Operator...">
-                            {condition.operator ? OPERATOR_DISPLAY_MAP[condition.operator] : "Select Operator..."}
-                         </SelectValue>
-                     </SelectTrigger>
-                     <SelectContent>
-                         {/* --- Sort operators using helper function --- */}
-                         {sortOperators(factDefinition?.operators ?? []).map(op => (
-                             <SelectItem key={op} value={op}>
-                                 {OPERATOR_DISPLAY_MAP[op] || op} 
-                             </SelectItem>
-                         ))}
-                         {!factDefinition && <SelectItem value="" disabled>Select field first</SelectItem>}
-                     </SelectContent>
-                </Select>
+                {/* --- Operator Select --- */}
+                <div className="w-full sm:w-[100px]">
+                    <Select 
+                        value={condition.operator} 
+                        onValueChange={(newOperator: z.infer<typeof JsonRulesEngineOperatorsSchema>) => { 
+                            onChange({ ...condition, operator: newOperator });
+                        }}
+                        disabled={!factDefinition} 
+                    >
+                        <SelectTrigger className="w-full h-9">
+                            <SelectValue placeholder="Select Operator..." className="truncate">
+                                {condition.operator ? OPERATOR_DISPLAY_MAP[condition.operator] : "Select Operator..."}
+                            </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                            {sortOperators(factDefinition?.operators ?? []).map(op => (
+                                <SelectItem key={op} value={op}>
+                                    {OPERATOR_DISPLAY_MAP[op] || op} 
+                                </SelectItem>
+                            ))}
+                            {!factDefinition && <SelectItem value="" disabled>Select field first</SelectItem>}
+                        </SelectContent>
+                    </Select>
+                </div>
 
-                {/* --- Render Value Input Component --- */}
-                {renderValueInput()}
+                {/* --- Value Input Component --- */}
+                <div className="w-full sm:w-1/3 relative">
+                    {renderValueInput()}
+                </div>
 
-                 {onRemove && (
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={onRemove}>
-                        <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">Remove Condition</span>
-                    </Button>
-                )}
+                {/* Remove Button */}
+                <div className="flex justify-end items-center mt-2 sm:mt-0">
+                    {onRemove && (
+                        <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-destructive" onClick={onRemove}>
+                            <Trash2 className="h-4 w-4" />
+                            <span className="sr-only">Remove Condition</span>
+                        </Button>
+                    )}
+                </div>
             </div>
         );
     }
