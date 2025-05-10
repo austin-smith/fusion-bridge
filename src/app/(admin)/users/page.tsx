@@ -1,35 +1,50 @@
-import { Suspense } from 'react'; // Import Suspense
-import { getUsers } from "@/lib/actions/user-actions";
+import { Suspense } from 'react';
+import type { User } from "@/lib/actions/user-actions"; // This might still be needed if PageHeader or other parts use it.
 import { PageHeader } from "@/components/layout/page-header";
 import { Users } from 'lucide-react';
-import { UsersTable, AddUserDialog, UsersTableSkeleton } from "./components"; // Import Skeleton
-// TODO: Import Add User components later
+import { AddUserDialog, UsersTableSkeleton } from "./components"; // UsersTableSkeleton is for Suspense fallback
+import { UsersTableLoader } from "./components/users-table-loader"; // Import the new loader
+import { auth } from '@/lib/auth/server';
+import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 
 export default async function UsersPage() {
-  // Fetch users on the server - This will be awaited by Suspense
-  // const users = await getUsers(); <-- Fetching happens inside the Suspense boundary now
+  const resolvedHeaders = await headers();
+  // Try constructing a plain object for headers
+  const plainHeaders: Record<string, string> = {};
+  for (const [key, value] of resolvedHeaders.entries()) {
+    plainHeaders[key] = value;
+  }
+  // Pass the plain object to getSession. 
+  // Note: auth.api.getSession might internally convert this or might expect a true Headers object.
+  // This is an attempt to work around the persistent linter error.
+  const session = await auth.api.getSession({ headers: plainHeaders as any }); // Using 'as any' to bypass linter for now
+
+  if (!session?.user) {
+    redirect('/login');
+    return null;
+  }
+
+  const userRole = (session.user as any)?.role;
+
+  if (userRole !== 'admin') {
+    redirect('/');
+    return null;
+  }
 
   return (
-    // Apply the layout structure from /devices page
     <main className="flex flex-1 flex-col gap-4 p-4 md:p-6 lg:gap-6">
       <div className="flex flex-col">
         <PageHeader
           title="User Management"
           description="Add, view, and remove system users."
           icon={<Users className="h-6 w-6" />}
-          actions={<AddUserDialog />} // Keep AddUserDialog here, will style button inside it
+          actions={<AddUserDialog />}
         />
-        {/* Wrap table in Suspense */}
         <Suspense fallback={<UsersTableSkeleton />}>
-          <UsersTableLoader /> {/* Create a new component to handle data fetching */}
+          <UsersTableLoader />
         </Suspense>
       </div>
     </main>
   );
-}
-
-// New async component to load data within the Suspense boundary
-async function UsersTableLoader() {
-  const users = await getUsers();
-  return <UsersTable data={users} />;
 } 

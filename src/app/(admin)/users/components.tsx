@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useActionState } from 'react';
-import { useFormStatus } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import { type ColumnDef, createColumnHelper } from '@tanstack/react-table';
-import { MoreHorizontal, ArrowUpDown, Trash2, Loader2, PlusCircle, Pencil, KeyRound } from 'lucide-react';
+import { MoreHorizontal, ArrowUpDown, Trash2, Loader2, Pencil, KeyRound, ShieldCheck, UserCircle2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -15,7 +15,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { DataTable } from '@/components/ui/data-table';
 import type { User } from '@/lib/actions/user-actions';
-import { deleteUser, addUser, updateUser } from '@/lib/actions/user-actions';
+import { updateUser } from '@/lib/actions/user-actions';
+import { authClient } from '@/lib/auth/client';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import {
@@ -48,6 +49,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useFusionStore } from '@/stores/store';
 
 // --- Column Definitions ---
 
@@ -116,7 +125,7 @@ export const columns: ColumnDef<User>[] = [
             {row.getValue("name") || '-'}
         </div>
     ),
-    size: 200,
+    size: 125,
   },
   {
     accessorKey: "email",
@@ -127,26 +136,47 @@ export const columns: ColumnDef<User>[] = [
             {row.getValue("email")}
         </div>
     ),
-    size: 250,
+    size: 200,
+  },
+  {
+    accessorKey: "role",
+    header: ({ column }) => <SortableHeader column={column}>Role</SortableHeader>,
+    cell: ({ row }) => {
+      const role = row.getValue("role") as string | null;
+      const displayRole = role ? role.charAt(0).toUpperCase() + role.slice(1) : 'User';
+      let RoleIcon = UserCircle2;
+
+      if (role === 'admin') { // Icon can still change
+        RoleIcon = ShieldCheck;
+      }
+
+      return (
+        <span className={cn(
+          "flex items-center w-fit"
+        )}>
+          <RoleIcon className="mr-1.5 h-4 w-4" />
+          {displayRole}
+        </span>
+      );
+    },
+    size: 100, 
   },
   {
     accessorKey: "twoFactorEnabled",
     header: ({ column }) => <SortableHeader column={column}>2FA</SortableHeader>,
     cell: ({ row }) => {
-      // Access the value directly from the original data object
       const user = row.original;
-      const isEnabled = user.twoFactorEnabled; // Access directly
-
+      const isEnabled = user.twoFactorEnabled;
       return (
         <span className={cn(
-          "px-2 py-0.5 rounded-full text-xs font-medium",
+          "px-2.5 py-1 rounded-full text-xs font-medium flex items-center w-fit",
           isEnabled ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
         )}>
           {isEnabled ? "Enabled" : "Disabled"}
         </span>
       );
     },
-    size: 100, // Adjust size as needed
+    size: 100, 
     enableSorting: true,
   },
   {
@@ -160,46 +190,14 @@ export const columns: ColumnDef<User>[] = [
       }).format(date);
       return <div className="text-xs text-muted-foreground">{formatted}</div>;
     },
-    size: 120,
-  },
-  {
-    accessorKey: "lastLoginAt",
-    header: ({ column }) => <SortableHeader column={column}>Last Login</SortableHeader>,
-    cell: ({ row }) => {
-      const date = row.getValue("lastLoginAt") as Date | null;
-      if (!date) {
-        return <div className="text-xs text-muted-foreground">-</div>;
-      }
-      const dateOnlyFormatted = new Intl.DateTimeFormat('en-US', {
-          year: 'numeric', month: 'short', day: 'numeric',
-      }).format(date);
-      const fullDateTimeFormatted = new Intl.DateTimeFormat('en-US', {
-          year: 'numeric', month: 'short', day: 'numeric',
-          hour: '2-digit', minute: '2-digit',
-          // Optionally add second: '2-digit' if needed
-      }).format(date);
-
-      return (
-        <TooltipProvider delayDuration={150}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="text-xs text-muted-foreground cursor-default">{dateOnlyFormatted}</div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{fullDateTimeFormatted}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
-    },
-    size: 150, // Adjusted size
+    size: 100,
   },
   {
     id: "actions",
     cell: ({ row }) => <UserActionsCell user={row.original} />,
     enableSorting: false,
     enableHiding: false,
-    size: 80, // Fixed size for actions
+    size: 50, // Fixed size for actions
   },
 ];
 
@@ -214,20 +212,24 @@ function UserActionsCell({ user }: UserActionsCellProps) {
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false);
+  const router = useRouter();
 
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      const result = await deleteUser(user.id);
-      if (result.success) {
-        toast.success(result.message || 'User deleted successfully.');
-        // Table will automatically re-render due to revalidatePath in server action
-      } else {
-        toast.error(result.message || 'Failed to delete user.');
+      const response = await authClient.admin.removeUser({ userId: user.id });
+      if (response.error) {
+        const errorMessage = typeof response.error === 'object' && response.error.message 
+                              ? response.error.message 
+                              : JSON.stringify(response.error);
+        throw new Error(errorMessage);
       }
-    } catch (error) {
-      console.error("Error calling deleteUser action:", error);
-      toast.error('An unexpected error occurred while deleting the user.');
+      toast.success(`User ${user.name || user.email} deleted successfully.`);
+      router.refresh();
+      useFusionStore.getState().triggerUserListRefresh();
+    } catch (error: any) {
+      console.error("Error deleting user:", error);
+      toast.error(error.message || 'Failed to delete user.');
     } finally {
       setIsDeleting(false);
       setIsAlertOpen(false);
@@ -310,35 +312,79 @@ export function UsersTable({ data }: UsersTableProps) {
 
 // --- Add User Dialog Component ---
 
-// Initial state for the form action
-const initialState = {
-    success: false,
-    message: undefined,
-};
-
 export function AddUserDialog() {
   const [isOpen, setIsOpen] = useState(false);
-  // Use useActionState to handle form submission and feedback
-  const [state, formAction] = useActionState(addUser, initialState);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'user' | 'admin'>('user');
+  const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
+  
   const formRef = useRef<HTMLFormElement>(null);
 
-  // Use effect to show toast message and close dialog on success
-  useEffect(() => {
-    if (state.success) {
-      toast.success(state.message || 'User added successfully!');
-      setIsOpen(false); // Close the dialog
-      formRef.current?.reset(); // Reset the form fields
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsLoading(true);
+    try {
+      type CreateUserSuccessResponse = { 
+        data?: { user: { name?: string | null, email: string } }; 
+        error?: any; 
+        name?: string | null;
+        email?: string;
+      };
+
+      const response = await authClient.admin.createUser({
+        name,
+        email,
+        password,
+        role: role,
+      }) as CreateUserSuccessResponse;
+
+      if (response.error) {
+        const errorMessage = typeof response.error === 'object' && response.error.message 
+                              ? response.error.message 
+                              : JSON.stringify(response.error);
+        throw new Error(errorMessage);
+      }
+
+      let newUserName = 'New user';
+      if (response.data?.user) {
+        newUserName = response.data.user.name || response.data.user.email;
+      } else if (response.name || response.email) { 
+        newUserName = response.name || response.email || 'New user';
+      }
+      
+      toast.success(`User ${newUserName} created successfully!`);
+      setIsOpen(false);
+      setName('');
+      setEmail('');
+      setPassword('');
+      setRole('user');
+      formRef.current?.reset();
+      router.refresh();
+      useFusionStore.getState().triggerUserListRefresh();
+    } catch (error: any) {
+      console.error("Error creating user:", error);
+      toast.error(error.message || 'Failed to create user.');
     }
-    if (!state.success && state.message) {
-        toast.error(state.message);
-    }
-  }, [state]);
+    setIsLoading(false);
+  };
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      setIsOpen(open);
+      if (!open) {
+        setName('');
+        setEmail('');
+        setPassword('');
+        setRole('user');
+        setIsLoading(false);
+      }
+    }}>
       <DialogTrigger asChild>
         <Button size="sm">
-          <PlusCircle className="h-4 w-4" />
+          <Plus className="h-4 w-4" />
           Add User
         </Button>
       </DialogTrigger>
@@ -349,53 +395,64 @@ export function AddUserDialog() {
             Enter the details for the new user.
           </DialogDescription>
         </DialogHeader>
-        <form action={formAction} ref={formRef}>
+        <form onSubmit={handleSubmit} ref={formRef}>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="name" className="text-right">
+              <Label htmlFor="add-name" className="text-right">
                 Name
               </Label>
-              <Input id="name" name="name" className="col-span-3" required />
+              <Input id="add-name" name="name" value={name} onChange={(e) => setName(e.target.value)} className="col-span-3" required />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="email" className="text-right">
+              <Label htmlFor="add-email" className="text-right">
                 Email
               </Label>
-              <Input id="email" name="email" type="text" className="col-span-3" required autoComplete="off" />
+              <Input id="add-email" name="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="col-span-3" required autoComplete="off" />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="password" className="text-right">
+              <Label htmlFor="add-password" className="text-right">
                 Password
               </Label>
-              <Input id="password" name="password" type="password" className="col-span-3" required minLength={8} autoComplete="new-password" />
+              <Input id="add-password" name="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="col-span-3" required minLength={8} autoComplete="new-password" />
             </div>
-             {/* Display server-side error message if any */}
-            {/* {!state.success && state.message && (
-                 <p className="col-span-4 text-sm text-destructive text-center">{state.message}</p>
-             )} */} {/* Removed from here, handled by toast */} 
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="add-role" className="text-right">
+                Role
+              </Label>
+              <Select value={role} onValueChange={(value: 'user' | 'admin') => setRole(value)}>
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">
+                    <div className="flex items-center gap-2">
+                      <UserCircle2 className="h-4 w-4 text-muted-foreground" />
+                      <span>User</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="admin">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+                      <span>Admin</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
-            {/* Add DialogClose for the Cancel button */}
             <DialogClose asChild>
-                 <Button type="button" variant="outline">Cancel</Button>
+                 <Button type="button" variant="outline" disabled={isLoading}>Cancel</Button>
             </DialogClose>
-            <AddUserSubmitButton />
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Add User
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
   );
-}
-
-// Specific submit button for Add User Dialog
-function AddUserSubmitButton() {
-    const { pending } = useFormStatus();
-    return (
-        <Button type="submit" disabled={pending}>
-            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Add User
-        </Button>
-    );
 }
 
 // --- Edit User Dialog Component ---
@@ -412,24 +469,23 @@ const editInitialState = {
 };
 
 function EditUserDialog({ user, isOpen, onOpenChange }: EditUserDialogProps) {
-  const [state, formAction] = useActionState(updateUser, editInitialState);
+  const [state, formAction, isPending] = useActionState(updateUser, editInitialState);
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (state.success) {
       toast.success(state.message || 'User updated successfully!');
-      onOpenChange(false); // Close the dialog via prop
+      onOpenChange(false);
+      useFusionStore.getState().triggerUserListRefresh();
     }
     if (!state.success && state.message) {
         toast.error(state.message);
     }
   }, [state, onOpenChange]);
 
-  // Reset form if dialog is closed externally or on success
   useEffect(() => {
       if (!isOpen) {
           formRef.current?.reset();
-          // Reset form state manually if needed, though re-render might handle it
       }
   }, [isOpen]);
 
@@ -443,7 +499,6 @@ function EditUserDialog({ user, isOpen, onOpenChange }: EditUserDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <form action={formAction} ref={formRef}>
-          {/* Hidden input for user ID */}
           <input type="hidden" name="id" value={user.id} />
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
@@ -467,9 +522,9 @@ function EditUserDialog({ user, isOpen, onOpenChange }: EditUserDialogProps) {
           </div>
           <DialogFooter>
             <DialogClose asChild>
-                 <Button type="button" variant="outline">Cancel</Button>
+                 <Button type="button" variant="outline" disabled={isPending}>Cancel</Button>
             </DialogClose>
-            <EditUserSubmitButton />
+            <EditUserSubmitButton isPending={isPending} />
           </DialogFooter>
         </form>
       </DialogContent>
@@ -477,12 +532,10 @@ function EditUserDialog({ user, isOpen, onOpenChange }: EditUserDialogProps) {
   );
 }
 
-// Specific submit button for Edit User Dialog
-function EditUserSubmitButton() {
-    const { pending } = useFormStatus();
+function EditUserSubmitButton({ isPending }: { isPending: boolean }) {
     return (
-        <Button type="submit" disabled={pending}>
-            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        <Button type="submit" disabled={isPending}>
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Save
         </Button>
     );
@@ -492,7 +545,7 @@ function EditUserSubmitButton() {
 
 // Helper component for skeleton table for Users page
 export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
-  const columnCount = 6; // Select, Avatar, Name, Email, Created, Actions
+  const columnCount = 6; // Select, Avatar, Name, Email, Role, 2FA, Created, Actions - Count updated
   return (
     <div className="border rounded-md">
       <Table>
@@ -506,6 +559,10 @@ export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
             <TableHead className="w-[200px] px-2 py-1"><Skeleton className="h-5 w-20" /></TableHead>
             {/* Email */}
             <TableHead className="px-2 py-1"><Skeleton className="h-5 w-20" /></TableHead>
+            {/* Role */}
+            <TableHead className="w-[120px] px-2 py-1"><Skeleton className="h-5 w-12" /></TableHead>
+            {/* 2FA */}
+            <TableHead className="w-[110px] px-2 py-1"><Skeleton className="h-5 w-10" /></TableHead>
             {/* Created */}
             <TableHead className="w-[120px] px-2 py-1"><Skeleton className="h-5 w-24" /></TableHead>
             {/* Last Login */}
@@ -524,6 +581,10 @@ export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
               {/* Name */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
               {/* Email */}
+              <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
+              {/* Role */}
+              <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
+              {/* 2FA */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
               {/* Created */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>

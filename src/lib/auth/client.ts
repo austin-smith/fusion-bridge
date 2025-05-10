@@ -1,5 +1,6 @@
 import { createAuthClient } from "better-auth/react";
 import { twoFactorClient } from "better-auth/client/plugins";
+import { adminClient } from "better-auth/client/plugins";
 
 // Create the client instance. 
 // No baseURL needed if client and server are on the same domain/port.
@@ -20,7 +21,8 @@ export const authClient = createAuthClient({
                 // Redirect with preserved callbackUrl
                 window.location.href = verifyUrl.toString();
             }
-        })
+        }),
+        adminClient()
     ]
 });
 

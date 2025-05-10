@@ -1,12 +1,13 @@
 import 'server-only';
 
-import { betterAuth } from "better-auth";
+import * as betterAuth from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/data/db";
 import { twoFactor } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
+import { admin as adminPlugin } from "better-auth/plugins";
 
-export const auth = betterAuth({
+export const auth = betterAuth.betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   appName: "Fusion", // Add appName for TOTP issuer
 
@@ -20,7 +21,8 @@ export const auth = betterAuth({
   },
   plugins: [
       twoFactor(),
-      nextCookies()
+      nextCookies(),
+      adminPlugin()
   ],
   session: {
     expiresIn: 60 * 60 * 24 * 1, // 1 day in seconds

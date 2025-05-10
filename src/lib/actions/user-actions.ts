@@ -7,19 +7,22 @@ import { auth } from '@/lib/auth/server';
 import { eq, sql, and, max } from 'drizzle-orm';
 import crypto from 'crypto';
 import { revalidatePath } from 'next/cache';
-import { cookies } from 'next/headers';
+import { headers as nextHeaders, cookies } from 'next/headers';
 
 // --- Types and Schemas ---
 // Define the schema internally, but don't export it
 const UserSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().min(1),
   name: z.string().nullable(),
   email: z.string().email(),
   image: z.string().url().nullable(),
   twoFactorEnabled: z.boolean().optional(),
   createdAt: z.date(),
-  // updatedAt: z.date(),
-  lastLoginAt: z.date().nullable().optional(),
+  // Admin plugin fields
+  role: z.string().nullable().optional(),
+  banned: z.boolean().nullable().optional(),
+  banReason: z.string().nullable().optional(),
+  banExpires: z.date().nullable().optional(),
 });
 
 // Export only the inferred type
@@ -32,7 +35,7 @@ const AddUserSchema = z.object({
 });
 
 const UpdateUserSchema = z.object({
-    id: z.string().uuid(),
+    id: z.string().min(1),
     name: z.string().min(1, { message: 'Name is required.' }),
     image: z.string().url({ message: "Must be a valid URL." }).optional().or(z.literal('')),
 });
@@ -72,139 +75,6 @@ interface SessionCheckResponse {
 }
 
 // --- Server Actions ---
-
-/**
- * Fetches all users from the database.
- * TODO: Add authorization check here later.
- */
-export async function getUsers(): Promise<User[]> {
-  try {
-    console.log("[Server Action] Fetching all users with last login...");
-
-    // Subquery to get the last login time for each user
-    const lastLoginSubquery = db
-      .select({
-        userId: session.userId,
-        lastLoginAt: max(session.createdAt).as('last_login_at'),
-      })
-      .from(session)
-      .groupBy(session.userId)
-      .as('last_logins');
-
-    const usersData = await db
-      .select({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        image: user.image,
-        twoFactorEnabled: user.twoFactorEnabled,
-        createdAt: user.createdAt, // Assuming you still want these
-        updatedAt: user.updatedAt, // Assuming you still want these
-        lastLoginAt: lastLoginSubquery.lastLoginAt,
-      })
-      .from(user)
-      .leftJoin(lastLoginSubquery, eq(user.id, lastLoginSubquery.userId));
-
-    console.log(`[Server Action] Found ${usersData.length} users with last login data.`);
-
-    const mappedData = usersData.map(u => ({
-        ...u,
-        createdAt: new Date(u.createdAt), 
-        lastLoginAt: u.lastLoginAt ? new Date(u.lastLoginAt) : null,
-    }));
-
-    // Validate fetched data against schema before returning
-    // Ensure the schema validation handles the new 'lastLoginAt' field
-    const finalUsers = z.array(UserSchema).parse(mappedData);
-    
-    return finalUsers;
-  } catch (error) {
-    console.error("[Server Action] Error fetching users with last login:", error);
-    // In a real app, handle this more gracefully (e.g., return error object)
-    return [];
-  }
-}
-
-/**
- * Adds a new user with email/password credentials.
- * Signature updated to work with useFormState.
- */
-export async function addUser(
-    prevState: ActionResult, // Added previous state argument
-    formData: FormData
-): Promise<ActionResult> {
-  console.log("[Server Action] Attempting to add new user...");
-
-  const validatedFields = AddUserSchema.safeParse({
-    name: formData.get('name'),
-    email: formData.get('email'),
-    password: formData.get('password'),
-  });
-
-  if (!validatedFields.success) {
-    const errorMessages = Object.values(validatedFields.error.flatten().fieldErrors).flat().join(', ');
-    console.warn("[Server Action] Invalid add user input:", errorMessages);
-    return { success: false, message: `Invalid input: ${errorMessages}` };
-  }
-
-  const { name, email, password } = validatedFields.data;
-
-  // Check if email already exists
-  try {
-    const existingUser = await db.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
-    if (existingUser.length > 0) {
-      console.warn(`[Server Action] Attempted to add user with existing email: ${email}`);
-      return { success: false, message: 'Email address is already in use.' };
-    }
-  } catch (error) {
-    console.error("[Server Action] Error checking existing email:", error);
-    return { success: false, message: 'Database error during email check.' };
-  }
-
-  // Hash password using better-auth's default hasher (scrypt)
-  let hashedPassword = '';
-  try {
-    const ctx = await auth.$context;
-    if (!ctx?.password?.hash) {
-        throw new Error('Could not get password hashing context from better-auth.');
-    }
-    console.log("[Server Action] Hashing password...");
-    hashedPassword = await ctx.password.hash(password);
-    console.log("[Server Action] Password hashed.");
-  } catch (error) {
-    console.error("[Server Action] Error hashing password:", error);
-    return { success: false, message: 'Failed to process password.' };
-  }
-
-  // Insert user and account in transaction
-  try {
-    await db.transaction(async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
-      const newUserId = crypto.randomUUID();
-      console.log(`[Server Action] Inserting user ${email} with ID ${newUserId}`);
-      await tx.insert(user).values({
-          id: newUserId,
-          email: email,
-          name: name,
-          // emailVerified is null by default, user needs to verify if email setup
-      });
-
-      console.log(`[Server Action] Inserting credentials account for user ${newUserId}`);
-      await tx.insert(account).values({
-          id: crypto.randomUUID(),
-          userId: newUserId,
-          providerId: 'credential', // Standard provider ID for email/password
-          accountId: newUserId,      // Typically use user ID for credential accounts
-          password: hashedPassword,
-      });
-    });
-    console.log("[Server Action] User and account created successfully.");
-    revalidatePath('/admin/users'); // Revalidate the user list page
-    return { success: true, message: 'User created successfully.' };
-  } catch (error) {
-    console.error("[Server Action] Error inserting user/account:", error);
-    return { success: false, message: 'Database error during user creation.' };
-  }
-}
 
 /**
  * Updates a user's name and image URL.
@@ -275,13 +145,13 @@ export async function updateCurrentUser(
     // 1. Get current user session by fetching internal API route
     let userId: string | undefined;
     try {
-        const cookieStore = await cookies(); 
-        const cookieHeader = cookieStore.getAll().map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+        const currentCookies = await cookies(); // Ensure cookies() is awaited here as well
+        const cookieHeaderString = currentCookies.getAll().map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
         const baseURL = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
         if (!baseURL) throw new Error("Base URL for API fetch missing.");
         const sessionCheckUrl = new URL('/api/auth/check-session', baseURL.startsWith('http') ? baseURL : `https://${baseURL}`);
         const response = await fetch(sessionCheckUrl.toString(), {
-          headers: { 'Cookie': cookieHeader },
+          headers: { 'Cookie': cookieHeaderString },
           cache: 'no-store',
         });
         if (!response.ok) {
@@ -337,8 +207,7 @@ export async function updateCurrentUser(
             email: user.email,
             image: user.image,
             twoFactorEnabled: user.twoFactorEnabled,
-            createdAt: user.createdAt, // Ensure createdAt is selected
-            lastLoginAt: sql<Date | null>`NULL`.as('last_login_at'), // Provide a null placeholder for lastLoginAt if not directly available/relevant here
+            createdAt: user.createdAt
         }).from(user).where(eq(user.id, userId)).limit(1);
 
         console.log(`[Server Action] Current user ${userId} updated successfully.`);
@@ -348,10 +217,6 @@ export async function updateCurrentUser(
             message: 'Profile updated successfully.', 
             updatedUser: updatedUserData.length > 0 ? {
                 ...updatedUserData[0],
-                // lastLoginAt might not be part of this specific query's direct result, 
-                // ensure it's handled if UserSchema expects it. Here, it's optional.
-                // If lastLoginAt is not included in select, it will be undefined here, which is fine for an optional field.
-                // However, since we added a placeholder `sql<Date | null>NULL.as('last_login_at')` in select it will be null.
             } : null 
         }; 
     } catch (error) {
@@ -476,56 +341,13 @@ export async function updateCurrentUserPassword(
 }
 
 /**
- * Deletes a user and their associated data (accounts, sessions).
- * TODO: Add authorization check here later.
- */
-export async function deleteUser(userId: string): Promise<ActionResult> {
-    console.log(`[Server Action] Attempting to delete user ${userId}...`);
-
-    if (!userId) {
-        return { success: false, message: 'User ID is required.' };
-    }
-
-    // Basic check to prevent deleting the *very first* user (implicit admin?)
-    // This is a simple safeguard, a robust role system is better.
-    try {
-        const firstUser = await db.select({ id: user.id, createdAt: user.createdAt }).from(user).orderBy(user.createdAt).limit(1);
-        if (firstUser.length > 0 && firstUser[0].id === userId) {
-            console.warn(`[Server Action] Attempted to delete the first user (${userId}), which is disallowed.`);
-            return { success: false, message: 'Cannot delete the initial administrator user.' };
-        }
-    } catch (error) {
-        console.error("[Server Action] Error checking if user is the first user:", error);
-        return { success: false, message: 'Database error during pre-delete check.' };
-    }
-
-    // Drizzle should handle cascading deletes for accounts and sessions
-    // based on the schema's `onDelete: "cascade"`.
-    try {
-        const result = await db.delete(user).where(eq(user.id, userId));
-        
-        if (result.rowsAffected === 0) {
-             console.warn(`[Server Action] Attempted to delete non-existent user ${userId}.`);
-             return { success: false, message: 'User not found.' };
-        }
-
-        console.log(`[Server Action] User ${userId} deleted successfully.`);
-        revalidatePath('/admin/users'); // Revalidate the user list page
-        return { success: true, message: 'User deleted successfully.' };
-    } catch (error) {
-        console.error(`[Server Action] Error deleting user ${userId}:`, error);
-        return { success: false, message: 'Database error during user deletion.' };
-    }
-}
-
-/**
  * Resets a specific user's password (Admin action).
  * Takes userId and newPassword.
  * IMPORTANT: Add proper authorization checks before merging!
  */
 // Define schema for the reset action
 const ResetPasswordSchema = z.object({
-    userId: z.string().uuid({ message: 'Invalid User ID.' }),
+    userId: z.string().min(1), // Allow any non-empty string ID
     newPassword: z.string().min(8, { message: 'Password must be at least 8 characters.' }),
     confirmPassword: z.string().min(8, { message: 'Confirm password is required.' }),
 })
@@ -548,7 +370,7 @@ export async function resetUserPassword(
     //    console.warn("[Server Action] resetUserPassword: Unauthorized attempt.");
     //    return { success: false, message: 'Unauthorized.' };
     // }
-    // --- END AUTHORIZATION CHECK --- 
+    // --- END AUTHORIZATION CHECK ---
 
     // 1. Validate form data
     const validatedFields = ResetPasswordSchema.safeParse({
@@ -558,26 +380,22 @@ export async function resetUserPassword(
     });
 
     if (!validatedFields.success) {
-        // Correct: Prioritize password mismatch error if present
         const fieldErrors = validatedFields.error.flatten().fieldErrors;
-        let errorMessages = (fieldErrors.confirmPassword ?? []).join(', '); // Get mismatch error first
+        let errorMessages = (fieldErrors.confirmPassword ?? []).join(', ');
         if (!errorMessages) {
-            // Fallback to other errors if no mismatch
            errorMessages = Object.values(fieldErrors).flat().join(', ');
         }
         console.warn("[Server Action] Invalid reset password input:", errorMessages);
         return { success: false, message: `Invalid input: ${errorMessages}` };
     }
 
-    // Only need userId and newPassword after successful validation
     const { userId, newPassword } = validatedFields.data;
     console.log(`[Server Action] Attempting reset for user ID: ${userId}`);
 
-    // 2. Hash new password
     let hashedNewPassword = '';
     let authCtx;
     try {
-        authCtx = await auth.$context; // Need context for hashing
+        authCtx = await auth.$context;
         if (!authCtx?.password?.hash) {
             throw new Error('Could not get password hashing context from better-auth.');
         }
@@ -589,26 +407,20 @@ export async function resetUserPassword(
         return { success: false, message: 'Failed to process new password.' };
     }
 
-    // 3. Update password in database
     try {
         console.log(`[Server Action] Updating password for credential account associated with user ${userId}`);
-        // Check if the user actually has a credential account before updating
         const result = await db.update(account)
             .set({
                 password: hashedNewPassword,
-                // Optionally update an 'updatedAt' field on the account if it exists
             })
             .where(and(eq(account.userId, userId), eq(account.providerId, 'credential')));
             
         if (result.rowsAffected === 0) {
              console.warn(`[Server Action] No credential account found for user ${userId} during password reset attempt.`);
-             // Decide if this is an error or just informational. Maybe the user uses social login only.
-             // For now, return success but mention no applicable account was found.
              return { success: true, message: 'Password updated (Note: User might not have a password-based account).' };
         }
 
         console.log(`[Server Action] Password reset successfully for user ${userId}.`);
-        // No revalidation needed here as it doesn't affect the users list directly
         return { success: true, message: 'User password reset successfully.' };
     } catch (error) {
         console.error(`[Server Action] Error updating password during reset for user ${userId}:`, error);

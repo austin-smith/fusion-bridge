@@ -127,6 +127,9 @@ interface FusionState {
   // --- NEW: Device Action Loading State ---
   deviceActionLoading: Map<string, boolean>; // Key: internalDeviceId, Value: true if loading
   
+  // --- NEW: User List Refresh State ---
+  lastUserListUpdateTimestamp: number | null;
+  
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
   addConnector: (connector: ConnectorWithConfig) => void;
@@ -197,6 +200,9 @@ interface FusionState {
 
   // --- NEW: Centralized Action to execute device state change ---
   executeDeviceAction: (internalDeviceId: string, newState: ActionableState) => Promise<void>;
+
+  // --- NEW: User List Refresh Action ---
+  triggerUserListRefresh: () => void;
 }
 
 // Initial state for MQTT (default)
@@ -269,6 +275,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   
   // --- NEW: Device Action Loading Initial State ---
   deviceActionLoading: new Map<string, boolean>(),
+  
+  // --- NEW: User List Refresh Initial State ---
+  lastUserListUpdateTimestamp: null,
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -957,6 +966,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       }));
     }
   },
+
+  // --- NEW: User List Refresh Action ---
+  triggerUserListRefresh: () => set({ lastUserListUpdateTimestamp: Date.now() }),
 
   // REMOVE addDashboardEvent action implementation
 

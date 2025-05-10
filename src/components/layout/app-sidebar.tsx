@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Sidebar,
   SidebarContent,
@@ -74,31 +74,58 @@ export function AppSidebar() {
   const { data: session, isPending } = useSession();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   
-  // Get setter from Zustand, but we won't rely on currentUser for rendering here
-  const { setCurrentUser } = useFusionStore();
+  // Get setter and currentUser from Zustand
+  const { setCurrentUser, currentUser } = useFusionStore();
   const { isMobile, setOpenMobile, state } = useSidebar();
+
+  // Determine user role from session
+  const userRole = (session?.user as any)?.role; // Access role, might be undefined
 
   // Effect to populate Zustand store from useSession data - KEEP THIS for other components
   useEffect(() => {
-    if (session?.user) {
-        // Map session user data to UserProfile type
-        // Make sure twoFactorEnabled is handled correctly if session.user has it
-        // Assuming session.user might not always have it, default like before
+    if (session?.user && !currentUser) { // Also check if currentUser is not already set to avoid potential loops if session updates frequently
         const userProfile: UserProfile = {
             id: session.user.id,
             name: session.user.name ?? null,
             email: session.user.email ?? null,
             image: session.user.image ?? null,
-            twoFactorEnabled: (session.user as any).twoFactorEnabled ?? false, // Check if session.user has it, default false
+            twoFactorEnabled: (session.user as any).twoFactorEnabled ?? false,
         };
         setCurrentUser(userProfile);
-        console.log("[AppSidebar] Updated currentUser in Zustand store from session.");
-    } else if (!session) {
-        // Optionally clear store if session becomes null (e.g., after logout)
-        // setCurrentUser(null);
+        console.log("[AppSidebar] Initialized currentUser in Zustand store from session.");
+    } else if (session?.user && currentUser) {
+        // If session user exists and store user exists, ensure they are in sync, prioritizing session as source of truth
+        // This handles cases where session might have updated info not yet reflected due to no direct update path
+        const sessionProfile: UserProfile = {
+            id: session.user.id,
+            name: session.user.name ?? null,
+            email: session.user.email ?? null,
+            image: session.user.image ?? null,
+            twoFactorEnabled: (session.user as any).twoFactorEnabled ?? false,
+        };
+        if (JSON.stringify(sessionProfile) !== JSON.stringify(currentUser)) {
+            setCurrentUser(sessionProfile);
+            console.log("[AppSidebar] Synced currentUser in Zustand store with updated session data.");
+        }
     }
-    // Only depend on session and setCurrentUser now
+    // No dependency on currentUser here to avoid re-running the effect when setCurrentUser is called from within
   }, [session, setCurrentUser]);
+
+  // Filter navGroups based on user role
+  const displayedNavGroups = useMemo(() => {
+    return navGroups.map(group => ({
+      ...group,
+      items: group.items.filter(item => {
+        if (item.label === 'Users') {
+          // Show "Users" only if not pending, session exists, and role is 'admin'
+          return !isPending && session?.user && userRole === 'admin';
+        }
+        return true; // Show all other items
+      })
+    }))
+    // Also filter out entire groups if they become empty after item filtering
+    .filter(group => group.items.length > 0);
+  }, [isPending, session, userRole]); // navGroups is static
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -138,7 +165,7 @@ export function AppSidebar() {
       
       <SidebarContent className="flex-grow">
          {/* Render nav groups immediately - assuming navGroups is static */}
-          {navGroups.map((group, groupIndex) => (
+          {displayedNavGroups.map((group, groupIndex) => (
             <React.Fragment key={`group-fragment-${groupIndex}`}>
               <SidebarGroup>
                 <SidebarGroupContent>
@@ -176,7 +203,7 @@ export function AppSidebar() {
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>
-              {groupIndex < navGroups.length - 1 && (
+              {groupIndex < displayedNavGroups.length - 1 && (
                   <Separator className="w-[80%] mx-auto" />
               )}
             </React.Fragment>
@@ -195,13 +222,13 @@ export function AppSidebar() {
                 "min-h-14",
                 "group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:min-h-0",
                 "group-data-[collapsible=expanded]:px-2",
-                // Apply open state styles only if user exists and not loading
-                (!isPending && session?.user) && "data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
+                // Apply open state styles only if user exists (from store) and not loading (from session)
+                (!isPending && currentUser) && "data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
                 "transition-all duration-200 ease-linear"
               )}
               aria-label="User menu"
-              // Disable button if loading or no user
-              disabled={isPending || !session?.user}
+              // Disable button if loading (from session) or no user (from store)
+              disabled={isPending || !currentUser}
             >
               <div className={cn("flex h-full w-full items-center gap-2")}>
                 {/* Avatar: Always render, conditionally populate */}
@@ -209,13 +236,13 @@ export function AppSidebar() {
                   "size-7 flex-shrink-0",
                   "group-data-[collapsible=icon]:size-8",
                   // Muted background if loading or no user
-                  (isPending || !session?.user) && "bg-muted"
+                  (isPending || !currentUser) && "bg-muted"
                 )}>
-                   {/* Only add image/fallback if session is loaded and user exists */}
-                  {!isPending && session?.user && (
+                   {/* Only add image/fallback if not pending and currentUser exists */}
+                  {!isPending && currentUser && (
                     <>
-                      <AvatarImage src={session.user.image || ''} alt={session.user.name || 'User'} className="object-cover" />
-                      <AvatarFallback>{session.user.name?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
+                      <AvatarImage src={currentUser.image || ''} alt={currentUser.name || 'User'} className="object-cover" />
+                      <AvatarFallback>{currentUser.name?.charAt(0).toUpperCase() || currentUser.email?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
                     </>
                   )}
                   {/* If pending or no user, the default Avatar background/fallback will show, potentially enhanced by the bg-muted above */}
@@ -229,12 +256,12 @@ export function AppSidebar() {
                       <div className="h-4 w-20 rounded bg-muted" />
                       <div className="h-3 w-24 rounded bg-muted" />
                     </div>
-                  ) : session?.user ? (
-                    // Actual user info when loaded
+                  ) : currentUser ? (
+                    // Actual user info when loaded (from store)
                     <>
-                      <div className="flex flex-col items-start">
-                        <span className="text-sm font-medium leading-tight truncate max-w-[100px]">{session.user.name || session.user.email?.split('@')[0] || 'User'}</span>
-                        <span className="text-xs text-muted-foreground leading-tight">{session.user.email}</span>
+                      <div className="grid flex-1 text-left text-sm leading-tight">
+                        <span className="truncate text-sm font-semibold">{currentUser.name || currentUser.email?.split('@')[0] || 'User'}</span>
+                        <span className="truncate text-xs text-muted-foreground">{currentUser.email}</span>
                       </div>
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-muted-foreground" />
                     </>
@@ -250,8 +277,8 @@ export function AppSidebar() {
             </Button>
           </DropdownMenuTrigger>
 
-          {/* Dropdown Content - Only render content if session is loaded and user exists */}
-          {!isPending && session?.user && (
+          {/* Dropdown Content - Only render content if not pending (from session) and currentUser exists (from store) */}
+          {!isPending && currentUser && (
             <DropdownMenuContent
               side={isMobile ? 'bottom' : 'right'}
               align="end"
@@ -261,13 +288,13 @@ export function AppSidebar() {
               <DropdownMenuLabel className="font-normal">
                  <div className="flex items-center gap-3">
                    <Avatar className="h-8 w-8">
-                     <AvatarImage src={session.user.image || ''} alt={session.user.name || 'User'} />
-                     <AvatarFallback>{session.user.name?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
+                     <AvatarImage src={currentUser.image || ''} alt={currentUser.name || 'User'} />
+                     <AvatarFallback>{currentUser.name?.charAt(0).toUpperCase() || currentUser.email?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
                    </Avatar>
                    <div className="flex flex-col space-y-1">
-                     <p className="text-sm font-medium leading-none truncate max-w-[150px]">{session.user.name || session.user.email?.split('@')[0] || 'User'}</p>
+                     <p className="text-sm font-medium leading-none truncate max-w-[150px]">{currentUser.name || currentUser.email?.split('@')[0] || 'User'}</p>
                      <p className="text-xs leading-none text-muted-foreground truncate max-w-[150px]">
-                       {session.user.email}
+                       {currentUser.email}
                      </p>
                    </div>
                  </div>

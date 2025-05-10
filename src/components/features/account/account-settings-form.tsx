@@ -119,18 +119,18 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
     useEffect(() => {
         if (profileState.success) {
             toast.success(profileState.message || 'Profile updated successfully!');
-            // Sync popover input with the state that will be used for display
             if (profileState.updatedUser) {
-                setImageUrlToSubmit(profileState.updatedUser.image ?? ''); // Update image URL state used by Avatar
-                setPopoverImageUrl(profileState.updatedUser.image ?? ''); // Sync popover input
-                // Update global store - Ensure updatedUser includes 2FA status if changed
+                setImageUrlToSubmit(profileState.updatedUser.image ?? ''); 
+                setPopoverImageUrl(profileState.updatedUser.image ?? ''); 
                 useFusionStore.getState().setCurrentUser({
                     ...profileState.updatedUser,
-                    twoFactorEnabled: profileState.updatedUser.twoFactorEnabled ?? false, // Ensure boolean
+                    twoFactorEnabled: profileState.updatedUser.twoFactorEnabled ?? false, 
                 });
                 console.log("[AccountSettingsForm] Updated currentUser in Zustand store.");
+                // Trigger user list refresh
+                useFusionStore.getState().triggerUserListRefresh();
+                console.log("[AccountSettingsForm] Triggered user list refresh.");
             } else {
-                 // If for some reason updatedUser isn't returned, sync with local state
                  setPopoverImageUrl(imageUrlToSubmit);
             }
         }

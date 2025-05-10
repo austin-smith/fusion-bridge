@@ -236,19 +236,21 @@ export const areaDevicesRelations = relations(areaDevices, ({ one }) => ({
 
 // --- Better Auth Core Schema (Renamed to defaults) ---
 
-// Renamed from 'users' to 'user'
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(), 
   name: text("name"),
   email: text("email").unique().notNull(),
-  emailVerified: integer("emailVerified", { mode: "timestamp" }), 
+  emailVerified: integer("emailVerified", { mode: "boolean" }), 
   image: text("image"),
   twoFactorEnabled: integer("twoFactorEnabled", { mode: "boolean" }).notNull().default(false),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  role: text('role'), 
+  banned: integer('banned', { mode: 'boolean' }), 
+  banReason: text('banReason'), 
+  banExpires: integer('banExpires', { mode: 'timestamp' }) 
 });
 
-// Renamed from 'accounts' to 'account'
 export const account = sqliteTable("account", {
   id: text("id").primaryKey(),
   userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }), 
@@ -261,14 +263,13 @@ export const account = sqliteTable("account", {
   scope: text("scope"),
   idToken: text("idToken"),
   password: text("password"), 
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
   providerAccountIdx: uniqueIndex("provider_account_idx").on(table.providerId, table.accountId),
   userIdx: index("account_user_idx").on(table.userId),
 }));
 
-// Renamed from 'sessions' to 'session'
 export const session = sqliteTable("session", {
   id: text("id").primaryKey(),
   userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }), 
@@ -276,35 +277,33 @@ export const session = sqliteTable("session", {
   expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
   ipAddress: text("ipAddress"),
   userAgent: text("userAgent"),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  impersonatedBy: text('impersonatedBy')
 }, (table) => ({
   tokenIdx: index("session_token_idx").on(table.token),
   userIdx: index("session_user_idx").on(table.userId),
 }));
 
-// Renamed from 'verificationTokens' to 'verification'
 export const verification = sqliteTable("verification", {
   id: text("id").primaryKey(),
   identifier: text("identifier").notNull(),
   value: text("value").notNull(), 
   expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
   identifierValueIdx: uniqueIndex("verification_identifier_value_idx").on(table.identifier, table.value),
 }));
 
 // --- Relations for Better Auth Schema (Updated names) ---
 
-// Updated relation name and references
 export const userRelations = relations(user, ({ many, one }) => ({
   accounts: many(account), // Reference updated table 'account'
   sessions: many(session), // Reference updated table 'session'
   twoFactor: one(twoFactor),
 }));
 
-// Updated relation name and references
 export const accountRelations = relations(account, ({ one }) => ({
   user: one(user, { // Reference updated table 'user'
     fields: [account.userId],
@@ -312,7 +311,6 @@ export const accountRelations = relations(account, ({ one }) => ({
   }),
 }));
 
-// Updated relation name and references
 export const sessionRelations = relations(session, ({ one }) => ({
   user: one(user, { // Reference updated table 'user'
     fields: [session.userId],
@@ -327,8 +325,8 @@ export const twoFactor = sqliteTable("twoFactor", {
   userId: text("userId").notNull().unique().references(() => user.id, { onDelete: "cascade" }),
   secret: text("secret").notNull(),
   backupCodes: text("backupCodes", { mode: "json" }).notNull(), // Store as JSON array string
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
   userIdx: index("twoFactor_user_idx").on(table.userId),
 }));
@@ -341,5 +339,3 @@ export const twoFactorRelations = relations(twoFactor, ({ one }) => ({
         references: [user.id],
     }),
 }));
-
-// No relations needed for verification table typically

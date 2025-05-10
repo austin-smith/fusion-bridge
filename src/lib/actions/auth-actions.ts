@@ -71,7 +71,7 @@ export async function createFirstAdminUser(formData: z.infer<typeof SetupSchema>
                 id: newUserId,
                 email: email,
                 name: name,
-                emailVerified: new Date(), // Assume verified for initial admin
+                emailVerified: true, // Assume verified for initial admin
             });
 
             console.log(`[Server Action] Inserting credentials account for user ${newUserId}`);
