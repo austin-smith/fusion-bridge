@@ -90,39 +90,44 @@ function AutomationCardSkeleton() {
     <div className="space-y-4">
       {Array.from({ length: 4 }).map((_, index) => (
         <Card key={index} className="overflow-hidden">
-          <div className="flex flex-col md:flex-row">
-            <div className="md:w-1/3 border-r border-border p-4 border-l-4 border-l-border">
-              <Skeleton className="h-6 w-3/4 mb-4" />
-              <div className="inline-flex items-center gap-1 h-5 w-20 px-1.5 rounded-md border">
-                <Skeleton className="h-3 w-3 rounded-full" />
-                <Skeleton className="h-3.5 w-10" />
+          <div className="p-4 pb-2 border-b">
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-6 w-1/3 mb-1" />
+              
+              <div className="flex items-center gap-2">
+                <div className="h-5 w-20 flex items-center border rounded-md px-1.5">
+                  <Skeleton className="h-3 w-3 rounded-full mr-1" />
+                  <Skeleton className="h-3.5 w-12" />
+                </div>
+                
+                <Skeleton className="h-8 w-8 rounded-md" />
+                <Skeleton className="h-8 w-8 rounded-md" />
               </div>
             </div>
-            
-            <div className="md:w-2/3 p-4">
-              <div className="mb-2">
-                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
-                  <Skeleton className="h-3 w-20" />
-                </div>
-              </div>
+          </div>
+          
+          <div className="p-4">
+            <div className="mb-3">
+              <Skeleton className="h-3 w-16 mb-3" />
               
-              <div>
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
+              <div className="space-y-3">
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-2">
                     <Skeleton className="h-4 w-4 rounded-full" />
-                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="h-4 w-2/3" />
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Skeleton className="h-4 w-4 rounded-full" />
-                    <Skeleton className="h-4 w-1/2" />
-                  </div>
+                ))}
+                
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-4 w-4 rounded-full" />
+                  <Skeleton className="h-4 w-1/2" />
                 </div>
-              </div>
-
-              <div className="flex justify-end mt-4">
-                <div className="flex space-x-1">
-                  <Skeleton className="h-8 w-8 rounded-md" />
-                  <Skeleton className="h-8 w-8 rounded-md" />
+                
+                <div className="mt-3 pt-2 border-t border-dashed border-muted">
+                  <div className="flex items-center">
+                    <Skeleton className="h-3 w-3 rounded-full mr-1.5" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -166,35 +171,41 @@ export function AutomationCardView() {
   const fetchConnectorsAndDevices = useCallback(async () => {
     try {
       // Fetch connectors
-      const connectorsResponse = await fetch('/api/connectors?category=piko');
+      const connectorsResponse = await fetch('/api/connectors');
       if (!connectorsResponse.ok) {
-        throw new Error(`HTTP error! status: ${connectorsResponse.status}`);
+        console.warn(`Failed to fetch connectors: ${connectorsResponse.status}`);
+        setConnectors([]);
+      } else {
+        const connectorsData = await connectorsResponse.json();
+        // Handle potential API response formats
+        const connectorsArray = Array.isArray(connectorsData) 
+          ? connectorsData 
+          : connectorsData.data && Array.isArray(connectorsData.data) 
+            ? connectorsData.data 
+            : [];
+        setConnectors(connectorsArray);
       }
-      const connectorsData = await connectorsResponse.json();
-      // Handle potential API response formats
-      const connectorsArray = Array.isArray(connectorsData) 
-        ? connectorsData 
-        : connectorsData.data && Array.isArray(connectorsData.data) 
-          ? connectorsData.data 
-          : [];
-      setConnectors(connectorsArray);
 
       // Fetch devices
-      const devicesResponse = await fetch('/api/devices/actionable');
+      const devicesResponse = await fetch('/api/devices');
       if (!devicesResponse.ok) {
-        throw new Error(`HTTP error! status: ${devicesResponse.status}`);
+        console.warn(`Failed to fetch devices: ${devicesResponse.status}`);
+        setTargetDevices([]);
+      } else {
+        const devicesData = await devicesResponse.json();
+        // Handle potential API response formats
+        const devicesArray = Array.isArray(devicesData) 
+          ? devicesData 
+          : devicesData.data && Array.isArray(devicesData.data) 
+            ? devicesData.data 
+            : [];
+        setTargetDevices(devicesArray);
       }
-      const devicesData = await devicesResponse.json();
-      // Handle potential API response formats
-      const devicesArray = Array.isArray(devicesData) 
-        ? devicesData 
-        : devicesData.data && Array.isArray(devicesData.data) 
-          ? devicesData.data 
-          : [];
-      setTargetDevices(devicesArray);
     } catch (e) {
       console.error('Failed to fetch connectors or devices:', e);
-      // Don't set error state as this is secondary data
+      // Set empty arrays to avoid null errors in the component
+      setConnectors([]);
+      setTargetDevices([]);
     }
   }, []);
 
