@@ -84,7 +84,7 @@ The core application code resides within the `src/` directory, organized as foll
     -   `common/`: General-purpose reusable components.
     -   `layout/`: Components specific to the main application layout/shell.
     -   `features/`: Components specific to certain application features (e.g., `connectors/`).
-    -   `automations/`: Components related to the automation feature (e.g., `AutomationTable.tsx`, `AutomationForm.tsx`, `TokenInserter.tsx`).
+    -   `automations/`: Components related to the automation feature (e.g., `AutomationCardView.tsx`, `AutomationForm.tsx`, `TokenInserter.tsx`).
 -   **`src/data/`**: Data access layer.
     -   `db/`: Drizzle ORM setup, schema, migrations, database client (`index.ts`), and utilities (`utils.ts`).
     -   `repositories/`: Logic for fetching/manipulating data (e.g., `eventsRepository`).
