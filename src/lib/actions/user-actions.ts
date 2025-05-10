@@ -2,9 +2,9 @@
 
 import { z } from 'zod';
 import { db } from '@/data/db';
-import { user, account } from '@/data/db/schema';
+import { user, account, session } from '@/data/db/schema';
 import { auth } from '@/lib/auth/server';
-import { eq, sql, and } from 'drizzle-orm';
+import { eq, sql, and, max } from 'drizzle-orm';
 import crypto from 'crypto';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
@@ -17,9 +17,9 @@ const UserSchema = z.object({
   email: z.string().email(),
   image: z.string().url().nullable(),
   twoFactorEnabled: z.boolean().optional(),
-  // Include timestamps if needed for the User type, otherwise remove
-  // createdAt: z.date(),
+  createdAt: z.date(),
   // updatedAt: z.date(),
+  lastLoginAt: z.date().nullable().optional(),
 });
 
 // Export only the inferred type
@@ -79,21 +79,47 @@ interface SessionCheckResponse {
  */
 export async function getUsers(): Promise<User[]> {
   try {
-    console.log("[Server Action] Fetching all users...");
-    const usersData = await db.select({
+    console.log("[Server Action] Fetching all users with last login...");
+
+    // Subquery to get the last login time for each user
+    const lastLoginSubquery = db
+      .select({
+        userId: session.userId,
+        lastLoginAt: max(session.createdAt).as('last_login_at'),
+      })
+      .from(session)
+      .groupBy(session.userId)
+      .as('last_logins');
+
+    const usersData = await db
+      .select({
         id: user.id,
         name: user.name,
         email: user.email,
         image: user.image,
         twoFactorEnabled: user.twoFactorEnabled,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-    }).from(user);
-    console.log(`[Server Action] Found ${usersData.length} users.`);
+        createdAt: user.createdAt, // Assuming you still want these
+        updatedAt: user.updatedAt, // Assuming you still want these
+        lastLoginAt: lastLoginSubquery.lastLoginAt,
+      })
+      .from(user)
+      .leftJoin(lastLoginSubquery, eq(user.id, lastLoginSubquery.userId));
+
+    console.log(`[Server Action] Found ${usersData.length} users with last login data.`);
+
+    const mappedData = usersData.map(u => ({
+        ...u,
+        createdAt: new Date(u.createdAt), 
+        lastLoginAt: u.lastLoginAt ? new Date(u.lastLoginAt) : null,
+    }));
+
     // Validate fetched data against schema before returning
-    return z.array(UserSchema).parse(usersData);
+    // Ensure the schema validation handles the new 'lastLoginAt' field
+    const finalUsers = z.array(UserSchema).parse(mappedData);
+    
+    return finalUsers;
   } catch (error) {
-    console.error("[Server Action] Error fetching users:", error);
+    console.error("[Server Action] Error fetching users with last login:", error);
     // In a real app, handle this more gracefully (e.g., return error object)
     return [];
   }
@@ -311,6 +337,8 @@ export async function updateCurrentUser(
             email: user.email,
             image: user.image,
             twoFactorEnabled: user.twoFactorEnabled,
+            createdAt: user.createdAt, // Ensure createdAt is selected
+            lastLoginAt: sql<Date | null>`NULL`.as('last_login_at'), // Provide a null placeholder for lastLoginAt if not directly available/relevant here
         }).from(user).where(eq(user.id, userId)).limit(1);
 
         console.log(`[Server Action] Current user ${userId} updated successfully.`);
@@ -318,7 +346,13 @@ export async function updateCurrentUser(
         return { 
             success: true, 
             message: 'Profile updated successfully.', 
-            updatedUser: updatedUserData.length > 0 ? updatedUserData[0] : null // Return fetched data
+            updatedUser: updatedUserData.length > 0 ? {
+                ...updatedUserData[0],
+                // lastLoginAt might not be part of this specific query's direct result, 
+                // ensure it's handled if UserSchema expects it. Here, it's optional.
+                // If lastLoginAt is not included in select, it will be undefined here, which is fine for an optional field.
+                // However, since we added a placeholder `sql<Date | null>NULL.as('last_login_at')` in select it will be null.
+            } : null 
         }; 
     } catch (error) {
         console.error(`[Server Action] Error updating current user ${userId}:`, error);

@@ -42,6 +42,12 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ResetPasswordDialog } from './reset-password-dialog';
 import { cn } from '@/lib/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // --- Column Definitions ---
 
@@ -155,6 +161,38 @@ export const columns: ColumnDef<User>[] = [
       return <div className="text-xs text-muted-foreground">{formatted}</div>;
     },
     size: 120,
+  },
+  {
+    accessorKey: "lastLoginAt",
+    header: ({ column }) => <SortableHeader column={column}>Last Login</SortableHeader>,
+    cell: ({ row }) => {
+      const date = row.getValue("lastLoginAt") as Date | null;
+      if (!date) {
+        return <div className="text-xs text-muted-foreground">-</div>;
+      }
+      const dateOnlyFormatted = new Intl.DateTimeFormat('en-US', {
+          year: 'numeric', month: 'short', day: 'numeric',
+      }).format(date);
+      const fullDateTimeFormatted = new Intl.DateTimeFormat('en-US', {
+          year: 'numeric', month: 'short', day: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+          // Optionally add second: '2-digit' if needed
+      }).format(date);
+
+      return (
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="text-xs text-muted-foreground cursor-default">{dateOnlyFormatted}</div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{fullDateTimeFormatted}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    },
+    size: 150, // Adjusted size
   },
   {
     id: "actions",
@@ -470,6 +508,8 @@ export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
             <TableHead className="px-2 py-1"><Skeleton className="h-5 w-20" /></TableHead>
             {/* Created */}
             <TableHead className="w-[120px] px-2 py-1"><Skeleton className="h-5 w-24" /></TableHead>
+            {/* Last Login */}
+            <TableHead className="w-[150px] px-2 py-1"><Skeleton className="h-5 w-24" /></TableHead>
             {/* Actions */}
             <TableHead className="w-[80px] px-2 py-1"><Skeleton className="h-5 w-16" /></TableHead>
           </TableRow>
@@ -486,6 +526,8 @@ export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
               {/* Email */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
               {/* Created */}
+              <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
+              {/* Last Login */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
               {/* Actions */}
               <TableCell className="px-2 py-2"><Skeleton className="h-8 w-8" /></TableCell>
