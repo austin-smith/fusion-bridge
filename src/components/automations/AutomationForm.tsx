@@ -9,8 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Trash2, Plus } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Trash2, Plus, ChevronDown, ChevronUp, HelpCircle, Info, X } from 'lucide-react';
 import {
     AutomationConfigSchema,
     type AutomationConfig,
@@ -45,7 +45,16 @@ import { AVAILABLE_AUTOMATION_TOKENS } from '@/lib/automation-tokens';
 import { SendHttpRequestActionFields } from './SendHttpRequestActionFields';
 import { RuleBuilder } from './RuleBuilder';
 import { getIconComponentByName } from '@/lib/mappings/presentation';
-import { HelpCircle } from 'lucide-react';
+import { 
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TriangleAlert, Bookmark, Globe, Power } from 'lucide-react';
+import { Badge } from "@/components/ui/badge";
+import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
 
 interface AutomationFormData {
     id: string;
@@ -142,6 +151,11 @@ export default function AutomationForm({
     const router = useRouter();
     const [isLoading, setIsLoading] = React.useState<boolean>(false);
 
+    const [temporalConditionsExpanded, setTemporalConditionsExpanded] = React.useState<boolean>(
+        // Only expand by default if there are existing temporal conditions
+        Boolean(initialData?.configJson?.temporalConditions?.length)
+    );
+
     const massageInitialData = (data: AutomationFormData): AutomationFormValues => {
         const config = data.configJson;
         
@@ -204,6 +218,19 @@ export default function AutomationForm({
         control: form.control,
         name: "config.temporalConditions"
     });
+
+    // Track which action accordions are open
+    const [openActionItems, setOpenActionItems] = React.useState<string[]>([]);
+
+    // Initialize the descriptors to show on first render
+    React.useEffect(() => {
+        // This will force a re-render after initial mount, ensuring descriptors are shown
+        setOpenActionItems([]);
+    }, []);
+
+    const handleActionAccordionChange = (value: string[]) => {
+        setOpenActionItems(value);
+    };
 
     const handleInsertToken = (
         fieldName: InsertableFieldNames,
@@ -301,6 +328,37 @@ export default function AutomationForm({
     const sortedPikoConnectors = [...pikoTargetConnectors].sort((a, b) => a.name.localeCompare(b.name));
     const sortedAvailableTargetDevices = [...availableTargetDevices].sort((a, b) => a.name.localeCompare(b.name));
 
+    // Helper function to render collapsed action detail
+    const getActionDetailText = (actionType: string, index: number): string => {
+        if (actionType === 'sendHttpRequest') {
+            const method = form.watch(`config.actions.${index}.params.method`);
+            const url = form.watch(`config.actions.${index}.params.urlTemplate`) || '(URL not set)';
+            return `→ ${method} ${url}`;
+        }
+        
+        if (actionType === 'setDeviceState') {
+            const deviceId = form.watch(`config.actions.${index}.params.targetDeviceInternalId`);
+            const state = form.watch(`config.actions.${index}.params.targetState`);
+            const deviceName = sortedAvailableTargetDevices.find(d => d.id === deviceId)?.name || 'Unknown device';
+            const stateDisplay = ACTIONABLE_STATE_DISPLAY_MAP[state as ActionableState] || state;
+            return `→ ${stateDisplay} ${deviceName}`;
+        }
+        
+        if (actionType === 'createEvent') {
+            const connectorId = form.watch(`config.actions.${index}.params.targetConnectorId`);
+            const connectorName = sortedPikoConnectors.find(c => c.id === connectorId)?.name || '(No connector)';
+            return `→ ${connectorName}`;
+        }
+        
+        if (actionType === 'createBookmark') {
+            const connectorId = form.watch(`config.actions.${index}.params.targetConnectorId`);
+            const connectorName = sortedPikoConnectors.find(c => c.id === connectorId)?.name || '(No connector)';
+            return `→ ${connectorName}`;
+        }
+        
+        return '';
+    };
+
     return (
         <FormProvider {...form}>
             <Form {...form}>
@@ -333,10 +391,10 @@ export default function AutomationForm({
                         </CardContent>
                     </Card>
 
-                    {/* --- NEW Parent Conditions Card --- */}
+                    {/* Restore original Conditions Card with collapsible temporal conditions */}
                     <Card>
                         <CardHeader>
-                            <CardTitle>Conditions (if...)</CardTitle>
+                            <CardTitle>Trigger (if...)</CardTitle>
                             <CardDescription className="text-xs text-muted-foreground pt-1">
                                 Define the primary event trigger and optional subsequent time-based conditions.
                             </CardDescription>
@@ -344,7 +402,7 @@ export default function AutomationForm({
                         <CardContent className="space-y-6"> 
                             {/* --- Trigger Conditions Section --- */}
                             <div>
-                                <h3 className="text-md font-semibold mb-3">Primary Trigger (if this happens...)</h3>
+                                <h3 className="text-sm font-semibold mb-3">Primary Conditions (if this happens...)</h3>
                                 <FormField
                                     control={form.control}
                                     name="config.conditions"
@@ -361,407 +419,588 @@ export default function AutomationForm({
                             {/* --- Separator --- */}
                             <hr className="my-6" />
 
-                            {/* --- Temporal Conditions Section --- */}
+                            {/* --- Temporal Conditions Section with Accordion --- */}
                             <div>
-                                <h3 className="text-md font-semibold mb-3">Temporal Conditions (and if...)</h3>
-                                <p className="text-xs text-muted-foreground mb-4">
-                                    Optionally, add conditions based on other events happening near the trigger time.
-                                </p>
-                                <div className="space-y-4">
-                                    {/* --- Map Temporal Conditions --- */}
-                                    {temporalConditionsFields.map((fieldItem, index) => (
-                                        <Card key={fieldItem.id} className="relative border border-blue-200 dark:border-blue-800 pt-8 bg-blue-50/30 dark:bg-blue-950/20">
-                                            <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 text-muted-foreground hover:text-destructive h-6 w-6" onClick={() => removeTemporalCondition(index)}><Trash2 className="h-4 w-4" /><span className="sr-only">Remove Temporal Condition</span></Button>
-                                            <CardContent className="space-y-4">
-                                                <FormField name={`config.temporalConditions.${index}.type`} render={({ field, fieldState }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Condition</FormLabel>
-                                                        <div className="flex items-start gap-2">
-                                                            <Select onValueChange={field.onChange} value={field.value}>
-                                                                <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
-                                                                <SelectContent>
-                                                                    <SelectItem value="eventOccurred">Any matching event occurred</SelectItem>
-                                                                    <SelectItem value="noEventOccurred">No matching event occurred</SelectItem>
-                                                                    <SelectItem value="eventCountEquals">Matching event count =</SelectItem>
-                                                                    <SelectItem value="eventCountLessThan">Matching event count &lt;</SelectItem>
-                                                                    <SelectItem value="eventCountGreaterThan">Matching event count &gt;</SelectItem>
-                                                                    <SelectItem value="eventCountLessThanOrEqual">Matching event count &le;</SelectItem>
-                                                                    <SelectItem value="eventCountGreaterThanOrEqual">Matching event count &ge;</SelectItem>
-                                                                </SelectContent>
-                                                            </Select>
-                                                            {/* --- Conditionally render Count Input INLINE --- */}
-                                                            {[ 'eventCountEquals', 'eventCountLessThan', 'eventCountGreaterThan', 'eventCountLessThanOrEqual', 'eventCountGreaterThanOrEqual' ].includes(field.value) && (
-                                                                <FormControl>
-                                                                    <Input 
-                                                                        {...form.register(`config.temporalConditions.${index}.expectedEventCount`, { valueAsNumber: true })}
-                                                                        type="number" 
-                                                                        min="0" 
-                                                                        step="1" 
-                                                                        placeholder="Count" 
-                                                                        disabled={isLoading} 
-                                                                        className={cn("w-[100px]", fieldState.error && 'border-destructive')} // Adjusted width slightly
-                                                                    />
-                                                                </FormControl>
-                                                            )}
-                                                        </div>
-                                                        {/* Display description/message below the flex container */}
-                                                        <FormDescription className={descriptionStyles}>
-                                                            Select the condition type and specify count if needed.
-                                                        </FormDescription>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )} />
+                                <h3 className="text-sm font-semibold mb-3">Temporal Conditions (and if...)</h3>
+                                
+                                <Accordion 
+                                    type="single"
+                                    collapsible
+                                    defaultValue={undefined}
+                                    onValueChange={(value) => setTemporalConditionsExpanded(!!value)}
+                                >
+                                    <AccordionItem value="temporal-conditions" className="border-0">
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-xs text-muted-foreground">
+                                                {temporalConditionsFields.length > 0 
+                                                    ? `${temporalConditionsFields.length} temporal condition${temporalConditionsFields.length > 1 ? 's' : ''} configured` 
+                                                    : "Optionally add conditions based on other events happening near the trigger time."}
+                                            </p>
+                                            <AccordionTrigger className="py-0" />
+                                        </div>
+                                        <AccordionContent>
+                                            <div className="pt-4">
+                                                <div className="space-y-4">
+                                                    {/* --- Map Temporal Conditions --- */}
+                                                    {temporalConditionsFields.map((fieldItem, index) => (
+                                                        <Card key={fieldItem.id} className="relative border border-blue-200 dark:border-blue-800 pt-8 bg-blue-50/30 dark:bg-blue-950/20">
+                                                            <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 text-muted-foreground hover:text-destructive h-6 w-6" onClick={() => removeTemporalCondition(index)}><Trash2 className="h-4 w-4" /><span className="sr-only">Remove Temporal Condition</span></Button>
+                                                            <CardContent className="space-y-4">
+                                                                <FormField name={`config.temporalConditions.${index}.type`} render={({ field, fieldState }) => (
+                                                                    <FormItem>
+                                                                        <FormLabel>Condition</FormLabel>
+                                                                        <div className="flex items-start gap-2">
+                                                                            <Select onValueChange={field.onChange} value={field.value}>
+                                                                                <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
+                                                                                <SelectContent>
+                                                                                    <SelectItem value="eventOccurred">Any matching event occurred</SelectItem>
+                                                                                    <SelectItem value="noEventOccurred">No matching event occurred</SelectItem>
+                                                                                    <SelectItem value="eventCountEquals">Matching event count =</SelectItem>
+                                                                                    <SelectItem value="eventCountLessThan">Matching event count &lt;</SelectItem>
+                                                                                    <SelectItem value="eventCountGreaterThan">Matching event count &gt;</SelectItem>
+                                                                                    <SelectItem value="eventCountLessThanOrEqual">Matching event count &le;</SelectItem>
+                                                                                    <SelectItem value="eventCountGreaterThanOrEqual">Matching event count &ge;</SelectItem>
+                                                                                </SelectContent>
+                                                                            </Select>
+                                                                            {/* --- Conditionally render Count Input INLINE --- */}
+                                                                            {[ 'eventCountEquals', 'eventCountLessThan', 'eventCountGreaterThan', 'eventCountLessThanOrEqual', 'eventCountGreaterThanOrEqual' ].includes(field.value) && (
+                                                                                <FormControl>
+                                                                                    <Input 
+                                                                                        {...form.register(`config.temporalConditions.${index}.expectedEventCount`, { valueAsNumber: true })}
+                                                                                        type="number" 
+                                                                                        min="0" 
+                                                                                        step="1" 
+                                                                                        placeholder="Count" 
+                                                                                        disabled={isLoading} 
+                                                                                        className={cn("w-[100px]", fieldState.error && 'border-destructive')} 
+                                                                                    />
+                                                                                </FormControl>
+                                                                            )}
+                                                                        </div>
+                                                                        {/* Display description/message below the flex container */}
+                                                                        <FormDescription className={descriptionStyles}>
+                                                                            Select the condition type and specify count if needed.
+                                                                        </FormDescription>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                )} />
 
-                                                <FormField name={`config.temporalConditions.${index}.scoping`} render={({ field, fieldState }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Check Events From</FormLabel>
-                                                        <Select onValueChange={field.onChange} value={field.value ?? 'anywhere'}>
-                                                            <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
-                                                            <SelectContent>
-                                                                <SelectItem value="anywhere">Anywhere</SelectItem>
-                                                                <SelectItem value="sameArea">Devices in same area</SelectItem>
-                                                                <SelectItem value="sameLocation">Devices in same location</SelectItem>
-                                                            </SelectContent>
-                                                        </Select>
-                                                        <FormDescription className={descriptionStyles}>Scope the devices checked by this condition.</FormDescription>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )} />
-                                                <FormField name={`config.temporalConditions.${index}.eventFilter`} render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Event Filter Criteria</FormLabel>
-                                                        
-                                                        <RuleBuilder 
-                                                            value={field.value} 
-                                                            onChange={field.onChange} 
-                                                        />
-                                                        
-                                                        <FormDescription className={descriptionStyles}>Define criteria that matching events must meet.</FormDescription>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )} />
-                                               
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                                                    <FormField name={`config.temporalConditions.${index}.timeWindowSecondsBefore`} render={({ field, fieldState }) => (
-                                                        <FormItem>
-                                                            <FormLabel>Seconds Before Trigger</FormLabel>
-                                                            <FormControl>
-                                                                <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
-                                                            </FormControl>
-                                                            <FormDescription className={descriptionStyles}>Check for events up to this many seconds before the trigger.</FormDescription>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )} />
-                                                    <FormField name={`config.temporalConditions.${index}.timeWindowSecondsAfter`} render={({ field, fieldState }) => (
-                                                        <FormItem>
-                                                            <FormLabel>Seconds After Trigger</FormLabel>
-                                                            <FormControl>
-                                                                <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
-                                                            </FormControl>
-                                                            <FormDescription className={descriptionStyles}>Check for events up to this many seconds after the trigger.</FormDescription>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )} />
+                                                                <FormField name={`config.temporalConditions.${index}.scoping`} render={({ field, fieldState }) => (
+                                                                    <FormItem>
+                                                                        <FormLabel>Check Events From</FormLabel>
+                                                                        <Select onValueChange={field.onChange} value={field.value ?? 'anywhere'}>
+                                                                            <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
+                                                                            <SelectContent>
+                                                                                <SelectItem value="anywhere">Anywhere</SelectItem>
+                                                                                <SelectItem value="sameArea">Devices in same area</SelectItem>
+                                                                                <SelectItem value="sameLocation">Devices in same location</SelectItem>
+                                                                            </SelectContent>
+                                                                        </Select>
+                                                                        <FormDescription className={descriptionStyles}>Scope the devices checked by this condition.</FormDescription>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                )} />
+                                                                <FormField name={`config.temporalConditions.${index}.eventFilter`} render={({ field }) => (
+                                                                    <FormItem>
+                                                                        <FormLabel>Event Filter Criteria</FormLabel>
+                                                                        
+                                                                        <RuleBuilder 
+                                                                            value={field.value} 
+                                                                            onChange={field.onChange} 
+                                                                        />
+                                                                        
+                                                                        <FormDescription className={descriptionStyles}>Define criteria that matching events must meet.</FormDescription>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                )} />
+                                                               
+                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                                                                    <FormField name={`config.temporalConditions.${index}.timeWindowSecondsBefore`} render={({ field, fieldState }) => (
+                                                                        <FormItem>
+                                                                            <FormLabel>Seconds Before Trigger</FormLabel>
+                                                                            <FormControl>
+                                                                                <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
+                                                                            </FormControl>
+                                                                            <FormDescription className={descriptionStyles}>Check for events up to this many seconds before the trigger.</FormDescription>
+                                                                            <FormMessage />
+                                                                        </FormItem>
+                                                                    )} />
+                                                                    <FormField name={`config.temporalConditions.${index}.timeWindowSecondsAfter`} render={({ field, fieldState }) => (
+                                                                        <FormItem>
+                                                                            <FormLabel>Seconds After Trigger</FormLabel>
+                                                                            <FormControl>
+                                                                                <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
+                                                                            </FormControl>
+                                                                            <FormDescription className={descriptionStyles}>Check for events up to this many seconds after the trigger.</FormDescription>
+                                                                            <FormMessage />
+                                                                        </FormItem>
+                                                                    )} />
+                                                                </div>
+                                                            </CardContent>
+                                                        </Card>
+                                                    ))}
+                                                    <Button 
+                                                        type="button" 
+                                                        variant="outline" 
+                                                        size="sm" 
+                                                        onClick={() => appendTemporalCondition({ id: crypto.randomUUID(), ...defaultTemporalCondition })} 
+                                                        disabled={isLoading}
+                                                    >
+                                                        <Plus className="h-4 w-4 mr-1" /> Add Temporal Condition
+                                                    </Button>
                                                 </div>
-                                            </CardContent>
-                                        </Card>
-                                    ))}
-                                    <Button 
-                                        type="button" 
-                                        variant="outline" 
-                                        size="sm" 
-                                        onClick={() => appendTemporalCondition({ id: crypto.randomUUID(), ...defaultTemporalCondition })} 
-                                        disabled={isLoading}
-                                    >
-                                        <Plus className="h-4 w-4" /> Add Temporal Condition
-                                    </Button>
-                                </div> 
+                                            </div>
+                                        </AccordionContent>
+                                    </AccordionItem>
+                                </Accordion>
                             </div>
                         </CardContent>
                     </Card>
-                    
 
-                    {/* --- RESTORE Actions Card --- */}
-                     
-                     <Card>
-                         <CardHeader>
+                    {/* Actions Section - Made into accordion for each action */}
+                    <Card>
+                        <CardHeader>
                             <CardTitle>Actions (then do this...)</CardTitle>
-                         </CardHeader>
-                         <CardContent className="space-y-4">
-                            {actionsFields.map((fieldItem, index) => {
-                                // --- Add Console Log Here --- 
-                                console.log(`Rendering Action at index ${index}, ID: ${fieldItem.id}, Value:`, form.getValues(`config.actions.${index}`));
-                                
-                                const actionType = form.watch(`config.actions.${index}.type`);
-                                return (
-                                    <Card key={fieldItem.id} className="relative border border-dashed pt-8">
-                                         {/* Action Card rendering logic - including simplified fields */}
-                                        <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 text-muted-foreground hover:text-destructive h-6 w-6" onClick={() => removeAction(index)}><Trash2 className="h-4 w-4" /><span className="sr-only">Remove Action</span></Button>
-                                        <CardContent className="space-y-4">
-                                            <FormField 
-                                                control={form.control}
-                                                name={`config.actions.${index}.type`}
-                                                render={({ field, fieldState }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Action Type</FormLabel>
-                                                        <FormControl>
-                                                            <Select
-                                                                onValueChange={(value) => {
-                                                                    // --- Add Console Log Here --- 
-                                                                    console.log(`Action type changed at index ${index} to:`, value);
-                                                                    const newType = value as AutomationAction['type'];
-                                                                    let newActionParams: AutomationAction['params'];
-                                                                    if (newType === 'createEvent') { 
-                                                                        newActionParams = { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' };
-                                                                    } else if (newType === 'createBookmark') { 
-                                                                        newActionParams = { nameTemplate: '', descriptionTemplate: '', durationMsTemplate: '5000', tagsTemplate: '', targetConnectorId: '' };
-                                                                    } else if (newType === 'sendHttpRequest') { 
-                                                                        newActionParams = { urlTemplate: '', method: 'GET', headers: [], contentType: 'text/plain', bodyTemplate: '' };
-                                                                    } else if (newType === 'setDeviceState') {
-                                                                        newActionParams = {
-                                                                            targetDeviceInternalId: sortedAvailableTargetDevices.length > 0 ? sortedAvailableTargetDevices[0].id : '',
-                                                                            targetState: ActionableState.SET_ON
-                                                                        };
-                                                                    } else { 
-                                                                        console.warn(`Unexpected action type: ${value}. Defaulting to minimal sendHttpRequest.`); 
-                                                                        newActionParams = { urlTemplate: '', method: 'GET'} as any; // Cast if necessary for default
-                                                                    }
-                                                                    // --- Add Console Log Here ---
-                                                                    console.log(`Setting value for config.actions.${index} to:`, newActionParams);
-                                                                    form.setValue(`config.actions.${index}.params` as any, newActionParams, { shouldValidate: true, shouldDirty: true });
-                                                                    field.onChange(newType); // Ensure the type field itself is also updated
-                                                                }}
-                                                                value={field.value ?? 'createEvent'}
-                                                            >
-                                                                <SelectTrigger className={cn(fieldState.error && 'border-destructive')}>
-                                                                    <SelectValue placeholder="Select Action Type" />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    <SelectItem value="createBookmark">Create Piko Bookmark</SelectItem>
-                                                                    <SelectItem value="createEvent">Create Piko Event</SelectItem>
-                                                                    <SelectItem value="sendHttpRequest">Send HTTP Request</SelectItem>
-                                                                    <SelectItem value="setDeviceState">Set Device State</SelectItem>
-                                                                </SelectContent>
-                                                            </Select>
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                            {/* --- Add console log via IIFE --- */}
-                                            {(() => { 
-                                                console.log(`Rendering Target Connector check for index ${index}. actionType:`, actionType);
-                                                return null; 
-                                            })()}
-                                            
-                                            {/* Conditional rendering for Target Connector */}
-                                            {(actionType === 'createEvent' || actionType === 'createBookmark') && (
-                                                 <FormField
-                                                     control={form.control}
-                                                     name={`config.actions.${index}.params.targetConnectorId`}
-                                                     render={({ field, fieldState }) => (
-                                                         <FormItem>
-                                                             <FormLabel>Target Connector</FormLabel>
-                                                             <FormControl>
-                                                                 <Select 
-                                                                     onValueChange={field.onChange} 
-                                                                     value={field.value ?? ''} 
-                                                                     disabled={isLoading || !(actionType === 'createEvent' || actionType === 'createBookmark')}
-                                                                 >
-                                                                     <SelectTrigger className={cn(fieldState.error && 'border-destructive', !(actionType === 'createEvent' || actionType === 'createBookmark') && 'hidden')}>
-                                                                         <SelectValue placeholder="Select Target Connector" />
-                                                                     </SelectTrigger>
-                                                                     <SelectContent>{sortedPikoConnectors.map(connector => (<SelectItem key={connector.id} value={connector.id}>{connector.name} ({connector.category})</SelectItem>))}</SelectContent>
-                                                                 </Select>
-                                                             </FormControl>
-                                                             <FormMessage />
-                                                         </FormItem>
-                                                     )} />
-                                            )}
-                                            <div className="space-y-2 border-l-2 pl-4 ml-1 border-muted">
-                                                <h3 className="text-sm font-medium text-muted-foreground mb-2">Action Parameters</h3>
-                                                 <p className="text-xs text-muted-foreground"> {actionType === 'createBookmark' && "Creates a bookmark on related Piko cameras."} {actionType === 'createEvent' && "Creates an event in the target Piko system."} {actionType === 'sendHttpRequest' && "Sends an HTTP request."} {actionType === 'setDeviceState' && "Changes the state of a specified device (e.g., turn on/off)."} </p>
-                                                {actionType === 'createEvent' && ( <>
-                                                     {/* --- Restore sourceTemplate Field --- */}
-                                                     <FormField control={form.control} name={`config.actions.${index}.params.sourceTemplate`} render={({ field, fieldState }) => (
-                                                        <FormItem>
-                                                            <div className="flex items-center justify-between">
-                                                                <FormLabel>Source</FormLabel>
-                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('sourceTemplate', index, token, 'action')} />
-                                                            </div>
-                                                            <FormControl><Textarea placeholder="Fusion" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                     )} />
-                                                     {/* --- Restore captionTemplate Field --- */}
-                                                     <FormField control={form.control} name={`config.actions.${index}.params.captionTemplate`} render={({ field, fieldState }) => (
-                                                        <FormItem>
-                                                            <div className="flex items-center justify-between">
-                                                                <FormLabel>Caption</FormLabel>
-                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('captionTemplate', index, token, 'action')} />
-                                                            </div>
-                                                            <FormControl><Textarea placeholder="Device: {{device.name}} // Event: {{event.data.state}} at {{event.time}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                     )} />
-                                                     {/* --- Restore descriptionTemplate Field --- */}
-                                                     <FormField control={form.control} name={`config.actions.${index}.params.descriptionTemplate`} render={({ field, fieldState }) => (
-                                                        <FormItem>
-                                                            <div className="flex items-center justify-between">
-                                                                <FormLabel>Description</FormLabel>
-                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('descriptionTemplate', index, token, 'action')} />
-                                                            </div>
-                                                            <FormControl><Textarea placeholder="Device: {{event.deviceId}} // Type: {{event.event}} // State: {{event.data.state}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                     )} />
-                                                </> )}
-                                                {actionType === 'createBookmark' && ( <>
-                                                     {/* --- Restore Bookmark Fields --- */}
-                                                    <FormField control={form.control} name={`config.actions.${index}.params.nameTemplate`} render={({ field, fieldState }) => (
-                                                        <FormItem>
-                                                            <div className="flex items-center justify-between">
-                                                                <FormLabel>Name</FormLabel>
-                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('nameTemplate', index, token, 'action')}/>
-                                                            </div>
-                                                            <FormControl><Input placeholder="e.g., Alert: {{device.name}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )} />
-                                                    <FormField control={form.control} name={`config.actions.${index}.params.descriptionTemplate`} render={({ field, fieldState }) => (
-                                                        <FormItem>
-                                                            <div className="flex items-center justify-between">
-                                                                <FormLabel>Description</FormLabel>
-                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('descriptionTemplate', index, token, 'action')}/>
-                                                            </div>
-                                                            <FormControl><Textarea placeholder="e.g., Device: {{device.name}} triggered event {{event.event}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )} />
-                                                    <FormField control={form.control} name={`config.actions.${index}.params.durationMsTemplate`} render={({ field, fieldState }) => (
-                                                        <FormItem>
-                                                             <div className="flex items-center justify-between">
-                                                                <FormLabel>Duration (milliseconds)</FormLabel>
-                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('durationMsTemplate', index, token, 'action')}/>
-                                                            </div>
-                                                            <FormControl><Input placeholder="e.g., 5000" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                                            <FormDescription className={descriptionStyles}>Duration in milliseconds.</FormDescription>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )} />
-                                                    <FormField control={form.control} name={`config.actions.${index}.params.tagsTemplate`} render={({ field, fieldState }) => (
-                                                        <FormItem>
-                                                            <div className="flex items-center justify-between">
-                                                                <FormLabel>Tags</FormLabel>
-                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('tagsTemplate', index, token, 'action')}/>
-                                                            </div>
-                                                            <FormControl><Input placeholder="e.g., Alert,{{device.type}},Automation" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                                            <FormDescription className={descriptionStyles}>Enter tags separated by commas.</FormDescription>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )} />
-                                                </> )}
-                                                {actionType === 'sendHttpRequest' && ( 
-                                                    <SendHttpRequestActionFields 
-                                                        actionIndex={index} 
-                                                        handleInsertToken={(fieldName, actIndex, token, headerIndex) => {
-                                                            handleInsertToken(fieldName, actIndex, token, 'action', headerIndex);
-                                                        }}
-                                                    /> 
-                                                )}
-                                                {actionType === 'setDeviceState' && (
-                                                    <>
-                                                        <FormField
-                                                            control={form.control}
-                                                            name={`config.actions.${index}.params.targetDeviceInternalId`}
-                                                            render={({ field, fieldState }) => (
-                                                                <FormItem>
-                                                                    <FormLabel>Target Device</FormLabel>
-                                                                    <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
-                                                                        <FormControl>
-                                                                            <SelectTrigger className={cn(fieldState.error && 'border-destructive')}>
-                                                                                <SelectValue placeholder="Select Target Device" />
-                                                                            </SelectTrigger>
-                                                                        </FormControl>
-                                                                        <SelectContent>
-                                                                            {sortedAvailableTargetDevices.map(device => {
-                                                                                const IconComponent = getIconComponentByName(device.iconName) || HelpCircle;
-                                                                                return (
-                                                                                    <SelectItem key={device.id} value={device.id}>
-                                                                                        <div className="flex items-center">
-                                                                                            <IconComponent className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
-                                                                                            <span>{device.name} <span className="text-xs text-muted-foreground">({device.displayType})</span></span>
-                                                                                        </div>
-                                                                                    </SelectItem>
-                                                                                );
-                                                                            })}
-                                                                            {sortedAvailableTargetDevices.length === 0 && (
-                                                                                <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                                                                                    No controllable devices found.
-                                                                                </div>
-                                                                            )}
-                                                                        </SelectContent>
-                                                                    </Select>
-                                                                    <FormDescription className={descriptionStyles}>
-                                                                        Select the device to control.
-                                                                    </FormDescription>
-                                                                    <FormMessage />
-                                                                </FormItem>
-                                                            )}
-                                                        />
-                                                        <FormField
-                                                            control={form.control}
-                                                            name={`config.actions.${index}.params.targetState`}
-                                                            render={({ field, fieldState }) => (
-                                                                <FormItem>
-                                                                    <FormLabel>Target State</FormLabel>
-                                                                    <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
-                                                                        <FormControl>
-                                                                            <SelectTrigger className={cn(fieldState.error && 'border-destructive')}>
-                                                                                <SelectValue placeholder="Select Target State" />
-                                                                            </SelectTrigger>
-                                                                        </FormControl>
-                                                                        <SelectContent>
-                                                                            {Object.entries(ACTIONABLE_STATE_DISPLAY_MAP).map(([value, label]) => (
-                                                                                <SelectItem key={value} value={value}>{label}</SelectItem>
-                                                                            ))}
-                                                                        </SelectContent>
-                                                                    </Select>
-                                                                    <FormMessage />
-                                                                </FormItem>
-                                                            )}
-                                                        />
-                                                    </>
-                                                )}
-                                                {!['createEvent', 'createBookmark', 'sendHttpRequest', 'setDeviceState'].includes(actionType || '') && ( <p className="text-sm text-muted-foreground">Select an action type.</p> )}
+                            <CardDescription className="text-xs text-muted-foreground">
+                                {actionsFields.length > 0 
+                                    ? `${actionsFields.length} action${actionsFields.length > 1 ? 's' : ''} configured` 
+                                    : "No actions configured yet"}
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <Accordion 
+                                type="multiple" 
+                                defaultValue={[]}
+                                value={openActionItems}
+                                className="space-y-4"
+                                onValueChange={handleActionAccordionChange}
+                            >
+                                {actionsFields.map((fieldItem, index) => {
+                                    const actionType = form.watch(`config.actions.${index}.type`);
+                                    
+                                    // Get simplified title based on action type
+                                    let actionTitle = "Action";
+                                    if (actionType === 'createEvent') actionTitle = "Create Event";
+                                    if (actionType === 'createBookmark') actionTitle = "Create Bookmark";
+                                    if (actionType === 'sendHttpRequest') actionTitle = "Send HTTP Request";
+                                    if (actionType === 'setDeviceState') actionTitle = "Set Device State";
+                                    
+                                    // Get the appropriate icon for the action type
+                                    const ActionIcon = () => {
+                                        if (actionType === 'createEvent') return <TriangleAlert className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />;
+                                        if (actionType === 'createBookmark') return <Bookmark className="h-4 w-4 mr-2 text-green-600 dark:text-green-400" />;
+                                        if (actionType === 'sendHttpRequest') return <Globe className="h-4 w-4 mr-2 text-purple-600 dark:text-purple-400" />;
+                                        if (actionType === 'setDeviceState') return <Power className="h-4 w-4 mr-2 text-amber-600 dark:text-amber-400" />;
+                                        return <HelpCircle className="h-4 w-4 mr-2 text-muted-foreground" />;
+                                    };
+                                    
+                                    // Add background color based on action type for visual distinction
+                                    let actionBgColor = "bg-background";
+                                    let actionBorderColor = "border-border";
+                                    
+                                    if (actionType === 'createEvent') {
+                                        actionBgColor = "bg-blue-50/40 dark:bg-blue-950/20";
+                                        actionBorderColor = "border-blue-200 dark:border-blue-800";
+                                    } else if (actionType === 'createBookmark') {
+                                        actionBgColor = "bg-green-50/40 dark:bg-green-950/20";
+                                        actionBorderColor = "border-green-200 dark:border-green-800";
+                                    } else if (actionType === 'sendHttpRequest') {
+                                        actionBgColor = "bg-purple-50/40 dark:bg-purple-950/20";
+                                        actionBorderColor = "border-purple-200 dark:border-purple-800";
+                                    } else if (actionType === 'setDeviceState') {
+                                        actionBgColor = "bg-amber-50/40 dark:bg-amber-950/20";
+                                        actionBorderColor = "border-amber-200 dark:border-amber-800";
+                                    }
+                                    
+                                    return (
+                                        <AccordionItem 
+                                            key={fieldItem.id} 
+                                            value={`action-${index}`}
+                                            className={`${actionBgColor} border-2 ${actionBorderColor} rounded-md overflow-hidden shadow-sm`}
+                                        >
+                                            <div className="relative">
+                                                <AccordionTrigger className="px-4 py-3 hover:no-underline">
+                                                    <div className="flex items-center">
+                                                        {/* Remove the numbered badge */}
+                                                        <ActionIcon />
+                                                        <span className="text-sm font-semibold">{actionTitle}</span>
+                                                        {/* Show details when action is collapsed */}
+                                                        {(!openActionItems.includes(`action-${index}`)) && 
+                                                            <span className="text-xs text-muted-foreground ml-2">
+                                                                {getActionDetailText(actionType, index)}
+                                                            </span>
+                                                        }
+                                                    </div>
+                                                </AccordionTrigger>
+                                                <Button 
+                                                    type="button" 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="absolute right-12 top-2.5 h-6 w-6 text-destructive hover:bg-destructive/10"
+                                                    onClick={() => removeAction(index)}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                    <span className="sr-only">Delete action</span>
+                                                </Button>
                                             </div>
-                                        </CardContent>
-                                    </Card>
-                                )
-                            })}
+                                            <AccordionContent className="px-4 pb-4 pt-2">
+                                                <div className="space-y-4">
+                                                    <FormField 
+                                                        control={form.control}
+                                                        name={`config.actions.${index}.type`}
+                                                        render={({ field, fieldState }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Action Type</FormLabel>
+                                                                <FormControl>
+                                                                    <Select
+                                                                        onValueChange={(value) => {
+                                                                            const newType = value as AutomationAction['type'];
+                                                                            let newActionParams: AutomationAction['params'];
+                                                                            if (newType === 'createEvent') { 
+                                                                                newActionParams = { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' };
+                                                                            } else if (newType === 'createBookmark') { 
+                                                                                newActionParams = { nameTemplate: '', descriptionTemplate: '', durationMsTemplate: '5000', tagsTemplate: '', targetConnectorId: '' };
+                                                                            } else if (newType === 'sendHttpRequest') { 
+                                                                                newActionParams = { urlTemplate: '', method: 'GET', headers: [], contentType: 'text/plain', bodyTemplate: '' };
+                                                                            } else if (newType === 'setDeviceState') {
+                                                                                newActionParams = {
+                                                                                    targetDeviceInternalId: sortedAvailableTargetDevices.length > 0 ? sortedAvailableTargetDevices[0].id : '',
+                                                                                    targetState: ActionableState.SET_ON
+                                                                                };
+                                                                            } else { 
+                                                                                console.warn(`Unexpected action type: ${value}. Defaulting to minimal sendHttpRequest.`); 
+                                                                                newActionParams = { urlTemplate: '', method: 'GET'} as any;
+                                                                            }
+                                                                            form.setValue(`config.actions.${index}.params` as any, newActionParams, { shouldValidate: true, shouldDirty: true });
+                                                                            field.onChange(newType);
+                                                                        }}
+                                                                        value={field.value ?? 'createEvent'}
+                                                                    >
+                                                                        <SelectTrigger className={cn("w-[220px]", fieldState.error && 'border-destructive')}>
+                                                                            <SelectValue placeholder="Select Action Type" />
+                                                                        </SelectTrigger>
+                                                                        <SelectContent>
+                                                                            <SelectItem value="createBookmark">Create Piko Bookmark</SelectItem>
+                                                                            <SelectItem value="createEvent">Create Piko Event</SelectItem>
+                                                                            <SelectItem value="sendHttpRequest">Send HTTP Request</SelectItem>
+                                                                            <SelectItem value="setDeviceState">Set Device State</SelectItem>
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    
+                                                    {/* Target Connector for Event and Bookmark */}
+                                                    {(actionType === 'createEvent' || actionType === 'createBookmark') && (
+                                                        <FormField
+                                                            control={form.control}
+                                                            name={`config.actions.${index}.params.targetConnectorId`}
+                                                            render={({ field, fieldState }) => {
+                                                                // Find selected connector details for displaying in trigger
+                                                                const selectedConnector = sortedPikoConnectors.find(c => c.id === field.value);
+                                                                
+                                                                return (
+                                                                    <FormItem>
+                                                                        <FormLabel>Target Connector</FormLabel>
+                                                                        <FormControl>
+                                                                            <Select 
+                                                                                onValueChange={field.onChange} 
+                                                                                value={field.value ?? ''} 
+                                                                                disabled={isLoading || !(actionType === 'createEvent' || actionType === 'createBookmark')}
+                                                                            >
+                                                                                <SelectTrigger 
+                                                                                    className={cn(
+                                                                                        "flex items-center w-[220px]",
+                                                                                        fieldState.error && 'border-destructive', 
+                                                                                        !(actionType === 'createEvent' || actionType === 'createBookmark') && 'hidden'
+                                                                                    )}
+                                                                                >
+                                                                                    <SelectValue placeholder="Select Target Connector">
+                                                                                        {selectedConnector && (
+                                                                                            <div className="flex items-center gap-2">
+                                                                                                <ConnectorIcon 
+                                                                                                    connectorCategory={selectedConnector.category} 
+                                                                                                    size={18} 
+                                                                                                    className="mr-1"
+                                                                                                />
+                                                                                                <span>{selectedConnector.name}</span>
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </SelectValue>
+                                                                                </SelectTrigger>
+                                                                                <SelectContent>
+                                                                                    {sortedPikoConnectors.map(connector => (
+                                                                                        <SelectItem 
+                                                                                            key={connector.id} 
+                                                                                            value={connector.id}
+                                                                                            className="flex items-center py-1.5"
+                                                                                        >
+                                                                                            <div className="flex items-center gap-2">
+                                                                                                <ConnectorIcon 
+                                                                                                    connectorCategory={connector.category} 
+                                                                                                    size={16} 
+                                                                                                />
+                                                                                                <span className="font-medium">{connector.name}</span>
+                                                                                            </div>
+                                                                                        </SelectItem>
+                                                                                    ))}
+                                                                                    
+                                                                                    {sortedPikoConnectors.length === 0 && (
+                                                                                        <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                                                                                            No Piko connectors found
+                                                                                        </div>
+                                                                                    )}
+                                                                                </SelectContent>
+                                                                            </Select>
+                                                                        </FormControl>
+                                                                        <FormDescription className={descriptionStyles}>
+                                                                            {actionType === 'createEvent' 
+                                                                                ? 'Select the Piko system to create an event in.'
+                                                                                : 'Select the Piko system to create a bookmark in.'}
+                                                                        </FormDescription>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                );
+                                                            }}
+                                                        />
+                                                    )}
+                                                    
+                                                    {/* Parameters section with vertical line styling */}
+                                                    <div className={`space-y-2 border-l-2 pl-4 ml-1 rounded-sm p-2 mt-2 bg-white/50 dark:bg-black/10
+                                                        ${actionType === 'createEvent' ? 'border-blue-300 dark:border-blue-700' : 
+                                                          actionType === 'createBookmark' ? 'border-green-300 dark:border-green-700' : 
+                                                          actionType === 'sendHttpRequest' ? 'border-purple-300 dark:border-purple-700' : 
+                                                          actionType === 'setDeviceState' ? 'border-amber-300 dark:border-amber-700' : 
+                                                          'border-muted'}`}>
+                                                        <h3 className="text-sm font-medium text-muted-foreground mb-2">Action Parameters</h3>
+                                                        <p className="text-xs text-muted-foreground mb-2"> 
+                                                            {actionType === 'createBookmark' && "Creates a bookmark on related Piko cameras."} 
+                                                            {actionType === 'createEvent' && "Creates an event in the target Piko system."} 
+                                                            {actionType === 'sendHttpRequest' && "Sends an HTTP request."} 
+                                                            {actionType === 'setDeviceState' && "Changes the state of a specified device (e.g., turn on/off)."}
+                                                        </p>
+                                                        
+                                                        {/* Action type specific fields */}
+                                                        {actionType === 'createEvent' && (
+                                                            <>
+                                                                <FormField control={form.control} name={`config.actions.${index}.params.sourceTemplate`} render={({ field, fieldState }) => (
+                                                                    <FormItem>
+                                                                        <div className="flex items-center justify-between">
+                                                                            <FormLabel>Source</FormLabel>
+                                                                            <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('sourceTemplate', index, token, 'action')} />
+                                                                        </div>
+                                                                        <FormControl><Input placeholder="Fusion" {...field} value={field.value ?? ''} disabled={isLoading} className={cn("w-full max-w-xs", fieldState.error && 'border-destructive')} /></FormControl>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                )} />
+                                                                <FormField control={form.control} name={`config.actions.${index}.params.captionTemplate`} render={({ field, fieldState }) => (
+                                                                    <FormItem>
+                                                                        <div className="flex items-center justify-between">
+                                                                            <FormLabel>Caption</FormLabel>
+                                                                            <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('captionTemplate', index, token, 'action')} />
+                                                                        </div>
+                                                                        <FormControl><Textarea placeholder="Device: {{device.name}} // Event: {{event.data.state}} at {{event.time}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                )} />
+                                                                <FormField control={form.control} name={`config.actions.${index}.params.descriptionTemplate`} render={({ field, fieldState }) => (
+                                                                    <FormItem>
+                                                                        <div className="flex items-center justify-between">
+                                                                            <FormLabel>Description</FormLabel>
+                                                                            <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('descriptionTemplate', index, token, 'action')} />
+                                                                        </div>
+                                                                        <FormControl><Textarea placeholder="Device: {{event.deviceId}} // Type: {{event.event}} // State: {{event.data.state}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                )} />
+                                                            </>
+                                                        )}
+                                                        
+                                                        {actionType === 'createBookmark' && (
+                                                            <>
+                                                                <FormField control={form.control} name={`config.actions.${index}.params.nameTemplate`} render={({ field, fieldState }) => (
+                                                                    <FormItem>
+                                                                        <div className="flex items-center justify-between">
+                                                                            <FormLabel>Name</FormLabel>
+                                                                            <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('nameTemplate', index, token, 'action')}/>
+                                                                        </div>
+                                                                        <FormControl><Input placeholder="e.g., Alert: {{device.name}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                )} />
+                                                                <FormField control={form.control} name={`config.actions.${index}.params.descriptionTemplate`} render={({ field, fieldState }) => (
+                                                                    <FormItem>
+                                                                        <div className="flex items-center justify-between">
+                                                                            <FormLabel>Description</FormLabel>
+                                                                            <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('descriptionTemplate', index, token, 'action')}/>
+                                                                        </div>
+                                                                        <FormControl><Textarea placeholder="e.g., Device: {{device.name}} triggered event {{event.event}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                )} />
+                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                    <FormField control={form.control} name={`config.actions.${index}.params.durationMsTemplate`} render={({ field, fieldState }) => (
+                                                                        <FormItem>
+                                                                            <FormLabel>Duration (ms)</FormLabel>
+                                                                            <FormControl>
+                                                                                <Input 
+                                                                                    type="number" 
+                                                                                    min="0" 
+                                                                                    step="1" 
+                                                                                    placeholder="e.g., 5000" 
+                                                                                    {...field}
+                                                                                    value={field.value ?? ''} 
+                                                                                    onChange={(e) => {
+                                                                                        const value = e.target.value;
+                                                                                        // Only allow positive numbers
+                                                                                        if (value === '' || (Number(value) >= 0 && !isNaN(Number(value)))) {
+                                                                                            field.onChange(value);
+                                                                                        }
+                                                                                    }}
+                                                                                    disabled={isLoading} 
+                                                                                    className={cn(fieldState.error && 'border-destructive')} 
+                                                                                />
+                                                                            </FormControl>
+                                                                            <FormDescription className={descriptionStyles}>Duration in milliseconds.</FormDescription>
+                                                                            <FormMessage />
+                                                                        </FormItem>
+                                                                    )} />
+                                                                    <FormField control={form.control} name={`config.actions.${index}.params.tagsTemplate`} render={({ field, fieldState }) => (
+                                                                        <FormItem>
+                                                                            <FormLabel>Tags</FormLabel>
+                                                                            <FormControl>
+                                                                                <Input
+                                                                                    placeholder="e.g., Alert,{{device.type}},Automation"
+                                                                                    {...field}
+                                                                                    value={field.value ?? ''}
+                                                                                    disabled={isLoading}
+                                                                                    className={cn(fieldState.error && 'border-destructive')}
+                                                                                />
+                                                                            </FormControl>
+                                                                            <FormDescription className={descriptionStyles}>Enter tags separated by commas.</FormDescription>
+                                                                            <FormMessage />
+                                                                        </FormItem>
+                                                                    )} />
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                        
+                                                        {actionType === 'sendHttpRequest' && (
+                                                            <SendHttpRequestActionFields 
+                                                                actionIndex={index} 
+                                                                handleInsertToken={(fieldName, actIndex, token, headerIndex) => {
+                                                                    handleInsertToken(fieldName, actIndex, token, 'action', headerIndex);
+                                                                }}
+                                                            /> 
+                                                        )}
+                                                        
+                                                        {actionType === 'setDeviceState' && (
+                                                            <>
+                                                                <div className="flex flex-col space-y-2 mt-2">
+                                                                    <FormLabel className="mb-1 mt-2">Device Control Flow</FormLabel>
+                                                                    <div className="flex items-center space-x-2">
+                                                                        <FormField
+                                                                            control={form.control}
+                                                                            name={`config.actions.${index}.params.targetDeviceInternalId`}
+                                                                            render={({ field, fieldState }) => (
+                                                                                <FormItem className="flex-grow-0 m-0">
+                                                                                    <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
+                                                                                        <FormControl>
+                                                                                            <SelectTrigger className={cn("w-[200px]", fieldState.error && 'border-destructive')}>
+                                                                                                <SelectValue placeholder="Select Device..." />
+                                                                                            </SelectTrigger>
+                                                                                        </FormControl>
+                                                                                        <SelectContent>
+                                                                                            {sortedAvailableTargetDevices.map(device => {
+                                                                                                const IconComponent = getIconComponentByName(device.iconName) || HelpCircle;
+                                                                                                return (
+                                                                                                    <SelectItem key={device.id} value={device.id}>
+                                                                                                        <div className="flex items-center">
+                                                                                                            <IconComponent className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+                                                                                                            <span>{device.name}</span>
+                                                                                                        </div>
+                                                                                                    </SelectItem>
+                                                                                                );
+                                                                                            })}
+                                                                                            {sortedAvailableTargetDevices.length === 0 && (
+                                                                                                <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                                                                                                    No controllable devices found.
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </SelectContent>
+                                                                                    </Select>
+                                                                                    <FormMessage />
+                                                                                </FormItem>
+                                                                            )}
+                                                                        />
+                                                                        
+                                                                        <div className="flex items-center text-muted-foreground">
+                                                                            <span className="text-lg">→</span>
+                                                                        </div>
+                                                                        
+                                                                        <FormField
+                                                                            control={form.control}
+                                                                            name={`config.actions.${index}.params.targetState`}
+                                                                            render={({ field, fieldState }) => (
+                                                                                <FormItem className="flex-grow-0 m-0">
+                                                                                    <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
+                                                                                        <FormControl>
+                                                                                            <SelectTrigger className={cn("w-[120px]", fieldState.error && 'border-destructive')}>
+                                                                                                <SelectValue placeholder="Select State..." />
+                                                                                            </SelectTrigger>
+                                                                                        </FormControl>
+                                                                                        <SelectContent>
+                                                                                            {Object.entries(ACTIONABLE_STATE_DISPLAY_MAP).map(([value, label]) => (
+                                                                                                <SelectItem key={value} value={value}>{label}</SelectItem>
+                                                                                            ))}
+                                                                                        </SelectContent>
+                                                                                    </Select>
+                                                                                    <FormMessage />
+                                                                                </FormItem>
+                                                                            )}
+                                                                        />
+                                                                    </div>
+                                                                    <FormDescription className={descriptionStyles}>
+                                                                        Select the device to control and the state to set it to.
+                                                                    </FormDescription>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                        
+                                                        {!['createEvent', 'createBookmark', 'sendHttpRequest', 'setDeviceState'].includes(actionType || '') && (
+                                                            <p className="text-sm text-muted-foreground">Select an action type.</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </AccordionContent>
+                                        </AccordionItem>
+                                    );
+                                })}
+                            </Accordion>
+                            
                             <Button 
                                 type="button" 
                                 variant="outline" 
                                 size="sm" 
                                 onClick={() => {
-                                     // --- Add Console Log Here --- 
-                                    console.log('Appending default action:', defaultAction);
                                     appendAction(defaultAction);
                                 }}
                                 disabled={isLoading}
+                                className="mt-4"
                             >
-                                <Plus className="h-4 w-4" /> Add Action
+                                <Plus className="h-4 w-4 mr-1" /> Add Action
                             </Button>
                         </CardContent>
                     </Card>
-                     
 
-                     {/* Submit Button */}
-                     <div className="flex justify-end space-x-2 mt-8">
-                         <Button type="submit" disabled={isLoading || !form.formState.isDirty || !form.formState.isValid}>
-                             {isLoading ? 'Saving...' : (initialData.id === 'new' ? 'Create Automation' : 'Save Changes')}
-                         </Button>
-                     </div>
+                    {/* Submit Button */}
+                    <div className="flex justify-end space-x-2 mt-8">
+                        <Button type="submit" disabled={isLoading || !form.formState.isDirty || !form.formState.isValid}>
+                            {isLoading ? 'Saving...' : (initialData.id === 'new' ? 'Create Automation' : 'Save Changes')}
+                        </Button>
+                    </div>
                 </form>
             </Form>
         </FormProvider>
