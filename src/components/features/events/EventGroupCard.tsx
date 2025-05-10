@@ -398,11 +398,11 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                       )}
                     </div>
                   </PopoverTrigger>
-                  <PopoverContent side="top" align="end" className="w-72 p-0 shadow-xl">
-                    <div className="p-3">
+                  <PopoverContent side="top" align="end" className="w-72 p-0 shadow-xl flex flex-col">
+                    <div className="p-3 flex-shrink-0">
                       <p className="font-medium text-sm mb-2">Event Sequence</p>
                     </div>
-                    <ScrollArea className="max-h-[300px] w-full">
+                    <ScrollArea className="flex-grow min-h-0 w-full" type="scroll">
                       {/* --- Integrated Timeline --- */}
                       <div className="px-3 pb-3">
                         <div className="relative border-l border-muted ml-1.5 pl-4 space-y-2">
