@@ -120,6 +120,28 @@ export async function parseYoLinkEvent(
     const identifier = event.event.split('.')[0]; // e.g., "DoorSensor"
     const deviceInfo = getDeviceTypeInfo('yolink', identifier);
 
+    // --- BEGIN Add Power Report Handling ---
+    if (event.event.endsWith('.powerReport')) {
+        console.log(`[YoLink Parser] Detected Power Report: ${event.event} for device ${event.deviceId}`);
+        const payload: UnknownEventPayload = { 
+            originalEventType: event.event,
+            message: `YoLink Power Report: ${event.event}`,
+            rawEventPayload: event.data
+        };
+        return [{
+            eventId: crypto.randomUUID(),
+            timestamp: timestamp,
+            connectorId: connectorId,
+            deviceId: event.deviceId,
+            deviceInfo: deviceInfo, 
+            category: EventCategory.DIAGNOSTICS,
+            type: EventType.POWER_CHECK_IN,    
+            payload: payload,
+            originalEvent: event,
+        }];
+    }
+    // --- END Add Power Report Handling ---
+
     // We process UNKNOWN events even for unmapped devices, 
     // as the event itself occurred and might be relevant.
     // If you want to completely ignore unmapped devices, move the check here.

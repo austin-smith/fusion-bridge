@@ -256,6 +256,7 @@ export enum EventType {
 
   // --- Category: DIAGNOSTICS ---
   DEVICE_CHECK_IN = 'DEVICE_CHECK_IN',         // NEW: For device reporting/check-in events
+  POWER_CHECK_IN = 'POWER_CHECK_IN',           // NEW: For device power reporting events
 
   // --- Category: UNKNOWN ---
   UNKNOWN_EXTERNAL_EVENT = 'UNKNOWN_EXTERNAL_EVENT',
@@ -369,6 +370,7 @@ export const EVENT_TYPE_DISPLAY_MAP = {
   
   // DIAGNOSTICS
   [EventType.DEVICE_CHECK_IN]: 'Device Check-in',
+  [EventType.POWER_CHECK_IN]: 'Power Check-in',
   
   // UNKNOWN
   [EventType.UNKNOWN_EXTERNAL_EVENT]: 'Unknown Event',
