@@ -4,14 +4,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import {
+import { Subscription } from 'rxjs';
+
+// Import only types, actual implementation will be loaded dynamically
+import type { 
   WebRTCStreamManager,
   WebRtcUrlConfig,
-  ApiVersions,
-  TargetStream,
-  ConnectionError,
+  ApiVersions as ApiVersionsType,
+  TargetStream as TargetStreamType,
+  ConnectionError as ConnectionErrorType,
 } from '@networkoptix/webrtc-stream-manager';
-import { Subscription } from 'rxjs';
 
 interface WebRTCConnectionDetails {
   pikoSystemId?: string;
@@ -41,9 +43,42 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
   const [fetchedPikoSystemId, setFetchedPikoSystemId] = useState<string | undefined>(undefined);
   const [fetchedAccessToken, setFetchedAccessToken] = useState<string | null>(null);
   const [fetchedConnectionType, setFetchedConnectionType] = useState<string | null>(null);
+  
+  // Store the dynamically loaded modules
+  const [webrtcLib, setWebrtcLib] = useState<{
+    WebRTCStreamManager: typeof WebRTCStreamManager;
+    ApiVersions: typeof ApiVersionsType;
+    TargetStream: typeof TargetStreamType;
+    ConnectionError: typeof ConnectionErrorType;
+  } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamManagerSubscriptionRef = useRef<Subscription | null>(null);
+
+  // Dynamic import of the WebRTC library on the client side only
+  useEffect(() => {
+    let isMounted = true;
+    const loadWebRTCLib = async () => {
+      try {
+        const webRTCModule = await import('@networkoptix/webrtc-stream-manager');
+        if (isMounted) {
+          setWebrtcLib({
+            WebRTCStreamManager: webRTCModule.WebRTCStreamManager,
+            ApiVersions: webRTCModule.ApiVersions,
+            TargetStream: webRTCModule.TargetStream,
+            ConnectionError: webRTCModule.ConnectionError,
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load WebRTC library:", err);
+        if (isMounted) {
+          setMediaInfoError("Failed to initialize video player components");
+        }
+      }
+    };
+    loadWebRTCLib();
+    return () => { isMounted = false; };
+  }, []);
 
   useEffect(() => {
     console.log("PikoVideoPlayer: Fetching connection details. ConnectorID:", connectorId, "CameraID:", cameraId, "Retry:", retryAttempt);
@@ -105,11 +140,11 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
       isFetchCancelled = true;
       console.log("PikoVideoPlayer: [FetchDetailsEffect] Aborted/Cancelled fetching details.");
     };
-  }, [connectorId, retryAttempt]);
+  }, [connectorId, cameraId, retryAttempt]);
 
   useEffect(() => {
-    if (!videoRef.current || !fetchedAccessToken || !cameraId) {
-      console.log("PikoVideoPlayer: [StreamManagerEffect] Waiting for video ref, access token, or camera ID.");
+    if (!videoRef.current || !fetchedAccessToken || !cameraId || !webrtcLib) {
+      console.log("PikoVideoPlayer: [StreamManagerEffect] Waiting for video ref, access token, camera ID, or WebRTC library.");
       return;
     }
 
@@ -146,8 +181,8 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
         systemId: systemIdForLib,
         cameraId: cameraId,
         accessToken: fetchedAccessToken,
-        apiVersion: ApiVersions.v2,
-        targetStream: TargetStream.AUTO,
+        apiVersion: webrtcLib.ApiVersions.v2,
+        targetStream: webrtcLib.TargetStream.AUTO,
         position: positionMs,
       };
       
@@ -168,9 +203,10 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
       let connectedStream: MediaStream | null = null;
 
       try {
-        streamManagerSubscriptionRef.current = WebRTCStreamManager.connect(webRtcConfig, currentVideoElement)
+        streamManagerSubscriptionRef.current = webrtcLib.WebRTCStreamManager.connect(webRtcConfig, currentVideoElement)
           .subscribe(
-            ([stream, error, manager]: [MediaStream | null, ConnectionError | null, WebRTCStreamManager | null]) => {
+            (data: [MediaStream | null, any | null, any | null]) => {
+              const [stream, error, manager] = data;
               if (stream && currentVideoElement) {
                 console.log("PikoVideoPlayer: Stream received from WebRTCStreamManager. Manager instance:", manager, "Current Stream ID:", stream.id);
                 if (currentVideoElement.srcObject !== stream) {
@@ -193,7 +229,9 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
               }
               if (error) {
                 console.error("PikoVideoPlayer: Error reported by WebRTCStreamManager:", error);
-                const message = (error as any)?.message || (typeof error === 'number' && ConnectionError[error]) || "Unknown error from library.";
+                const message = (error as any)?.message || 
+                  (typeof error === 'number' && (webrtcLib.ConnectionError as any)[error]) || 
+                  "Unknown error from library.";
                 setMediaInfoError(message);
                 toast.error(`Video Error: ${message}`);
                 if (streamManagerSubscriptionRef.current && !streamManagerSubscriptionRef.current.closed) {
@@ -241,11 +279,11 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
       setIsLoadingMediaInfo(false);
       return;
     }
-  }, [fetchedPikoSystemId, fetchedAccessToken, cameraId, positionMs, fetchedConnectionType, isLoadingMediaInfo]);
+  }, [fetchedPikoSystemId, fetchedAccessToken, cameraId, positionMs, fetchedConnectionType, isLoadingMediaInfo, webrtcLib]);
 
   return (
     <div className={`relative aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center ${className}`}>
-        {(isLoadingMediaInfo || (!fetchedPikoSystemId && !fetchedAccessToken && !mediaInfoError && !fetchedConnectionType)) && (
+        {(isLoadingMediaInfo || (!fetchedPikoSystemId && !fetchedAccessToken && !mediaInfoError && !fetchedConnectionType) || !webrtcLib) && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground z-10">
             <Loader2 className="h-8 w-8 mb-2 animate-spin" />
             <span>{isLoadingMediaInfo ? 'Loading video info...' : 'Preparing video player...'}</span>
@@ -275,7 +313,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
             muted
             playsInline
             preload="auto"
-            className={`absolute inset-0 w-full h-full z-0 bg-black object-contain ${isLoadingMediaInfo || mediaInfoError ? 'opacity-0' : 'opacity-100'}`}
+            className={`absolute inset-0 w-full h-full z-0 bg-black object-contain ${isLoadingMediaInfo || mediaInfoError || !webrtcLib ? 'opacity-0' : 'opacity-100'}`}
         />
     </div>
   );

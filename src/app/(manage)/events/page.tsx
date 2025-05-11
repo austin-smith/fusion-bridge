@@ -176,15 +176,15 @@ export default function EventsPage() {
   const [eventCategoryFilter, setEventCategoryFilter] = useState<string[]>(initialEventCategories);
   
   // State for view mode with localStorage persistence
-  const [viewMode, setViewMode] = useState<'table' | 'card'>(() => {
-    if (typeof window !== 'undefined') {
-      const storedPreference = localStorage.getItem('eventsViewModePreference');
-      if (storedPreference === 'table' || storedPreference === 'card') {
-        return storedPreference;
-      }
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('table'); // Default to table view, consistent with server
+
+  // Effect to load and set viewMode from localStorage after initial render
+  useEffect(() => {
+    const storedPreference = localStorage.getItem('eventsViewModePreference');
+    if (storedPreference === 'table' || storedPreference === 'card') {
+      setViewMode(storedPreference);
     }
-    return 'table'; // Default to table view
-  });
+  }, []); // Empty dependency array ensures this runs only once on mount
 
   const [isCardViewFullScreen, setIsCardViewFullScreen] = useState(false);
   const cardViewContainerRef = useRef<HTMLDivElement>(null);

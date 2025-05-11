@@ -81,6 +81,5 @@ export function getDeviceTypeInfo(connectorCategory: ConnectorCategory | string 
   }
 
   // If no specific mapping is found within the category, return the default Unknown object
-  console.warn(`No type mapping found for identifier: ${identifier} (Category: ${connectorCategory}). Defaulting to Unknown.`);
   return unknownDeviceInfo;
 } 

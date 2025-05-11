@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
     if (error instanceof pikoDriver.PikoApiError) {
         errorMessage = `Piko API Error: ${error.message}`;
         statusCode = error.statusCode || 500;
-        console.error(`[API Thumb] Piko API Error Details (${statusCode}):`, error.errorString, error.rawError);
+        console.error(`[API Thumb] Piko API Error Details (${statusCode}): ${error.errorString}${error.rawErrorOmitted ? ' (Raw error details omitted)' : ''}`);
     } else if (error instanceof Error) {
         errorMessage = error.message;
          console.error(`[API Thumb] Generic Error:`, error);
