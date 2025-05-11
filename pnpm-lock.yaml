@@ -23,6 +23,9 @@ importers:
       '@libsql/client':
         specifier: ^0.15.4
         version: 0.15.4(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+      '@networkoptix/webrtc-stream-manager':
+        specifier: ^0.1.27
+        version: 0.1.27
       '@radix-ui/react-accordion':
         specifier: ^1.2.7
         version: 1.2.8(@types/react-dom@18.3.7(@types/react@18.3.20))(@types/react@18.3.20)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -191,6 +194,9 @@ importers:
       react-syntax-highlighter:
         specifier: ^15.6.1
         version: 15.6.1(react@18.3.1)
+      rxjs:
+        specifier: 7.8.1
+        version: 7.8.1
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
@@ -1089,6 +1095,9 @@ packages:
 
   '@neon-rs/load@0.0.4':
     resolution: {integrity: sha512-kTPhdZyTQxB+2wpiRcFWrDcejc4JI6tkPuS7UZCG4l6Zvc5kU/gGQ/ozvHTh1XR5tS+UlfAfGuPajjzQjCiHCw==}
+
+  '@networkoptix/webrtc-stream-manager@0.1.27':
+    resolution: {integrity: sha512-g0bk6V+0GzHhSbu8j75EOX7iU9IzdMDKm0NmixeBHMhFOMNOEb0spkm+1gkGaH9Y2GpPkDbouCBDrWtL/axKvQ==}
 
   '@next/env@15.3.1':
     resolution: {integrity: sha512-cwK27QdzrMblHSn9DZRV+DQscHXRuJv6MydlJRpFSqJWZrTYMLzKDeyueJNN9MGd8NNiUKzDQADAf+dMLXX7YQ==}
@@ -3944,6 +3953,9 @@ packages:
   run-parallel@1.2.0:
     resolution: {integrity: sha512-5l4VyZR86LZ/lDxZTR6jqL8AFE2S0IFLMP26AbjsLVADxHdhB/c0GUsH+y39UfCi3dzz8OlQuPmnaJOMoDHQBA==}
 
+  rxjs@7.8.1:
+    resolution: {integrity: sha512-AA3TVj+0A2iuIoQkWEK/tqFjBq2j+6PO6Y0zJcvzLAFhEFIO3HL0vls9hWLncZbAAbK0mar7oZ4V079I/qPMxg==}
+
   safe-array-concat@1.1.3:
     resolution: {integrity: sha512-AURm5f0jYEOydBj7VQlVvDrjeFgthDdEF5H1dP+6mNpoXOMo1quQqJ4wvJDyRZ9+pO3kGWoOdmV08cSv2aJV6Q==}
     engines: {node: '>=0.4'}
@@ -4329,6 +4341,9 @@ packages:
   web-streams-polyfill@3.3.3:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
     engines: {node: '>= 8'}
+
+  webrtc-issue-detector@1.10.0:
+    resolution: {integrity: sha512-vU+esrCis76JNI+gAaW5q/CZp//8n4KpMpQVUxBnJ3i4CwZ3b1PcAkp1nQGEWnsFowi9vJJtQmelFBMQV0Gp5A==}
 
   websocket@1.0.35:
     resolution: {integrity: sha512-/REy6amwPZl44DDzvRCkaI1q1bIiQB0mEFQLUrhz3z2EK91cp3n72rAjUlrTP0zV22HJIUOVHQGPxhFRjxjt+Q==}
@@ -5221,6 +5236,11 @@ snapshots:
     optional: true
 
   '@neon-rs/load@0.0.4': {}
+
+  '@networkoptix/webrtc-stream-manager@0.1.27':
+    dependencies:
+      rxjs: 7.8.1
+      webrtc-issue-detector: 1.10.0
 
   '@next/env@15.3.1': {}
 
@@ -8206,6 +8226,10 @@ snapshots:
     dependencies:
       queue-microtask: 1.2.3
 
+  rxjs@7.8.1:
+    dependencies:
+      tslib: 2.8.1
+
   safe-array-concat@1.1.3:
     dependencies:
       call-bind: 1.0.8
@@ -8699,6 +8723,8 @@ snapshots:
   uuid@11.1.0: {}
 
   web-streams-polyfill@3.3.3: {}
+
+  webrtc-issue-detector@1.10.0: {}
 
   websocket@1.0.35:
     dependencies:

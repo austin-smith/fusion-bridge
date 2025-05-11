@@ -33,6 +33,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { useFusionStore, UserProfile } from '@/stores/store';
+import { AuthContext } from '@/components/layout/client-providers';
 
 // --- Define Navigation Groups ---
 type NavItem = {
@@ -72,6 +73,7 @@ export function AppSidebar() {
   const router = useRouter();
   const isActive = (href: string) => pathname === href;
   const { data: session, isPending } = useSession();
+  const { initialUserRole } = React.useContext(AuthContext);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   
   // Get setter and currentUser from Zustand
@@ -113,19 +115,10 @@ export function AppSidebar() {
 
   // Filter navGroups based on user role
   const displayedNavGroups = useMemo(() => {
-    return navGroups.map(group => ({
-      ...group,
-      items: group.items.filter(item => {
-        if (item.label === 'Users') {
-          // Show "Users" only if not pending, session exists, and role is 'admin'
-          return !isPending && session?.user && userRole === 'admin';
-        }
-        return true; // Show all other items
-      })
-    }))
-    // Also filter out entire groups if they become empty after item filtering
-    .filter(group => group.items.length > 0);
-  }, [isPending, session, userRole]); // navGroups is static
+    return navGroups;
+    // Remove the expensive filtering operation that causes menu flicker
+    // The visibility will be handled with CSS conditionally in the rendering
+  }, []); // Empty dependency array since navGroups is static
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -173,6 +166,19 @@ export function AppSidebar() {
                     {group.items.map((item) => {
                       const Icon = item.icon;
                       const active = isActive(item.href);
+                      
+                      // Special handling for Users item - avoid flicker by using SSR role
+                      const isUsersItem = item.label === 'Users';
+                      const showUsersItem =
+                        isUsersItem
+                          ? initialUserRole === 'admin' || (!isPending && session?.user && userRole === 'admin')
+                          : true;
+                      
+                      // Skip rendering completely if it's Users item and shouldn't be shown
+                      if (isUsersItem && !showUsersItem) {
+                        return null;
+                      }
+                      
                       return (
                         <SidebarMenuItem key={item.href}>
                           <SidebarMenuButton

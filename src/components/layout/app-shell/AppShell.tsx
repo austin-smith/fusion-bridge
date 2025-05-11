@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useTheme } from "next-themes";
 import { FiMenu } from "react-icons/fi";
 import { AppSidebar } from '../app-sidebar';
-import { SidebarTrigger, SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
 import { ThemeToggle } from '@/components/common/theme-toggle';
 
 interface AppShellProps {
@@ -19,7 +19,7 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
   return (
     <>
       {showSidebar ? (
-        <SidebarProvider>
+        <>
           <AppSidebar />
           <SidebarInset className="flex flex-col w-full max-w-full overflow-hidden">
             <header className="sticky top-0 z-40 w-full flex h-[60px] items-center border-b bg-background/95 px-4 backdrop-blur md:px-6 max-w-full shrink-0">
@@ -47,7 +47,7 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
               </div>
             </footer>
           </SidebarInset>
-        </SidebarProvider>
+        </>
       ) : (
         <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
           {children}

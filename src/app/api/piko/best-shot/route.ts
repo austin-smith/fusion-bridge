@@ -23,8 +23,9 @@ export async function GET(request: NextRequest) {
   const objectTrackId = searchParams.get('objectTrackId');
   const cameraId = searchParams.get('cameraId');
 
-  // 2. Validate Core Parameters
+  // Minimal validation log
   if (!connectorId || !objectTrackId || !cameraId) {
+    console.error(`Piko best-shot: Missing required params. Connector: ${connectorId}, ObjectTrack: ${objectTrackId}, Camera: ${cameraId}`);
     return NextResponse.json(
       { success: false, error: 'Missing required query parameters: connectorId, objectTrackId, cameraId' },
       { status: 400 }
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // 3. Retrieve Connector Configuration (using connectorId)
-    console.log(`Piko best-shot: Fetching connector config for DB ID: ${connectorId}`);
+    // console.log(`Piko best-shot: Fetching connector config for DB ID: ${connectorId}`);
     const connector = await db.query.connectors.findFirst({
       where: eq(connectors.id, connectorId),
       columns: { id: true, category: true, cfg_enc: true } 
@@ -75,25 +76,25 @@ export async function GET(request: NextRequest) {
         console.warn(`Piko best-shot: Query pikoSystemId (${pikoSystemIdFromQuery}) mismatches connector config (${config.selectedSystem}) for connector ${connectorId}. Using config value.`);
     }
      if (config.type === 'local' && pikoSystemIdFromQuery) {
-         console.warn(`Piko best-shot: Query pikoSystemId (${pikoSystemIdFromQuery}) was passed for a local connector ${connectorId}. Ignoring.`);
+         // console.warn(`Piko best-shot: Query pikoSystemId (${pikoSystemIdFromQuery}) was passed for a local connector ${connectorId}. Ignoring.`);
      }
 
-    // 5. Call Updated Driver Function to Get Image Blob
-    console.log(`Piko best-shot: Fetching image for track ${objectTrackId} on camera ${cameraId} (type: ${config.type})...`);
-    // UPDATED CALL: Use connectorId. Config and accessToken are no longer passed directly.
-    const imageBlob = await piko.getPikoBestShotImageBlob(
+    // 5. Call Updated Driver Function to Get Image Data (Buffer and contentType)
+    // console.log(`Piko best-shot: Fetching image data for track ${objectTrackId} on camera ${cameraId} (type: ${config.type})...`);
+    const { buffer: imageBuffer, contentType: rawContentType } = await piko.getPikoBestShotImageData(
       connectorId, 
       objectTrackId,
       cameraId
     );
 
-    // 6. Return Image Blob
-    console.log(`Piko best-shot: Successfully fetched image. Returning image (Type: ${imageBlob.type})...`);
-    return new NextResponse(imageBlob, {
+    // 6. Return Image Buffer
+    // MIME type correction removed, use rawContentType directly
+    console.log(`Piko best-shot: Successfully fetched image. Returning image buffer (Type: ${rawContentType}, Size: ${imageBuffer.length})...`);
+    return new NextResponse(imageBuffer, {
         status: 200,
         headers: {
-            'Content-Type': imageBlob.type,
-            'Content-Length': imageBlob.size.toString(),
+            'Content-Type': rawContentType, // Use the content type as received from the driver
+            'Content-Length': imageBuffer.length.toString(),
         },
     });
 
@@ -102,7 +103,12 @@ export async function GET(request: NextRequest) {
     const connectorIdForLog = connectorId || 'unknown'; 
     const objectTrackIdForLog = objectTrackId || 'unknown';
     
-    console.error(`Error fetching Piko best shot for connector ${connectorIdForLog}, track ${objectTrackIdForLog}:`, error);
+    // Avoid logging the entire error object if it might contain a large buffer
+    let briefError = error;
+    if (error instanceof Error && error.cause instanceof Buffer) {
+        briefError = new Error(error.message); // Create a new error without the buffer as cause for logging
+    }
+    console.error(`Error fetching Piko best shot for connector ${connectorIdForLog}, track ${objectTrackIdForLog}:`, briefError);
 
     const { status, message } = mapPikoErrorResponse(error);
 

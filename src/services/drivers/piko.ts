@@ -127,7 +127,7 @@ export class PikoApiError extends Error {
   public readonly statusCode?: number;
   public readonly errorId?: string; 
   public readonly errorString?: string;
-  public readonly rawError?: unknown;
+  public readonly rawErrorOmitted: boolean;
 
   constructor(
     message: string,
@@ -144,7 +144,9 @@ export class PikoApiError extends Error {
     this.statusCode = options?.statusCode;
     this.errorId = options?.errorId;
     this.errorString = options?.errorString || message;
-    this.rawError = options?.rawError;
+    
+    this.rawErrorOmitted = options?.rawError !== undefined;
+
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, PikoApiError);
     }
@@ -292,7 +294,6 @@ export class PikoAuthManager {
     scope?: string
   ): Promise<PikoTokenResponse> {
     const logPrefix = `[PikoAuthManager:_fetchPikoCloudToken][User: ${username.substring(0,3)}...]`;
-    console.log(`${logPrefix} Attempting to fetch cloud token. Scope: ${scope || 'general'}`);
     if (!username || !password) {
       throw new PikoApiError('Username and password are required for Piko Cloud token fetch.', { 
           statusCode: 400, 
@@ -345,7 +346,6 @@ export class PikoAuthManager {
     config: PikoConfig & { type: 'local' }
   ): Promise<PikoTokenResponse> {
     const logPrefix = `[PikoAuthManager:_fetchPikoLocalToken][${config.host}:${config.port}]`;
-    console.log(`${logPrefix} Attempting to fetch local token.`);
     if (!config.host || !config.port || !config.username || !config.password) {
       throw new PikoApiError('Host, port, username, and password are required for local Piko token fetch.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
     }
@@ -397,7 +397,6 @@ export class PikoAuthManager {
 
   private async _refreshPikoCloudToken(refreshToken: string): Promise<PikoTokenResponse> {
     const logPrefix = '[PikoAuthManager:_refreshPikoCloudToken]';
-    console.log(`${logPrefix} Attempting Piko Cloud token refresh.`);
     if (!refreshToken) {
       throw new PikoApiError('Refresh token is required for Piko Cloud token refresh.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
     }
@@ -424,15 +423,12 @@ export class PikoAuthManager {
     }
   }
 
-  public async _getTokenAndConfig( // Made public for now, might be internal to manager later
+  public async _getTokenAndConfig(
     connectorId: string, 
     options?: { forceRefresh?: boolean }
   ): Promise<{ config: PikoConfig; token: PikoTokenResponse; }> {
     const logPrefix = `[PikoAuthManager:_getTokenAndConfig][Piko][${connectorId}]`;
     const forceRefresh = options?.forceRefresh || false;
-    if (forceRefresh) {
-      console.log(`${logPrefix} Force refresh requested.`);
-    }
     console.log(`${logPrefix} Fetching config and ensuring valid token...`);
     const connectorData = await db.select().from(connectors).where(eq(connectors.id, connectorId)).limit(1);
     if (!connectorData.length) {
@@ -461,49 +457,39 @@ export class PikoAuthManager {
     }
     
     if (!forceRefresh && currentDbConfig.token?.accessToken && currentDbConfig.token.expiresAt !== undefined && !isTokenExpiring(currentDbConfig.token.expiresAt)) {
-      console.log(`${logPrefix} Current token is valid (and not forced to refresh).`);
+      console.log(`${logPrefix} Current token is valid.`);
       return { config: currentDbConfig, token: { accessToken: currentDbConfig.token.accessToken, refreshToken: currentDbConfig.token.refreshToken, expiresAt: currentDbConfig.token.expiresAt!, scope: currentDbConfig.token.scope, sessionId: currentDbConfig.token.sessionId }};
     }
     
-    if (forceRefresh && currentDbConfig.token?.accessToken) {
-      console.log(`${logPrefix} Token present but forceRefresh is true, proceeding to refresh/fetch logic.`);
-    } else if (!currentDbConfig.token?.accessToken) {
-      console.log(`${logPrefix} No existing access token found, proceeding to fetch logic.`);
-    } else {
-      console.log(`${logPrefix} Existing token is expiring or missing expiry, proceeding to refresh/fetch logic.`);
-    }
-
     let newPikoTokenResponse: PikoTokenResponse;
     let attemptedAction = "initial_check_failed_or_expiring";
     try {
       if (currentDbConfig.type === 'cloud' && currentDbConfig.token?.refreshToken && !forceRefresh) { 
-        console.log(`${logPrefix} Attempting token refresh using stored refreshToken.`); attemptedAction = "refresh";
+        console.log(`${logPrefix} Attempting token refresh...`); 
+        attemptedAction = "refresh";
         newPikoTokenResponse = await this._refreshPikoCloudToken(currentDbConfig.token.refreshToken);
       } else {
-        if (forceRefresh) {
-            console.log(`${logPrefix} Force refresh: Bypassing stored refresh token. Fetching new token directly via password grant.`);
-            attemptedAction = "fetch_new_forced";
-        } else {
-            console.log(`${logPrefix} No valid refreshToken or not cloud connector. Fetching new token via password grant/local auth.`); 
-            attemptedAction = "fetch_new";
-        }
+        console.log(`${logPrefix} Attempting new token fetch (type: ${currentDbConfig.type})...`);
+        attemptedAction = "fetch_new";
         const scope = (currentDbConfig.type === 'cloud' && currentDbConfig.selectedSystem) ? `cloudSystemId=${currentDbConfig.selectedSystem}` : undefined;
         newPikoTokenResponse = currentDbConfig.type === 'cloud' ? 
             await this._fetchPikoCloudToken(currentDbConfig.username, currentDbConfig.password, scope) :
             await this._fetchPikoLocalToken(currentDbConfig as PikoConfig & { type: 'local' });
       }
-      console.log(`${logPrefix} Successfully performed token action: '${attemptedAction}'.`);
+      console.log(`${logPrefix} Token action '${attemptedAction}' successful.`);
 
     } catch (error) {
-      console.warn(`${logPrefix} Token action '${attemptedAction}' failed. Fallback to new fetch. Initial error:`, error);
+      console.warn(`${logPrefix} Token action '${attemptedAction}' failed. Fallback to new fetch. Initial error:`, 
+        error instanceof Error ? error.message : String(error)
+      );
       attemptedAction = "fetch_new_after_fallback";
       try {
-        console.log(`${logPrefix} Fallback: Fetching new token directly via password grant/local auth.`);
+        console.log(`${logPrefix} Fallback: Fetching new token (type: ${currentDbConfig.type})...`);
         const scope = (currentDbConfig.type === 'cloud' && currentDbConfig.selectedSystem) ? `cloudSystemId=${currentDbConfig.selectedSystem}` : undefined;
         newPikoTokenResponse = currentDbConfig.type === 'cloud' ? 
             await this._fetchPikoCloudToken(currentDbConfig.username, currentDbConfig.password, scope) :
             await this._fetchPikoLocalToken(currentDbConfig as PikoConfig & { type: 'local' });
-        console.log(`${logPrefix} Successfully performed fallback token action: '${attemptedAction}'.`);
+        console.log(`${logPrefix} Fallback token fetch successful.`);
       } catch (finalFetchError) {
         console.error(`${logPrefix} All token attempts (including fallback) failed. Last error:`, finalFetchError);
         const errMsg = finalFetchError instanceof Error ? finalFetchError.message : String(finalFetchError);
@@ -512,17 +498,15 @@ export class PikoAuthManager {
     }
     const updatedConfigWithNewToken: PikoConfig = { ...currentDbConfig, token: { accessToken: newPikoTokenResponse.accessToken, refreshToken: newPikoTokenResponse.refreshToken, expiresAt: newPikoTokenResponse.expiresAt, scope: newPikoTokenResponse.scope, sessionId: newPikoTokenResponse.sessionId }};
     
-    console.log(`${logPrefix} Attempting to save updated token/config to DB...`);
     try {
       await updateConnectorConfig(connectorId, updatedConfigWithNewToken);
-      console.log(`${logPrefix} Successfully called updateConnectorConfig.`);
+      console.log(`${logPrefix} Successfully saved updated token to DB.`);
     } catch (dbUpdateError) {
       console.error(`${logPrefix} CRITICAL: Failed to save updated token/config to DB after successful fetch/refresh. DB update error:`, dbUpdateError);
       throw new PikoApiError(`Failed to persist new token for ${connectorId} to DB. Downstream operations will use stale data. Error: ${dbUpdateError instanceof Error ? dbUpdateError.message : String(dbUpdateError)}`, 
           { cause: dbUpdateError, errorId: PikoErrorCode.CantProcessRequest });
     }
     
-    console.log(`${logPrefix} Piko token was updated. Returning new config and token response.`);
     return { config: updatedConfigWithNewToken, token: newPikoTokenResponse };
   }
   
@@ -677,9 +661,9 @@ class PikoFetchStrategy implements PikoHttpRequestStrategy {
     logPrefix: string
   ): Promise<unknown> {
     if (expectedResponseType === 'json') {
-      if (response.status === 204) { console.log(`${logPrefix} Success (204 No Content) via fetch`); return null; }
+      if (response.status === 204) { /* console.log(`${logPrefix} Success (204 No Content) via fetch`); */ return null; }
       try {
-        const data = await response.json(); console.log(`${logPrefix} Success (JSON) via fetch`); return data;
+        const data = await response.json(); /* console.log(`${logPrefix} Success (JSON) via fetch`); */ return data;
       } catch (e) {
         console.error(`${logPrefix} Failed to parse successful JSON response from fetch:`, e);
         let bodyText = ''; try { bodyText = await response.text(); } catch {} 
@@ -689,13 +673,14 @@ class PikoFetchStrategy implements PikoHttpRequestStrategy {
       }
     } else if (expectedResponseType === 'blob') {
       try {
-        const blob = await response.blob(); console.log(`${logPrefix} Success (Blob) via fetch`); return blob;
+        const blob = await response.blob(); /* console.log(`${logPrefix} Success (Blob) via fetch`); */ return blob;
       } catch (e) {
         console.error(`${logPrefix} Failed to process successful Blob response from fetch:`, e);
         throw new PikoApiError(`Failed to process blob response from fetch: ${e instanceof Error ? e.message : 'Unknown error'}`, { cause: e });
       }
     } else if (expectedResponseType === 'stream') {
-      console.log(`${logPrefix} Success (Stream) via fetch`); return response;
+      // console.log(`${logPrefix} Success (Stream) via fetch`); 
+      return response;
     } else {
       console.error(`${logPrefix} Invalid expectedResponseType for fetch: ${expectedResponseType}`);
       try { await response.text(); } catch {}
@@ -717,12 +702,12 @@ class PikoNodeHttpsStrategy implements PikoHttpRequestStrategy {
     if (!httpsModule || !config || !config.host || !config.port) {
       throw new PikoApiError('NodeHttpsStrategy requires https module and valid host/port in config.', {errorId: PikoErrorCode.InternalServerError});
     }
-    console.warn(`${logPrefix} Using https.request for: ${method} ${url.toString()}`);
+    // console.warn(`${logPrefix} Using https.request for: ${method} ${url.toString()}`); // Keep if direct https use is notable
     
     // Correctly create the agent options based on ignoreTlsErrors
     const agentOptions: import('https').AgentOptions = {};
     if (config.ignoreTlsErrors) {
-      console.warn(`${logPrefix} TLS certificate validation will be IGNORED.`);
+      // console.warn(`${logPrefix} TLS certificate validation will be IGNORED.`);
       agentOptions.rejectUnauthorized = false;
     } else {
       // Default behavior: reject unauthorized (unless a CA is provided, which we are not doing here)
@@ -754,10 +739,10 @@ class PikoNodeHttpsStrategy implements PikoHttpRequestStrategy {
         let responseBody = '';
         const statusCode = res.statusCode ?? 0;
         const contentType = res.headers['content-type'];
-        res.setEncoding('utf8');
         
         if (statusCode < 200 || statusCode >= 300) {
           let errorAccumulator = '';
+          res.setEncoding('utf8'); 
           res.on('data', chunk => errorAccumulator += chunk);
           res.on('end', () => {
             const errorInfo: { message: string, errorId?: string, errorString?: string, raw?: unknown } = {
@@ -770,7 +755,8 @@ class PikoNodeHttpsStrategy implements PikoHttpRequestStrategy {
               errorInfo.message = errorData.errorString || errorData.message || errorInfo.message;
               errorInfo.raw = errorData;
             } catch (parseError) {
-              console.warn(`${logPrefix} Could not parse JSON error response body:`, errorAccumulator, parseError);
+              // This log can be noisy if non-JSON errors occur, PikoApiError constructor handles rawError now
+              // console.warn(`${logPrefix} Could not parse JSON error response body:`, errorAccumulator, parseError);
               if (errorAccumulator && errorAccumulator.length < 200) errorInfo.message += `: ${errorAccumulator.substring(0, 100)}`;
               errorInfo.raw = errorAccumulator;
             }
@@ -782,14 +768,15 @@ class PikoNodeHttpsStrategy implements PikoHttpRequestStrategy {
         }
 
         if (statusCode === 204 && expectedResponseType !== 'stream') {
-          console.log(`${logPrefix} Success (204 No Content) via https.request`); resolve(null); return;
+          /* console.log(`${logPrefix} Success (204 No Content) via https.request`); */ resolve(null); return;
         }
 
         if (expectedResponseType === 'json') {
+          res.setEncoding('utf8'); // Set encoding for JSON response
           res.on('data', (chunk) => { responseBody += chunk; });
           res.on('end', () => {
             try {
-              const data = JSON.parse(responseBody); console.log(`${logPrefix} Success (JSON) via https.request`); resolve(data);
+              const data = JSON.parse(responseBody); /* console.log(`${logPrefix} Success (JSON) via https.request`); */ resolve(data);
             } catch (parseError) {
               console.error(`${logPrefix} Failed to parse successful JSON response (https.request):`, parseError);
               reject(new PikoApiError(`Failed to parse successful API response: ${parseError instanceof Error ? parseError.message : String(parseError)}`, { statusCode: 500, rawError: responseBody }));
@@ -801,19 +788,22 @@ class PikoNodeHttpsStrategy implements PikoHttpRequestStrategy {
             res.resume(); reject(new PikoApiError(`Expected image response, got ${contentType || 'unknown'}`, { statusCode })); return;
           }
           const chunks: Buffer[] = [];
-          res.on('data', (chunk) => chunks.push(Buffer.from(chunk as any, 'binary')));
+          // Data chunks will be Buffers if no encoding is set on 'res'
+          res.on('data', (chunk) => chunks.push(chunk as Buffer)); 
           res.on('end', () => {
             try {
               const finalBuffer = Buffer.concat(chunks);
-              const blob = new Blob([finalBuffer], { type: contentType });
-              console.log(`${logPrefix} Success (Blob) via https.request`); resolve(blob);
+              // Create and resolve a Blob object as before
+              const blob = new Blob([finalBuffer], { type: contentType }); 
+              // console.log(`${logPrefix} Success (Blob from buffer) via https.request. Type: ${blob.type}, Size: ${blob.size}`);
+              resolve(blob);
             } catch (e) {
-              console.error(`${logPrefix} Failed to process blob data:`, e);
-              reject(new PikoApiError(`Failed to process image data: ${e instanceof Error ? e.message : 'Unknown error'}`, { cause: e }));
+              console.error(`${logPrefix} Failed to process blob data from buffer:`, e);
+              reject(new PikoApiError(`Failed to process image blob from buffer: ${e instanceof Error ? e.message : 'Unknown error'}`, { cause: e }));
             }
           });
         } else if (expectedResponseType === 'stream') {
-          console.log(`${logPrefix} Success (Stream) via https.request. Piping response.`);
+          // console.log(`${logPrefix} Success (Stream) via https.request. Piping response.`);
           const nodeStream = res;
           const webReadableStream = new ReadableStream({
             start(controller) {
@@ -922,7 +912,7 @@ class PikoHttpClient {
     } = params;
 
     const logPrefix = `[PikoHttpClient][${connectorId || 'direct'}]${isRetry ? '[RETRY]' : ''}`;
-    console.log(`${logPrefix} Requesting path: ${path}, method: ${method}, expectedType: ${expectedResponseType}`);
+    console.log(`${logPrefix} Requesting path: ${path}, method: ${method}`);
 
     if (!path) {
       throw new PikoApiError('Missing required parameter (Path).', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
@@ -1135,22 +1125,28 @@ export async function createPikoLoginTicket(connectorId: string, serverId: strin
   }
 }
 
-export async function getPikoBestShotImageBlob(connectorId: string, objectTrackId: string, cameraId: string): Promise<Blob> {
-  const logPrefix = `[getPikoBestShotImageBlob][${connectorId}]`;
+export async function getPikoBestShotImageData(connectorId: string, objectTrackId: string, cameraId: string): Promise<{ buffer: Buffer, contentType: string }> {
+  const logPrefix = `[getPikoBestShotImageData][${connectorId}]`;
   console.log(`${logPrefix} Fetching best shot for track ${objectTrackId} on camera ${cameraId}.`);
   if (!objectTrackId || !cameraId) throw new PikoApiError('Missing params.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
   const path = '/ec2/analyticsTrackBestShot';
   const queryParams = { objectTrackId, cameraId };
   const additionalHeaders = { 'Accept': 'image/*' };
+  
   const blobData = await pikoApiClient.request({
-    connectorId, path, queryParams, additionalHeaders, expectedResponseType: 'blob'
-  });
+    connectorId, path, queryParams, additionalHeaders, expectedResponseType: 'blob' 
+  }) as Blob;
+
   if (!(blobData instanceof Blob)) {
-     console.error(`${logPrefix} Did not receive Blob. Received:`, blobData);
-     throw new PikoApiError('Expected image Blob from Best Shot API.', { rawError: blobData, errorId: PikoErrorCode.InvalidParameter });
+     console.error(`${logPrefix} Did not receive a Blob object. Received:`, blobData);
+     throw new PikoApiError('Expected a Blob object from Best Shot API client request.', { rawError: blobData, errorId: PikoErrorCode.InvalidParameter });
   }
-  console.log(`${logPrefix} Successfully retrieved Best Shot blob (Type: ${blobData.type}, Size: ${blobData.size})`);
-  return blobData;
+  
+  const imageBuffer = Buffer.from(await blobData.arrayBuffer());
+  const contentType = blobData.type;
+
+  console.log(`${logPrefix} Successfully retrieved Best Shot image data (Converted from Blob. Type: ${contentType}, Size: ${imageBuffer.length})`);
+  return { buffer: imageBuffer, contentType: contentType };
 }
 
 export async function getPikoDeviceThumbnail(

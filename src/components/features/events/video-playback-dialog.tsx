@@ -24,7 +24,8 @@ export interface VideoPlaybackDialogProps {
   deviceName?: string | null;
 }
 
-export const VideoPlaybackDialog: React.FC<VideoPlaybackDialogProps> = ({ 
+// Wrap the component with React.memo
+export const VideoPlaybackDialog: React.FC<VideoPlaybackDialogProps> = React.memo(({
   isOpen, 
   onOpenChange, 
   connectorId, 
@@ -34,8 +35,10 @@ export const VideoPlaybackDialog: React.FC<VideoPlaybackDialogProps> = ({
   title = 'Video Playback',
   deviceName
 }) => {
-  // Prevent rendering if critical IDs are missing
+  // Prevent rendering if critical IDs are missing or dialog is not open
   if (!isOpen || !connectorId || !cameraId) return null;
+
+  console.log('[VideoPlaybackDialog] Rendering. isOpen:', isOpen, 'ConnectorId:', connectorId, 'CameraId:', cameraId);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -65,4 +68,7 @@ export const VideoPlaybackDialog: React.FC<VideoPlaybackDialogProps> = ({
       </DialogContent>
     </Dialog>
   );
-}; 
+});
+
+// Add a display name for better debugging in React DevTools
+VideoPlaybackDialog.displayName = 'VideoPlaybackDialog (Memo)'; 
