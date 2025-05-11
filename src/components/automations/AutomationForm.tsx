@@ -234,7 +234,8 @@ export default function AutomationForm({
     const form = useForm<AutomationFormValues>({
         resolver: zodResolver(FormSchema),
         defaultValues: massageInitialData(initialData),
-        mode: 'onTouched',
+        mode: 'onChange',
+        reValidateMode: 'onChange',
     });
 
     const { fields: actionsFields, append: appendAction, remove: removeAction } = useFieldArray({
