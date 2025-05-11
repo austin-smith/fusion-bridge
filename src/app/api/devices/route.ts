@@ -347,44 +347,47 @@ async function syncYoLinkDevices(
 ): Promise<number> { // Return only count
 // --- END Modify syncYoLinkDevices signature ---
   let processedCount = 0;
-  // REMOVE fetchedStates map
   try {
     console.log(`Syncing YoLink devices metadata for connector ${connectorId}`);
-    const driverConfig = { uaid: config.uaid, clientSecret: config.clientSecret };
-    const accessToken = await yolinkDriver.getAccessToken(driverConfig);
-    const yolinkDevicesFromApi = await yolinkDriver.getDeviceList(accessToken);
+    // Use the new getRefreshedYoLinkToken which returns an object with newAccessToken and updatedConfig
+    const tokenDetails = await yolinkDriver.getRefreshedYoLinkToken(config);
+    // We'll use tokenDetails.updatedConfig for subsequent calls if config needs to be passed,
+    // and tokenDetails.newAccessToken where raw accessToken was used.
+    // However, getDeviceList now takes connectorId and the original config.
+    // The callYoLinkApi within getDeviceList will use getRefreshedYoLinkToken internally.
+
+    // UPDATED: Pass connectorId as the first argument to getDeviceList.
+    // The 'config' passed here is the initial config for the connector.
+    // getDeviceList will internally handle token refresh using this config.
+    const yolinkDevicesFromApi = await yolinkDriver.getDeviceList(connectorId, config);
     console.log(`Found ${yolinkDevicesFromApi.length} YoLink devices from API for metadata sync.`);
 
-    if (yolinkDevicesFromApi.length === 0) return 0; // Return count directly
+    if (yolinkDevicesFromApi.length === 0) return 0;
 
     console.log(`Upserting ${yolinkDevicesFromApi.length} YoLink devices metadata...`);
     for (const device of yolinkDevicesFromApi) {
       if (!device.deviceId || !device.name || !device.type) continue;
 
-      // --- BEGIN Extract token for state fetch --- //
       const deviceToken = device.token;
-      // --- END Extract token --- //
       
-      // --- BEGIN Get basic info from getDeviceList --- //
       let initialStatusFromList: string | null = null;
       if (typeof device.state === 'object' && device.state !== null) {
         initialStatusFromList = (device.state as any).state ?? (device.state as any).power ?? null;
       }
-      // --- END Get basic info --- //
 
-      // Get Standardized Type Info
       const stdTypeInfo = getDeviceTypeInfo('yolink', device.type);
       
-      // --- BEGIN Declare calculatedDisplayState earlier --- //
       let calculatedDisplayState: DisplayState | undefined = undefined;
-      // --- END Declare calculatedDisplayState earlier --- //
 
-      // --- BEGIN Fetch State --- //
       if ((device.type === 'Switch' || device.type === 'Outlet' || device.type === 'MultiOutlet') && deviceToken) {
           try {
               console.log(`[API Sync] Fetching state for ${device.type} ${device.deviceId}...`);
+              // UPDATED: Pass connectorId as the first argument.
+              // The 'config' here refers to the initial connector config.
+              // getDeviceState will internally manage tokens.
               const stateData = await yolinkDriver.getDeviceState(
-                  driverConfig, 
+                  connectorId, // Pass connectorId
+                  config,      // Pass the original config
                   device.deviceId, 
                   deviceToken, 
                   device.type
@@ -409,7 +412,6 @@ async function syncYoLinkDevices(
               // Do not update status if state fetch fails, rely on event processor
           }
       }
-      // --- END Fetch State --- //
 
       const deviceData = {
         deviceId: device.deviceId,
@@ -482,15 +484,11 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
         throw new Error('Invalid or incomplete Piko configuration.');
     }
 
-    const tokenResponse = await pikoDriver.getToken(config);
-    const accessToken = tokenResponse.accessToken;
-    console.log(`Successfully obtained Piko token (Type: ${config.type})`);
-
     // --- Sync Piko Servers (Cloud only) ---
     if (config.type === 'cloud' && config.selectedSystem) {
         try {
           console.log(`Syncing Piko servers for system: ${config.selectedSystem}...`);
-          const pikoServersFromApi = await pikoDriver.getSystemServers(config, accessToken);
+          const pikoServersFromApi = await pikoDriver.getSystemServers(connectorId);
           console.log(`Found ${pikoServersFromApi.length} Piko servers.`);
           if (pikoServersFromApi.length > 0) {
             for (const server of pikoServersFromApi) {
@@ -531,7 +529,7 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
 
     // --- Sync Piko Devices --- 
     console.log(`Fetching Piko devices (Type: ${config.type})...`);
-    const pikoDevicesFromApi = await pikoDriver.getSystemDevices(config, accessToken);
+    const pikoDevicesFromApi = await pikoDriver.getSystemDevices(connectorId);
     console.log(`Found ${pikoDevicesFromApi.length} Piko devices.`);
 
     if (pikoDevicesFromApi.length > 0) {

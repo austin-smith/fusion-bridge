@@ -9,18 +9,19 @@ import { NextRequest } from 'next/server';
 
 // Define specific config schemas
 const YoLinkConfigSchema = z.object({
-  uaid: z.string(),
-  clientSecret: z.string(),
-  homeId: z.string().optional(), // Home ID can be optional initially
+  uaid: z.string().min(1, "UAID is required"),
+  clientSecret: z.string().min(1, "Client Secret is required"),
+  homeId: z.string().min(1, "Home ID is required for YoLink connectors"), // Make homeId required and non-empty
 });
 
 // Define Piko common/base schema
 const PikoTokenSchema = z.object({ 
   accessToken: z.string(),
   refreshToken: z.string().optional(), 
-  expiresAt: z.string().optional(),    
-  expiresIn: z.union([z.string(), z.number()]).optional(), 
+  expiresAt: z.number().optional(),
+  expiresIn: z.number().optional(),
   sessionId: z.string().optional(),    
+  scope: z.string().optional() // Added scope as it's part of PikoTokenResponse and might be in config.token
 }).optional();
 
 const PikoBaseConfigSchema = z.object({

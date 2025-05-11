@@ -3,8 +3,7 @@ import 'server-only'; // Mark this module as server-only
 // Remove module init log: console.log(`[${new Date().toISOString()}] --- MQTT Service Module Initializing ---`);
 
 import * as mqtt from 'mqtt';
-import { getAccessToken, getHomeInfo } from '@/services/drivers/yolink';
-import { YoLinkConfig } from '@/services/drivers/yolink';
+import { getHomeInfo, getRefreshedYoLinkToken, YoLinkConfig as DriverYoLinkConfig } from '@/services/drivers/yolink';
 import { db } from '@/data/db';
 import { connectors } from '@/data/db/schema';
 import { eq, and } from 'drizzle-orm';
@@ -14,6 +13,7 @@ import { parseYoLinkEvent } from '@/lib/event-parsers/yolink'; // <-- Import the
 import { useFusionStore } from '@/stores/store'; // <-- Import Zustand store
 import { Connector } from '@/types'; // Import Connector type
 import { initializePikoConnections } from './piko-websocket-service'; // Import Piko initializer
+import { updateConnectorConfig } from '@/data/repositories/connectors'; // <-- IMPORT ADDED
 
 // Define event type based on the example
 export interface YolinkEvent {
@@ -30,7 +30,7 @@ export interface YolinkEvent {
 // Type to represent an MQTT connection state associated with a specific YoLink Home ID
 interface MqttConnection {
   client: mqtt.MqttClient | null;
-  config: YoLinkConfig; // Stored credentials (UAID, Secret)
+  config: DriverYoLinkConfig; // Use the imported YoLinkConfig from the driver
   homeId: string; // The YoLink Home ID (key for the map)
   connectorId: string; // The ID of the connector DB entry associated with this connection
   lastEventData: { time: Date, count: number } | null;
@@ -140,7 +140,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
   // console.log(`[initMqttService][${connectorId}] Starting initialization...`);
   
   let connector: Connector | undefined;
-  let config: (YoLinkConfig & { homeId?: string }) | undefined;
+  let config: (DriverYoLinkConfig & { homeId?: string }) | undefined;
   let homeId: string | undefined;
   try {
       const connectorResult = await db.select().from(connectors).where(eq(connectors.id, connectorId)).limit(1);
@@ -158,227 +158,279 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
 
       if (connector.category !== 'yolink') {
           // console.log(`[initMqttService][${connectorId}] Skipping MQTT init, not a YoLink connector.`);
-          return Promise.resolve(false);
+          return Promise.resolve(false); // No error, just not applicable
       }
 
+      let parsedDbConfig: DriverYoLinkConfig & { homeId?: string }; // Type for what we expect from DB JSON
       try {
-          config = JSON.parse(connector.cfg_enc);
-          if (!config?.uaid || !config?.clientSecret) throw new Error('Missing uaid or clientSecret in config');
-          
-          homeId = config.homeId;
-          if (!homeId) {
-              console.warn(`[initMqttService][${connectorId}] Missing homeId in config. Fetching...`);
-              const accessToken = await getAccessToken(config); // Use parsed config for token
-              homeId = await getHomeInfo(accessToken);
-              config.homeId = homeId;
-              await db.update(connectors).set({ cfg_enc: JSON.stringify(config) }).where(eq(connectors.id, connectorId));
-              console.log(`[initMqttService][${connectorId}] Fetched and saved homeId: ${homeId}`);
+          parsedDbConfig = JSON.parse(connector.cfg_enc);
+          if (!parsedDbConfig?.uaid || !parsedDbConfig?.clientSecret) {
+            throw new Error('Missing uaid or clientSecret in parsed DB config');
           }
       } catch (e) {
-          console.error(`[initMqttService][${connectorId}] Failed to parse config or fetch/save homeId:`, e);
-          return Promise.reject(e);
+          console.error(`[initMqttService][${connectorId}] Failed to parse connector.cfg_enc:`, e);
+          return Promise.reject(new Error(`Invalid config for ${connectorId}: ${e instanceof Error ? e.message : String(e)}`));
       }
       
-      const currentHomeId = homeId!; // We know homeId is valid here
-      const currentConfig = { uaid: config!.uaid, clientSecret: config!.clientSecret };
+      let homeIdFromConfig = parsedDbConfig.homeId;
+      let configForTokenFetch: DriverYoLinkConfig = { ...parsedDbConfig }; // Start with DB config for token fetch
+
+      if (!homeIdFromConfig) {
+          console.warn(`[initMqttService][${connectorId}] homeId missing from DB config. Fetching via getHomeInfo...`);
+          try {
+              // First, ensure we have a valid token to call getHomeInfo
+              const tokenDetailsForHomeIdFetch = await getRefreshedYoLinkToken(configForTokenFetch);
+              configForTokenFetch = tokenDetailsForHomeIdFetch.updatedConfig; // Use the config with the token that will be used
+
+              // Persist token updates if they occurred during this preliminary fetch
+              if (tokenDetailsForHomeIdFetch.updatedConfig.accessToken !== parsedDbConfig.accessToken || 
+                  tokenDetailsForHomeIdFetch.updatedConfig.refreshToken !== parsedDbConfig.refreshToken || 
+                  tokenDetailsForHomeIdFetch.updatedConfig.tokenExpiresAt !== parsedDbConfig.tokenExpiresAt) {
+                  console.warn(`[initMqttService][${connectorId}] Token updated during homeId fetch. DB UPDATE NEEDED for cfg_enc with:`, JSON.stringify(configForTokenFetch));
+                  // await db.update(connectors).set({ cfg_enc: JSON.stringify(configForTokenFetch) }).where(eq(connectors.id, connectorId));
+              }
+
+              homeIdFromConfig = await getHomeInfo(connectorId, configForTokenFetch); // Use the config that has the valid token
+              parsedDbConfig.homeId = homeIdFromConfig; // Add homeId to the object that might be saved back to DB
+              console.warn(`[initMqttService][${connectorId}] Fetched homeId: ${homeIdFromConfig}. DB UPDATE NEEDED for cfg_enc (to include homeId):`, JSON.stringify(parsedDbConfig));
+              // await db.update(connectors).set({ cfg_enc: JSON.stringify(parsedDbConfig) }).where(eq(connectors.id, connectorId));
+          } catch (homeIdError) {
+              console.error(`[initMqttService][${connectorId}] Could not obtain homeId:`, homeIdError);
+              return Promise.reject(new Error(`Could not obtain homeId for ${connectorId}: ${homeIdError instanceof Error ? homeIdError.message : String(homeIdError)}`));
+          }
+      }
+      
+      const currentHomeId = homeIdFromConfig!;
       const isDisabled = !connector.eventsEnabled;
-      // console.log(`[initMqttService][${connectorId}] Target Home ID: ${currentHomeId}, Disabled: ${isDisabled}`);
+
       const connection: MqttConnection = connections.get(currentHomeId) ?? {
           client: null,
-          config: currentConfig,
+          config: { ...parsedDbConfig }, // Initialize with the full config from DB (now including homeId)
           homeId: currentHomeId,
           connectorId: connectorId,
           lastEventData: null,
-          lastStandardizedPayload: null, // <<< Initialize renamed payload field
+          lastStandardizedPayload: null,
           connectionError: null,
           reconnectAttempts: 0,
-          disabled: true, // Will be updated below
+          disabled: true, 
           isConnected: false
       };
-      connection.config = currentConfig;
       connection.connectorId = connectorId;
+      // Ensure connection.config has the latest from parsedDbConfig (which might have new homeId or token from homeId fetch step)
+      // but retain runtime token info if it existed and this is a re-entrant call for an existing connection object.
+      // The main getRefreshedYoLinkToken below will fully reconcile tokens.
+      connection.config = { 
+          ...parsedDbConfig, 
+          accessToken: connection.config?.accessToken, // Prefer existing runtime token if available
+          refreshToken: connection.config?.refreshToken,
+          tokenExpiresAt: connection.config?.tokenExpiresAt
+      }; 
       connections.set(currentHomeId, connection);
 
       if (isDisabled) {
-          // console.log(`[initMqttService][${connectorId}] MQTT events are disabled in DB.`);
-          connection.disabled = true;
-          connection.isConnected = false;
-          connection.connectionError = null;
-          connection.reconnectAttempts = 0;
+          console.log(`[initMqttService][${connectorId}] MQTT events are disabled in DB for home ${currentHomeId}.`);
+          connection.disabled = true; connection.isConnected = false; connection.connectionError = null; connection.reconnectAttempts = 0;
           if (connection.client) {
-              console.log(`[initMqttService][${currentHomeId}] Disconnecting existing client due to disabled state for connector ${connectorId}.`);
               try { connection.client.end(true); } catch (e) { console.error(`Error ending client for ${currentHomeId}:`, e);} finally { connection.client = null; }
           }
           connections.set(currentHomeId, connection);
           return Promise.resolve(false);
       }
       
-      // console.log(`[initMqttService][${connectorId}] Events are enabled.`);
       connection.disabled = false;
-      connection.connectionError = null;
-      connection.reconnectAttempts = 0;
       connections.set(currentHomeId, connection);
+
+      let tokenDetails: Awaited<ReturnType<typeof getRefreshedYoLinkToken>>;
+      try {
+        // Pass the connection.config, which should be the most up-to-date version including any runtime tokens
+        tokenDetails = await getRefreshedYoLinkToken(connection.config); 
+      } catch (tokenFetchError) {
+        console.error(`[initMqttService][${connectorId}] Failed to obtain token for MQTT:`, tokenFetchError);
+        connection.connectionError = `Token fetch error: ${tokenFetchError instanceof Error ? tokenFetchError.message : String(tokenFetchError)}`;
+        connection.isConnected = false;
+        connections.set(currentHomeId, connection);
+        return Promise.reject(tokenFetchError);
+      }
+
+      const { newAccessToken, updatedConfig: newYoLinkConfigFromRefresh } = tokenDetails;
+      // Store the original config before updating connection.config for comparison
+      const originalConnectionConfig = { ...connection.config }; 
+      connection.config = newYoLinkConfigFromRefresh; // Update in-memory state with the definitive new token config
+      connections.set(currentHomeId, connection);
+
+      // Construct the final config object that would be saved to the DB.
+      // Ensure homeId from parsedDbConfig or fetched is included if not already in newYoLinkConfigFromRefresh
+      const finalConfigForDb: DriverYoLinkConfig = {
+         ...newYoLinkConfigFromRefresh,
+         homeId: currentHomeId // Ensure currentHomeId is part of the saved config
+      };
+
+      const homeIdWasMissingOrChanged = !originalConnectionConfig.homeId || originalConnectionConfig.homeId !== currentHomeId;
+
+      if (
+        newYoLinkConfigFromRefresh.accessToken !== originalConnectionConfig.accessToken ||
+        newYoLinkConfigFromRefresh.refreshToken !== originalConnectionConfig.refreshToken ||
+        newYoLinkConfigFromRefresh.tokenExpiresAt !== originalConnectionConfig.tokenExpiresAt ||
+        homeIdWasMissingOrChanged
+      ) {
+        console.warn(`[initMqttService][${connectorId}] YoLink config (tokens or homeId) changed. Attempting to save updated configuration to DB.`);
+        try {
+          await updateConnectorConfig(connectorId, finalConfigForDb);
+          console.log(`[initMqttService][${connectorId}] Successfully saved updated config to DB via mqtt-service.`);
+        } catch (dbError) {
+          console.error(`[initMqttService][${connectorId}] CRITICAL: Failed to save updated config to DB via mqtt-service. Error:`, dbError);
+          // Log error, but don't let it stop MQTT connection if token was obtained
+        }
+      }
       
-      if (connection.client && (!connection.client.connected || connection.config.uaid !== currentConfig.uaid || connection.config.clientSecret !== currentConfig.clientSecret)) {
-          console.log(`[initMqttService][${currentHomeId}] Ending existing client for connector ${connectorId} due to config change or disconnected state.`);
-          try { connection.client.end(true); } catch (e) { console.error(`Error ending client for ${currentHomeId}:`, e); } finally { connection.client = null; }
+      if (connection.client && connection.client.connected && connection.config.accessToken === newAccessToken) {
+          connection.isConnected = true; connection.disabled = false; connection.connectionError = null; connection.reconnectAttempts = 0;
+          connections.set(currentHomeId, connection);
+          return Promise.resolve(true);
+      }
+
+      if (connection.client) {
+          try { connection.client.end(true); } catch (e) { console.error(`Error ending stale client for ${currentHomeId}:`, e); } finally { connection.client = null; }
           connection.isConnected = false;
           connections.set(currentHomeId, connection);
       }
 
-      if (!connection.client) {
-          // console.log(`[initMqttService][${currentHomeId}] Attempting MQTT connection for connector ${connectorId}...`);
+      console.log(`[initMqttService][${currentHomeId}] Attempting MQTT connection for ${connectorId}...`);
+      connection.connectionError = null;
+      connections.set(currentHomeId, connection);
           
-          return new Promise<boolean>(async (resolve, reject) => {
-              let connectTimeoutId: NodeJS.Timeout | null = null;
+      return new Promise<boolean>(async (resolve, reject) => {
+          let connectTimeoutId: NodeJS.Timeout | null = null;
+          const cleanup = () => {
+              if (connectTimeoutId) clearTimeout(connectTimeoutId);
+              connectTimeoutId = null;
+              if (connection.client) {
+                  connection.client.removeAllListeners('connect');
+                  connection.client.removeAllListeners('error');
+                  connection.client.removeAllListeners('close');
+              }
+          };
+
+          try { // This try block was missing in the previous partial application
+              console.log(`[${currentHomeId}][${connectorId}] Using access token for MQTT username.`);
               
-              // Cleanup function for handlers and timeout
-              const cleanup = () => {
-                  if (connectTimeoutId) clearTimeout(connectTimeoutId);
-                  connectTimeoutId = null;
-                  if (connection.client) {
-                      connection.client.removeAllListeners('connect');
-                      connection.client.removeAllListeners('error');
-                      connection.client.removeAllListeners('close');
-                      // Keep message and offline listeners attached if needed after initial connect?
-                  }
-              };
-
-              try {
-                  const token = await getAccessToken(connection.config);
-                  // console.log(`[${currentHomeId}] Access token obtained.`);
-                  
-                  // Start connection timeout
-                  connectTimeoutId = setTimeout(() => {
-                      cleanup();
-                      console.error(`[${currentHomeId}][${connectorId}] MQTT connection timed out.`);
-                      if(connections.has(currentHomeId)) {
-                          const conn = connections.get(currentHomeId)!;
-                          conn.connectionError = 'Connection Timeout';
-                          conn.isConnected = false;
-                          if (conn.client) { try { conn.client.end(true); } catch(e){} finally { conn.client = null; } }
-                          connections.set(currentHomeId, conn);
-                      }
-                      reject(new Error('Connection Timeout'));
-                  }, 15000); // 15 second timeout
-
-                  connection.client = mqtt.connect('mqtt://api.yosmart.com:8003', {
-                      clientId: `fusion-bridge-server-${currentHomeId}-${Math.random().toString(16).substring(2, 10)}`,
-                      username: token, password: '', reconnectPeriod: 5000, connectTimeout: 10000,
-                  });
-                  connections.set(currentHomeId, connection);
-                  
-                  // --- Setup Event Handlers --- 
-                  connection.client.once('connect', () => { // Use .once for initial connect resolve
-                      cleanup(); // Clear timeout
-                      console.log(`[${currentHomeId}] Connected to YoLink MQTT broker`);
-                      if (connections.has(currentHomeId)) {
-                          const conn = connections.get(currentHomeId)!;
-                          conn.connectionError = null; conn.reconnectAttempts = 0; conn.isConnected = true; conn.disabled = false;
-                          connections.set(currentHomeId, conn);
-                          // Subscribe after successful connect
-                          if (!conn.client) return; // Safety
-                          const topic = `yl-home/${currentHomeId}/+/report`;
-                          conn.client.subscribe(topic, (err) => {
-                              if (err) {
-                                  console.error(`[${currentHomeId}] Failed to subscribe:`, err);
-                                  conn.connectionError = `Failed to subscribe: ${err.message}`;
-                                  connections.set(currentHomeId, conn);
-                              } else { 
-                                  // console.log(`[${currentHomeId}] Subscribed to ${topic}`); 
-                              }
-                          });
-                      }
-                      resolve(true); // Resolve the promise on successful connection
-                  });
-
-                  connection.client.once('error', (err) => { // Use .once for initial connect failure
-                      cleanup(); // Clear timeout
-                      console.error(`[${currentHomeId}] MQTT client error during initial connect:`, err);
-                      if (connections.has(currentHomeId)) {
-                          const conn = connections.get(currentHomeId)!; conn.connectionError = `Connection error: ${err.message}`; conn.isConnected = false;
-                          if (conn.client) { try { conn.client.end(true); } catch(e){} finally { conn.client = null; } }
-                          connections.set(currentHomeId, conn);
-                          // Don't schedule reconnect here, let the rejection handle it
-                      }
-                      reject(err); // Reject the promise on error
-                  });
-
-                  connection.client.once('close', () => { // Use .once for initial connect failure
-                      cleanup(); // Clear timeout
-                      // console.log(`[${currentHomeId}] MQTT client connection closed during initial connect.`);
-                      if (connections.has(currentHomeId)) {
-                          const conn = connections.get(currentHomeId)!; conn.isConnected = false; conn.client = null;
-                          conn.connectionError = conn.connectionError || 'Connection closed unexpectedly'; // Keep existing error or set default
-                          connections.set(currentHomeId, conn);
-                          // Don't schedule reconnect here
-                      }
-                      reject(new Error(connection.connectionError || 'Connection closed unexpectedly')); // Reject
-                  });
-
-                  // Keep persistent message/offline handlers if needed outside the promise logic
-                  connection.client.on('message', async (topic, payload) => {
-                      const associatedConnectorId = connections.get(currentHomeId)?.connectorId;
-                      if (!associatedConnectorId) {
-                          console.error(`[${currentHomeId}][message] Cannot process, connectorId not found for homeId.`);
-                          return;
-                      }
-                      
-                      let rawEvent: Record<string, any>;
-                      try { rawEvent = JSON.parse(payload.toString()); } catch (err) { 
-                          console.error(`[${currentHomeId}][${associatedConnectorId}] Failed to parse MQTT payload:`, payload.toString(), err); return; 
-                      }
-
-                      try {
-                          const standardizedEvents = await parseYoLinkEvent(associatedConnectorId, rawEvent);
-                          for (const stdEvent of standardizedEvents) {
-                              try { await eventsRepository.storeStandardizedEvent(stdEvent); } catch (e) { console.error(`Store error for ${stdEvent.eventId}:`, e); continue; }
-                              try { useFusionStore.getState().processStandardizedEvent(stdEvent); } catch (e) { console.error(`Zustand error for ${stdEvent.eventId}:`, e); }
-                              processEvent(stdEvent).catch(err => { console.error(`Automation error for ${stdEvent.eventId}:`, err); });
-                          }
-                          // Update last event data for this homeId
-                          const count = await eventsRepository.getEventCount(); 
-                          const conn = connections.get(currentHomeId);
-                          if (conn) {
-                              const rawEventTime = rawEvent?.time as number | undefined;
-                              if (rawEventTime) { 
-                                conn.lastEventData = { time: new Date(rawEventTime), count }; 
-                                conn.lastStandardizedPayload = standardizedEvents[0]?.payload ?? null; // <<< Store first standardized payload
-                                connections.set(currentHomeId, conn); 
-                              }
-                          }
-                      } catch(err) { console.error(`[${currentHomeId}][${associatedConnectorId}] Error processing event pipeline:`, err); }
-                  });
-
-                  connection.client.on('offline', () => {
-                      // console.log(`[${currentHomeId}] MQTT client is offline.`);
-                      if (connections.has(currentHomeId)) {
-                          const conn = connections.get(currentHomeId)!; conn.connectionError = 'Connection offline'; conn.isConnected = false;
-                          connections.set(currentHomeId, conn);
-                      }
-                  });
-
-              } catch (connectErr) {
-                  cleanup(); // Clear timeout on setup error
-                  console.error(`[${currentHomeId}][${connectorId}] Failed to initiate MQTT connection setup:`, connectErr);
-                  if (connections.has(currentHomeId)) {
+              connectTimeoutId = setTimeout(() => {
+                  cleanup();
+                  console.error(`[${currentHomeId}][${connectorId}] MQTT connection timed out.`);
+                  if(connections.has(currentHomeId)) {
                       const conn = connections.get(currentHomeId)!;
-                      conn.connectionError = connectErr instanceof Error ? connectErr.message : 'MQTT connection failed';
-                      conn.isConnected = false;
+                      conn.connectionError = 'Connection Timeout'; conn.isConnected = false;
                       if (conn.client) { try { conn.client.end(true); } catch(e){} finally { conn.client = null; } }
                       connections.set(currentHomeId, conn);
                   }
-                  reject(connectErr); // Reject the promise
-              }
-          }); // End of new Promise
+                  reject(new Error('Connection Timeout'));
+              }, 15000);
 
-      } else {
-          // console.log(`[initMqttService][${currentHomeId}] Client already exists for connector ${connectorId}. Assuming connected or reconnecting.`);
-          // If client exists, assume it's either connected or attempting reconnection.
-          // Resolve true immediately if already connected, otherwise maybe wait briefly?
-          // For simplicity, let's resolve true if connection.isConnected is true
-          return Promise.resolve(connection.isConnected);
-      }
+              connection.client = mqtt.connect('mqtt://api.yosmart.com:8003', {
+                  clientId: `fusion-bridge-server-${currentHomeId}-${Math.random().toString(16).substring(2, 10)}`,
+                  username: newAccessToken, 
+                  password: '', 
+                  reconnectPeriod: 0, 
+                  connectTimeout: 10000,
+              });
+              connections.set(currentHomeId, connection);
+              
+              connection.client.once('connect', () => { 
+                  cleanup(); 
+                  console.log(`[${currentHomeId}] Connected to YoLink MQTT broker`);
+                  if (connections.has(currentHomeId)) {
+                      const conn = connections.get(currentHomeId)!;
+                      conn.connectionError = null; conn.reconnectAttempts = 0; conn.isConnected = true; conn.disabled = false;
+                      connections.set(currentHomeId, conn);
+                      if (!conn.client) return;
+                      const topic = `yl-home/${currentHomeId}/+/report`;
+                      conn.client.subscribe(topic, (err) => {
+                          if (err) {
+                              console.error(`[${currentHomeId}] Failed to subscribe:`, err);
+                              conn.connectionError = `Failed to subscribe: ${err.message}`;
+                              connections.set(currentHomeId, conn);
+                          } 
+                      });
+                  }
+                  resolve(true); 
+              });
+
+              connection.client.once('error', (err) => { 
+                  cleanup(); 
+                  console.error(`[${currentHomeId}] MQTT client error during initial connect:`, err);
+                  if (connections.has(currentHomeId)) {
+                      const conn = connections.get(currentHomeId)!; conn.connectionError = `Connection error: ${err.message}`; conn.isConnected = false;
+                      if (conn.client) { try { conn.client.end(true); } catch(e){} finally { conn.client = null; } }
+                      connections.set(currentHomeId, conn);
+                  }
+                  reject(err); 
+              });
+
+              connection.client.once('close', () => { 
+                  cleanup(); 
+                  if (connections.has(currentHomeId)) {
+                      const conn = connections.get(currentHomeId)!; conn.isConnected = false; conn.client = null;
+                      conn.connectionError = conn.connectionError || 'Connection closed unexpectedly during init';
+                      connections.set(currentHomeId, conn);
+                  }
+                  reject(new Error(connection.connectionError || 'Connection closed unexpectedly during init')); 
+              });
+
+              // Persistent handlers should be outside 'once' if they need to live beyond initial connection attempt
+              connection.client.on('message', async (topic, payload) => {
+                  const associatedConnectorId = connections.get(currentHomeId)?.connectorId;
+                  if (!associatedConnectorId) {
+                      console.error(`[${currentHomeId}][message] Cannot process, connectorId not found for homeId.`);
+                      return;
+                  }
+                  
+                  let rawEvent: Record<string, any>;
+                  try { rawEvent = JSON.parse(payload.toString()); } catch (err) { 
+                      console.error(`[${currentHomeId}][${associatedConnectorId}] Failed to parse MQTT payload:`, payload.toString(), err); return; 
+                  }
+
+                  try {
+                      const standardizedEvents = await parseYoLinkEvent(associatedConnectorId, rawEvent);
+                      for (const stdEvent of standardizedEvents) {
+                          try { await eventsRepository.storeStandardizedEvent(stdEvent); } catch (e) { console.error(`Store error for ${stdEvent.eventId}:`, e); continue; }
+                          try { useFusionStore.getState().processStandardizedEvent(stdEvent); } catch (e) { console.error(`Zustand error for ${stdEvent.eventId}:`, e); }
+                          processEvent(stdEvent).catch(err => { console.error(`Automation error for ${stdEvent.eventId}:`, err); });
+                      }
+                      // Update last event data for this homeId
+                      const count = await eventsRepository.getEventCount(); 
+                      const conn = connections.get(currentHomeId);
+                      if (conn) {
+                          const rawEventTime = rawEvent?.time as number | undefined;
+                          if (rawEventTime) { 
+                            conn.lastEventData = { time: new Date(rawEventTime), count }; 
+                            conn.lastStandardizedPayload = standardizedEvents[0]?.payload ?? null; // <<< Store first standardized payload
+                            connections.set(currentHomeId, conn); 
+                          }
+                      }
+                  } catch(err) { console.error(`[${currentHomeId}][${associatedConnectorId}] Error processing event pipeline:`, err); }
+              });
+
+              connection.client.on('offline', () => {
+                  // console.log(`[${currentHomeId}] MQTT client is offline.`);
+                  if (connections.has(currentHomeId)) {
+                      const conn = connections.get(currentHomeId)!; conn.connectionError = 'Connection offline'; conn.isConnected = false;
+                      connections.set(currentHomeId, conn);
+                  }
+              });
+
+          } catch (connectErr) {
+              cleanup(); 
+              console.error(`[${currentHomeId}][${connectorId}] Failed to initiate MQTT connection setup:`, connectErr);
+              if (connections.has(currentHomeId)) {
+                  const conn = connections.get(currentHomeId)!;
+                  conn.connectionError = connectErr instanceof Error ? connectErr.message : 'MQTT connection failed';
+                  conn.isConnected = false;
+                  if (conn.client) { try { conn.client.end(true); } catch(e){} finally { conn.client = null; } }
+                  connections.set(currentHomeId, conn);
+              }
+              reject(connectErr); 
+          }
+      }); 
 
   } catch (error) {
     console.error(`[initMqttService][${connectorId}] General initialization error:`, error);

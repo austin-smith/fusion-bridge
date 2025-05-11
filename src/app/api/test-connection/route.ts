@@ -82,17 +82,22 @@ export async function POST(request: Request) {
     // Dispatch to the appropriate driver
     try {
       if (driver === 'yolink') {
-        // Log the config being sent to the driver for debugging
-        console.log('Testing YoLink connection with config:', {
-          uaid: config.uaid ? '****' + config.uaid.substring(Math.max(0, config.uaid.length - 4)) : 'missing',
-          clientSecret: config.clientSecret ? '[REDACTED]' : 'missing'
-        });
-        
-        // Validation is done by Zod schema now
+        // config is already validated as TestYoLinkConfigSchema by the main schema dispatcher
         const validatedConfig = config as z.infer<typeof TestYoLinkConfigSchema>;
-        // Test the connection
-        success = await yolinkDriver.testConnection(validatedConfig as YoLinkConfig);
-        if (success) message = "YoLink connection successful!";
+        
+        console.log('Testing YoLink connection with (redacted) credentials for uaid:', 
+          validatedConfig.uaid ? '****' + validatedConfig.uaid.substring(Math.max(0, validatedConfig.uaid.length - 4)) : 'missing'
+        );
+        
+        const credTestResult = await yolinkDriver.testYoLinkCredentials(validatedConfig.uaid, validatedConfig.clientSecret);
+        
+        success = credTestResult.success;
+        if (credTestResult.success && credTestResult.homeId) {
+          message = "YoLink credentials validated successfully.";
+          additionalData = { homeId: credTestResult.homeId }; // Store homeId
+        } else {
+          errorMessage = credTestResult.error || "Failed to validate YoLink credentials or retrieve Home ID.";
+        }
       } else if (driver === 'piko') {
         console.log('Testing Piko connection with config type:', config.type);
         

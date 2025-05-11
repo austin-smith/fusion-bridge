@@ -4,7 +4,8 @@ import { connectors } from '@/data/db/schema';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { Connector, ConnectorWithConfig } from '@/types';
-import { getAccessToken, getHomeInfo } from '@/services/drivers/yolink';
+import * as yolinkDriver from '@/services/drivers/yolink';
+import type { YoLinkConfig } from '@/services/drivers/yolink';
 
 // Schema for connector update
 const updateConnectorSchema = z.object({
@@ -107,19 +108,48 @@ export async function PUT(
     // Special handling if updating a YoLink connector's credentials
     if (existingConnector.category === 'yolink' && config !== undefined) {
         // Check if credentials changed (uaid or clientSecret)
-        const currentYoLinkConfig = currentConfig as Partial<{ uaid: string; clientSecret: string; homeId: string }>;
-        const newYoLinkConfig = config as Partial<{ uaid: string; clientSecret: string }>;
+        const currentYoLinkConfig = currentConfig as Partial<YoLinkConfig>;
+        const newYoLinkConfigFromInput = config as Partial<YoLinkConfig>;
 
-        if (newYoLinkConfig.uaid !== currentYoLinkConfig.uaid || newYoLinkConfig.clientSecret !== currentYoLinkConfig.clientSecret) {
-            console.log(`YoLink credentials changed for connector ${id}. Re-fetching homeId...`);
+        const credentialsChanged = newYoLinkConfigFromInput.uaid !== undefined && newYoLinkConfigFromInput.uaid !== currentYoLinkConfig.uaid || 
+                                 newYoLinkConfigFromInput.clientSecret !== undefined && newYoLinkConfigFromInput.clientSecret !== currentYoLinkConfig.clientSecret;
+
+        if (credentialsChanged) {
+            console.log(`YoLink credentials changed for connector ${id}. Verifying and re-fetching homeId...`);
             try {
-                if (!newYoLinkConfig.uaid || !newYoLinkConfig.clientSecret) {
-                    throw new Error("Both UAID and Client Secret must be provided when updating YoLink credentials.");
+                const newUaid = newYoLinkConfigFromInput.uaid || currentYoLinkConfig.uaid;
+                const newClientSecret = newYoLinkConfigFromInput.clientSecret || currentYoLinkConfig.clientSecret;
+
+                if (!newUaid || !newClientSecret) {
+                    throw new Error("Both UAID and Client Secret must be present when YoLink credentials change.");
                 }
-                const accessToken = await getAccessToken({ uaid: newYoLinkConfig.uaid, clientSecret: newYoLinkConfig.clientSecret });
-                const newHomeId = await getHomeInfo(accessToken);
-                (updatedConfig as { homeId?: string }).homeId = newHomeId;
-                console.log(`YoLink homeId updated to ${newHomeId} for connector ${id}.`);
+
+                // 1. Create a temporary config with the new credentials to validate them
+                const tempNewCredentialConfig: YoLinkConfig = {
+                    uaid: newUaid,
+                    clientSecret: newClientSecret,
+                    // scope is usually part of token response, default to current or empty for new credential check
+                    scope: currentYoLinkConfig.scope || [], 
+                };
+
+                // 2. Validate new credentials and get a token based on them
+                const tokenDetailsFromNewCreds = await yolinkDriver.getRefreshedYoLinkToken(tempNewCredentialConfig);
+
+                // 3. Fetch homeId using the token from new credentials and the existing connectorId
+                // The config passed to getHomeInfo should be the one containing the new valid token
+                const newHomeId = await yolinkDriver.getHomeInfo(id, tokenDetailsFromNewCreds.updatedConfig);
+                
+                // 4. Update the main 'updatedConfig' object that will be saved to the DB
+                (updatedConfig as YoLinkConfig).homeId = newHomeId;
+                (updatedConfig as YoLinkConfig).uaid = newUaid;
+                (updatedConfig as YoLinkConfig).clientSecret = newClientSecret;
+                // Also, persist the new tokens obtained from the new credentials
+                (updatedConfig as YoLinkConfig).accessToken = tokenDetailsFromNewCreds.updatedConfig.accessToken;
+                (updatedConfig as YoLinkConfig).refreshToken = tokenDetailsFromNewCreds.updatedConfig.refreshToken;
+                (updatedConfig as YoLinkConfig).tokenExpiresAt = tokenDetailsFromNewCreds.updatedConfig.tokenExpiresAt;
+                (updatedConfig as YoLinkConfig).scope = tokenDetailsFromNewCreds.updatedConfig.scope; // Persist scope too
+
+                console.log(`YoLink homeId updated to ${newHomeId} and tokens refreshed for connector ${id}.`);
             } catch (yolinkError) {
                 console.error('Error re-fetching YoLink Home ID during update:', yolinkError);
                 const errorMessage = yolinkError instanceof Error ? yolinkError.message : 'Failed to verify new YoLink credentials';

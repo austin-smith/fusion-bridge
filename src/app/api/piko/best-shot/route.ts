@@ -78,18 +78,11 @@ export async function GET(request: NextRequest) {
          console.warn(`Piko best-shot: Query pikoSystemId (${pikoSystemIdFromQuery}) was passed for a local connector ${connectorId}. Ignoring.`);
      }
 
-    // 4. Obtain Appropriate Token (using full config)
-    console.log(`Piko best-shot: Getting token for connector ${connectorId} (type: ${config.type})...`);
-    // Use the generic getToken which handles cloud/local logic
-    // For cloud, it *should* get a system-scoped token if selectedSystem is present
-    const tokenResponse = await piko.getToken(config);
-
     // 5. Call Updated Driver Function to Get Image Blob
     console.log(`Piko best-shot: Fetching image for track ${objectTrackId} on camera ${cameraId} (type: ${config.type})...`);
-    // Pass the full config and the obtained token
+    // UPDATED CALL: Use connectorId. Config and accessToken are no longer passed directly.
     const imageBlob = await piko.getPikoBestShotImageBlob(
-      config, // Pass the full config object
-      tokenResponse.accessToken,
+      connectorId, 
       objectTrackId,
       cameraId
     );

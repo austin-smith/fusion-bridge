@@ -1,21 +1,20 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod'; // Import Zod
-import { 
-    getSystemInfo, 
-    PikoApiError, 
-    PikoConfig, 
-    PikoTokenResponse 
+import {
+    getSystemInfo,
+    PikoSystemInfo // Import the interface for the return type
 } from '@/services/drivers/piko';
 import { mapPikoErrorResponse } from '@/lib/api-utils';
 
 // Define Zod schema for the token part
 const pikoTokenSchema = z.object({
   accessToken: z.string().min(1, 'Access token is required'),
+  // Other token fields are optional and not directly used by getSystemInfo
   refreshToken: z.string().optional(),
-  expiresAt: z.string().optional(),
-  expiresIn: z.union([z.string(), z.number()]).optional(),
+  expiresAt: z.number().optional(),
+  expiresIn: z.number().optional(),
   sessionId: z.string().optional(),
-  tokenType: z.string().optional(), // Allow other fields if present
+  tokenType: z.string().optional(),
   scope: z.string().optional(),
 });
 
@@ -24,27 +23,33 @@ const pikoLocalConfigSchema = z.object({
   type: z.literal('local'),
   host: z.string().min(1, 'Host is required'),
   port: z.number().int().positive('Port must be a positive integer'),
-  username: z.string().min(1, 'Username is required'),
-  password: z.string().min(1, 'Password is required'),
+  username: z.string().min(1, 'Username is required'), 
+  password: z.string().min(1, 'Password is required'), 
   ignoreTlsErrors: z.boolean().optional().default(false),
-  // Omit selectedSystem and token from PikoConfig base
+  // Fields from PikoConfig that are optional but allowed on the schema if someone passes them, 
+  // though getSystemInfo for local type won't use selectedSystem or token from config.
+  selectedSystem: z.string().optional(), 
+  token: z.any().optional() 
 });
 
 // Define Zod schema for the entire request body
 const systemInfoRequestBodySchema = z.object({
-  config: pikoLocalConfigSchema,
+  // Use pikoLocalConfigSchema directly. 
+  // The object produced by this schema is assignable to PikoConfig 
+  // because PikoConfig has host/port as optional, and this schema makes them required.
+  // TypeScript will handle assignability when calling getSystemInfo.
+  config: pikoLocalConfigSchema, 
   token: pikoTokenSchema,
 });
 
 /**
  * Fetches system information (specifically the name) for a LOCAL Piko system
- * using a previously obtained access token.
+ * using a previously obtained access token and config.
  */
 export async function POST(request: Request) {
   console.log('[Piko API /system-info] Received request');
   
   try {
-    // Parse and validate request body using Zod
     let parsedBody;
     try {
       const rawBody = await request.json();
@@ -62,28 +67,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Invalid JSON format' }, { status: 400 });
     }
 
+    // The config here is already validated by Zod to be PikoConfig & { type: 'local' }
     const { config, token } = parsedBody;
     console.log(`[Piko API /system-info] Processing validated request for host: ${config.host}:${config.port}`);
 
-    // Call the driver function to get system info - casting token is safe due to schema validation
-    const systemInfo = await getSystemInfo(config, token.accessToken);
+    // Call the correctly re-implemented getSystemInfo from the Piko driver
+    const systemInfo: PikoSystemInfo = await getSystemInfo(config, token.accessToken);
 
-    // Successfully fetched system info
     console.log(`[Piko API /system-info] Successfully fetched system info for host: ${config.host}. Name: ${systemInfo.name}`);
     return NextResponse.json({
       success: true,
       name: systemInfo.name,
-      // Optionally return other info if needed later
-      // version: systemInfo.version, 
-      // localId: systemInfo.localId 
+      version: systemInfo.version,
+      id: systemInfo.localId, 
+      // Removed fullInfo to only return specified fields
     });
 
   } catch (error: unknown) {
     console.error('[Piko API /system-info] Error fetching Piko system info:', error);
-
-    // Use the shared error mapping function
     const { status, message } = mapPikoErrorResponse(error);
-
     return NextResponse.json(
       { success: false, error: `Failed to fetch system info: ${message}` }, 
       { status: status }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import * as yolinkDriver from '@/services/drivers/yolink';
+import type { YoLinkConfig } from '@/services/drivers/yolink';
 
 // Schema for token request - expecting uaid/clientSecret
 const tokenRequestSchema = z.object({
@@ -8,9 +9,10 @@ const tokenRequestSchema = z.object({
   clientSecret: z.string(),
 });
 
-// Schema for home info request
+// Schema for home info request - UPDATED
 const homeInfoRequestSchema = z.object({
-  accessToken: z.string(),
+  uaid: z.string(),
+  clientSecret: z.string(),
 });
 
 export async function POST(request: Request) {
@@ -28,13 +30,22 @@ export async function POST(request: Request) {
         );
       }
       
-      // Pass uaid/clientSecret directly to the driver
       const { uaid, clientSecret } = result.data;
       try {
-        const accessToken = await yolinkDriver.getAccessToken({ uaid, clientSecret });
-        return NextResponse.json({ success: true, accessToken });
+        // Create a minimal config for getRefreshedYoLinkToken
+        const tempConfig: YoLinkConfig = { uaid, clientSecret, scope: [] }; 
+        const tokenDetails = await yolinkDriver.getRefreshedYoLinkToken(tempConfig);
+        // Return the relevant token details. Client might expect just accessToken or more.
+        // For now, returning an object with accessToken, refreshToken, and expiresAt.
+        return NextResponse.json({
+          success: true, 
+          accessToken: tokenDetails.newAccessToken,
+          refreshToken: tokenDetails.newRefreshToken,
+          expiresAt: tokenDetails.newExpiresAt,
+          // updatedConfig: tokenDetails.updatedConfig // Optionally return the full updated config if needed by client
+        });
       } catch (error) {
-        console.error('Error getting YoLink access token:', error);
+        console.error('Error getting YoLink access token via proxy:', error);
         return NextResponse.json(
           { success: false, error: error instanceof Error ? error.message : 'Failed to get access token' },
           { status: 500 }
@@ -52,14 +63,28 @@ export async function POST(request: Request) {
         );
       }
       
-      const { accessToken } = result.data;
+      const { uaid, clientSecret } = result.data;
       try {
-        const homeId = await yolinkDriver.getHomeInfo(accessToken);
-        return NextResponse.json({ success: true, homeId });
+        const credTestResult = await yolinkDriver.testYoLinkCredentials(uaid, clientSecret);
+
+        if (credTestResult.success && credTestResult.homeId) {
+          return NextResponse.json({
+            success: true,
+            homeId: credTestResult.homeId,
+          });
+        } else {
+          // If testYoLinkCredentials was not successful or homeId is missing, return an error.
+          // Use the error message from credTestResult if available.
+          return NextResponse.json(
+            { success: false, error: credTestResult.error || 'Failed to get home info: Invalid credentials or unable to retrieve homeId.' },
+            { status: credTestResult.error?.includes("Invalid") || credTestResult.error?.includes("required") ? 400 : 401 } // 400 for bad input, 401 for auth failure
+          );
+        }
       } catch (error) {
-        console.error('Error getting YoLink home info:', error);
+        // This catch is for unexpected errors during the call to testYoLinkCredentials itself.
+        console.error('Error calling testYoLinkCredentials in YoLink proxy for getHomeInfo:', error);
         return NextResponse.json(
-          { success: false, error: error instanceof Error ? error.message : 'Failed to get home info' },
+          { success: false, error: error instanceof Error ? error.message : 'Failed to get home info due to an unexpected error.' },
           { status: 500 }
         );
       }

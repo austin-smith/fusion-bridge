@@ -11,6 +11,7 @@ export const connectors = sqliteTable("connectors", {
   cfg_enc: text("cfg_enc").notNull(), // Stores config as JSON string
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   eventsEnabled: integer("events_enabled", { mode: "boolean" }).notNull().default(false),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
 // Remove relation to automations as sourceConnectorId is removed from automations

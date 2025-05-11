@@ -1666,9 +1666,8 @@ export function AddConnectorModal() {
                           className="w-full sm:w-auto" 
                           disabled={
                               isLoading || 
-                              // Disable submit for local piko if connection hasn't been tested successfully
+                              (selectedCategory === 'yolink' && !isEditMode && !testedYoLinkHomeId) ||
                               (selectedCategory === 'piko' && selectedPikoType === 'local' && !testResult?.success) ||
-                              // Disable submit for cloud piko if no system selected in selection step
                               (selectedCategory === 'piko' && selectedPikoType === 'cloud' && pikoWizardStep === 'system-selection' && !form.getValues('selectedSystem'))
                           }
                         >
