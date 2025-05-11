@@ -21,8 +21,14 @@ import { db } from '@/data/db';
 import { connectors } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import { Connector } from '@/types';
-// Restore PikoApiError import - NO LONGER NEEDED
-import { PikoConfig, PikoTokenResponse, PikoDeviceRaw, getSystemDevices, PikoJsonRpcSubscribeRequest, getTokenAndConfig /* PikoApiError */ } from '@/services/drivers/piko';
+import {
+    PikoConfig, 
+    PikoTokenResponse, 
+    PikoDeviceRaw, 
+    getSystemDevices, // This should be a valid export from piko.ts if used directly
+    PikoJsonRpcSubscribeRequest, 
+    PikoAuthManager // Correctly import PikoAuthManager
+} from '@/services/drivers/piko';
 import { parsePikoEvent } from '@/lib/event-parsers/piko';
 import * as eventsRepository from '@/data/repositories/events';
 import { useFusionStore } from '@/stores/store';
@@ -203,6 +209,9 @@ const initialPikoConnectionState: Omit<PikoWebSocketConnection, 'connectorId'> =
     isAttemptingConnection: false
 };
 
+// Potentially instantiate PikoAuthManager globally or where needed
+const authManager = new PikoAuthManager();
+
 export async function initPikoWebSocket(
     connectorId: string,
     targetUrl?: string, // Optional URL override for redirects
@@ -338,10 +347,13 @@ export async function initPikoWebSocket(
                         throw new Error("connectorId is missing in initPikoWebSocket.");
                     }
 
-                    const { config: updatedConfigFromDriver, token: newTokenInfo } = await getTokenAndConfig(
-                        connectorId, 
-                        { forceRefresh: isAuthRetry } // Pass forceRefresh based on isAuthRetry
+                    // Use the PikoAuthManager instance to get token and config
+                    const tokenAndConfigResponse = await authManager._getTokenAndConfig(
+                        connectorId,
+                        { forceRefresh: isAuthRetry }
                     );
+                    const { config: updatedConfigFromDriver, token: newTokenInfo } = tokenAndConfigResponse;
+
                     currentState.config = updatedConfigFromDriver;
                     currentState.tokenInfo = newTokenInfo;
                     connections.set(connectorId, currentState); 
