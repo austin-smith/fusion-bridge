@@ -36,7 +36,6 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
   positionMs,
   className
 }) => {
-  const [isMounted, setIsMounted] = useState(false);
   const [isLoadingMediaInfo, setIsLoadingMediaInfo] = useState(true);
   const [mediaInfoError, setMediaInfoError] = useState<string | null>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
@@ -58,11 +57,11 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
 
   // Dynamic import of the WebRTC library on the client side only
   useEffect(() => {
-    let isMounted = true;
+    let isMountedEffect = true;
     const loadWebRTCLib = async () => {
       try {
         const webRTCModule = await import('@networkoptix/webrtc-stream-manager');
-        if (isMounted) {
+        if (isMountedEffect) {
           setWebrtcLib({
             WebRTCStreamManager: webRTCModule.WebRTCStreamManager,
             ApiVersions: webRTCModule.ApiVersions,
@@ -72,18 +71,13 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
         }
       } catch (err) {
         console.error("Failed to load WebRTC library:", err);
-        if (isMounted) {
+        if (isMountedEffect) {
           setMediaInfoError("Failed to initialize video player components");
         }
       }
     };
     loadWebRTCLib();
-    return () => { isMounted = false; };
-  }, []);
-
-  // Effect to set isMounted to true only on the client side
-  useEffect(() => {
-    setIsMounted(true);
+    return () => { isMountedEffect = false; };
   }, []);
 
   useEffect(() => {
@@ -146,11 +140,11 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
       isFetchCancelled = true;
       console.log("PikoVideoPlayer: [FetchDetailsEffect] Aborted/Cancelled fetching details.");
     };
-  }, [connectorId, cameraId, retryAttempt, isMounted]);
+  }, [connectorId, cameraId, retryAttempt]);
 
   useEffect(() => {
-    if (!isMounted || !videoRef.current || !fetchedAccessToken || !cameraId || !webrtcLib) {
-      console.log("PikoVideoPlayer: [StreamManagerEffect] Waiting for mount, video ref, access token, camera ID, or WebRTC library.");
+    if (!videoRef.current || !fetchedAccessToken || !cameraId || !webrtcLib) {
+      console.log("PikoVideoPlayer: [StreamManagerEffect] Waiting for video ref, access token, camera ID, or WebRTC library.");
       return;
     }
 
@@ -179,6 +173,8 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
 
       const systemIdForLib: string = fetchedPikoSystemId;
       const currentVideoElement = videoRef.current;
+      let connectedStream: MediaStream | null = null;
+      let timerId: NodeJS.Timeout | undefined = undefined;
 
       console.log("PikoVideoPlayer: [StreamManagerEffect] Proceeding with CLOUD connection. SystemId:",
         systemIdForLib, "cameraId:", cameraId, "tokenExists:", !!fetchedAccessToken, "positionMs:", positionMs);
@@ -206,62 +202,67 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
           currentVideoElement.load();
       }
 
-      let connectedStream: MediaStream | null = null;
-
       try {
-        streamManagerSubscriptionRef.current = webrtcLib.WebRTCStreamManager.connect(webRtcConfig)
-          .subscribe(
-            (data: [MediaStream | null, any | null, any | null]) => {
-              const [stream, error, manager] = data;
-              if (stream && currentVideoElement) {
-                console.log("PikoVideoPlayer: Stream received from WebRTCStreamManager. Manager instance:", manager, "Current Stream ID:", stream.id);
-                if (currentVideoElement.srcObject !== stream) {
-                  console.log("PikoVideoPlayer: Attaching new stream to video element.");
-                  currentVideoElement.srcObject = stream;
-                  connectedStream = stream;
-                  currentVideoElement.muted = true;
-                  currentVideoElement.play().then(() => {
-                    console.log("PikoVideoPlayer: video.play() Promise resolved for stream:", stream.id);
-                    setMediaInfoError(null);
-                  }).catch(e => {
-                    console.warn("PikoVideoPlayer: video.play() Promise rejected for stream:", stream.id, e);
-                    if (connectedStream === stream) {
-                       setMediaInfoError(`Playback failed: ${e.message}`);
-                    }
-                  });
-                } else {
-                  console.log("PikoVideoPlayer: Stream received is same as current srcObject. No action taken.");
+        // Defer the connect call slightly
+        timerId = setTimeout(() => {
+          if (!webrtcLib || !currentVideoElement) {
+            console.warn("PikoVideoPlayer: [StreamManagerEffect] Library or video element became null before timeout execution.");
+            return;
+          }
+          streamManagerSubscriptionRef.current = webrtcLib.WebRTCStreamManager.connect(webRtcConfig, currentVideoElement)
+            .subscribe(
+              (data: [MediaStream | null, any | null, any | null]) => {
+                const [stream, error, manager] = data;
+                if (stream && currentVideoElement) {
+                  console.log("PikoVideoPlayer: Stream received from WebRTCStreamManager. Manager instance:", manager, "Current Stream ID:", stream.id);
+                  if (currentVideoElement.srcObject !== stream) {
+                    console.log("PikoVideoPlayer: Attaching new stream to video element.");
+                    currentVideoElement.srcObject = stream;
+                    connectedStream = stream;
+                    currentVideoElement.muted = true;
+                    currentVideoElement.play().then(() => {
+                      console.log("PikoVideoPlayer: video.play() Promise resolved for stream:", stream.id);
+                      setMediaInfoError(null);
+                    }).catch(e => {
+                      console.warn("PikoVideoPlayer: video.play() Promise rejected for stream:", stream.id, e);
+                      if (connectedStream === stream) {
+                         setMediaInfoError(`Playback failed: ${e.message}`);
+                      }
+                    });
+                  } else {
+                    console.log("PikoVideoPlayer: Stream received is same as current srcObject. No action taken.");
+                  }
                 }
+                if (error) {
+                  console.error("PikoVideoPlayer: Error reported by WebRTCStreamManager:", error);
+                  let detailedErrorMessage = "Unknown error from library.";
+                  if (typeof error === 'number' && webrtcLib?.ConnectionError) {
+                    const errorName = (webrtcLib.ConnectionError as any)[error];
+                    detailedErrorMessage = errorName ? `ConnectionError: ${errorName} (Code: ${error})` : `Unknown ConnectionError (Code: ${error})`;
+                  } else if ((error as any)?.message) {
+                    detailedErrorMessage = (error as any).message;
+                  }
+                  console.error("PikoVideoPlayer: Detailed ConnectionError:", detailedErrorMessage, "Raw error object:", error);
+                  setMediaInfoError(detailedErrorMessage);
+                  toast.error(`Video Error: ${detailedErrorMessage}`);
+                  if (streamManagerSubscriptionRef.current && !streamManagerSubscriptionRef.current.closed) {
+                    streamManagerSubscriptionRef.current.unsubscribe();
+                    streamManagerSubscriptionRef.current = null;
+                  }
+                }
+              },
+              (err: any) => {
+                console.error("PikoVideoPlayer: Observable error from WebRTCStreamManager:", err);
+                const errorMsg = err.message || "Observable failed.";
+                setMediaInfoError(errorMsg);
+                toast.error(`Video Error: ${errorMsg}`);
+              },
+              () => {
+                console.log("PikoVideoPlayer: WebRTCStreamManager observable completed.");
               }
-              if (error) {
-                console.error("PikoVideoPlayer: Error reported by WebRTCStreamManager:", error);
-                // Log the raw error object and attempt to get a string name if it's a numeric enum
-                let detailedErrorMessage = "Unknown error from library.";
-                if (typeof error === 'number' && webrtcLib?.ConnectionError) {
-                  const errorName = (webrtcLib.ConnectionError as any)[error];
-                  detailedErrorMessage = errorName ? `ConnectionError: ${errorName} (Code: ${error})` : `Unknown ConnectionError (Code: ${error})`;
-                } else if ((error as any)?.message) {
-                  detailedErrorMessage = (error as any).message;
-                }
-                console.error("PikoVideoPlayer: Detailed ConnectionError:", detailedErrorMessage, "Raw error object:", error);
-                setMediaInfoError(detailedErrorMessage);
-                toast.error(`Video Error: ${detailedErrorMessage}`);
-                if (streamManagerSubscriptionRef.current && !streamManagerSubscriptionRef.current.closed) {
-                  streamManagerSubscriptionRef.current.unsubscribe();
-                  streamManagerSubscriptionRef.current = null;
-                }
-              }
-            },
-            (err: any) => {
-              console.error("PikoVideoPlayer: Observable error from WebRTCStreamManager:", err);
-              const errorMsg = err.message || "Observable failed.";
-              setMediaInfoError(errorMsg);
-              toast.error(`Video Error: ${errorMsg}`);
-            },
-            () => {
-              console.log("PikoVideoPlayer: WebRTCStreamManager observable completed.");
-            }
-          );
+            );
+        }, 0);
+
       } catch (e) {
         console.error("PikoVideoPlayer: [StreamManagerEffect] Sync error calling WebRTCStreamManager.connect:", e);
         const errorMsg = e instanceof Error ? e.message : "Failed to initiate library connection.";
@@ -270,6 +271,9 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
       }
 
       return () => {
+        if (timerId) {
+          clearTimeout(timerId);
+        }
         console.log("PikoVideoPlayer: [StreamManagerEffect] CLEANUP for cloud connection. Unsubscribing.");
         if (streamManagerSubscriptionRef.current) {
           streamManagerSubscriptionRef.current.unsubscribe();
@@ -291,16 +295,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
       setIsLoadingMediaInfo(false);
       return;
     }
-  }, [isMounted, fetchedPikoSystemId, fetchedAccessToken, cameraId, positionMs, fetchedConnectionType, isLoadingMediaInfo, webrtcLib]);
-
-  if (!isMounted) {
-    // Render a placeholder or null until mounted on the client
-    return (
-      <div className={`relative aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center ${className}`}>
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  }, [fetchedPikoSystemId, fetchedAccessToken, cameraId, positionMs, fetchedConnectionType, isLoadingMediaInfo, webrtcLib]);
 
   return (
     <div className={`relative aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center ${className}`}>
