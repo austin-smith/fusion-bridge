@@ -109,7 +109,7 @@ export function AppSidebar() {
         }
     }
     // No dependency on currentUser here to avoid re-running the effect when setCurrentUser is called from within
-  }, [session, setCurrentUser]);
+  }, [session, setCurrentUser, currentUser]);
 
   // Filter navGroups based on user role
   const displayedNavGroups = useMemo(() => {

@@ -1282,3 +1282,11 @@ export async function getSystemInfo(config: PikoConfig, accessToken: string): Pr
     throw error;
   }
 }
+
+export async function getTokenAndConfig(
+  connectorId: string,
+  options?: { forceRefresh?: boolean }
+): Promise<{ config: PikoConfig; token: PikoTokenResponse }> {
+  const authManager = new PikoAuthManager();
+  return authManager._getTokenAndConfig(connectorId, options);
+}
