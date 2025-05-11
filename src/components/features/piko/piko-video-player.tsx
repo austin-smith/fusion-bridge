@@ -1,306 +1,256 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import Hls from 'hls.js';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import {
+  WebRTCStreamManager,
+  WebRtcUrlConfig,
+  ApiVersions,
+  TargetStream,
+  ConnectionError,
+} from '@networkoptix/webrtc-stream-manager';
+import { Subscription } from 'rxjs';
 
-// Define structure for the getInfo API response
-interface MediaInfoResponse {
-  mediaType: 'hls' | 'webm' | 'mp4';
-  streamUrl: string;
-  // resolution?: string; // Remove resolution field
+interface WebRTCConnectionDetails {
+  pikoSystemId?: string;
+  accessToken: string;
+  connectionType: 'cloud' | 'local' | string;
 }
 
 interface PikoVideoPlayerProps {
-  connectorId: string; // Always required now
-  pikoSystemId?: string; // Optional - only for cloud
-  cameraId: string; // Always required now
-  positionMs?: number; // MODIFIED: Now optional for live stream
-  className?: string; // Allow custom styling
+  connectorId: string;
+  pikoSystemId?: string;
+  cameraId: string;
+  positionMs?: number;
+  className?: string;
 }
 
 export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
   connectorId,
   pikoSystemId,
   cameraId,
-  positionMs, // Will be undefined for live stream
+  positionMs,
   className
 }) => {
-  const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const [mediaType, setMediaType] = useState<'hls' | 'webm' | 'mp4' | null>(null);
-  const [isLoadingMediaInfo, setIsLoadingMediaInfo] = useState(true); // Start loading immediately
+  const [isLoadingMediaInfo, setIsLoadingMediaInfo] = useState(true);
   const [mediaInfoError, setMediaInfoError] = useState<string | null>(null);
-  const [retryAttempt, setRetryAttempt] = useState(0); // <-- NEW: State for retry attempts
+  const [retryAttempt, setRetryAttempt] = useState(0);
+
+  const [fetchedPikoSystemId, setFetchedPikoSystemId] = useState<string | undefined>(undefined);
+  const [fetchedAccessToken, setFetchedAccessToken] = useState<string | null>(null);
+  const [fetchedConnectionType, setFetchedConnectionType] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
+  const streamManagerSubscriptionRef = useRef<Subscription | null>(null);
 
-  // Effect to fetch media info when props or retryAttempt change
   useEffect(() => {
-    console.log("PikoVideoPlayer: Media info useEffect triggered. RetryAttempt:", retryAttempt, "Props:", {connectorId, cameraId, positionMs});
-    
-    // 1. Signal a reset by nullifying streamUrl and mediaType.
-    // This will trigger the cleanup in the HLS setup useEffect.
-    setStreamUrl(null);
-    setMediaType(null);
-    
-    // 2. Set loading/error states for the new fetch attempt
+    console.log("PikoVideoPlayer: Fetching connection details. ConnectorID:", connectorId, "CameraID:", cameraId, "Retry:", retryAttempt);
     setIsLoadingMediaInfo(true);
     setMediaInfoError(null);
+    setFetchedPikoSystemId(undefined);
+    setFetchedAccessToken(null);
+    setFetchedConnectionType(null);
 
-    // 3. Validate props
     if (!connectorId || !cameraId) {
-      console.error("PikoVideoPlayer: Missing required props (connectorId, cameraId). Halting fetch.");
-      setMediaInfoError("Required information missing to load video.");
+      console.error("PikoVideoPlayer: Missing connectorId or cameraId for fetching details.");
+      setMediaInfoError("Required information missing for video playback.");
       setIsLoadingMediaInfo(false);
-      return; 
+      return;
     }
 
-    // 4. Define and call fetchMediaInfo
-    let isFetchCancelled = false; // Renamed from isCancelled to avoid confusion with a potential outer scope
-    const infoApiUrl = new URL('/api/piko/media', window.location.origin);
-    infoApiUrl.searchParams.append('connectorId', connectorId);
-    if (pikoSystemId) {
-        infoApiUrl.searchParams.append('pikoSystemId', pikoSystemId);
-    }
-    infoApiUrl.searchParams.append('cameraId', cameraId);
-    if (positionMs !== undefined && positionMs !== null) {
-        infoApiUrl.searchParams.append('positionMs', String(positionMs));
-    }
+    let isFetchCancelled = false;
+    const apiUrl = new URL('/api/piko/webrtc', window.location.origin);
+    apiUrl.searchParams.append('connectorId', connectorId);
 
-    const fetchMediaInfo = async () => {
-      console.log("PikoVideoPlayer: Fetching media info from:", infoApiUrl.toString());
+    const fetchDetails = async () => {
       try {
-        const response = await fetch(infoApiUrl.toString());
+        const response = await fetch(apiUrl.toString());
+        const responsePayload = await response.json();
         if (isFetchCancelled) return;
+
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}` }));
-          throw new Error(errorData.details || errorData.error || `Failed to fetch media info (${response.status})`);
+          throw new Error(responsePayload.error || `Failed to fetch connection details (${response.status})`);
         }
-        const data: MediaInfoResponse = await response.json();
-        if (isFetchCancelled) return;
+        if (!responsePayload.success || !responsePayload.data) {
+          throw new Error(responsePayload.error || "API request failed or returned invalid data.");
+        }
+        const details: WebRTCConnectionDetails = responsePayload.data;
+        console.log("PikoVideoPlayer: Connection details received:", details);
+        
+        setFetchedPikoSystemId(details.pikoSystemId);
+        setFetchedAccessToken(details.accessToken);
+        setFetchedConnectionType(details.connectionType);
 
-        if (data.mediaType && data.streamUrl) {
-            console.log(`PikoVideoPlayer: Media info received: Type=${data.mediaType}, URL=${data.streamUrl}`);
-            setMediaType(data.mediaType);
-            setStreamUrl(data.streamUrl);
-        } else {
-            throw new Error("Invalid media info received from API.");
+        if (details.connectionType === 'cloud' && !details.pikoSystemId) {
+            console.error("PikoVideoPlayer: Cloud connection type but API did not return pikoSystemId.");
+            throw new Error("Configuration error: System ID for cloud playback is missing.");
         }
+
       } catch (error) {
-          if (isFetchCancelled) return;
-          console.error("PikoVideoPlayer: Failed to fetch media info:", error);
-          const errorMsg = error instanceof Error ? error.message : "Unknown error fetching media info";
-          setMediaInfoError(errorMsg);
-          toast.error(`Error loading video: ${errorMsg}`);
-          // Ensure streamUrl/mediaType remain null if fetch fails
-          setStreamUrl(null); 
-          setMediaType(null);
+        if (isFetchCancelled) return;
+        console.error("PikoVideoPlayer: Error fetching connection details:", error);
+        const errorMsg = error instanceof Error ? error.message : "Unknown error fetching details.";
+        setMediaInfoError(errorMsg);
+        toast.error(`Error preparing video: ${errorMsg}`);
       } finally {
-          if (isFetchCancelled) return;
-          setIsLoadingMediaInfo(false);
+        if (isFetchCancelled) return;
+        setIsLoadingMediaInfo(false);
       }
     };
 
-    fetchMediaInfo();
-
+    fetchDetails();
     return () => {
-        isFetchCancelled = true;
-        console.log("PikoVideoPlayer: [MediaInfoEffect] fetchMediaInfo cancelled / effect cleanup.");
+      isFetchCancelled = true;
+      console.log("PikoVideoPlayer: [FetchDetailsEffect] Aborted/Cancelled fetching details.");
     };
-  }, [connectorId, pikoSystemId, cameraId, positionMs, retryAttempt]);
+  }, [connectorId, retryAttempt]);
 
-  // Effect to setup hls.js or native player based on fetched info
   useEffect(() => {
-    const videoElement = videoRef.current;
-    let objectUrl: string | null = null; 
-
-    const cleanup = () => {
-      console.log("PikoVideoPlayer: [HLSEffect] Cleanup running.");
-      if (hlsRef.current) {
-        console.log("PikoVideoPlayer: [HLSEffect] Destroying HLS instance.");
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-      if (objectUrl) {
-        console.log("PikoVideoPlayer: [HLSEffect] Revoking Object URL.");
-        URL.revokeObjectURL(objectUrl);
-        objectUrl = null;
-      }
-      if (videoElement) {
-        console.log("PikoVideoPlayer: [HLSEffect] Resetting video element src.");
-        videoElement.removeAttribute('src');
-        videoElement.load(); 
-      }
-    };
-
-    // Only proceed if we have a valid streamUrl and mediaType
-    if (videoElement && streamUrl && mediaType) {
-      console.log(`PikoVideoPlayer: [HLSEffect] Setting up player: Type=${mediaType}, URL=${streamUrl}`);
-      
-      // No need to call cleanup() here explicitly at the start of the effect body,
-      // because this effect re-runs when streamUrl/mediaType change. 
-      // Its previous run's cleanup function would have already executed.
-
-      if (mediaType === 'hls' && Hls.isSupported()) {
-          // --- HLS Setup ---
-          setIsLoadingMediaInfo(false); // HLS setup is synchronous for the element
-          const hls = new Hls({
-              debug: true,
-              // OLD, DEPRECATED CONFIG:
-              // fragLoadingMaxRetry: 2, 
-              // fragLoadingTimeOut: 35000, 
-              // NEW fragLoadPolicy based on HLS.js v1.6.2+ recommendations
-              fragLoadPolicy: {
-                default: {
-                  maxTimeToFirstByteMs: 35000, // Wait up to 35s for the first byte
-                  maxLoadTimeMs: 60000,      // Allow up to 60s for the whole fragment to load
-                  timeoutRetry: {
-                    maxNumRetry: 2,        // Retry 2 times on timeout
-                    retryDelayMs: 1000,    // Wait 1s before first retry
-                    maxRetryDelayMs: 5000  // Max delay for subsequent retries (if HLS.js uses backoff)
-                  },
-                  errorRetry: {
-                    maxNumRetry: 2,        // Retry 2 times on other network/parsing errors
-                    retryDelayMs: 1000,
-                    maxRetryDelayMs: 5000
-                  }
-                }
-              }
-          });
-          hls.loadSource(streamUrl); // streamUrl should be the direct M3U8 path or proxy
-          hls.attachMedia(videoElement);
-          hls.on(Hls.Events.ERROR, async (event, data) => {
-              console.error('PikoVideoPlayer: HLS.js Error:', data);
-              let detailedErrorMessage = `HLS Error: ${data.type} - ${data.details}`;
-              let userFriendlyMessage = "A video playback error occurred.";
-
-              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                  userFriendlyMessage = "Network connection issue while streaming.";
-                  if (data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT) {
-                      userFriendlyMessage = "Video stream timed out. Check connection or try again.";
-                  }
-                  if (data.networkDetails?.status && data.networkDetails.status >= 400) {
-                     // Try to get more specific error from response if possible
-                     // (Note: Accessing responseText might depend on CORS and error type)
-                     const responseText = (data.networkDetails as XMLHttpRequest)?.responseText;
-                     if (responseText) {
-                        try {
-                            const errorJson = JSON.parse(responseText);
-                            detailedErrorMessage = errorJson.details || errorJson.error || detailedErrorMessage;
-                        } catch (parseError) { /* Keep original HLS error message */ }
-                     } else {
-                         detailedErrorMessage = `${detailedErrorMessage} (Status: ${data.networkDetails.status})`;
-                     }
-                  }
-              } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                  userFriendlyMessage = "Error with video stream data.";
-                  if (data.details === Hls.ErrorDetails.FRAG_PARSING_ERROR) {
-                      userFriendlyMessage = "Problem decoding video data. The stream might be corrupted.";
-                  }
-              }
-              
-              toast.error(userFriendlyMessage);
-              setMediaInfoError(userFriendlyMessage + (data.details ? ` (Details: ${data.details})` : ''));
-              
-              // Explicitly destroy HLS instance here before nulling out URL/type
-              if (hlsRef.current) {
-                console.log("PikoVideoPlayer: [HLS Error Handler] Explicitly destroying HLS instance.");
-                hlsRef.current.destroy();
-                hlsRef.current = null;
-              }
-              setStreamUrl(null); 
-              setMediaType(null);
-          });
-          hlsRef.current = hls;
-      } else if (mediaType === 'webm' || mediaType === 'mp4' || (mediaType === 'hls' && !Hls.isSupported())) {
-          // --- Native Setup (WebM, MP4 or HLS fallback) ---
-          if (mediaType === 'hls') {
-              console.warn("PikoVideoPlayer: HLS stream detected but HLS.js not supported. Attempting native playback.");
-          }
-          
-          setIsLoadingMediaInfo(true); 
-          setMediaInfoError(null);
-          console.log(`PikoVideoPlayer: Fetching ${mediaType} stream from:`, streamUrl);
-          
-          fetch(streamUrl) 
-            .then(async response => {
-                if (!response.ok) {
-                    let errorData: { error?: string; details?: string } = {};
-                    try {
-                        // Attempt to parse JSON first, as our API route should return structured errors
-                        errorData = await response.json(); 
-                    } catch (parseError) {
-                        // If JSON parsing fails, try to get text, then fall back to statusText
-                        console.warn('PikoVideoPlayer: Could not parse error response as JSON for non-OK fetch.');
-                        const rText = await response.text().catch(() => response.statusText);
-                        errorData = { details: rText.substring(0, 200) }; // Use details for generic text
-                    }
-                    console.error(`PikoVideoPlayer: API returned error fetching ${mediaType} stream: Status ${response.status}`, errorData);
-                    const message = errorData.details || errorData.error || `API error ${response.status}`;
-                    throw new Error(message); 
-                }
-                // Check content type
-                const contentType = response.headers.get('Content-Type');
-                // MODIFIED: Simplified expected type check (no mpegts needed)
-                const expectedContentTypePrefix = `video/${mediaType}`;
-                
-                if (!contentType || !contentType.startsWith(expectedContentTypePrefix)) {
-                     console.error(`PikoVideoPlayer: Unexpected Content-Type for ${mediaType} stream: ${contentType}`);
-                    throw new Error(`Expected ${expectedContentTypePrefix} stream, but received ${contentType || 'unknown type'}`);
-                }
-                return response.blob();
-            })
-            .then(blob => {
-                objectUrl = URL.createObjectURL(blob);
-                console.log(`PikoVideoPlayer: ${mediaType} stream fetched, setting object URL:`, objectUrl);
-                if (videoElement) { 
-                    videoElement.src = objectUrl;
-                }
-                setMediaInfoError(null);
-            })
-            .catch(error => {
-                console.error(`PikoVideoPlayer: Failed to fetch or process ${mediaType} stream:`, error);
-                const errorMsg = error instanceof Error ? error.message : `Unknown error loading ${mediaType} video`; // Added type to error
-                setMediaInfoError(errorMsg);
-                toast.error(`Error loading video: ${errorMsg}`);
-                setStreamUrl(null); 
-                setMediaType(null);
-            })
-            .finally(() => {
-                setIsLoadingMediaInfo(false); 
-            });
-
-      } else {
-          // --- Unsupported Type --- 
-          console.error(`PikoVideoPlayer: Unsupported media type received: ${mediaType}`);
-          setMediaInfoError(`Unsupported media type: ${mediaType}`);
-          setIsLoadingMediaInfo(false);
-      }
-    } else {
-        // If streamUrl or mediaType becomes null (e.g., after error), ensure cleanup
-        cleanup();
+    if (!videoRef.current || !fetchedAccessToken || !cameraId) {
+      console.log("PikoVideoPlayer: [StreamManagerEffect] Waiting for video ref, access token, or camera ID.");
+      return;
     }
 
-    // Cleanup on unmount or if dependencies change triggering cleanup
-    return cleanup;
+    if (!fetchedConnectionType) {
+      console.log("PikoVideoPlayer: [StreamManagerEffect] Waiting for connection type to be determined from API.");
+      if (!isLoadingMediaInfo) {
+        setMediaInfoError("Connection type could not be determined from server.");
+      }
+      return;
+    }
 
-  }, [streamUrl, mediaType]); // Depend on the fetched stream URL and type
+    if (fetchedConnectionType === 'local') {
+      console.warn("PikoVideoPlayer: [StreamManagerEffect] Local Piko connections: Gracefully indicating not supported.");
+      setMediaInfoError("Video playback for local Piko connection is not supported.");
+      setIsLoadingMediaInfo(false);
+      return;
+    }
 
+    if (fetchedConnectionType === 'cloud') {
+      if (!fetchedPikoSystemId) {
+        console.error("PikoVideoPlayer: [StreamManagerEffect] Cloud connection type, but fetchedPikoSystemId is MISSING. Cannot connect.");
+        setMediaInfoError("Configuration error: System ID for cloud video stream is missing or invalid.");
+        setIsLoadingMediaInfo(false);
+        return;
+      }
 
-  // --- Rendering ---
+      const systemIdForLib: string = fetchedPikoSystemId;
+      const currentVideoElement = videoRef.current;
+
+      console.log("PikoVideoPlayer: [StreamManagerEffect] Proceeding with CLOUD connection. SystemId:",
+        systemIdForLib, "cameraId:", cameraId, "tokenExists:", !!fetchedAccessToken, "positionMs:", positionMs);
+
+      const webRtcConfig: WebRtcUrlConfig = {
+        systemId: systemIdForLib,
+        cameraId: cameraId,
+        accessToken: fetchedAccessToken,
+        apiVersion: ApiVersions.v2,
+        targetStream: TargetStream.AUTO,
+        position: positionMs,
+      };
+      
+      setMediaInfoError(null);
+
+      console.log("PikoVideoPlayer: [StreamManagerEffect] Calling WebRTCStreamManager.connect with config:", webRtcConfig);
+      
+      if (streamManagerSubscriptionRef.current) {
+        console.log("PikoVideoPlayer: [StreamManagerEffect] Unsubscribing from previous stream manager subscription before new attempt.");
+        streamManagerSubscriptionRef.current.unsubscribe();
+      }
+      if (currentVideoElement) {
+          currentVideoElement.srcObject = null;
+          if (currentVideoElement.hasAttribute('src')) currentVideoElement.removeAttribute('src');
+          currentVideoElement.load();
+      }
+
+      let connectedStream: MediaStream | null = null;
+
+      try {
+        streamManagerSubscriptionRef.current = WebRTCStreamManager.connect(webRtcConfig, currentVideoElement)
+          .subscribe(
+            ([stream, error, manager]: [MediaStream | null, ConnectionError | null, WebRTCStreamManager | null]) => {
+              if (stream && currentVideoElement) {
+                console.log("PikoVideoPlayer: Stream received from WebRTCStreamManager. Manager instance:", manager, "Current Stream ID:", stream.id);
+                if (currentVideoElement.srcObject !== stream) {
+                  console.log("PikoVideoPlayer: Attaching new stream to video element.");
+                  currentVideoElement.srcObject = stream;
+                  connectedStream = stream;
+                  currentVideoElement.muted = true;
+                  currentVideoElement.play().then(() => {
+                    console.log("PikoVideoPlayer: video.play() Promise resolved for stream:", stream.id);
+                    setMediaInfoError(null);
+                  }).catch(e => {
+                    console.warn("PikoVideoPlayer: video.play() Promise rejected for stream:", stream.id, e);
+                    if (connectedStream === stream) {
+                       setMediaInfoError(`Playback failed: ${e.message}`);
+                    }
+                  });
+                } else {
+                  console.log("PikoVideoPlayer: Stream received is same as current srcObject. No action taken.");
+                }
+              }
+              if (error) {
+                console.error("PikoVideoPlayer: Error reported by WebRTCStreamManager:", error);
+                const message = (error as any)?.message || (typeof error === 'number' && ConnectionError[error]) || "Unknown error from library.";
+                setMediaInfoError(message);
+                toast.error(`Video Error: ${message}`);
+                if (streamManagerSubscriptionRef.current && !streamManagerSubscriptionRef.current.closed) {
+                  streamManagerSubscriptionRef.current.unsubscribe();
+                  streamManagerSubscriptionRef.current = null;
+                }
+              }
+            },
+            (err: any) => {
+              console.error("PikoVideoPlayer: Observable error from WebRTCStreamManager:", err);
+              const errorMsg = err.message || "Observable failed.";
+              setMediaInfoError(errorMsg);
+              toast.error(`Video Error: ${errorMsg}`);
+            },
+            () => {
+              console.log("PikoVideoPlayer: WebRTCStreamManager observable completed.");
+            }
+          );
+      } catch (e) {
+        console.error("PikoVideoPlayer: [StreamManagerEffect] Sync error calling WebRTCStreamManager.connect:", e);
+        const errorMsg = e instanceof Error ? e.message : "Failed to initiate library connection.";
+        setMediaInfoError(errorMsg);
+        toast.error(errorMsg);
+      }
+
+      return () => {
+        console.log("PikoVideoPlayer: [StreamManagerEffect] CLEANUP for cloud connection. Unsubscribing.");
+        if (streamManagerSubscriptionRef.current) {
+          streamManagerSubscriptionRef.current.unsubscribe();
+          streamManagerSubscriptionRef.current = null;
+        }
+        if (currentVideoElement) {
+          console.log("PikoVideoPlayer: [StreamManagerEffect] CLEANUP. Resetting video element.");
+          currentVideoElement.srcObject = null;
+          if (currentVideoElement.hasAttribute('src')) {
+              currentVideoElement.removeAttribute('src');
+          }
+          currentVideoElement.load(); 
+        }
+        connectedStream = null; 
+      };
+    } else {
+      console.error(`PikoVideoPlayer: [StreamManagerEffect] Unhandled connection type: ${fetchedConnectionType}. Cannot connect.`);
+      setMediaInfoError(`Unsupported Piko connection type: ${fetchedConnectionType}.`);
+      setIsLoadingMediaInfo(false);
+      return;
+    }
+  }, [fetchedPikoSystemId, fetchedAccessToken, cameraId, positionMs, fetchedConnectionType, isLoadingMediaInfo]);
+
   return (
     <div className={`relative aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center ${className}`}>
-        {/* Loading State (while fetching media info) */}
-        {isLoadingMediaInfo && (
+        {(isLoadingMediaInfo || (!fetchedPikoSystemId && !fetchedAccessToken && !mediaInfoError && !fetchedConnectionType)) && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground z-10">
             <Loader2 className="h-8 w-8 mb-2 animate-spin" />
-            <span>Loading video info...</span>
+            <span>{isLoadingMediaInfo ? 'Loading video info...' : 'Preparing video player...'}</span>
           </div>
         )}
-        {/* Error State (info fetch or playback error) */}
         {!isLoadingMediaInfo && mediaInfoError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-destructive text-center p-4 z-10 bg-muted">
             <AlertCircle className="h-8 w-8 mb-2" />
@@ -312,39 +262,20 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
               onClick={() => {
                 console.log("PikoVideoPlayer: Retry button clicked.");
                 setRetryAttempt(prev => prev + 1);
-                // Reset error and loading here to show loading spinner immediately on retry
-                setMediaInfoError(null);
-                setIsLoadingMediaInfo(true);
               }}
             >
               Retry Playback
             </Button>
           </div>
         )}
-        {/* Video Element (render if info loaded successfully, source set by useEffect) */}
-        {/* Keep video element mounted but hidden during load/error for refs */}
         <video
             ref={videoRef}
             controls
             autoPlay
+            muted
+            playsInline
             preload="auto"
-            // Revert back to object-contain as it accurately displays the source frame
             className={`absolute inset-0 w-full h-full z-0 bg-black object-contain ${isLoadingMediaInfo || mediaInfoError ? 'opacity-0' : 'opacity-100'}`}
-            onError={(e) => {
-                // Native error (e.g., WebM fails, or native HLS fails)
-                if (!hlsRef.current) { // Don't log if HLS.js might be handling it
-                    console.error("PikoVideoPlayer: Native video element error:", e);
-                    const videoElement = e.target as HTMLVideoElement;
-                    // Use a more generic message as we cannot access backend error details here.
-                    const errorMsg = "Error loading video";
-                    
-                    // Display the generic message
-                    toast.error(errorMsg);
-                    setMediaInfoError(errorMsg); // Show the generic error in the player UI
-                    setStreamUrl(null); // Prevent retry loops
-                    setMediaType(null);
-                }
-            }}
         />
     </div>
   );

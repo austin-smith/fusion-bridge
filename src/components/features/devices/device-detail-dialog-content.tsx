@@ -43,7 +43,12 @@ import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 import type { PikoServer } from '@/types'; // Keep if pikoServerDetails is used
 import { Skeleton } from "@/components/ui/skeleton";
 import Image from 'next/image';
-import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
+import dynamic from 'next/dynamic';
+// Import the PikoVideoPlayer dynamically to prevent SSR issues with WebRTC
+const PikoVideoPlayer = dynamic(
+  () => import('@/components/features/piko/piko-video-player').then(mod => mod.PikoVideoPlayer),
+  { ssr: false }
+);
 import { useFusionStore } from '@/stores/store'; // Import the store
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'; // Import Tooltip
 import type { PikoConfig } from '@/services/drivers/piko'; // Import PikoConfig type
@@ -259,6 +264,12 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   const preloadingUrlRef = useRef<string | null>(null);
   const urlToRevokeRef = useRef<string | null>(null);
 
+  // --- Ref for current thumbnailUrl, to stabilize fetchThumbnail ---
+  const currentThumbnailUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    currentThumbnailUrlRef.current = thumbnailUrl;
+  }, [thumbnailUrl]);
+
   // --- START: Logic to get Piko System ID and Connection Type ---
   let pikoSystemIdForVideo: string | undefined = undefined;
   let isPikoLocalConnection = false; // Flag for local connection
@@ -453,7 +464,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     try {
       const apiUrl = new URL('/api/piko/device-thumbnail', window.location.origin);
       apiUrl.searchParams.append('connectorId', device.connectorId);
-      apiUrl.searchParams.append('deviceId', device.deviceId);
+      apiUrl.searchParams.append('cameraId', device.deviceId);
       apiUrl.searchParams.append('size', '640x480');
 
       const response = await fetch(apiUrl.toString());
@@ -466,7 +477,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
       console.log('[Fetch] New blob URL created:', newObjectUrl);
 
       // Store the currently displayed URL for later revocation
-      urlToRevokeRef.current = thumbnailUrl;
+      urlToRevokeRef.current = currentThumbnailUrlRef.current;
       // Store the new URL being preloaded
       preloadingUrlRef.current = newObjectUrl;
 
@@ -504,7 +515,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
       urlToRevokeRef.current = null;
     }
     // No finally block for setIsThumbnailLoading(false) - handled by preload events
-  }, [device.connectorCategory, device.deviceTypeInfo, device.connectorId, device.deviceId, showLiveVideo, thumbnailUrl, preloaderImgRef, setThumbnailUrl, setLastThumbnailRefreshTime, preloadingUrlRef, urlToRevokeRef, setIsThumbnailLoading, setThumbnailError]);
+  }, [device.connectorCategory, device.deviceTypeInfo, device.connectorId, device.deviceId, showLiveVideo, preloaderImgRef, setThumbnailUrl, setLastThumbnailRefreshTime, preloadingUrlRef, urlToRevokeRef, setIsThumbnailLoading, setThumbnailError, currentThumbnailUrlRef]);
 
   useEffect(() => {
     if (device.connectorCategory !== 'piko' || device.deviceTypeInfo?.type !== 'Camera') {
@@ -526,11 +537,14 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     return () => {
       clearInterval(intervalId);
       // Clean up any object URLs still in memory
-      if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
+      if (currentThumbnailUrlRef.current) URL.revokeObjectURL(currentThumbnailUrlRef.current);
       if (preloadingUrlRef.current) URL.revokeObjectURL(preloadingUrlRef.current);
       if (urlToRevokeRef.current) URL.revokeObjectURL(urlToRevokeRef.current);
+      // Clear refs on cleanup as well
+      preloadingUrlRef.current = null;
+      urlToRevokeRef.current = null;
     };
-  }, [device.connectorCategory, device.deviceTypeInfo?.type, showLiveVideo, fetchThumbnail, thumbnailUrl, device.connectorId, device.deviceId]);
+  }, [device.connectorCategory, device.deviceTypeInfo?.type, showLiveVideo, fetchThumbnail, device.connectorId, device.deviceId]);
 
   // --- Handle Saving Associations ---
   const handleSaveAssociations = async () => {
