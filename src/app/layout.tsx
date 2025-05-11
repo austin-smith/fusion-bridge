@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import localFont from 'next/font/local';
 import '@/styles/globals.css';
@@ -17,9 +17,21 @@ const csgFont = localFont({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://fusion-bridge-production.up.railway.app'),
+  metadataBase: new URL('https://fusion-bridge-dev.up.railway.app'),
   title: 'Fusion',
   description: 'Scurity integration platform',
+  manifest: '/manifest.json',
+  icons: {
+    icon: [
+      { url: '/icons/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/icons/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icons/android-chrome-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/android-chrome-512x512.png', sizes: '512x512', type: 'image/png' }
+    ],
+    apple: [
+      { url: '/icons/apple-touch-icon.png', sizes: '180x180' } // Assuming 180x180 for the generic apple-touch-icon.png
+    ],
+  },
   openGraph: {
     images: [
       {
@@ -33,6 +45,10 @@ export const metadata: Metadata = {
     type: 'website',
   },
 };
+
+export const viewport: Viewport = {
+  themeColor: '#FFFFFF',
+}
 
 export default async function RootLayout({
   children,
