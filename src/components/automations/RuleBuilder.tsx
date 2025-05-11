@@ -152,7 +152,7 @@ export function RuleBuilder({
                     <span className="text-xs text-muted-foreground">of the following must be true:</span>
                     <div className="flex-grow"></div> {/* Spacer */} 
                     {depth > 0 && onRemove && (
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={onRemove}>
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={onRemove}>
                             <Trash2 className="h-4 w-4" />
                             <span className="sr-only">Remove Group</span>
                         </Button>
@@ -177,6 +177,7 @@ export function RuleBuilder({
 
                 <div className="flex items-center space-x-2 pt-2">
                     <Button 
+                        type="button"
                         variant="outline" 
                         size="sm" 
                         onClick={() => addCondition(groupType, conditions)} // Pass context
@@ -185,6 +186,7 @@ export function RuleBuilder({
                          <Plus className="h-3 w-3" /> Condition
                     </Button>
                     <Button 
+                        type="button"
                         variant="outline" 
                         size="sm" 
                         onClick={() => addGroup(groupType, conditions)} // Pass context
@@ -332,7 +334,7 @@ export function RuleBuilder({
                 {/* Remove Button */}
                 <div className="flex justify-end items-center mt-2 sm:mt-0">
                     {onRemove && (
-                        <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-destructive" onClick={onRemove}>
+                        <Button type="button" variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-destructive" onClick={onRemove}>
                             <Trash2 className="h-4 w-4" />
                             <span className="sr-only">Remove Condition</span>
                         </Button>
@@ -342,11 +344,3 @@ export function RuleBuilder({
         );
     }
 }
-
-// --- REMOVED Local Placeholder --- 
-// interface JsonRuleCondition {
-//     fact: string;
-//     operator: string; 
-//     value: any;
-//     path?: string;
-// } 
