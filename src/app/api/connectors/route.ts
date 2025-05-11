@@ -18,9 +18,10 @@ const YoLinkConfigSchema = z.object({
 const PikoTokenSchema = z.object({ 
   accessToken: z.string(),
   refreshToken: z.string().optional(), 
-  expiresAt: z.string().optional(),    
-  expiresIn: z.union([z.string(), z.number()]).optional(), 
+  expiresAt: z.number().optional(),
+  expiresIn: z.number().optional(),
   sessionId: z.string().optional(),    
+  scope: z.string().optional() // Added scope as it's part of PikoTokenResponse and might be in config.token
 }).optional();
 
 const PikoBaseConfigSchema = z.object({

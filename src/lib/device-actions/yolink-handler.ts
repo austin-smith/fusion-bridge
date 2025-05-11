@@ -65,6 +65,7 @@ export class YoLinkActionHandler implements IDeviceActionHandler {
         try {
             console.log(`[YoLinkHandler] Calling yolinkDriver.setDeviceState for ${device.deviceId} with token ${!!deviceToken} and state ${targetYoLinkState}`);
             await yolinkDriver.setDeviceState(
+                device.connectorId,
                 connectorConfig,
                 device.deviceId, // Vendor ID
                 deviceToken,

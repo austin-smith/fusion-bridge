@@ -22,7 +22,7 @@ import { connectors } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import { Connector } from '@/types';
 // Restore PikoApiError import - NO LONGER NEEDED
-import { PikoConfig, PikoTokenResponse, getToken, PikoDeviceRaw, getSystemDevices, PikoJsonRpcSubscribeRequest /* PikoApiError */ } from '@/services/drivers/piko';
+import { PikoConfig, PikoTokenResponse, PikoDeviceRaw, getSystemDevices, PikoJsonRpcSubscribeRequest, getTokenAndConfig /* PikoApiError */ } from '@/services/drivers/piko';
 import { parsePikoEvent } from '@/lib/event-parsers/piko';
 import * as eventsRepository from '@/data/repositories/events';
 import { useFusionStore } from '@/stores/store';
@@ -124,12 +124,22 @@ export function getAllPikoWebSocketStates(): Map<string, PikoWebSocketState> {
 /** Fetches Piko devices and updates the connection state map */
 async function _fetchAndStoreDeviceMap(state: PikoWebSocketConnection): Promise<void> {
     if (!state.config || !state.tokenInfo?.accessToken) {
-        console.error(`[${state.connectorId}][_fetchAndStoreDeviceMap] Missing config or access token.`);
+        // This check might be less critical if getSystemDevices internally handles token fetching robustly via connectorId,
+        // but it's a good guard for the state object's consistency.
+        console.error(`[${state.connectorId}][_fetchAndStoreDeviceMap] Missing config or access token in local WebSocket state. This might indicate an issue upstream.`);
+        // We can still attempt the call with connectorId, as getSystemDevices should handle it.
+        // If getSystemDevices itself requires a fully populated config locally for some reason before calling fetchPikoApiData, this might fail there.
+        // For now, assume getSystemDevices(connectorId) is self-sufficient.
+    }
+    if (!state.connectorId) {
+        console.error(`[${state.connectorId}][_fetchAndStoreDeviceMap] Critical: connectorId is missing in state. Cannot fetch devices.`);
         return;
     }
+
     try {
-        console.log(`[${state.connectorId}] Fetching system devices (${state.config.type})...`);
-        const devices = await getSystemDevices(state.config, state.tokenInfo.accessToken);
+        console.log(`[${state.connectorId}] Fetching system devices...`);
+        // UPDATED CALL: Use state.connectorId. state.config and state.tokenInfo are no longer passed directly.
+        const devices = await getSystemDevices(state.connectorId);
         state.deviceGuidMap = new Map(devices.map(d => [d.id, d]));
         console.log(`[${state.connectorId}] Stored device map with ${state.deviceGuidMap.size} devices.`);
         connections.set(state.connectorId, state); // Update the global map
@@ -196,7 +206,8 @@ const initialPikoConnectionState: Omit<PikoWebSocketConnection, 'connectorId'> =
 export async function initPikoWebSocket(
     connectorId: string,
     targetUrl?: string, // Optional URL override for redirects
-    redirectDepth: number = 0 // Track redirect depth
+    redirectDepth: number = 0, // Track redirect depth
+    isAuthRetry: boolean = false // Added for auth retry logic
 ): Promise<boolean> {
     // --- Add Redirect Depth Check --- 
     if (redirectDepth > MAX_REDIRECTS) {
@@ -317,20 +328,29 @@ export async function initPikoWebSocket(
                  };
 
                 try {
-                    // 1. Get Token
-                    let currentToken = currentState.tokenInfo?.accessToken;
-                    if (!currentToken) {
-                        console.log(`[${connectorId}] Fetching new Piko token (${currentState.config?.type})...`);
-                        if (!currentState.config) {
-                            throw new Error("Piko config missing in state during token fetch.");
-                        }
-                        currentState.tokenInfo = await getToken(currentState.config);
-                        currentToken = currentState.tokenInfo.accessToken;
-                        connections.set(connectorId, currentState); 
-                        console.log(`[${connectorId}] Token obtained.`);
+                    // 1. Get Token using getTokenAndConfig, potentially forcing refresh on auth retry
+                    if (!isAuthRetry) {
+                        console.log(`[${connectorId}] Ensuring valid Piko token and config for initial attempt...`);
+                    } else {
+                        console.log(`[${connectorId}] Ensuring valid Piko token and config for AUTH RETRY...`);
                     }
-                    const accessToken = currentToken;
-                    if (!accessToken) throw new Error("Failed to obtain valid access token.");
+                    if (!connectorId) { 
+                        throw new Error("connectorId is missing in initPikoWebSocket.");
+                    }
+
+                    const { config: updatedConfigFromDriver, token: newTokenInfo } = await getTokenAndConfig(
+                        connectorId, 
+                        { forceRefresh: isAuthRetry } // Pass forceRefresh based on isAuthRetry
+                    );
+                    currentState.config = updatedConfigFromDriver;
+                    currentState.tokenInfo = newTokenInfo;
+                    connections.set(connectorId, currentState); 
+                    console.log(`[${connectorId}] Token and config obtained/validated (AuthRetry: ${isAuthRetry}).`);
+
+                    const accessToken = newTokenInfo.accessToken;
+                    if (!accessToken) {
+                        throw new Error("Failed to obtain a valid access token via getTokenAndConfig.");
+                    }
 
                     // 2. Construct URL, Headers, Origin, and potentially TLS Options
                     let urlToConnect: string;
@@ -381,7 +401,7 @@ export async function initPikoWebSocket(
                     }, CONNECTION_TIMEOUT_MS);
 
                     // 5. Attach Client Event Listeners
-                    client.on('connectFailed', (error) => {
+                    client.on('connectFailed', async (error) => { // Made async to await recursive call
                          if (!connectTimeoutId) return; 
                          
                          const errorMessage = error.message || '';
@@ -419,8 +439,8 @@ export async function initPikoWebSocket(
 
                                  // Use setImmediate to avoid deep recursion stack
                                  setImmediate(() => {
-                                     initPikoWebSocket(connectorId, wssRedirectUrl, redirectDepth + 1)
-                                         .then(resolve) // Pass resolve/reject down the chain
+                                     initPikoWebSocket(connectorId, wssRedirectUrl, redirectDepth + 1, false) // isAuthRetry is false for redirects
+                                         .then(resolve)
                                          .catch(reject);
                                  });
                                  return; 
@@ -430,8 +450,23 @@ export async function initPikoWebSocket(
                              }
                          }
                          
-                         // If it wasn't the handled redirect, log as a real error (keep essential info)
-                         console.error(`${logPrefix}[connectFailed] WebSocket connection failed (Non-redirect error):`, error.toString());
+                         // Check for 401 Unauthorized and if it's not already an auth retry attempt
+                         if (errorMessage.includes("401 Unauthorized") && !isAuthRetry) {
+                            console.warn(`${logPrefix}[connectFailed] WebSocket auth error (401). Attempting token refresh and connection retry...`);
+                            cleanupAttempt('Auth Retry Attempt'); // Clean up current attempt artifacts
+                            try {
+                                // Recursively call initPikoWebSocket with isAuthRetry set to true
+                                const retrySuccess = await initPikoWebSocket(connectorId, targetUrl, redirectDepth, true);
+                                resolve(retrySuccess); // Resolve the original promise with the outcome of the retry
+                            } catch (retryError) {
+                                console.error(`${logPrefix}[connectFailed] Auth retry attempt also failed:`, retryError);
+                                reject(retryError); // Reject original promise if retry also hard-fails
+                            }
+                            return; // Stop further processing for this failed attempt
+                         }
+                         
+                         // If it wasn't a handled redirect or a first-time 401, treat as normal failure
+                         console.error(`${logPrefix}[connectFailed] WebSocket connection failed (Final attempt or non-auth error):`, error.toString());
                          
                          // Treat as normal failure
                          const normalFailState = connections.get(connectorId);

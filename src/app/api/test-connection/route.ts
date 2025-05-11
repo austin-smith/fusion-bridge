@@ -82,17 +82,31 @@ export async function POST(request: Request) {
     // Dispatch to the appropriate driver
     try {
       if (driver === 'yolink') {
-        // Log the config being sent to the driver for debugging
         console.log('Testing YoLink connection with config:', {
           uaid: config.uaid ? '****' + config.uaid.substring(Math.max(0, config.uaid.length - 4)) : 'missing',
           clientSecret: config.clientSecret ? '[REDACTED]' : 'missing'
         });
         
-        // Validation is done by Zod schema now
         const validatedConfig = config as z.infer<typeof TestYoLinkConfigSchema>;
-        // Test the connection
-        success = await yolinkDriver.testConnection(validatedConfig as YoLinkConfig);
-        if (success) message = "YoLink connection successful!";
+        
+        // UPDATED LOGIC for YoLink testConnection:
+        // The refactored yolinkDriver.testConnection(connectorId, cfg) requires a connectorId.
+        // For testing new, unsaved credentials, we will call getRefreshedYoLinkToken directly.
+        // Success means we can obtain a token with the given uaid/clientSecret.
+        try {
+          const tempCfg: YoLinkConfig = { 
+            uaid: validatedConfig.uaid, 
+            clientSecret: validatedConfig.clientSecret, 
+            scope: [] // Scope is required by YoLinkConfig, provide a default
+          };
+          await yolinkDriver.getRefreshedYoLinkToken(tempCfg);
+          success = true;
+          message = "YoLink credentials validated successfully (token obtained).";
+        } catch (tokenError) {
+          console.error('YoLink credential test failed (getRefreshedYoLinkToken):', tokenError);
+          success = false;
+          errorMessage = tokenError instanceof Error ? tokenError.message : "Failed to obtain token with provided YoLink credentials.";
+        }
       } else if (driver === 'piko') {
         console.log('Testing Piko connection with config type:', config.type);
         

@@ -28,13 +28,12 @@ export async function GET(request: NextRequest) {
 
   try {
     // --- Get Config and Token using Helper from piko.ts ---
-    const { config, token } = await pikoDriver.getTokenAndConfig(connectorId);
-    const accessToken = token.accessToken;
+    // This config might still be useful for logic within this route (e.g., config.type)
+    const { config } = await pikoDriver.getTokenAndConfig(connectorId);
 
     // --- Fetch Device Details ---
     const deviceDetails = await pikoDriver.getSystemDeviceById(
-        config,
-        accessToken,
+        connectorId,
         cameraId
     );
     if (!deviceDetails) {
@@ -118,7 +117,8 @@ export async function GET(request: NextRequest) {
         if (determinedMediaType === 'hls') {
             // Get HLS Stream
             console.log(`[API Media/getStream/HLS] Calling getPikoHlsStream`);
-            pikoResponse = await pikoDriver.getPikoHlsStream(config, accessToken, cameraId);
+            // UPDATED CALL: Use connectorId, remove config and accessToken
+            pikoResponse = await pikoDriver.getPikoHlsStream(connectorId, cameraId);
             finalContentType = pikoResponse.headers.get('Content-Type') || 'application/vnd.apple.mpegurl';
         } else {
             // If not the above specific unsupported case, then positionMs is required for WebM/MP4
@@ -128,38 +128,20 @@ export async function GET(request: NextRequest) {
                 throw { status: 500, message: "Internal Server Error: Media type and position mismatch for streaming.", details: "positionMs is required for recorded WebM/MP4 streams." };
             }
             console.log(`[API Media/getStream/WebM] Preparing WebM stream request (Recorded).`);
-            const serverId = deviceDetails.serverId;
+            const serverId = deviceDetails.serverId; // Still need serverId for getPikoMediaStream if ticket auth is desired
             console.log(`[API Media/WebM] Associated Server ID: ${serverId || 'Not Found'}`);
             try {
-                 let streamToken: string | undefined = accessToken;
-                 let streamServerId: string | undefined = undefined;
-                 let streamTicket: string | undefined = undefined;
-                 if (serverId) {
-                     console.log(`[API Media/WebM] Attempting login ticket generation for server ${serverId}...`);
-                     try {
-                         streamTicket = await pikoDriver.createPikoLoginTicket(config, accessToken, serverId);
-                         streamToken = undefined;
-                         streamServerId = serverId;
-                         console.log(`[API Media/WebM] Login ticket obtained successfully.`);
-                     } catch(ticketGenError) {
-                         console.warn(`[API Media/WebM] Failed ticket gen (ServerId: ${serverId}). Fallback to Bearer. Error:`, ticketGenError);
-                         streamToken = accessToken;
-                         streamTicket = undefined;
-                         streamServerId = undefined;
-                     }
-                 } else {
-                     console.log(`[API Media/WebM] No ServerID. Using Bearer token.`);
-                     streamToken = accessToken;
-                 }
-                 console.log(`[API Media/WebM] Calling getPikoMediaStream using: ${streamTicket ? 'Ticket Auth' : 'Bearer Auth'}`);
+                 // The logic for ticket vs bearer is now internal to getPikoMediaStream if serverId is provided.
+                 // We directly call getPikoMediaStream with connectorId, cameraId, positionMs, and optionally serverId.
+                 console.log(`[API Media/WebM] Calling getPikoMediaStream. ServerId for potential ticket auth: ${serverId}`);
+                 // UPDATED CALL: Use connectorId. Pass serverId for internal ticket logic.
+                 // streamToken, streamTicket, streamServerId are no longer needed here.
                  pikoResponse = await pikoDriver.getPikoMediaStream(
-                     config,
-                     streamToken,
+                     connectorId,
                      cameraId,
-                     positionMs,
+                     positionMs, // positionMs is already confirmed not null here
                      'webm',
-                     streamTicket,
-                     streamServerId
+                     serverId // Pass serverId; getPikoMediaStream will handle ticket creation if serverId is present
                  );
                  console.log(`[API Media/WebM] getPikoMediaStream call successful. Status: ${pikoResponse.status}`);
                  finalContentType = 'video/webm';

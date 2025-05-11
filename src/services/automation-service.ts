@@ -356,7 +356,7 @@ async function executeActionWithRetry(
                 if (targetConnector.category === 'piko') {
                     const { username, password, selectedSystem } = targetConfig as Partial<piko.PikoConfig>;
                     if (!username || !password || !selectedSystem) { throw new Error(`Missing Piko config for target connector ${targetConnector.id}`); }
-                    const pikoTokenResponse: piko.PikoTokenResponse = await piko.getSystemScopedAccessToken(username, password, selectedSystem);
+                    
                     let associatedPikoCameraExternalIds: string[] = [];
                     const sourceDeviceInternalId = tokenFactContext.device?.id;
                     if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string' && sourceDeviceInternalId !== stdEvent.deviceId /* Check if it's UUID */) {
@@ -369,6 +369,7 @@ async function executeActionWithRetry(
                             }
                         } catch (assocError) { console.error(`[Rule ${rule.id}][Action createEvent] Error fetching camera associations:`, assocError); }
                     } else { console.warn(`[Rule ${rule.id}][Action createEvent] Could not get internal ID for source device ${stdEvent.deviceId}. Cannot fetch camera associations.`); }
+                    
                     const pikoPayload: piko.PikoCreateEventPayload = { 
                         source: resolvedParams.sourceTemplate, 
                         caption: resolvedParams.captionTemplate, 
@@ -376,7 +377,7 @@ async function executeActionWithRetry(
                         timestamp: stdEvent.timestamp.toISOString(),
                         ...(associatedPikoCameraExternalIds.length > 0 && { metadata: { cameraRefs: associatedPikoCameraExternalIds } })
                     };
-                    await piko.createPikoEvent(selectedSystem, pikoTokenResponse.accessToken, pikoPayload);
+                    await piko.createPikoEvent(targetConnector.id, pikoPayload);
                 } else { console.warn(`[Rule ${rule.id}][Action createEvent] Unsupported target connector category ${targetConnector.category}`); }
                 break;
             }
@@ -411,7 +412,7 @@ async function executeActionWithRetry(
                     try { const parsedDuration = parseInt(resolvedParams.durationMsTemplate, 10); if (!isNaN(parsedDuration) && parsedDuration > 0) durationMs = parsedDuration; } catch {} 
                     let tags: string[] = [];
                     if (resolvedParams.tagsTemplate && resolvedParams.tagsTemplate.trim() !== '') { try { tags = resolvedParams.tagsTemplate.split(',').map(tag => tag.trim()).filter(tag => tag !== ''); } catch {} }
-                    const pikoTokenResponse: piko.PikoTokenResponse = await piko.getSystemScopedAccessToken(username, password, selectedSystem);
+                    
                     for (const pikoCameraDeviceId of associatedPikoCameraExternalIds) {
                         const pikoPayload: PikoCreateBookmarkPayload = {
                             name: resolvedParams.nameTemplate,
@@ -420,7 +421,7 @@ async function executeActionWithRetry(
                             durationMs: durationMs,
                             tags: tags.length > 0 ? tags : undefined
                         };
-                        await piko.createPikoBookmark(selectedSystem, pikoTokenResponse.accessToken, pikoCameraDeviceId, pikoPayload);
+                        await piko.createPikoBookmark(targetConnector.id, pikoCameraDeviceId, pikoPayload);
                     }
                 } else { console.warn(`[Rule ${rule.id}][Action createBookmark] Unsupported target connector category ${targetConnector.category}`); }
                 break;

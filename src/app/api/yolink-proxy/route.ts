@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import * as yolinkDriver from '@/services/drivers/yolink';
+import type { YoLinkConfig } from '@/services/drivers/yolink';
 
 // Schema for token request - expecting uaid/clientSecret
 const tokenRequestSchema = z.object({
@@ -28,13 +29,22 @@ export async function POST(request: Request) {
         );
       }
       
-      // Pass uaid/clientSecret directly to the driver
       const { uaid, clientSecret } = result.data;
       try {
-        const accessToken = await yolinkDriver.getAccessToken({ uaid, clientSecret });
-        return NextResponse.json({ success: true, accessToken });
+        // Create a minimal config for getRefreshedYoLinkToken
+        const tempConfig: YoLinkConfig = { uaid, clientSecret, scope: [] }; 
+        const tokenDetails = await yolinkDriver.getRefreshedYoLinkToken(tempConfig);
+        // Return the relevant token details. Client might expect just accessToken or more.
+        // For now, returning an object with accessToken, refreshToken, and expiresAt.
+        return NextResponse.json({
+          success: true, 
+          accessToken: tokenDetails.newAccessToken,
+          refreshToken: tokenDetails.newRefreshToken,
+          expiresAt: tokenDetails.newExpiresAt,
+          // updatedConfig: tokenDetails.updatedConfig // Optionally return the full updated config if needed by client
+        });
       } catch (error) {
-        console.error('Error getting YoLink access token:', error);
+        console.error('Error getting YoLink access token via proxy:', error);
         return NextResponse.json(
           { success: false, error: error instanceof Error ? error.message : 'Failed to get access token' },
           { status: 500 }
@@ -54,8 +64,15 @@ export async function POST(request: Request) {
       
       const { accessToken } = result.data;
       try {
-        const homeId = await yolinkDriver.getHomeInfo(accessToken);
-        return NextResponse.json({ success: true, homeId });
+        // FIXME: The new yolinkDriver.getHomeInfo(connectorId, config) requires a connectorId and config.
+        // This proxy action only receives an accessToken and cannot directly use the refactored getHomeInfo.
+        // This part needs to be re-evaluated or the proxy action removed/changed.
+        // For now, returning an error indicating this part is not functional with the new driver.
+        console.warn('[YoLink Proxy] getHomeInfo action is not compatible with the refactored YoLink driver and requires an update.');
+        return NextResponse.json(
+            { success: false, error: 'getHomeInfo via proxy is currently non-functional due to driver changes. Requires connectorId.' },
+            { status: 501 } // Not Implemented
+        );
       } catch (error) {
         console.error('Error getting YoLink home info:', error);
         return NextResponse.json(

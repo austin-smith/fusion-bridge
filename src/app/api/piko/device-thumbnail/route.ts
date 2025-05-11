@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   const size = searchParams.get('size');
 
   // --- DEBUG LOG: Incoming Params ---
-  console.log(`[API Thumb] Req Params - ConnID: ${connectorId}, CameraID: ${cameraId}, Timestamp: ${timestampMsStr}, Size: ${size}`); // <-- Use cameraId in log
+  console.log(`[API Thumb] Req Params - ConnectorID: ${connectorId}, CameraID: ${cameraId}, Timestamp: ${timestampMsStr}, Size: ${size}`); // <-- Use cameraId in log
   // --- END DEBUG --- 
 
   if (!connectorId || !cameraId) { // <-- Check cameraId
@@ -21,21 +21,25 @@ export async function GET(request: NextRequest) {
 
   try {
     // --- Use Helper from piko.ts ---
-    const { config, token } = await pikoDriver.getTokenAndConfig(connectorId); 
+    // The getTokenAndConfig call is not directly needed here because 
+    // pikoDriver.getPikoDeviceThumbnail will call fetchPikoApiData, 
+    // which internally calls getTokenAndConfig using the connectorId.
+    // const { config, token } = await pikoDriver.getTokenAndConfig(connectorId); 
+    
     // --- DEBUG LOG: Config & Token ---
-    console.log(`[API Thumb] Fetched Config Type: ${config?.type}, Token Access Token Present: ${!!token?.accessToken}`);
+    // console.log(`[API Thumb] Fetched Config Type: ${config?.type}, Token Access Token Present: ${!!token?.accessToken}`);
     // --- END DEBUG --- 
 
     // --- Fetch Thumbnail ---
     const timestampNum = timestampMsStr ? parseInt(timestampMsStr, 10) : undefined;
-    console.log(`[API Thumb] Calling getPikoDeviceThumbnail with: CameraID=${cameraId}, Timestamp=${timestampNum}, Size=${size}`); // <-- Use cameraId in log
+    console.log(`[API Thumb] Calling getPikoDeviceThumbnail with: ConnectorID=${connectorId}, CameraID=${cameraId}, Timestamp=${timestampNum}, Size=${size}`);
     
     const thumbnailBlob = await pikoDriver.getPikoDeviceThumbnail(
-      config,
-      token.accessToken,
-      cameraId, // <-- Pass cameraId to the driver function
+      connectorId,      // Corrected: Pass connectorId
+      cameraId,         // Corrected: Pass cameraId as deviceId
       timestampNum, 
       size ?? undefined
+      // Removed superfluous arguments
     );
 
     // --- DEBUG LOG: Blob Result ---
