@@ -209,7 +209,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
       let connectedStream: MediaStream | null = null;
 
       try {
-        streamManagerSubscriptionRef.current = webrtcLib.WebRTCStreamManager.connect(webRtcConfig, currentVideoElement)
+        streamManagerSubscriptionRef.current = webrtcLib.WebRTCStreamManager.connect(webRtcConfig)
           .subscribe(
             (data: [MediaStream | null, any | null, any | null]) => {
               const [stream, error, manager] = data;
