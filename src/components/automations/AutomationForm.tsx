@@ -234,8 +234,7 @@ export default function AutomationForm({
     const form = useForm<AutomationFormValues>({
         resolver: zodResolver(FormSchema),
         defaultValues: massageInitialData(initialData),
-        mode: 'onChange',
-        reValidateMode: 'onChange',
+        mode: 'onTouched',
     });
 
     const { fields: actionsFields, append: appendAction, remove: removeAction } = useFieldArray({
@@ -1020,7 +1019,7 @@ export default function AutomationForm({
 
                     {/* Submit Button */}
                     <div className="flex justify-end space-x-2 mt-8">
-                        <Button type="submit" disabled={isLoading || !form.formState.isDirty || !form.formState.isValid}>
+                        <Button type="submit" disabled={isLoading || !form.formState.isValid}>
                             {isLoading ? 'Saving...' : (initialData.id === 'new' ? 'Create Automation' : 'Save Changes')}
                         </Button>
                     </div>
