@@ -273,7 +273,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
         newYoLinkConfigFromRefresh.tokenExpiresAt !== originalConnectionConfig.tokenExpiresAt ||
         homeIdWasMissingOrChanged
       ) {
-        console.warn(`[initMqttService][${connectorId}] YoLink config (tokens or homeId) changed. Attempting to save to DB with:`, JSON.stringify(finalConfigForDb));
+        console.warn(`[initMqttService][${connectorId}] YoLink config (tokens or homeId) changed. Attempting to save updated configuration to DB.`);
         try {
           await updateConnectorConfig(connectorId, finalConfigForDb);
           console.log(`[initMqttService][${connectorId}] Successfully saved updated config to DB via mqtt-service.`);
