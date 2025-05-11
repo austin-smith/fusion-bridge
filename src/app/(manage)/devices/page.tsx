@@ -236,7 +236,6 @@ export default function DevicesPage() {
       setIsLoadingInitial(true);
       setError(null);
       try {
-        console.log('[DevicesPage] Fetching initial data (Connectors & Devices)...');
         const [connectorsResponse, devicesResponse] = await Promise.all([
           fetch('/api/connectors'), 
           fetch('/api/devices')
@@ -246,25 +245,21 @@ export default function DevicesPage() {
         const connectorsData = await connectorsResponse.json();
         if (!connectorsResponse.ok || !connectorsData.success) {
           console.error('[DevicesPage] Failed to fetch initial connectors:', connectorsData.error || 'Unknown error');
-          useFusionStore.getState().setConnectors([]); // Use setConnectors
+          useFusionStore.getState().setConnectors([]); 
         } else if (connectorsData.data && Array.isArray(connectorsData.data)) {
-          useFusionStore.getState().setConnectors(connectorsData.data as ConnectorWithConfig[]); // Use setConnectors
-          console.log('[DevicesPage] Initial connectors loaded into store.');
+          useFusionStore.getState().setConnectors(connectorsData.data as ConnectorWithConfig[]); 
         } else {
-          useFusionStore.getState().setConnectors([]); // Use setConnectors
+          useFusionStore.getState().setConnectors([]); 
         }
         
         // Process Devices Response
         const devicesData = await devicesResponse.json();
-        console.log('[DevicesPage] Initial GET /api/devices RAW response data:', devicesData);
         if (!devicesResponse.ok || !devicesData.success) {
           throw new Error(devicesData.error || 'Failed to fetch initial devices');
         }
 
         if (devicesData.data && Array.isArray(devicesData.data)) {
-          console.log(`[DevicesPage] Calling setDeviceStatesFromSync with ${devicesData.data.length} devices.`);
           setDeviceStatesFromSync(devicesData.data as DeviceWithConnector[]); 
-          console.log('[DevicesPage] Initial devices loaded into store.');
         } else {
           console.warn('[DevicesPage] Initial fetch returned no device data.');
           setDeviceStatesFromSync([]); 
@@ -272,7 +267,7 @@ export default function DevicesPage() {
       } catch (err) {
         console.error('[DevicesPage] Error fetching initial data:', err);
         setError(err instanceof Error ? err.message : 'Unknown error fetching data');
-        useFusionStore.getState().setConnectors([]); // Use setConnectors
+        useFusionStore.getState().setConnectors([]); 
         setDeviceStatesFromSync([]); 
       } finally {
         setIsLoadingInitial(false);
@@ -283,7 +278,6 @@ export default function DevicesPage() {
 
   // Combine store data into the format the table expects
   const tableData = useMemo((): DisplayedDevice[] => {
-    console.log(`[DevicesPage] Recalculating tableData. deviceStates size: ${deviceStates.size}, allDevices length: ${allDevices.length}`);
     const connectorsMap = new Map(connectors.map(c => [c.id, c])); 
     const allDevicesMap = new Map(allDevices.map(d => [d.deviceId, d])); 
 
@@ -306,16 +300,16 @@ export default function DevicesPage() {
             const rawDeviceType = state.rawType ?? state.deviceInfo?.type ?? 'Unknown'; 
 
             const displayDevice: DisplayedDevice = {
-                internalId: fullDevice.id, // Use the internal ID from the full device record
+                internalId: fullDevice.id, 
                 deviceId: state.deviceId,
                 connectorId: state.connectorId,
                 name: deviceName, 
-                connectorName: connector?.name ?? 'Unknown', // Ensure string
+                connectorName: connector?.name ?? 'Unknown', 
                 connectorCategory: connector?.category ?? 'unknown',
                 deviceTypeInfo: state.deviceInfo, 
                 displayState: state.displayState, 
                 lastSeen: state.lastSeen,
-                associationCount: fullDevice.associationCount ?? 0, // Use device association count
+                associationCount: fullDevice.associationCount ?? 0, 
                 type: rawDeviceType, 
                 url: url,
                 model: model,
@@ -335,20 +329,17 @@ export default function DevicesPage() {
         return acc;
     }, []); 
 
-    console.log('[DevicesPage] Finished calculating tableData. Result length:', mappedData.length);
     return mappedData;
   }, [deviceStates, connectors, allDevices]);
 
   // Filter devices based on the category toggle
   const filteredTableData = useMemo<DisplayedDevice[]>(() => {
     if (categoryFilter === 'all') {
-      console.log('[DevicesPage] Filtered Data (all):', tableData);
       return tableData;
     }
     const filtered = tableData.filter(device => 
       device.connectorCategory?.toLowerCase() === categoryFilter
     );
-    console.log(`[DevicesPage] Filtered Data (${categoryFilter}):`, filtered);
     return filtered;
   }, [tableData, categoryFilter]);
 
@@ -358,10 +349,8 @@ export default function DevicesPage() {
     setError(null);
     const loadingToastId = toast.loading('Triggering device sync...');
     try {
-      console.log('Syncing devices via POST to /api/devices');
       const response = await fetch('/api/devices', { method: 'POST' });
       const data = await response.json();
-      console.log('Sync POST /api/devices response received:', data);
 
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to trigger sync');
@@ -369,22 +358,15 @@ export default function DevicesPage() {
       
       // --- BEGIN Store Update --- 
       if (data.data && Array.isArray(data.data)) {
-        // Use the data returned from the API to update the client-side store
         useFusionStore.getState().setDeviceStatesFromSync(data.data as DeviceWithConnector[]);
-        console.log('[DevicesPage] Updated store from sync API response.');
-        toast.success(`Sync complete. Updated view with ${data.data.length} devices.`); // Updated toast
+        toast.success(`Sync complete. Updated view with ${data.data.length} devices.`);
       } else {
-        // Handle case where sync succeeded but no device data returned (unlikely but possible)
         console.warn('[DevicesPage] Sync API succeeded but returned no device data.');
         toast.success(`Sync complete. No devices found or returned.`);
-        // Optionally clear the store if sync implies empty list?
-        // useFusionStore.getState().setDeviceStatesFromSync([]); 
       }
       // --- END Store Update ---
       
       toast.dismiss(loadingToastId);
-      // Note: UI updates based on store changes triggered by events, not directly from this response. // <-- Keep note, but behavior changed
-      // toast.success(`Sync triggered. Found ${data.syncedCount || 0} devices. UI will update as events arrive.`); // <-- REMOVED OLD TOAST
       if (data.errors && data.errors.length > 0) {
           data.errors.forEach((err: { connectorName: string; error: string }) => {
               toast.warning(`Connector ${err.connectorName}: ${err.error}`);

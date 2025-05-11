@@ -82,30 +82,21 @@ export async function POST(request: Request) {
     // Dispatch to the appropriate driver
     try {
       if (driver === 'yolink') {
-        console.log('Testing YoLink connection with config:', {
-          uaid: config.uaid ? '****' + config.uaid.substring(Math.max(0, config.uaid.length - 4)) : 'missing',
-          clientSecret: config.clientSecret ? '[REDACTED]' : 'missing'
-        });
-        
+        // config is already validated as TestYoLinkConfigSchema by the main schema dispatcher
         const validatedConfig = config as z.infer<typeof TestYoLinkConfigSchema>;
         
-        // UPDATED LOGIC for YoLink testConnection:
-        // The refactored yolinkDriver.testConnection(connectorId, cfg) requires a connectorId.
-        // For testing new, unsaved credentials, we will call getRefreshedYoLinkToken directly.
-        // Success means we can obtain a token with the given uaid/clientSecret.
-        try {
-          const tempCfg: YoLinkConfig = { 
-            uaid: validatedConfig.uaid, 
-            clientSecret: validatedConfig.clientSecret, 
-            scope: [] // Scope is required by YoLinkConfig, provide a default
-          };
-          await yolinkDriver.getRefreshedYoLinkToken(tempCfg);
-          success = true;
-          message = "YoLink credentials validated successfully (token obtained).";
-        } catch (tokenError) {
-          console.error('YoLink credential test failed (getRefreshedYoLinkToken):', tokenError);
-          success = false;
-          errorMessage = tokenError instanceof Error ? tokenError.message : "Failed to obtain token with provided YoLink credentials.";
+        console.log('Testing YoLink connection with (redacted) credentials for uaid:', 
+          validatedConfig.uaid ? '****' + validatedConfig.uaid.substring(Math.max(0, validatedConfig.uaid.length - 4)) : 'missing'
+        );
+        
+        const credTestResult = await yolinkDriver.testYoLinkCredentials(validatedConfig.uaid, validatedConfig.clientSecret);
+        
+        success = credTestResult.success;
+        if (credTestResult.success && credTestResult.homeId) {
+          message = "YoLink credentials validated successfully.";
+          additionalData = { homeId: credTestResult.homeId }; // Store homeId
+        } else {
+          errorMessage = credTestResult.error || "Failed to validate YoLink credentials or retrieve Home ID.";
         }
       } else if (driver === 'piko') {
         console.log('Testing Piko connection with config type:', config.type);

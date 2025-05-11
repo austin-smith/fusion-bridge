@@ -9,9 +9,9 @@ import { NextRequest } from 'next/server';
 
 // Define specific config schemas
 const YoLinkConfigSchema = z.object({
-  uaid: z.string(),
-  clientSecret: z.string(),
-  homeId: z.string().optional(), // Home ID can be optional initially
+  uaid: z.string().min(1, "UAID is required"),
+  clientSecret: z.string().min(1, "Client Secret is required"),
+  homeId: z.string().min(1, "Home ID is required for YoLink connectors"), // Make homeId required and non-empty
 });
 
 // Define Piko common/base schema

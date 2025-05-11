@@ -393,7 +393,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
 
   // Action to bulk update device states after a sync operation
   setDeviceStatesFromSync: (syncedDevices) => set((state) => {
-      console.log('[Store] setDeviceStatesFromSync received:', syncedDevices);
+      console.log(`[Store] setDeviceStatesFromSync received ${syncedDevices?.length || 0} devices.`);
       
       // Use produce for safe immutable updates within the map
       const newDeviceStates = produce(state.deviceStates, (draft: Draft<Map<string, DeviceStateInfo>>) => {
@@ -439,7 +439,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
           // }
       });
       
-      console.log('[Store] setDeviceStatesFromSync updated state map:', newDeviceStates);
+      console.log(`[Store] setDeviceStatesFromSync updated state map. New size: ${newDeviceStates?.size || 0}`);
       // Update allDevices with the full list, but deviceStates map uses merged data
       return { 
           deviceStates: newDeviceStates, 

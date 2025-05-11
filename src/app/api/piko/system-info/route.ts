@@ -1,16 +1,12 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod'; // Import Zod
-import { 
-    // getSystemInfo, // This will cause a build error until re-implemented or an alternative is found
-    PikoApiError, // Keep for error handling if needed by mapPikoErrorResponse
-    PikoConfig, 
-    // PikoTokenResponse, // Not directly used by this route's logic anymore, token comes from request
-    getSystemInfo as pikoGetSystemInfo, // Import and alias to avoid conflict if any
+import {
+    getSystemInfo,
     PikoSystemInfo // Import the interface for the return type
 } from '@/services/drivers/piko';
 import { mapPikoErrorResponse } from '@/lib/api-utils';
 
-// Define Zod schema for the token part (as per original code)
+// Define Zod schema for the token part
 const pikoTokenSchema = z.object({
   accessToken: z.string().min(1, 'Access token is required'),
   // Other token fields are optional and not directly used by getSystemInfo
@@ -22,7 +18,7 @@ const pikoTokenSchema = z.object({
   scope: z.string().optional(),
 });
 
-// Define Zod schema for the config part (local only - as per original code)
+// Define Zod schema for the config part (local only)
 const pikoLocalConfigSchema = z.object({
   type: z.literal('local'),
   host: z.string().min(1, 'Host is required'),
@@ -41,7 +37,7 @@ const systemInfoRequestBodySchema = z.object({
   // Use pikoLocalConfigSchema directly. 
   // The object produced by this schema is assignable to PikoConfig 
   // because PikoConfig has host/port as optional, and this schema makes them required.
-  // TypeScript will handle assignability when calling pikoGetSystemInfo.
+  // TypeScript will handle assignability when calling getSystemInfo.
   config: pikoLocalConfigSchema, 
   token: pikoTokenSchema,
 });
@@ -76,7 +72,7 @@ export async function POST(request: Request) {
     console.log(`[Piko API /system-info] Processing validated request for host: ${config.host}:${config.port}`);
 
     // Call the correctly re-implemented getSystemInfo from the Piko driver
-    const systemInfo: PikoSystemInfo = await pikoGetSystemInfo(config, token.accessToken);
+    const systemInfo: PikoSystemInfo = await getSystemInfo(config, token.accessToken);
 
     console.log(`[Piko API /system-info] Successfully fetched system info for host: ${config.host}. Name: ${systemInfo.name}`);
     return NextResponse.json({

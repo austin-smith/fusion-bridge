@@ -13,6 +13,7 @@ import { parseYoLinkEvent } from '@/lib/event-parsers/yolink'; // <-- Import the
 import { useFusionStore } from '@/stores/store'; // <-- Import Zustand store
 import { Connector } from '@/types'; // Import Connector type
 import { initializePikoConnections } from './piko-websocket-service'; // Import Piko initializer
+import { updateConnectorConfig } from '@/data/repositories/connectors'; // <-- IMPORT ADDED
 
 // Define event type based on the example
 export interface YolinkEvent {
@@ -252,23 +253,34 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
       }
 
       const { newAccessToken, updatedConfig: newYoLinkConfigFromRefresh } = tokenDetails;
+      // Store the original config before updating connection.config for comparison
+      const originalConnectionConfig = { ...connection.config }; 
       connection.config = newYoLinkConfigFromRefresh; // Update in-memory state with the definitive new token config
       connections.set(currentHomeId, connection);
 
-      // Compare the latest config (after all token operations) with what was originally read from DB (parsedDbConfig)
-      // to determine if a DB write is needed.
       // Construct the final config object that would be saved to the DB.
-      const finalConfigForDb = { ...newYoLinkConfigFromRefresh, homeId: currentHomeId };
+      // Ensure homeId from parsedDbConfig or fetched is included if not already in newYoLinkConfigFromRefresh
+      const finalConfigForDb: DriverYoLinkConfig = {
+         ...newYoLinkConfigFromRefresh,
+         homeId: currentHomeId // Ensure currentHomeId is part of the saved config
+      };
+
+      const homeIdWasMissingOrChanged = !originalConnectionConfig.homeId || originalConnectionConfig.homeId !== currentHomeId;
 
       if (
-        newYoLinkConfigFromRefresh.accessToken !== parsedDbConfig.accessToken ||
-        newYoLinkConfigFromRefresh.refreshToken !== parsedDbConfig.refreshToken ||
-        newYoLinkConfigFromRefresh.tokenExpiresAt !== parsedDbConfig.tokenExpiresAt ||
-        currentHomeId !== parsedDbConfig.homeId // Compare the determined currentHomeId with what was initially in parsedDbConfig.homeId
-        // No need for: !parsedDbConfig.homeId, as currentHomeId !== parsedDbConfig.homeId covers it if parsedDbConfig.homeId was undefined.
+        newYoLinkConfigFromRefresh.accessToken !== originalConnectionConfig.accessToken ||
+        newYoLinkConfigFromRefresh.refreshToken !== originalConnectionConfig.refreshToken ||
+        newYoLinkConfigFromRefresh.tokenExpiresAt !== originalConnectionConfig.tokenExpiresAt ||
+        homeIdWasMissingOrChanged
       ) {
-        console.warn(`[initMqttService][${connectorId}] YoLink config changed. DB UPDATE NEEDED for cfg_enc with:`, JSON.stringify(finalConfigForDb));
-        // Placeholder: await db.update(connectors).set({ cfg_enc: JSON.stringify(finalConfigForDb) }).where(eq(connectors.id, connectorId));
+        console.warn(`[initMqttService][${connectorId}] YoLink config (tokens or homeId) changed. Attempting to save to DB with:`, JSON.stringify(finalConfigForDb));
+        try {
+          await updateConnectorConfig(connectorId, finalConfigForDb);
+          console.log(`[initMqttService][${connectorId}] Successfully saved updated config to DB via mqtt-service.`);
+        } catch (dbError) {
+          console.error(`[initMqttService][${connectorId}] CRITICAL: Failed to save updated config to DB via mqtt-service. Error:`, dbError);
+          // Log error, but don't let it stop MQTT connection if token was obtained
+        }
       }
       
       if (connection.client && connection.client.connected && connection.config.accessToken === newAccessToken) {

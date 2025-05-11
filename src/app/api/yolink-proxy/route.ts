@@ -9,9 +9,10 @@ const tokenRequestSchema = z.object({
   clientSecret: z.string(),
 });
 
-// Schema for home info request
+// Schema for home info request - UPDATED
 const homeInfoRequestSchema = z.object({
-  accessToken: z.string(),
+  uaid: z.string(),
+  clientSecret: z.string(),
 });
 
 export async function POST(request: Request) {
@@ -62,21 +63,28 @@ export async function POST(request: Request) {
         );
       }
       
-      const { accessToken } = result.data;
+      const { uaid, clientSecret } = result.data;
       try {
-        // FIXME: The new yolinkDriver.getHomeInfo(connectorId, config) requires a connectorId and config.
-        // This proxy action only receives an accessToken and cannot directly use the refactored getHomeInfo.
-        // This part needs to be re-evaluated or the proxy action removed/changed.
-        // For now, returning an error indicating this part is not functional with the new driver.
-        console.warn('[YoLink Proxy] getHomeInfo action is not compatible with the refactored YoLink driver and requires an update.');
-        return NextResponse.json(
-            { success: false, error: 'getHomeInfo via proxy is currently non-functional due to driver changes. Requires connectorId.' },
-            { status: 501 } // Not Implemented
-        );
+        const credTestResult = await yolinkDriver.testYoLinkCredentials(uaid, clientSecret);
+
+        if (credTestResult.success && credTestResult.homeId) {
+          return NextResponse.json({
+            success: true,
+            homeId: credTestResult.homeId,
+          });
+        } else {
+          // If testYoLinkCredentials was not successful or homeId is missing, return an error.
+          // Use the error message from credTestResult if available.
+          return NextResponse.json(
+            { success: false, error: credTestResult.error || 'Failed to get home info: Invalid credentials or unable to retrieve homeId.' },
+            { status: credTestResult.error?.includes("Invalid") || credTestResult.error?.includes("required") ? 400 : 401 } // 400 for bad input, 401 for auth failure
+          );
+        }
       } catch (error) {
-        console.error('Error getting YoLink home info:', error);
+        // This catch is for unexpected errors during the call to testYoLinkCredentials itself.
+        console.error('Error calling testYoLinkCredentials in YoLink proxy for getHomeInfo:', error);
         return NextResponse.json(
-          { success: false, error: error instanceof Error ? error.message : 'Failed to get home info' },
+          { success: false, error: error instanceof Error ? error.message : 'Failed to get home info due to an unexpected error.' },
           { status: 500 }
         );
       }

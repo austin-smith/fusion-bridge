@@ -1,7 +1,8 @@
 // YoLink driver with test connection functionality
 
 import { z } from 'zod';
-import { calculateExpiresAt, isTokenExpiring } from '@/lib/token-utils'; // Added import
+import { calculateExpiresAt, isTokenExpiring } from '@/lib/token-utils';
+import { updateConnectorConfig } from '@/data/repositories/connectors';
 
 export interface YoLinkConfig {
   uaid: string;
@@ -146,7 +147,12 @@ async function callYoLinkApi<T>(
 
   let tokenDetails: Awaited<ReturnType<typeof getRefreshedYoLinkToken>>;
   try {
-    tokenDetails = await getRefreshedYoLinkToken(initialConfig);
+    // If this is a retry due to a token error, force a refresh by clearing existing token details from initialConfig.
+    // Otherwise, use initialConfig as is, which might contain a valid token.
+    const configForTokenFetch = isRetry 
+        ? { ...initialConfig, accessToken: undefined, tokenExpiresAt: 0 } 
+        : initialConfig;
+    tokenDetails = await getRefreshedYoLinkToken(configForTokenFetch);
   } catch (tokenError) {
     console.error(`[callYoLinkApi][${connectorId}] Failed to get/refresh token for ${operationName}:`, tokenError);
     throw tokenError; // Propagate error if token cannot be obtained
@@ -154,76 +160,148 @@ async function callYoLinkApi<T>(
 
   const { newAccessToken, updatedConfig } = tokenDetails;
 
-  // TODO (Phase 4): Persist updatedConfig to DB if it changed.
-  // For now, we compare initialConfig's token fields with updatedConfig's token fields.
+  // Persist updatedConfig to DB if it changed (Placeholder for actual DB update logic)
   if (
     initialConfig.accessToken !== updatedConfig.accessToken ||
     initialConfig.refreshToken !== updatedConfig.refreshToken ||
     initialConfig.tokenExpiresAt !== updatedConfig.tokenExpiresAt
   ) {
     console.warn(`[callYoLinkApi][${connectorId}] Token updated for ${operationName}. DB UPDATE NEEDED for cfg_enc with:`, JSON.stringify(updatedConfig));
-    // In a real scenario, you'd call something like: 
-    // await updateConnectorConfig(connectorId, updatedConfig);
-    // And the 'initialConfig' for subsequent calls within the same high-level operation 
-    // should ideally use this 'updatedConfig'. For now, each callYoLinkApi starts with its passed 'initialConfig'.
+    // Example: await updateConnectorConfig(connectorId, updatedConfig);
+    // The 'initialConfig' for subsequent high-level operations should ideally use this 'updatedConfig'.
+    // For now, the next call within the same operation chain would need to pass this updatedConfig.
   }
 
-  console.log(`YoLink ${operationName} using token (present: ${!!newAccessToken})`);
-
   if (!newAccessToken) {
-    // This case should ideally be caught by getRefreshedYoLinkToken throwing an error.
     console.error(`[callYoLinkApi][${connectorId}] YoLink Access Token is unexpectedly missing after refresh logic for ${operationName}.`);
     throw new Error(`YoLink Access Token is required for ${operationName} but was not obtained.`);
   }
 
   try {
-    console.log(`Preparing to execute YoLink ${operationName} with URL:`, YOLINK_API_URL, 'Body:', requestBody);
-    
+    // Delegate the actual API call to _executeYoLinkRequest
+    const result = await _executeYoLinkRequest<T>(
+      newAccessToken,
+      requestBody,
+      operationName,
+      connectorId // Use connectorId as logContext
+    );
+    console.log(`[callYoLinkApi][${connectorId}] Successfully executed YoLink ${operationName}`);
+    return result;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[callYoLinkApi][${connectorId}] Error during attempt for ${operationName}: ${errorMessage}`);
+
+    // Reactive Refresh for specific token errors, if not already a retry
+    // We need to parse the error message to see if it's a known token error code from getYoLinkErrorMessage
+    // This is a bit fragile. A more robust way would be for _executeYoLinkRequest to throw a custom error with a code.
+    const isTokenInvalidError = errorMessage.includes("000103") || errorMessage.includes("API token is invalid");
+    const isTokenExpiredError = errorMessage.includes("010104") || errorMessage.includes("API token has expired");
+
+    if (!isRetry && (isTokenInvalidError || isTokenExpiredError)) {
+      console.warn(`[callYoLinkApi][${connectorId}] Token error detected for ${operationName} ('${errorMessage}'). Attempting reactive refresh and retry...`);
+      // For the retry, we pass the updatedConfig which should contain the latest refresh token (if any)
+      // The getRefreshedYoLinkToken call at the start of the retried callYoLinkApi will be forced to refresh
+      // because we set isRetry=true, which modifies its input config to clear accessToken.
+      return callYoLinkApi<T>(connectorId, updatedConfig, requestBody, operationName, true); 
+    }
+    // If not a recognized token error, or if it's already a retry, re-throw the error.
+    // If error came from _executeYoLinkRequest, it should already be a well-formed Error object.
+    throw error; 
+  }
+}
+
+// --- BEGIN Add _executeYoLinkRequest Function ---
+/**
+ * Executes a YoLink API request using a pre-obtained access token.
+ * This function centralizes the actual fetch call and YoLink-specific response handling.
+ * @param accessToken The YoLink access token.
+ * @param requestBody The body for the YoLink API call.
+ * @param operationName A descriptive name for the operation (for logging).
+ * @param logContext A string identifying the calling context (e.g., connectorId or "direct_call") for logging.
+ * @returns Promise resolving to the data.data part of the YoLink API response.
+ * @throws Error if the API call fails or returns a YoLink error code.
+ */
+async function _executeYoLinkRequest<T>(
+  accessToken: string,
+  requestBody: Record<string, unknown>,
+  operationName: string,
+  logContext: string // e.g., connectorId or a string like "direct_call"
+): Promise<T> {
+  console.log(`_executeYoLinkRequest [${logContext}] for operation '${operationName}'`);
+
+  if (!accessToken) {
+    // This should ideally not happen if callers manage tokens correctly.
+    console.error(`[executeYoLinkRequest][${logContext}] Access token is missing for operation '${operationName}'.`);
+    throw new Error(`Access token is required for YoLink operation '${operationName}'.`);
+  }
+
+  try {
     const response = await fetch(YOLINK_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${newAccessToken}` // Use the obtained/refreshed token
+        'Authorization': `Bearer ${accessToken}`
       },
       body: JSON.stringify(requestBody)
     });
 
-    console.log(`YoLink ${operationName} response status:`, response.status);
     const data = await response.json();
-    
-    // Check BUDP success code ('000000') and HTTP status
-    if (!response.ok || data.code !== '000000') {
-      const errorCode = data.code as string | undefined;
-      const errorMessage = data.desc || data.msg || `API returned status ${errorCode || 'unknown'}`;
-      console.error(`[callYoLinkApi][${connectorId}] Failed to execute YoLink ${operationName}: ${errorMessage}`, data);
+    // console.log(`[executeYoLinkRequest][${logContext}] '${operationName}' response status: ${response.status}, YoLink code: ${data.code}`);
 
-      // Reactive Refresh for specific token errors, if not already a retry
-      if (!isRetry && (errorCode === '000103' /* invalid token */ || errorCode === '010104' /* expired token */)) {
-        console.warn(`[callYoLinkApi][${connectorId}] Token error (${errorCode}) detected for ${operationName}. Attempting reactive refresh and retry...`);
-        // Force re-evaluation by making getRefreshedYoLinkToken think the token is bad
-        const configForRetry: YoLinkConfig = {
-          ...updatedConfig, // Use the latest config from the first attempt
-          accessToken: undefined, // Force refresh/new fetch
-          tokenExpiresAt: 0      // Force refresh/new fetch
-        };
-        // Recursive call, now marked as a retry.
-        // Pass the modified config (updatedConfig from previous token fetch attempt) to ensure it has latest refresh token etc.
-        return callYoLinkApi<T>(connectorId, configForRetry, requestBody, operationName, true);
-      }
-      throw new Error(`Failed to execute YoLink ${operationName}: ${errorMessage}`);
+    if (!response.ok || data.code !== '000000') {
+      const errorMessage = getYoLinkErrorMessage(data, response.status);
+      console.error(`[executeYoLinkRequest][${logContext}] Failed '${operationName}': ${errorMessage}`, data);
+      // Throw the specific error message, which might include the YoLink error code.
+      // This allows callers (like callYoLinkApi) to inspect the error code for reactive refresh.
+      throw new Error(errorMessage); 
     }
 
-    console.log(`Successfully executed YoLink ${operationName}`);
+    // console.log(`[executeYoLinkRequest][${logContext}] Successfully executed '${operationName}'.`);
     return data.data as T;
   } catch (error) {
-    // This will catch errors from the fetch itself, or the re-thrown error from non-OK responses, or error from reactive refresh attempt.
     if (error instanceof Error) {
-      console.error(`[callYoLinkApi][${connectorId}] Error in YoLink ${operationName}:`, error.message);
-      throw error; // Re-throw known errors
+      // If the error is already one we threw (from getYoLinkErrorMessage), or a network error, rethrow.
+      console.error(`[executeYoLinkRequest][${logContext}] Error during '${operationName}':`, error.message);
+      throw error; 
     }
-    // Handle network or unexpected errors
-    console.error(`[callYoLinkApi][${connectorId}] Unexpected error in YoLink ${operationName}:`, error);
-    throw new Error(`Network error or unexpected issue during YoLink ${operationName}.`);
+    // Fallback for non-Error objects thrown
+    console.error(`[executeYoLinkRequest][${logContext}] Unexpected non-Error type during '${operationName}':`, error);
+    throw new Error(`Network error or unexpected issue during YoLink operation '${operationName}'.`);
+  }
+}
+// --- END Add _executeYoLinkRequest Function ---
+
+/**
+ * Fetches a NEW YoLink API access token using client credentials.
+ * This version is for pre-connector creation scenarios and does not use YoLinkConfig.
+ * It serves as a thin wrapper around _fetchNewYoLinkToken.
+ * @param uaid The YoLink UAID (client_id).
+ * @param clientSecret The YoLink Client Secret.
+ * @returns Promise resolving to the raw YoLinkTokenAPIResponse object.
+ * @throws Error with a user-friendly message if fetching fails.
+ */
+async function _fetchNewYoLinkTokenDirect(uaid: string, clientSecret: string): Promise<YoLinkTokenAPIResponse> {
+  console.log(`_fetchNewYoLinkTokenDirect called for uaid: ${uaid ? uaid.substring(0,3) + '...' : 'missing'}`);
+  // Construct a minimal config for the sole purpose of calling _fetchNewYoLinkToken
+  const tempCfg: YoLinkConfig = {
+    uaid: uaid,
+    clientSecret: clientSecret,
+    scope: [], // Default scope, actual scope is determined by YoLink server for client_credentials
+    // Other YoLinkConfig fields (accessToken, refreshToken, tokenExpiresAt, homeId) are not relevant here.
+  };
+
+  try {
+    // Delegate the actual token fetching logic to the existing function
+    return await _fetchNewYoLinkToken(tempCfg);
+  } catch (error) {
+    // Add context to the error if it originated from _fetchNewYoLinkToken via this direct path
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[fetchNewYoLinkTokenDirect] Error during call to _fetchNewYoLinkToken: ${errorMessage}`);
+    // Re-throw a new error with more specific context, or re-throw the original if it's already well-formed.
+    // For now, let's assume _fetchNewYoLinkToken throws a sufficiently descriptive error.
+    // If _fetchNewYoLinkToken's errors are too generic, we might wrap it: 
+    // throw new Error(`Failed to obtain YoLink token directly via wrapper: ${errorMessage}`);
+    throw error; // Re-throw the original error for now
   }
 }
 
@@ -289,6 +367,120 @@ async function _fetchNewYoLinkToken(cfg: YoLinkConfig): Promise<YoLinkTokenAPIRe
     throw new Error('Network error or unexpected issue connecting to YoLink for a new token.');
   }
 }
+
+// --- BEGIN Add _callYoLinkApiDirect Function ---
+/**
+ * Generic function to call the YoLink API directly using uaid and clientSecret.
+ * This is for pre-connector creation scenarios and does not involve YoLinkConfig or token persistence.
+ * @param uaid The YoLink UAID (client_id).
+ * @param clientSecret The YoLink Client Secret.
+ * @param requestBody The body for the YoLink API call (method, params, etc.).
+ * @param operationName Name of the operation for logging purposes.
+ * @returns The API response data (data.data part).
+ * @throws Error if API call fails.
+ */
+async function _callYoLinkApiDirect<T>(
+  uaid: string,
+  clientSecret: string,
+  requestBody: Record<string, unknown>,
+  operationName: string
+): Promise<T> {
+  console.log(`_callYoLinkApiDirect for operation '${operationName}' (uaid: ${uaid ? uaid.substring(0,3) + '...':'missing'})`);
+
+  let tokenResponse: YoLinkTokenAPIResponse;
+  try {
+    tokenResponse = await _fetchNewYoLinkTokenDirect(uaid, clientSecret);
+  } catch (tokenError) {
+    console.error(`[_callYoLinkApiDirect] Failed to get token for '${operationName}':`, tokenError);
+    throw tokenError; // Re-throw error from _fetchNewYoLinkTokenDirect
+  }
+
+  const accessToken = tokenResponse.access_token;
+  // No need to check if accessToken is null here as _fetchNewYoLinkTokenDirect would have thrown
+
+  // Now call the centralized request execution function
+  try {
+    return await _executeYoLinkRequest<T>(
+      accessToken,
+      requestBody,
+      operationName,
+      "_callYoLinkApiDirect" // Log context
+    );
+  } catch (executionError) {
+    // Errors from _executeYoLinkRequest should already be descriptive
+    // and include context from getYoLinkErrorMessage if it was a YoLink API error.
+    console.error(`[_callYoLinkApiDirect] Error during execution of '${operationName}':`, executionError);
+    throw executionError;
+  }
+}
+// --- END Add _callYoLinkApiDirect Function ---
+
+// --- BEGIN Add _getHomeInfoDirect Function ---
+/**
+ * Fetches the YoLink Home General Info using only uaid and clientSecret.
+ * This is for pre-connector creation scenarios.
+ * @param uaid The YoLink UAID (client_id).
+ * @param clientSecret The YoLink Client Secret.
+ * @returns Promise resolving to the home ID string.
+ * @throws Error if fetching fails.
+ */
+async function _getHomeInfoDirect(uaid: string, clientSecret: string): Promise<string> {
+  console.log(`_getHomeInfoDirect called with uaid: ${uaid ? uaid.substring(0,3) + '...':'missing'}`);
+  try {
+    const data = await _callYoLinkApiDirect<{ id: string }>(
+      uaid,
+      clientSecret,
+      { method: "Home.getGeneralInfo", params: {} },
+      "_getHomeInfoDirect"
+    );
+
+    if (data?.id && typeof data.id === 'string') {
+      return data.id;
+    } else {
+      console.error('[getHomeInfoDirect] YoLink home info response did not contain a valid home ID', data);
+      throw new Error('YoLink home info response (direct) did not contain a valid home ID.');
+    }
+  } catch (error) {
+    // Log the error and re-throw it to be handled by the caller (e.g., testYoLinkCredentials)
+    console.error('[getHomeInfoDirect] Error fetching home info directly:', error);
+    // Errors from _callYoLinkApiDirect should already be user-friendly
+    throw error; 
+  }
+}
+// --- END Add _getHomeInfoDirect Function ---
+
+// --- BEGIN Add testYoLinkCredentials Function ---
+/**
+ * Tests YoLink credentials by attempting to fetch home information.
+ * This function is intended for use BEFORE a connector is created.
+ * @param uaid The YoLink User Account ID (UAID).
+ * @param clientSecret The YoLink Client Secret.
+ * @returns Promise resolving to an object with success status, and optionally homeId or error message.
+ */
+export async function testYoLinkCredentials(uaid: string, clientSecret: string): Promise<{
+  success: boolean;
+  homeId?: string;
+  error?: string;
+}> {
+  console.log(`testYoLinkCredentials called with uaid: ${uaid ? uaid.substring(0,3) + '...':'missing'}`);
+  try {
+    // Validate inputs directly here for clarity, though _getHomeInfoDirect also checks
+    if (!uaid || !clientSecret) {
+      console.error('[testYoLinkCredentials] Missing UAID or Client Secret.');
+      return { success: false, error: 'YoLink UAID and Client Secret are required.' };
+    }
+
+    const homeId = await _getHomeInfoDirect(uaid, clientSecret);
+    // If _getHomeInfoDirect succeeds, credentials are valid
+    console.log(`[testYoLinkCredentials] Successfully fetched homeId: ${homeId}`);
+    return { success: true, homeId: homeId };
+  } catch (error) {
+    console.error('[testYoLinkCredentials] Credential test failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred during credential test.';
+    return { success: false, error: errorMessage };
+  }
+}
+// --- END Add testYoLinkCredentials Function ---
 
 // --- BEGIN Add _refreshYoLinkToken Function ---
 /**
