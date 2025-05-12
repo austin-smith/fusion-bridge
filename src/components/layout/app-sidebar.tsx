@@ -259,8 +259,8 @@ export function AppSidebar() {
                   {isPending ? (
                     // Placeholder text appearance during loading
                     <div className="flex flex-col items-start gap-1.5">
-                      <div className="h-4 w-20 rounded bg-muted" />
-                      <div className="h-3 w-24 rounded bg-muted" />
+                      <div className="h-4 w-20 rounded bg-muted/50" />
+                      <div className="h-3 w-24 rounded bg-muted/50" />
                     </div>
                   ) : currentUser ? (
                     // Actual user info when loaded (from store)

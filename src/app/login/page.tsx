@@ -3,6 +3,7 @@ import { db } from '@/data/db'; // Assuming DB instance path
 import { user } from '@/data/db/schema'; // Import the renamed 'user' table
 import { sql } from 'drizzle-orm';
 import { LoginForm } from "@/components/login-form"
+import AddToHomeScreenPrompt from '@/components/pwa/AddToHomeScreenPrompt';
 
 export default async function LoginPage() {
   let userCount: number | null = null;
@@ -26,10 +27,11 @@ export default async function LoginPage() {
 
   // If users exist or the DB check failed, render the login form
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+    <>
       <div className="w-full max-w-sm">
         <LoginForm />
       </div>
-    </div>
-  )
+      <AddToHomeScreenPrompt />
+    </>
+  );
 }

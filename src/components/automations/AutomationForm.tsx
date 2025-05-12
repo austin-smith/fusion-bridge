@@ -1008,6 +1008,9 @@ export default function AutomationForm({
                                 size="sm" 
                                 onClick={() => {
                                     appendAction(defaultAction);
+                                    // Expand the newly added action
+                                    // The new action will be at the end of the array, so its index is actionsFields.length
+                                    setOpenActionItems(prev => [...prev, `action-${actionsFields.length}`]);
                                 }}
                                 disabled={isLoading}
                                 className="mt-4"
