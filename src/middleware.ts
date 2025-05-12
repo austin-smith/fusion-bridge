@@ -13,14 +13,17 @@ import { getSessionCookie } from 'better-auth/cookies';
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Log the path for every request that hits the middleware (if config.matcher doesn't exclude it)
+  console.log(`[Middleware] Processing path: ${pathname}`);
+
   const loginUrl = new URL('/login', request.url);
   const homeUrl = new URL('/', request.url);
 
-  // Check for the session cookie directly
   const sessionCookie = getSessionCookie(request);
   const isAuthenticated = !!sessionCookie;
 
-  console.log(`[Middleware] Path: ${pathname}, Authenticated: ${isAuthenticated}`);
+  console.log(`[Middleware] Auth check for path: ${pathname}, Authenticated: ${isAuthenticated}`);
   
   const isLoginPage = pathname === '/login';
   const isSetupPage = pathname === '/setup';
@@ -58,14 +61,14 @@ export const config = {
    * - api/startup (initial setup check route)
    * - _next/static (static files)
    * - _next/image (image optimization files)
+   * - /icons/ (custom icons folder)
    * - favicon.ico (favicon file)
-   * - Any paths with a file extension (e.g., .png, .jpg)
-   * - The root path '/' IF it should be public (optional)
    *
    * Adjust the negative lookaheads as needed.
    * If the root path ('/') should be protected, remove it from matcher or handle in middleware logic.
    */
   matcher: [
-    '/((?!api/auth|api/webhooks|api/startup|_next/static|_next/image|favicon.ico|.*\.\w+).*)',
+    // This regex aims to exclude specific paths and prefixes from middleware processing.
+    '/((?!api/auth|api/webhooks|api/startup|_next/static|_next/image|icons/|favicon\.ico|opengraph-image\.png).*)',
   ],
-}; 
+};

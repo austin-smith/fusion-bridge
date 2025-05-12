@@ -7,6 +7,7 @@ import { FiMenu } from "react-icons/fi";
 import { AppSidebar } from '../app-sidebar';
 import { SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
 import { ThemeToggle } from '@/components/common/theme-toggle';
+import AddToHomeScreenPrompt from '@/components/common/AddToHomeScreenPrompt';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -18,6 +19,7 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
 
   return (
     <>
+      <AddToHomeScreenPrompt />
       {showSidebar ? (
         <>
           <AppSidebar />

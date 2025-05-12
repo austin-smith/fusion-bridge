@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from 'next';
+import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import localFont from 'next/font/local';
 import '@/styles/globals.css';
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     ],
     shortcut: ['/favicon.ico'],
     apple: [
-      { url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' } 
+      { url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }
     ],
   },
   openGraph: {
@@ -47,10 +47,6 @@ export const metadata: Metadata = {
     type: 'website',
   },
 };
-
-export const viewport: Viewport = {
-  themeColor: '#FFFFFF',
-}
 
 export default async function RootLayout({
   children,
