@@ -26,10 +26,12 @@ export const metadata: Metadata = {
       { url: '/icons/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
       { url: '/icons/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
       { url: '/icons/android-chrome-192x192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icons/android-chrome-512x512.png', sizes: '512x512', type: 'image/png' }
+      { url: '/icons/android-chrome-512x512.png', sizes: '512x512', type: 'image/png' },
+      { url: '/favicon.ico', type: 'image/x-icon', sizes: 'any' }
     ],
+    shortcut: ['/favicon.ico'],
     apple: [
-      { url: '/icons/apple-touch-icon.png', sizes: '180x180' } // Assuming 180x180 for the generic apple-touch-icon.png
+      { url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' } 
     ],
   },
   openGraph: {
