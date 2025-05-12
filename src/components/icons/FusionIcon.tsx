@@ -1,56 +1,15 @@
 import React from 'react';
 
-export const FusionIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => { // Used React.SVGProps directly
+export const FusionIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => {
   return (
     <svg
-      viewBox="0 0 128 128" // Use the original viewBox
+      viewBox="0 0 375 375"
       xmlns="http://www.w3.org/2000/svg"
-      {...props} // Spread props to allow className, size, etc.
+      {...props}
     >
-      {/* Outer circle */}
-      <circle
-        style={{
-          fill: 'none',
-          stroke: 'currentColor', // Use currentColor for inherited color
-          strokeWidth: 16, // Updated stroke width
-          strokeLinejoin: 'bevel',
-          strokeDasharray: 'none',
-          strokeOpacity: 1,
-        }}
-        cx="64.274071" // Updated cx
-        cy="63.5"
-        r="48.438419"
-      />
-      {/* Left dot */}
-      <circle
-        style={{
-          fill: 'currentColor', // Use currentColor
-          fillOpacity: 1,
-          stroke: 'none',
-          strokeWidth: 14, // Updated stroke width
-          strokeLinejoin: 'bevel',
-          strokeDasharray: 'none',
-          strokeOpacity: 1,
-        }}
-        cx="17.769901" // Updated cx
-        cy="63.5"
-        r="17" // Updated r
-      />
-      {/* Right dot */}
-      <circle
-        style={{
-          fill: 'currentColor', // Use currentColor
-          fillOpacity: 1,
-          stroke: 'none',
-          strokeWidth: 14, // Updated stroke width
-          strokeLinejoin: 'bevel',
-          strokeDasharray: 'none',
-          strokeOpacity: 1,
-        }}
-        cx="110.87759" // Updated cx
-        cy="63.5"
-        r="17" // Updated r
-      />
+      <g fill="currentColor">
+        <path d="M35.32 25.422h124.578c7.457 0 13.5 6.043 13.5 13.5v158.894c0 7.457-6.043 13.5-13.5 13.5H35.32c-7.457 0-13.5-6.043-13.5-13.5V38.922c0-7.457 6.043-13.5 13.5-13.5ZM35.32 242.773h124.578a13.503 13.503 0 0 1 13.5 13.5v82.387c0 7.453-6.043 13.5-13.5 13.5H35.32a13.503 13.503 0 0 1-13.5-13.5v-82.387c0-7.453 6.043-13.5 13.5-13.5ZM218.844 25.422h124.574a13.5 13.5 0 0 1 13.5 13.5v82.348c0 7.457-6.043 13.5-13.5 13.5H218.844a13.5 13.5 0 0 1-13.5-13.5V38.922c0-7.457 6.043-13.5 13.5-13.5ZM218.844 163.672h124.574a13.51 13.51 0 0 1 9.547 3.957 13.497 13.497 0 0 1 3.953 9.543v158.926c0 7.457-6.043 13.5-13.5 13.5H218.844a13.5 13.5 0 0 1-13.5-13.5V177.172c0-7.453 6.043-13.5 13.5-13.5Z"/>
+      </g>
     </svg>
   );
 };
