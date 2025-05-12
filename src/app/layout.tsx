@@ -17,9 +17,9 @@ const csgFont = localFont({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://fusion-bridge-dev.up.railway.app'),
+  metadataBase: new URL('https://fusion-bridge-production.up.railway.app'),
   title: 'Fusion',
-  description: 'Scurity integration platform',
+  description: 'Unify. Automate. Protect.',
   manifest: '/manifest.json',
   icons: {
     icon: [
