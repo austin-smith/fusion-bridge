@@ -20,10 +20,20 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import type { PushoverConfig } from '@/data/repositories/service-configurations';
-import type { PushoverGroupInfo } from '@/types/pushover-types';
+import type { PushoverGroupInfo, PushoverGroupUser } from '@/types/pushover-types';
 import { AddPushoverUserModal } from './pushover/add-pushover-user-modal';
 import { toast } from 'sonner';
-import { Eye, EyeOff, Users, RefreshCw, UserPlus, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Eye, EyeOff, Users, RefreshCw, UserPlus, Loader2, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface ServiceConfigFormProps {
   initialConfig: PushoverConfig | null;
@@ -58,6 +68,11 @@ export function ServiceConfigForm({ initialConfig, onTestClick, isEnabled, onEna
   // Modal state
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
 
+  // Remove user state
+  const [isRemovingUser, setIsRemovingUser] = useState(false);
+  const [userToRemove, setUserToRemove] = useState<PushoverGroupUser | null>(null);
+  const [isRemoveConfirmOpen, setIsRemoveConfirmOpen] = useState(false);
+
   useEffect(() => {
     if (formState.success && formState.savedIsEnabled !== undefined) {
       toast.success('Pushover Configuration', { description: formState.message || 'Saved successfully.' });
@@ -72,6 +87,7 @@ export function ServiceConfigForm({ initialConfig, onTestClick, isEnabled, onEna
   const fetchGroupInfo = async () => {
     if (!initialConfig) {
       setGroupInfoError("Pushover must be configured before viewing group users.");
+      setGroupInfo(null);
       return;
     }
 
@@ -106,8 +122,47 @@ export function ServiceConfigForm({ initialConfig, onTestClick, isEnabled, onEna
     setAccordionValue(value);
     
     // If accordion is opening and we don't have group info yet, fetch it
-    if (value === "users" && !groupInfo && !isLoadingGroupInfo) {
+    if (value === "users" && !groupInfo && !isLoadingGroupInfo && initialConfig) {
       fetchGroupInfo();
+    }
+  };
+
+  const openRemoveConfirmDialog = (user: PushoverGroupUser) => {
+    setUserToRemove(user);
+    setIsRemoveConfirmOpen(true);
+  };
+
+  const handleRemoveUser = async () => {
+    if (!userToRemove) return;
+
+    setIsRemovingUser(true);
+    try {
+      const response = await fetch('/api/services/pushover/group-users/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: userToRemove.user, device: userToRemove.device || undefined }),
+      });
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        toast.success('User Removed', {
+          description: `User ${userToRemove.user.substring(0,5)}... successfully removed from group.`,
+        });
+        fetchGroupInfo(); // Refresh list
+      } else {
+        toast.error('Failed to Remove User', {
+          description: data.error || 'An unexpected error occurred.',
+        });
+      }
+    } catch (error) {
+      console.error("Error removing user:", error);
+      toast.error('Network Error', {
+        description: 'Could not connect to the server to remove user.',
+      });
+    } finally {
+      setIsRemovingUser(false);
+      setIsRemoveConfirmOpen(false);
+      setUserToRemove(null);
     }
   };
 
@@ -261,6 +316,7 @@ export function ServiceConfigForm({ initialConfig, onTestClick, isEnabled, onEna
                       <TableHead>User</TableHead>
                       <TableHead>Device</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -281,6 +337,18 @@ export function ServiceConfigForm({ initialConfig, onTestClick, isEnabled, onEna
                               Active
                             </Badge>
                           )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => openRemoveConfirmDialog(user)}
+                            disabled={isRemovingUser}
+                            title="Remove User"
+                            className="hover:text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -330,6 +398,27 @@ export function ServiceConfigForm({ initialConfig, onTestClick, isEnabled, onEna
           fetchGroupInfo(); // Refresh group info after user is added
         }}
       />
+
+      {/* Remove User Confirmation Dialog */}
+      <AlertDialog open={isRemoveConfirmOpen} onOpenChange={setIsRemoveConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action will remove the user{' '}
+              <strong>{userToRemove?.name || userToRemove?.memo || userToRemove?.user.substring(0,8) + '...'}</strong>
+              {userToRemove?.device && ` (device: ${userToRemove.device})`} from the Pushover group.
+              This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRemovingUser}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRemoveUser} disabled={isRemovingUser} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+              {isRemovingUser ? <Loader2 className="h-4 w-4 animate-spin" /> : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </form>
   );
 } 

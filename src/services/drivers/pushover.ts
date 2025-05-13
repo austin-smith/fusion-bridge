@@ -12,7 +12,9 @@ import {
   ValidateUserParams,
   ValidateUserParamsSchema,
   PushoverValidationResponse,
-  PushoverValidationResponseSchema
+  PushoverValidationResponseSchema,
+  RemoveUserFromGroupParams,
+  RemoveUserFromGroupParamsSchema
 } from '../../types/pushover-types';
 
 // Define ONLY the base URL as a constant
@@ -122,7 +124,7 @@ export async function sendPushoverNotification(
   if (!paramValidation.success) {
     return {
       success: false,
-      errorMessage: `Invalid parameters: ${paramValidation.error.errors.map(e => e.message).join(', ')}`,
+      errorMessage: `Invalid parameters: ${paramValidation.error.errors.map((e: { message: string }) => e.message).join(', ')}`,
     };
   }
   
@@ -245,7 +247,7 @@ export async function addPushoverGroupUser(
   if (!paramValidation.success) {
     return {
       success: false,
-      errorMessage: `Invalid parameters: ${paramValidation.error.errors.map(e => e.message).join(', ')}`,
+      errorMessage: `Invalid parameters: ${paramValidation.error.errors.map((e: { message: string }) => e.message).join(', ')}`,
     };
   }
   
@@ -301,6 +303,87 @@ export async function addPushoverGroupUser(
 }
 
 /**
+ * Removes a user from a Pushover group.
+ * 
+ * @param apiToken Your Pushover application's API token.
+ * @param groupKey The Pushover group key.
+ * @param params Object containing the user key and optional device name.
+ * @returns A promise resolving to an object indicating success or failure.
+ */
+export async function removePushoverGroupUser(
+  apiToken: string,
+  groupKey: string,
+  params: RemoveUserFromGroupParams
+): Promise<{
+  success: boolean;
+  errorMessage?: string;
+  errors?: string[];
+  rawResponse?: any;
+}> {
+  if (!apiToken || !groupKey) {
+    return { success: false, errorMessage: 'API token or Group key is missing.' };
+  }
+
+  // Validate parameters with Zod
+  const paramValidation = RemoveUserFromGroupParamsSchema.safeParse(params);
+  if (!paramValidation.success) {
+    return {
+      success: false,
+      errorMessage: `Invalid parameters: ${paramValidation.error.errors.map((e: { message: string }) => e.message).join(', ')}`,
+    };
+  }
+  
+  const validParams = paramValidation.data;
+
+  const payload: any = {
+    token: apiToken,
+    user: validParams.user,
+  };
+  if (validParams.device) payload.device = validParams.device;
+
+  try {
+    // Construct URL using base constant and path
+    const url = `${PUSHOVER_API_BASE_URL}/groups/${groupKey}/remove_user.json`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const responseData = await response.json();
+    
+    // Validate response with Zod (using the generic API response schema)
+    const responseValidation = PushoverApiResponseSchema.safeParse(responseData);
+    
+    if (response.ok && responseData.status === 1) {
+      console.log(`[Pushover Driver] Successfully removed user ${validParams.user.substring(0,5)}... (device: ${validParams.device || 'all'}) from group ${groupKey.substring(0,5)}... Request ID: ${responseData.request}`);
+      return { success: true, rawResponse: responseData };
+    } else {
+      const errorMessages = responseData.errors || [`HTTP Error: ${response.status} - ${response.statusText}`];
+      console.error(`[Pushover Driver] Failed to remove user from group:`, errorMessages, 'Request ID:', responseData.request);
+      return {
+        success: false,
+        errors: errorMessages,
+        errorMessage: `Pushover API Error: ${errorMessages.join(', ')}`,
+        rawResponse: responseData,
+      };
+    }
+  } catch (error) {
+    console.error('[Pushover Driver] Network or unexpected error removing user from group:', error);
+    let errorMessage = 'Network or unexpected error.';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    return { 
+        success: false, 
+        errorMessage: `Failed to remove user from group: ${errorMessage}` 
+    };
+  }
+}
+
+/**
  * Validates a Pushover user/group key.
  * 
  * @param apiToken Your Pushover application's API token.
@@ -322,7 +405,7 @@ export async function validatePushoverUser(
       success: false,
       status: 0,
       request: '',
-      errorMessage: `Invalid parameters: ${paramValidation.error.errors.map(e => e.message).join(', ')}`,
+      errorMessage: `Invalid parameters: ${paramValidation.error.errors.map((e: { message: string }) => e.message).join(', ')}`,
     };
   }
   

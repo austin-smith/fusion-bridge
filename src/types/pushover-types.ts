@@ -107,6 +107,14 @@ export const AddUserToGroupParamsSchema = z.object({
 
 export type AddUserToGroupParams = z.infer<typeof AddUserToGroupParamsSchema>;
 
+// Schema for removing a user from a group
+export const RemoveUserFromGroupParamsSchema = z.object({
+  user: z.string().min(1, "User key is required."),
+  device: z.string().optional(), // If provided, only remove this specific device subscription
+});
+
+export type RemoveUserFromGroupParams = z.infer<typeof RemoveUserFromGroupParamsSchema>;
+
 // Schema for validating a user/group key
 export const ValidateUserParamsSchema = z.object({
   user: z.string().min(1, "User/Group key is required."),
