@@ -167,9 +167,7 @@ async function callYoLinkApi<T>(
     initialConfig.tokenExpiresAt !== updatedConfig.tokenExpiresAt
   ) {
     console.warn(`[callYoLinkApi][${connectorId}] Token updated for ${operationName}. DB UPDATE NEEDED for cfg_enc with:`, JSON.stringify(updatedConfig));
-    // Example: await updateConnectorConfig(connectorId, updatedConfig);
-    // The 'initialConfig' for subsequent high-level operations should ideally use this 'updatedConfig'.
-    // For now, the next call within the same operation chain would need to pass this updatedConfig.
+    await updateConnectorConfig(connectorId, updatedConfig);
   }
 
   if (!newAccessToken) {
@@ -837,19 +835,17 @@ export async function getDeviceState(
     throw new Error('Missing YoLink deviceId or deviceToken for getting state.');
   }
 
-  let method: string;
-  switch (rawDeviceType) {
-    case 'Switch':
-      method = 'Switch.getState';
-      break;
-    case 'Outlet':
-    case 'MultiOutlet': // MultiOutlet uses the Outlet API endpoint for state
-      method = 'Outlet.getState';
-      break;
-    default:
-      console.error(`Unsupported device type for getDeviceState: ${rawDeviceType}`);
-      throw new Error(`Cannot get state for unsupported device type: ${rawDeviceType}`);
+  // --- BEGIN Dynamic Method Construction ---
+  // Validate rawDeviceType to prevent constructing nonsensical method strings
+  if (!rawDeviceType) {
+    console.error(`Invalid rawDeviceType for getDeviceState: '${rawDeviceType}' (must be a non-empty string)`);
+    throw new Error(`Invalid rawDeviceType provided for getDeviceState (must be a non-empty string).`);
   }
+  // Construct the method dynamically
+  // YoLink API methods for getting state are typically in the format "DeviceType.getState"
+  // e.g., "Switch.getState", "DoorSensor.getState", "LeakSensor.getState"
+  const method = `${rawDeviceType}.getState`;
+  // --- END Dynamic Method Construction ---
 
   try {
     // The call to get access token is now handled by callYoLinkApi

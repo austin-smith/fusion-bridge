@@ -9,7 +9,7 @@ import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import type { DeviceWithConnector, PikoServer, Connector } from '@/types';
 import { useFusionStore } from '@/stores/store';
 import type { TypedDeviceInfo, IntermediateState, DisplayState } from '@/lib/mappings/definitions';
-import { DeviceType, BinaryState, ON, OFF, CANONICAL_STATE_MAP } from '@/lib/mappings/definitions';
+import { DeviceType, BinaryState, ContactState, ON, OFF, CANONICAL_STATE_MAP, OFFLINE, ONLINE } from '@/lib/mappings/definitions';
 
 // Helper function to get association count
 async function getAssociationCount(
@@ -381,6 +381,7 @@ async function syncYoLinkDevices(
 ): Promise<number> { // Return only count
 // --- END Modify syncYoLinkDevices signature ---
   let processedCount = 0;
+  let deletedCount = 0; // Added to track deletions
   try {
     console.log(`Syncing YoLink devices metadata for connector ${connectorId}`);
     // Use the new getRefreshedYoLinkToken which returns an object with newAccessToken and updatedConfig
@@ -396,7 +397,48 @@ async function syncYoLinkDevices(
     const yolinkDevicesFromApi = await yolinkDriver.getDeviceList(connectorId, config);
     console.log(`Found ${yolinkDevicesFromApi.length} YoLink devices from API for metadata sync.`);
 
-    if (yolinkDevicesFromApi.length === 0) return 0;
+    const apiDeviceIds = new Set(yolinkDevicesFromApi.map(d => d.deviceId));
+
+    // Fetch existing device IDs from DB for this connector
+    const existingDbDevices = await db
+      .select({ deviceId: devices.deviceId })
+      .from(devices)
+      .where(eq(devices.connectorId, connectorId));
+    
+    const dbDeviceIds = new Set(existingDbDevices.map(d => d.deviceId));
+
+    // Identify and delete stale devices
+    const staleDeviceIds: string[] = [];
+    for (const dbDeviceId of dbDeviceIds) {
+      if (!apiDeviceIds.has(dbDeviceId)) {
+        staleDeviceIds.push(dbDeviceId);
+      }
+    }
+
+    if (staleDeviceIds.length > 0) {
+      console.log(`[API Sync YoLink] Deleting ${staleDeviceIds.length} stale devices for connector ${connectorId}:`, staleDeviceIds);
+      try {
+        await db
+          .delete(devices)
+          .where(and(
+            eq(devices.connectorId, connectorId),
+            inArray(devices.deviceId, staleDeviceIds)
+          ));
+        deletedCount = staleDeviceIds.length;
+        console.log(`[API Sync YoLink] Successfully deleted ${deletedCount} stale devices.`);
+      } catch (deleteError) {
+        console.error(`[API Sync YoLink] Error deleting stale devices for connector ${connectorId}:`, deleteError);
+        // Potentially throw or log this error more formally
+      }
+    }
+
+    if (yolinkDevicesFromApi.length === 0 && staleDeviceIds.length === 0) {
+        console.log(`[API Sync YoLink] No devices from API and no stale devices to delete for connector ${connectorId}.`);
+        return 0; // No devices processed or deleted
+    }
+    
+    // If only deletions happened, and no devices came from API, processedCount remains 0.
+    // The function should reflect the number of upserted devices.
 
     console.log(`Upserting ${yolinkDevicesFromApi.length} YoLink devices metadata...`);
     for (const device of yolinkDevicesFromApi) {
@@ -412,40 +454,92 @@ async function syncYoLinkDevices(
       const stdTypeInfo = getDeviceTypeInfo('yolink', device.type);
       
       let calculatedDisplayState: DisplayState | undefined = undefined;
+      let intermediateState: IntermediateState | undefined = undefined; // Moved up for broader scope
 
-      if ((device.type === 'Switch' || device.type === 'Outlet' || device.type === 'MultiOutlet') && deviceToken) {
+      // --- BEGIN Updated state fetching logic for YoLink devices ---
+      const canFetchState = !!device.token; // Simplified: if there's a device token, attempt to fetch state
+
+      if (canFetchState) {
           try {
-              console.log(`[API Sync] Fetching state for ${device.type} ${device.deviceId}...`);
-              // UPDATED: Pass connectorId as the first argument.
-              // The 'config' here refers to the initial connector config.
-              // getDeviceState will internally manage tokens.
+              console.log(`[API Sync YoLink] Fetching state for ${device.type} ${device.deviceId}...`);
               const stateData = await yolinkDriver.getDeviceState(
-                  connectorId, // Pass connectorId
-                  config,      // Pass the original config
+                  connectorId, 
+                  config,      
                   device.deviceId, 
-                  deviceToken, 
+                  device.token!, // Use non-null assertion as canFetchState guarantees it's a string here
                   device.type
               );
               
-              const rawState = stateData?.state; // e.g., 'open', 'closed'
-              let intermediateState: IntermediateState | undefined = undefined;
-              if (rawState === 'open') {
-                  intermediateState = BinaryState.On;
-              } else if (rawState === 'closed') {
-                  intermediateState = BinaryState.Off;
-              }
-              
-              if (intermediateState) {
-                  calculatedDisplayState = mapIntermediateToDisplay(intermediateState); // Assign here
-                  console.log(`[API Sync] Device ${device.deviceId} fetched state: ${rawState} -> ${intermediateState} -> ${calculatedDisplayState}`);
+              // stateData here corresponds to the 'data' object in the YoLink API response for getState
+              if (typeof stateData?.online === 'boolean' && stateData.online === false) {
+                  calculatedDisplayState = OFFLINE;
+                  console.log(`[API Sync YoLink] Device ${device.deviceId} (${device.type}) reported as explicitly offline by API.`);
               } else {
-                   console.warn(`[API Sync] Unknown raw state '${rawState}' received for ${device.deviceId}`);
+                  // Device is online or online status is not explicitly in stateData root (or stateData.online is true).
+                  // Attempt to find a physical state if one exists.
+                  let rawStateValue: string | undefined = undefined;
+
+                  if (typeof stateData?.state === 'string') {
+                      rawStateValue = stateData.state; // Common for Switch, Outlet
+                  } else if (typeof stateData?.state === 'object' && stateData.state !== null && typeof (stateData.state as any).state === 'string') {
+                      rawStateValue = (stateData.state as any).state; // Common for DoorSensor, nested state
+                  } else if (typeof stateData?.power === 'string') {
+                      rawStateValue = stateData.power; // Some devices might use a top-level 'power' field
+                  }
+                  // Add more common patterns here if observed for other device types
+
+                  if (rawStateValue) {
+                      // We have a rawStateValue, now map it based on our standardized device type
+                      switch (stdTypeInfo.type) { // Use standardized type for mapping
+                          case DeviceType.Switch:
+                          case DeviceType.Outlet:
+                              if (rawStateValue === 'open' || rawStateValue === 'on') {
+                                  intermediateState = BinaryState.On;
+                              } else if (rawStateValue === 'closed' || rawStateValue === 'off') {
+                                  intermediateState = BinaryState.Off;
+                              }
+                              break;
+                          case DeviceType.Sensor: 
+                              if (stdTypeInfo.subtype === 'Contact') { // Standardized subtype
+                                  if (rawStateValue === 'open') {
+                                      intermediateState = ContactState.Open;
+                                  } else if (rawStateValue === 'closed') {
+                                      intermediateState = ContactState.Closed;
+                                  }
+                              }
+                              // Potentially add other sensor subtypes here, e.g., for LeakSensor if its rawStateValue is 'normal'/'alert'
+                              // This part still requires knowing how specific standardized sensor types report raw states.
+                              break;
+                          // Add other DeviceType mappings as needed if their rawStateValues need specific interpretation
+                          // (e.g., DeviceType.Lock might have 'locked'/'unlocked')
+                      }
+
+                      if (intermediateState) {
+                          calculatedDisplayState = mapIntermediateToDisplay(intermediateState);
+                          console.log(`[API Sync YoLink] Device ${device.deviceId} (${device.type}) physical state: ${rawStateValue} -> ${intermediateState} -> ${calculatedDisplayState}`);
+                      } else {
+                           console.warn(`[API Sync YoLink] Unknown or unmappable raw state value '${rawStateValue}' for ${device.deviceId} (${device.type}, standardized: ${stdTypeInfo.type}/${stdTypeInfo.subtype || 'N/A'}).`);
+                      }
+                  } else if (typeof stateData?.online === 'boolean' && stateData.online === true) {
+                      // Device is online, but no specific physical state like open/closed or on/off was found.
+                      // For devices like Hubs, this is normal. Set explicit ONLINE state.
+                      calculatedDisplayState = ONLINE; // Set to ONLINE state
+                      console.log(`[API Sync YoLink] Device ${device.deviceId} (${device.type}) is online, no further distinct physical state found. Marked as ONLINE.`);
+                  } else if (!calculatedDisplayState) { // If not OFFLINE and no state determined from any source
+                      console.warn(`[API Sync YoLink] Could not determine state for ${device.deviceId} (${device.type}) from response:`, stateData);
+                  }
               }
           } catch (stateError) {
-              console.error(`  [Error] Failed to fetch state for ${device.type} ${device.deviceId}:`, stateError instanceof Error ? stateError.message : stateError);
-              // Do not update status if state fetch fails, rely on event processor
+              const errorMessage = stateError instanceof Error ? stateError.message : String(stateError);
+              console.error(`  [Error] Failed to fetch state for ${device.type} ${device.deviceId}:`, errorMessage);
+              // Ensure calculatedDisplayState is not modified here if the API call itself fails.
+              // The status in the DB should not change if we can't reach the API or the device through the API.
+              // If the API was reached but reported an error (e.g. device offline by YoLink error code),
+              // we still don't update status based on an error, only on explicit 'online: false' in a successful response.
+              console.warn(`[API Sync YoLink] State for ${device.deviceId} (${device.type}) will not be updated due to API error during state fetch.`);
           }
       }
+      // --- END Updated state fetching logic ---
 
       const deviceData = {
         deviceId: device.deviceId,
@@ -495,9 +589,9 @@ async function syncYoLinkDevices(
         console.error(`  [Error] Failed YoLink upsert for deviceId ${deviceData.deviceId}:`, upsertError);
       }
     }
-    console.log(`YoLink sync finished for ${connectorId}. Processed ${processedCount} devices.`);
+    console.log(`YoLink sync finished for ${connectorId}. Processed ${processedCount} devices. Deleted ${deletedCount} stale devices.`);
     // --- BEGIN Return only count ---
-    return processedCount;
+    return processedCount; // Consider if the return value should reflect deletions too
     // --- END Return only count ---
   } catch (error: unknown) {
     console.error(`Error syncing YoLink devices metadata for ${connectorId}:`, error);
@@ -510,6 +604,7 @@ async function syncYoLinkDevices(
 */
 async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfig): Promise<number> {
   let processedDeviceCount = 0;
+  let deletedCount = 0; // Added to track deletions
   try {
     console.log(`Syncing Piko data for connector ${connectorId} (Type: ${config.type})`);
 
@@ -566,6 +661,45 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
     const pikoDevicesFromApi = await pikoDriver.getSystemDevices(connectorId);
     console.log(`Found ${pikoDevicesFromApi.length} Piko devices.`);
 
+    const apiDeviceIds = new Set(pikoDevicesFromApi.map(d => d.id));
+
+    // Fetch existing device IDs from DB for this connector
+    const existingDbDevices = await db
+      .select({ deviceId: devices.deviceId })
+      .from(devices)
+      .where(eq(devices.connectorId, connectorId));
+    
+    const dbDeviceIds = new Set(existingDbDevices.map(d => d.deviceId));
+
+    // Identify and delete stale devices
+    const staleDeviceIds: string[] = [];
+    for (const dbDeviceId of dbDeviceIds) {
+      if (!apiDeviceIds.has(dbDeviceId)) {
+        staleDeviceIds.push(dbDeviceId);
+      }
+    }
+
+    if (staleDeviceIds.length > 0) {
+      console.log(`[API Sync Piko] Deleting ${staleDeviceIds.length} stale devices for connector ${connectorId}:`, staleDeviceIds);
+      try {
+        await db
+          .delete(devices)
+          .where(and(
+            eq(devices.connectorId, connectorId),
+            inArray(devices.deviceId, staleDeviceIds)
+          ));
+        deletedCount = staleDeviceIds.length;
+        console.log(`[API Sync Piko] Successfully deleted ${deletedCount} stale devices.`);
+      } catch (deleteError) {
+        console.error(`[API Sync Piko] Error deleting stale devices for connector ${connectorId}:`, deleteError);
+      }
+    }
+    
+    if (pikoDevicesFromApi.length === 0 && staleDeviceIds.length === 0) {
+        console.log(`[API Sync Piko] No devices from API and no stale devices to delete for connector ${connectorId}.`);
+        return 0; 
+    }
+
     if (pikoDevicesFromApi.length > 0) {
       console.log(`Upserting ${pikoDevicesFromApi.length} Piko devices...`);
       for (const device of pikoDevicesFromApi) {
@@ -614,7 +748,7 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
       }
     }
 
-    console.log(`Piko device sync finished for ${connectorId}. Processed: ${processedDeviceCount}`);
+    console.log(`Piko device sync finished for ${connectorId}. Processed: ${processedDeviceCount}. Deleted: ${deletedCount}`);
     return processedDeviceCount;
 
   } catch (error: unknown) {
@@ -630,13 +764,51 @@ async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfi
  */
 async function syncGeneaDevices(connectorId: string, config: geneaDriver.GeneaConfig): Promise<number> {
   let processedCount = 0;
+  let deletedCount = 0; // Added to track deletions
   try {
     console.log(`Syncing Genea devices for connector ${connectorId}`);
     // Config is already parsed and validated in the main POST handler
     const geneaDoorsFromApi = await geneaDriver.getGeneaDoors(config);
     console.log(`Found ${geneaDoorsFromApi.length} Genea doors from API.`);
 
-    if (geneaDoorsFromApi.length === 0) return 0;
+    const apiDeviceIds = new Set(geneaDoorsFromApi.map(d => d.uuid));
+
+    // Fetch existing device IDs from DB for this connector
+    const existingDbDevices = await db
+      .select({ deviceId: devices.deviceId })
+      .from(devices)
+      .where(eq(devices.connectorId, connectorId));
+
+    const dbDeviceIds = new Set(existingDbDevices.map(d => d.deviceId));
+
+    // Identify and delete stale devices
+    const staleDeviceIds: string[] = [];
+    for (const dbDeviceId of dbDeviceIds) {
+      if (!apiDeviceIds.has(dbDeviceId)) {
+        staleDeviceIds.push(dbDeviceId);
+      }
+    }
+    
+    if (staleDeviceIds.length > 0) {
+      console.log(`[API Sync Genea] Deleting ${staleDeviceIds.length} stale devices for connector ${connectorId}:`, staleDeviceIds);
+      try {
+        await db
+          .delete(devices)
+          .where(and(
+            eq(devices.connectorId, connectorId),
+            inArray(devices.deviceId, staleDeviceIds)
+          ));
+        deletedCount = staleDeviceIds.length;
+        console.log(`[API Sync Genea] Successfully deleted ${deletedCount} stale devices.`);
+      } catch (deleteError) {
+        console.error(`[API Sync Genea] Error deleting stale devices for connector ${connectorId}:`, deleteError);
+      }
+    }
+
+    if (geneaDoorsFromApi.length === 0 && staleDeviceIds.length === 0) {
+        console.log(`[API Sync Genea] No devices from API and no stale devices to delete for connector ${connectorId}.`);
+        return 0;
+    }
 
     console.log(`Upserting ${geneaDoorsFromApi.length} Genea doors...`);
     for (const door of geneaDoorsFromApi) {
@@ -689,7 +861,7 @@ async function syncGeneaDevices(connectorId: string, config: geneaDriver.GeneaCo
         console.error(`  [Error] Failed Genea door upsert for deviceId ${deviceData.deviceId}:`, upsertError);
       }
     }
-    console.log(`Genea Sync finished for ${connectorId}. Processed: ${processedCount}`);
+    console.log(`Genea Sync finished for ${connectorId}. Processed: ${processedCount}. Deleted: ${deletedCount}`);
     return processedCount;
   } catch (error: unknown) {
     console.error(`Error syncing Genea devices for connector ${connectorId}:`, error);

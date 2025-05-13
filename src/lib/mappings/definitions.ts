@@ -140,6 +140,12 @@ export const MOTION_DETECTED = 'Motion Detected';
 export const NO_VIBRATION = 'No Vibration';
 export const VIBRATION_DETECTED = 'Vibration Detected';
 
+export const OFFLINE = 'Offline';
+export const ONLINE = 'Online';
+
+export const RECORDING = 'Recording';
+export const UNAUTHORIZED = 'Unauthorized';
+
 // --- Device State Types ---
 // Define types using the constants instead of re-writing string literals
 
@@ -149,9 +155,15 @@ export type ContactSensorState = typeof OPEN | typeof CLOSED;
 export type LeakSensorState = typeof DRY | typeof LEAK_DETECTED;
 export type MotionSensorState = typeof NO_MOTION | typeof MOTION_DETECTED;
 export type VibrationSensorState = typeof NO_VIBRATION | typeof VIBRATION_DETECTED;
+export type OfflineStateType = typeof OFFLINE;
+export type OnlineStateType = typeof ONLINE;
+export type RecordingStateType = typeof RECORDING;
+export type UnauthorizedStateType = typeof UNAUTHORIZED;
 
 // Union of all possible display states
-export type DisplayState = LockState | OnOffState | ContactSensorState | LeakSensorState | MotionSensorState | VibrationSensorState;
+// --- BEGIN Update DisplayState Union ---
+export type DisplayState = LockState | OnOffState | ContactSensorState | LeakSensorState | MotionSensorState | VibrationSensorState | OfflineStateType | OnlineStateType | RecordingStateType | UnauthorizedStateType;
+// --- END Update DisplayState Union ---
 
 // --- CANONICAL STATE MAPPINGS ---
 // The single source of truth for enum-to-display-string mappings

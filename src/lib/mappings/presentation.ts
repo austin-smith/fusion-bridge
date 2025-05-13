@@ -6,7 +6,7 @@ import {
     DisplayState,
     CANONICAL_STATE_MAP,
     // Import state constants for icon mapping
-    LOCKED, UNLOCKED, ON, OFF, OPEN, CLOSED, LEAK_DETECTED, DRY, MOTION_DETECTED, NO_MOTION, VIBRATION_DETECTED, NO_VIBRATION,
+    LOCKED, UNLOCKED, ON, OFF, OPEN, CLOSED, LEAK_DETECTED, DRY, MOTION_DETECTED, NO_MOTION, VIBRATION_DETECTED, NO_VIBRATION, OFFLINE, ONLINE, RECORDING, UNAUTHORIZED,
     EventCategory,
     ArmedState
 } from './definitions';
@@ -15,7 +15,7 @@ import {
     // Device type icons
     Siren, Cctv, Warehouse, Combine, Router, Cable, Lock, Power, Radio, Droplets, ToggleLeft, Thermometer, HelpCircle,
     // State-specific icons
-    Unlock, PowerOff, DoorOpen, DoorClosed, AlertTriangle, ShieldCheck, Activity,
+    Unlock, PowerOff, DoorOpen, DoorClosed, AlertTriangle, ShieldCheck, Activity, WifiOff, Wifi, Ban, Video,
     // Event category icons
     KeyRound, PersonStanding,
     // ADD: Armed State Icons
@@ -93,6 +93,10 @@ const nameToIconComponentMap: Record<string, LucideIcon> = {
   ToggleLeft: LucideIcons.ToggleLeft,
   Thermometer: LucideIcons.Thermometer,
   HelpCircle: LucideIcons.HelpCircle,
+  WifiOff: LucideIcons.WifiOff,
+  Wifi: LucideIcons.Wifi,
+  Video: LucideIcons.Video,
+  Ban: LucideIcons.Ban,
   // Add other icons used elsewhere if needed
 };
 
@@ -117,6 +121,10 @@ const displayStateIconMap: Partial<Record<DisplayState, LucideIcon>> = {
     [NO_MOTION]: ShieldCheck,
     [VIBRATION_DETECTED]: AlertTriangle,
     [NO_VIBRATION]: ShieldCheck,
+    [OFFLINE]: WifiOff,
+    [ONLINE]: Wifi,
+    [RECORDING]: Video,
+    [UNAUTHORIZED]: Ban,
 };
 
 // Helper function to get display state icon component
