@@ -601,7 +601,7 @@ export function ActionItem({
                                                   <SelectContent>
                                                       <SelectItem value={ALL_USERS_PUSHOVER_VALUE}>
                                                           <div className="flex flex-col items-start text-left">
-                                                              <span className="font-medium">All Users (Group Default)</span>
+                                                              <span className="font-medium">All Users</span>
                                                               <span className="text-xs text-muted-foreground">Send to all users in the configured group.</span>
                                                           </div>
                                                       </SelectItem>
