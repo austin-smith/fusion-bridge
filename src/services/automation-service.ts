@@ -493,10 +493,11 @@ async function executeActionWithRetry(
             case 'sendPushNotification': {
                 const params = action.params as z.infer<typeof SendPushNotificationActionParamsSchema>;
                 
-                // Resolve tokens for title and message
+                // Resolve tokens for title, message, and target user key
                 const resolvedTemplates = resolveTokens(params, stdEvent, tokenFactContext) as z.infer<typeof SendPushNotificationActionParamsSchema>;
                 const resolvedTitle = resolvedTemplates.titleTemplate;
                 const resolvedMessage = resolvedTemplates.messageTemplate; // Message is required by schema
+                const resolvedTargetUserKey = resolvedTemplates.targetUserKeyTemplate;
                 
                 // Fetch Pushover service configuration
                 const pushoverConfig = await getPushoverConfiguration();
@@ -512,6 +513,11 @@ async function executeActionWithRetry(
                     throw new Error(`Pushover configuration is incomplete (missing API Token or Group Key).`);
                 }
                 
+                // Determine which recipient key to use - specific user or default group
+                const recipientKey = (resolvedTargetUserKey && resolvedTargetUserKey !== '__all__') 
+                                        ? resolvedTargetUserKey 
+                                        : pushoverConfig.groupKey;
+                
                 // Prepare parameters for the Pushover driver
                 const pushoverParams: ResolvedPushoverMessageParams = {
                      message: resolvedMessage, // Required
@@ -520,8 +526,8 @@ async function executeActionWithRetry(
                      ...(params.priority !== 0 && { priority: params.priority }),
                  };
                 
-                // Call the Pushover driver
-                const result = await sendPushoverNotification(pushoverConfig.apiToken, pushoverConfig.groupKey, pushoverParams);
+                // Call the Pushover driver with the appropriate recipient key
+                const result = await sendPushoverNotification(pushoverConfig.apiToken, recipientKey, pushoverParams);
                 
                 // Check result and throw on failure for retry
                 if (!result.success) {
@@ -529,7 +535,7 @@ async function executeActionWithRetry(
                     throw new Error(`Failed to send Pushover notification: ${errorDetail}`);
                 }
                 
-                console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Successfully sent Pushover notification.`);
+                console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Successfully sent Pushover notification to ${resolvedTargetUserKey ? 'user key ' + resolvedTargetUserKey.substring(0, 7) + '...' : 'all users in group'}.`);
                 break;
             }
             // --- End Add Case --- 

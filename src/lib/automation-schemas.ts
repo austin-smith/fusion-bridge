@@ -149,6 +149,8 @@ export const SendPushNotificationActionParamsSchema = z.object({
   // No targetConnectorId needed
   titleTemplate: z.string().optional(),
   messageTemplate: z.string().min(1, { message: "Message is required" }),
+  // Optional target user key - if not provided, notification goes to all users in group
+  targetUserKeyTemplate: z.string().optional(),
   priority: z.union([
     z.literal(-2),
     z.literal(-1),

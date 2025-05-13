@@ -249,13 +249,13 @@ export default function AutomationForm({
                     timeWindowSecondsAfter: restCond.timeWindowSecondsAfter !== undefined ? Number(restCond.timeWindowSecondsAfter) : undefined,
                 };
             }) || [],
-            conditions: ((conditionNode: any): any => {
+            conditions: (function cleanConditionNode(conditionNode: any): any {
                 if (!conditionNode) return conditionNode;
                 const { _internalId, ...rest } = conditionNode;
                 if (rest.all) {
-                    rest.all = rest.all.map((node: any) => (conditionNode as any)(node));
+                    rest.all = rest.all.map((node: any) => cleanConditionNode(node));
                 } else if (rest.any) {
-                    rest.any = rest.any.map((node: any) => (conditionNode as any)(node));
+                    rest.any = rest.any.map((node: any) => cleanConditionNode(node));
                 }
                 return rest;
             })(data.config.conditions),
@@ -412,7 +412,7 @@ export default function AutomationForm({
                     </Card>
 
                     <div className="flex justify-end space-x-2 mt-8">
-                        <Button type="submit" disabled={isLoading || !form.formState.isDirty || !form.formState.isValid}>
+                        <Button type="submit" disabled={isLoading || !form.formState.isValid}>
                             {isLoading ? 'Saving...' : (initialData.id === 'new' ? 'Create Automation' : 'Save Changes')}
                         </Button>
                     </div>

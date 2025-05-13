@@ -109,7 +109,23 @@ export const ACTION_TYPE_INFO: Record<AutomationActionType, ActionTypeInfo> = {
     iconColorClass: 'text-orange-600 dark:text-orange-400',
     bgColorClass: 'bg-orange-50/40 dark:bg-orange-950/20',
     borderColorClass: 'border-orange-200 dark:border-orange-800',
-    formatter: () => '→ via Pushover Service'
+    formatter: (params) => {
+      if (!params) return '→ via Pushover Service';
+      
+      // Check if a specific user is targeted
+      const targetUserKey = params.targetUserKeyTemplate;
+      
+      if (targetUserKey) {
+        // If a specific user key is set, display it (trimmed for UI clarity)
+        const displayKey = typeof targetUserKey === 'string' && targetUserKey.length > 10 
+          ? `${targetUserKey.substring(0, 7)}...` 
+          : targetUserKey;
+        return `→ to user ${displayKey} via Pushover`;
+      }
+      
+      // Default case - sending to all users in the group
+      return '→ to all users via Pushover';
+    }
   }
 };
 

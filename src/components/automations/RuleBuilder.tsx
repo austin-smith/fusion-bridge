@@ -289,7 +289,7 @@ export function RuleBuilder({
         if (!currentIsGroup) return;
         const oldType = newType === 'all' ? 'any' : 'all';
         const conditions = value[oldType] || [];
-        onChange({ [newType]: conditions });
+        onChange({ _internalId: value._internalId, [newType]: conditions });
     };
 
     const handleItemChange = (index: number, groupType: 'all' | 'any', currentConditions: RuleNodeWithId[]) => (updatedItem: RuleNodeWithId) => {

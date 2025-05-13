@@ -19,7 +19,7 @@ import {
     FormLabel,
     FormMessage,
 } from "@/components/ui/form";
-import { Trash2, HelpCircle } from 'lucide-react';
+import { Trash2, HelpCircle, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
     AutomationAction,
@@ -40,6 +40,9 @@ import { priorityOptions } from '@/lib/pushover-constants'; // Adjust path as ne
 import type { connectors } from '@/data/db/schema';
 import type { z } from 'zod'; // Import z
 import type { AutomationFormValues } from '../AutomationForm'; // Adjust path as needed
+
+// --- Add constant for the "All Users" value ---
+const ALL_USERS_PUSHOVER_VALUE = '__all__';
 
 type ConnectorSelect = typeof connectors.$inferSelect;
 type TargetDeviceOption = {
@@ -99,6 +102,37 @@ export function ActionItem({
   const actionType = form.watch(`config.actions.${index}.type`);
   const actionParams = form.watch(`config.actions.${index}.params`);
 
+  // State for user selection dropdown (moved to top level)
+  const [groupUsers, setGroupUsers] = React.useState<Array<{ user: string; memo: string; device?: string | null }>>([]);
+  const [isFetchingUsers, setIsFetchingUsers] = React.useState(false);
+  const [fetchUsersError, setFetchUsersError] = React.useState<string | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
+
+  // Fetch users when dropdown is opened (moved to top level)
+  React.useEffect(() => {
+    if (actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && isDropdownOpen && groupUsers.length === 0 && !isFetchingUsers) {
+      const fetchUsers = async () => {
+        setIsFetchingUsers(true);
+        setFetchUsersError(null);
+        try {
+          const response = await fetch('/api/services/pushover/group-users/list');
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Failed to fetch users: ${response.statusText}`);
+          }
+          const users = await response.json();
+          setGroupUsers(users);
+        } catch (error) {
+          console.error("Error fetching Pushover group users:", error);
+          setFetchUsersError(error instanceof Error ? error.message : "An unknown error occurred");
+        } finally {
+          setIsFetchingUsers(false);
+        }
+      };
+      fetchUsers();
+    }
+  }, [actionType, isDropdownOpen, groupUsers.length, isFetchingUsers]);
+
   const actionTitle = getActionTitle(actionType);
   const ActionIcon = () => {
     const { icon: IconComponent, className } = getActionIconProps(actionType);
@@ -126,6 +160,7 @@ export function ActionItem({
         newActionParams = { 
             titleTemplate: '',
             messageTemplate: '',
+            targetUserKeyTemplate: ALL_USERS_PUSHOVER_VALUE,
             priority: 0
         };
     } else { 
@@ -523,6 +558,82 @@ export function ActionItem({
                                           <FormMessage />
                                       </FormItem>
                                   )}
+                              />
+                              
+                              <FormField 
+                                  control={form.control}
+                                  name={`config.actions.${index}.params.targetUserKeyTemplate`}
+                                  render={({ field, fieldState }) => {
+                                      // Find selected user info for display
+                                      const currentSelectedUser = (field.value && field.value !== ALL_USERS_PUSHOVER_VALUE) ? groupUsers.find(u => u.user === field.value) : null;
+                                      
+                                      return (
+                                          <FormItem>
+                                              <FormLabel className="flex items-center">
+                                                  <Users className="h-4 w-4 mr-1.5 text-muted-foreground" /> Target User
+                                              </FormLabel>
+                                              <Select
+                                                  onValueChange={field.onChange}
+                                                  value={field.value || ALL_USERS_PUSHOVER_VALUE} 
+                                                  disabled={isLoading || isFetchingUsers}
+                                                  open={isDropdownOpen}
+                                                  onOpenChange={setIsDropdownOpen}
+                                              >
+                                                  <FormControl>
+                                                      <SelectTrigger className={cn("text-left w-[220px]", fieldState.error && 'border-destructive')}>
+                                                          <SelectValue placeholder={
+                                                              isFetchingUsers ? "Loading users..." : 
+                                                              fetchUsersError ? "Error loading users" : 
+                                                              "Select target user..."
+                                                          }>
+                                                              {!field.value || field.value === ALL_USERS_PUSHOVER_VALUE
+                                                                  ? <span className="text-sm">All Users</span>
+                                                                  : <span className="text-sm">
+                                                                        {currentSelectedUser 
+                                                                            ? (currentSelectedUser.memo || `User Key: ${currentSelectedUser.user.substring(0, 7)}...`) 
+                                                                            : `Key: ${(field.value || '').substring(0, 7)}...`
+                                                                        }
+                                                                    </span>
+                                                              }
+                                                          </SelectValue>
+                                                      </SelectTrigger>
+                                                  </FormControl>
+                                                  <SelectContent>
+                                                      <SelectItem value={ALL_USERS_PUSHOVER_VALUE}>
+                                                          <div className="flex flex-col items-start text-left">
+                                                              <span className="font-medium">All Users (Group Default)</span>
+                                                              <span className="text-xs text-muted-foreground">Send to all users in the configured group.</span>
+                                                          </div>
+                                                      </SelectItem>
+                                                      {groupUsers.length > 0 && groupUsers.map(user => (
+                                                          <SelectItem key={user.user} value={user.user}>
+                                                              <div className="flex flex-col items-start text-left">
+                                                                  <span className="font-medium">{user.memo || `User Key: ${user.user.substring(0, 7)}...`}</span>
+                                                                  {user.memo && <span className="text-xs text-muted-foreground">Key: {user.user.substring(0, 7)}...</span>}
+                                                                  {user.device && <span className="text-xs text-muted-foreground">Device: {user.device}</span>}
+                                                              </div>
+                                                          </SelectItem>
+                                                      ))}
+                                                      {isFetchingUsers && (
+                                                          <div className="flex items-center justify-center p-2">
+                                                              <span className="text-sm text-muted-foreground">Loading users...</span>
+                                                          </div>
+                                                      )}
+                                                      {fetchUsersError && (
+                                                          <div className="p-2 text-sm text-destructive">
+                                                              Error: {fetchUsersError}
+                                                          </div>
+                                                      )}
+                                                  </SelectContent>
+                                              </Select>
+                                              {fetchUsersError && <FormMessage className="text-destructive">{fetchUsersError}</FormMessage>}
+                                              <FormDescription className={descriptionStyles}>
+                                                  Select a specific user to send to, or leave empty to send to all users in the group.
+                                              </FormDescription>
+                                              <FormMessage />
+                                          </FormItem>
+                                      );
+                                  }}
                               />
 
                               <FormField 
