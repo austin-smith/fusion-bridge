@@ -18,6 +18,12 @@ import { Engine } from 'json-rules-engine';
 import type { JsonRuleCondition, JsonRuleGroup } from '@/lib/automation-schemas'; // Import rule types
 import { requestDeviceStateChange } from '@/lib/device-actions';
 import { ActionableState } from '@/lib/mappings/definitions';
+// Import Pushover config repository and driver
+import { getPushoverConfiguration } from '@/data/repositories/service-configurations';
+import { sendPushoverNotification } from '@/services/drivers/pushover';
+import type { ResolvedPushoverMessageParams } from '@/types/pushover-types';
+// Import the new action schema
+import type { SendPushNotificationActionParamsSchema } from '@/lib/automation-schemas';
 
 // --- Moved Type Definition Earlier ---
 // Define structure for trigger device context, including nested location
@@ -169,6 +175,15 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
         // --- End Fetch Source Device ---
 
         for (const rule of allEnabledAutomations) {
+            if (rule.locationScopeId) {
+                const eventLocationId = sourceDeviceContext?.area?.location?.id;
+                if (rule.locationScopeId !== eventLocationId) {
+                    console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Event from location '${eventLocationId || 'unknown'}' is outside rule's scope '${rule.locationScopeId}'. Skipping.`);
+                    continue; 
+                }
+                console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Event location '${eventLocationId}' matches rule scope '${rule.locationScopeId}'. Proceeding.`);
+            }
+
             let ruleConfig: AutomationConfig;
             try {
                 // Parse the config using the UPDATED schema
@@ -474,6 +489,50 @@ async function executeActionWithRetry(
                 console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Successfully requested state change for ${params.targetDeviceInternalId} to ${params.targetState}`);
                 break;
             }
+            // --- Add Send Push Notification Case --- 
+            case 'sendPushNotification': {
+                const params = action.params as z.infer<typeof SendPushNotificationActionParamsSchema>;
+                
+                // Resolve tokens for title and message
+                const resolvedTemplates = resolveTokens(params, stdEvent, tokenFactContext) as z.infer<typeof SendPushNotificationActionParamsSchema>;
+                const resolvedTitle = resolvedTemplates.titleTemplate;
+                const resolvedMessage = resolvedTemplates.messageTemplate; // Message is required by schema
+                
+                // Fetch Pushover service configuration
+                const pushoverConfig = await getPushoverConfiguration();
+                
+                // Validate configuration
+                if (!pushoverConfig) {
+                    throw new Error(`Pushover service is not configured.`);
+                }
+                if (!pushoverConfig.isEnabled) {
+                    throw new Error(`Pushover service is disabled.`);
+                }
+                if (!pushoverConfig.apiToken || !pushoverConfig.groupKey) {
+                    throw new Error(`Pushover configuration is incomplete (missing API Token or Group Key).`);
+                }
+                
+                // Prepare parameters for the Pushover driver
+                const pushoverParams: ResolvedPushoverMessageParams = {
+                     message: resolvedMessage, // Required
+                     title: resolvedTitle, // Now always present
+                     // Send priority only if it's not the default (0)
+                     ...(params.priority !== 0 && { priority: params.priority }),
+                 };
+                
+                // Call the Pushover driver
+                const result = await sendPushoverNotification(pushoverConfig.apiToken, pushoverConfig.groupKey, pushoverParams);
+                
+                // Check result and throw on failure for retry
+                if (!result.success) {
+                    const errorDetail = result.errors?.join(', ') || result.errorMessage || 'Unknown Pushover API error';
+                    throw new Error(`Failed to send Pushover notification: ${errorDetail}`);
+                }
+                
+                console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Successfully sent Pushover notification.`);
+                break;
+            }
+            // --- End Add Case --- 
             default: {
                 const _exhaustiveCheck: never = action;
                 console.warn(`[Rule ${rule.id}] Unknown or unhandled action type: ${(_exhaustiveCheck as any)?.type}`);

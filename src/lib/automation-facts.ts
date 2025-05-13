@@ -39,7 +39,7 @@ export const OPERATOR_DISPLAY_MAP: Record<z.infer<typeof JsonRulesEngineOperator
 type FactValueInputType = 'select' | 'text' | 'number' | 'multiselect';
 
 // Define structure for providing options for 'select' or 'multiselect' inputs
-interface FactValueOption {
+export interface FactValueOption {
     value: string | number;
     label: string;
 }
@@ -53,8 +53,9 @@ export interface AutomationFact {
     operators: z.infer<typeof JsonRulesEngineOperatorsSchema>[]; // List of compatible operators
     valueInputType: FactValueInputType; // How the user provides the value
     valueOptions?: FactValueOption[]; // Options for 'select' or 'multiselect'
-    // Add placeholder/helper text if needed
-    // placeholder?: string; 
+    
+    // NEW: Simplified property for dynamic select options from entity lists
+    selectableEntityType?: 'Device' | 'Area' | 'Location';
 }
 
 // Helper function to convert enum/map to FactValueOption[]
@@ -66,7 +67,7 @@ const mapToOptions = (map: Record<string, string>): FactValueOption[] => {
 };
 
 // --- Define the available facts ---
-export const AVAILABLE_AUTOMATION_FACTS = [
+export const AVAILABLE_AUTOMATION_FACTS: AutomationFact[] = [
     // --- Event Facts ---
     {
         id: 'event.category',
@@ -110,10 +111,18 @@ export const AVAILABLE_AUTOMATION_FACTS = [
         dataType: 'string', // Display states are strings
         operators: stringOperators,
         valueInputType: 'text', // Or maybe 'select' if we define all possible display states?
-        // valueOptions: undefined, // Could potentially list all known display states here
     },
 
     // --- Device Facts ---
+    {
+        id: 'device.id', // This fact means the condition value will be a device ID
+        label: 'Device',  // User-friendly label for the fact itself (e.g., user selects "Device IS X")
+        group: 'Device',
+        dataType: 'string', // The ID is a string
+        operators: stringOperators, // Compare the ID with 'equal', 'notEqual', 'in', etc.
+        valueInputType: 'select',   // The UI should show a dropdown
+        selectableEntityType: 'Device', // Populate dropdown with Devices
+    },
     {
         id: 'device.name',
         label: 'Device Name',
@@ -129,8 +138,7 @@ export const AVAILABLE_AUTOMATION_FACTS = [
         dataType: 'enum',
         operators: enumOperators,
         valueInputType: 'select',
-        // Use DeviceType enum keys as values and labels directly for now
-        valueOptions: Object.values(DeviceType).map(value => ({ value, label: value })),
+        valueOptions: Object.values(DeviceType).map(value => ({ value, label: value })).sort((a,b) => a.label.localeCompare(b.label)),
     },
     {
         id: 'device.subtype',
@@ -140,7 +148,7 @@ export const AVAILABLE_AUTOMATION_FACTS = [
         operators: enumOperators,
         valueInputType: 'select',
          // Use DeviceSubtype enum keys as values and labels
-        valueOptions: Object.values(DeviceSubtype).map(value => ({ value, label: value })),
+        valueOptions: Object.values(DeviceSubtype).map(value => ({ value, label: value })).sort((a,b) => a.label.localeCompare(b.label)),
     },
     {
         id: 'device.externalId',
@@ -150,15 +158,6 @@ export const AVAILABLE_AUTOMATION_FACTS = [
         operators: stringOperators,
         valueInputType: 'text',
     },
-     {
-        id: 'device.id', // Our internal UUID
-        label: 'Device Internal ID',
-        group: 'Device',
-        dataType: 'string',
-        operators: stringOperators,
-        valueInputType: 'text',
-    },
-
 
     // --- Connector Facts ---
     {
@@ -173,12 +172,13 @@ export const AVAILABLE_AUTOMATION_FACTS = [
 
     // --- Area Facts ---
     {
-        id: 'area.id',
-        label: 'Area ID',
+        id: 'area.id', 
+        label: 'Area',
         group: 'Area',
         dataType: 'string',
         operators: stringOperators,
-        valueInputType: 'text', // Or select if area list is available
+        valueInputType: 'select',
+        selectableEntityType: 'Area',
     },
     {
         id: 'area.name',
@@ -199,22 +199,23 @@ export const AVAILABLE_AUTOMATION_FACTS = [
     },
 
     // --- Location Facts (Placeholder) ---
-    // {
-    //     id: 'location.id',
-    //     label: 'Location ID',
-    //     group: 'Location',
-    //     dataType: 'string',
-    //     operators: stringOperators,
-    //     valueInputType: 'text', // Or select
-    // },
-    // {
-    //     id: 'location.name',
-    //     label: 'Location Name',
-    //     group: 'Location',
-    //     dataType: 'string',
-    //     operators: stringOperators,
-    //     valueInputType: 'text',
-    // },
+    {
+        id: 'location.id',
+        label: 'Location',
+        group: 'Location',
+        dataType: 'string',
+        operators: stringOperators,
+        valueInputType: 'select',
+        selectableEntityType: 'Location',
+    },
+    {
+        id: 'location.name',
+        label: 'Location Name',
+        group: 'Location',
+        dataType: 'string',
+        operators: stringOperators,
+        valueInputType: 'text',
+    },
 
 ] as const; // --- Apply 'as const' directly to the array literal ---
 

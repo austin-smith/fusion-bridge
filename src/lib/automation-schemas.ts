@@ -144,6 +144,21 @@ export const SetDeviceStateActionParamsSchema = z.object({
 });
 // --- END Add SetDeviceStateActionParamsSchema ---
 
+// --- BEGIN Add SendPushNotificationActionParamsSchema ---
+export const SendPushNotificationActionParamsSchema = z.object({
+  // No targetConnectorId needed
+  titleTemplate: z.string().optional(),
+  messageTemplate: z.string().min(1, { message: "Message is required" }),
+  priority: z.union([
+    z.literal(-2),
+    z.literal(-1),
+    z.literal(0),
+    z.literal(1),
+    z.literal(2)
+  ]).default(0),
+});
+// --- END Add SendPushNotificationActionParamsSchema ---
+
 // Schema for a single action within an automation
 // Using discriminatedUnion allows easy extension with new action types later
 export const AutomationActionSchema = z.discriminatedUnion("type", [
@@ -163,6 +178,11 @@ export const AutomationActionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("setDeviceState"),
     params: SetDeviceStateActionParamsSchema
+  }),
+  // --- Add new sendPushNotification action type ---
+  z.object({
+    type: z.literal("sendPushNotification"),
+    params: SendPushNotificationActionParamsSchema
   }),
   // Add future action types here, e.g.:
   // z.object({ type: z.literal("sendNotification"), params: SendNotificationParamsSchema }),

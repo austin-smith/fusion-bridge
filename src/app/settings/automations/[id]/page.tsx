@@ -1,17 +1,18 @@
 import React from 'react';
 import { db } from '@/data/db';
-import { automations, connectors, devices } from '@/data/db/schema';
+import { automations, connectors, devices, locations, areas } from '@/data/db/schema';
 import { eq, inArray, asc } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import AutomationForm from '@/components/automations/AutomationForm';
 import type { AutomationConfig, AutomationAction, TemporalCondition } from '@/lib/automation-schemas';
 import { deviceIdentifierMap } from '@/lib/mappings/identification';
 import type { MultiSelectOption } from '@/components/ui/multi-select-combobox';
-import { DeviceType, DeviceSubtype } from '@/lib/mappings/definitions';
+import { DeviceType, DeviceSubtype, ArmedState } from '@/lib/mappings/definitions';
 import type { Connector } from '@/lib/types';
 import { getDeviceTypeIconName } from '@/lib/mappings/presentation';
 import { Separator } from "@/components/ui/separator";
 import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions";
+import type { Location, Area } from '@/types';
 
 // Type definition for the data needed by this page/form
 // Should align with what getAutomationData returns and AutomationForm expects
@@ -159,19 +160,81 @@ async function getAvailableTargetDevices() {
             standardizedDeviceType: true,
             type: true 
         },
+        with: {
+            areaDevices: {
+                columns: {
+                    areaId: true
+                }
+            }
+        },
         where: inArray(devices.type, rawTypesArray),
         orderBy: [asc(devices.name)]
     });
-    const mappedDevices = actionableDbDevices.map((d: typeof actionableDbDevices[number]) => {
+    
+    const mappedDevices = actionableDbDevices.map((d: any) => {
         const stdType = d.standardizedDeviceType as DeviceType;
         return {
             id: d.id,
             name: d.name,
             displayType: d.standardizedDeviceType || d.type || 'Unknown Type',
-            iconName: d.standardizedDeviceType ? getDeviceTypeIconName(stdType) : getDeviceTypeIconName(DeviceType.Unmapped) 
+            iconName: d.standardizedDeviceType 
+                ? getDeviceTypeIconName(stdType) 
+                : getDeviceTypeIconName(DeviceType.Unmapped),
+            areaId: d.areaDevices && d.areaDevices.length > 0 ? d.areaDevices[0].areaId : null,
+            locationId: null // We'll need to join with areas to get this later if needed
         };
     });
     return mappedDevices;
+}
+
+async function getDevicesForConditions() {
+    const conditionDevices = await db.query.devices.findMany({
+        columns: {
+            id: true,
+            name: true
+        },
+        with: {
+            areaDevices: {
+                columns: {
+                    areaId: true
+                }
+            }
+        },
+        orderBy: [asc(devices.name)]
+    });
+    
+    return conditionDevices.map((d: any) => ({
+        id: d.id,
+        name: d.name,
+        areaId: d.areaDevices && d.areaDevices.length > 0 ? d.areaDevices[0].areaId : null,
+        locationId: null // We'll need to join with areas to get this later if needed
+    }));
+}
+
+async function getAllLocations(): Promise<Location[]> {
+    const dbLocations = await db.select({
+        id: locations.id,
+        parentId: locations.parentId,
+        name: locations.name,
+        path: locations.path,
+        createdAt: locations.createdAt,
+        updatedAt: locations.updatedAt
+    }).from(locations).orderBy(asc(locations.name));
+    
+    return dbLocations;
+}
+
+async function getAllAreas(): Promise<Area[]> {
+    const dbAreas = await db.select({
+        id: areas.id,
+        name: areas.name,
+        locationId: areas.locationId,
+        armedState: areas.armedState,
+        createdAt: areas.createdAt,
+        updatedAt: areas.updatedAt
+    }).from(areas).orderBy(asc(areas.name));
+    
+    return dbAreas;
 }
 
 // Page Component for editing or creating an automation
@@ -180,9 +243,20 @@ export default async function AutomationSettingsPage({ params }: { params: Promi
   const standardizedDeviceTypes = getStandardizedDeviceTypeOptions(); 
 
   // Fetch automation data and available connectors concurrently
-  const [initialData, availableConnectors] = await Promise.all([
+  const [
+    initialData, 
+    availableConnectors,
+    availableTargetDevicesData,
+    devicesForConditionsData,
+    allLocationsData,
+    allAreasData
+  ] = await Promise.all([
     getAutomationData(automationId),
     getAvailableConnectors(),
+    getAvailableTargetDevices(),
+    getDevicesForConditions(),
+    getAllLocations(),
+    getAllAreas()
   ]);
 
   // Handle case where an existing automation ID was not found
@@ -220,7 +294,10 @@ export default async function AutomationSettingsPage({ params }: { params: Promi
         initialData={formData as any} 
         availableConnectors={availableConnectors} 
         sourceDeviceTypeOptions={standardizedDeviceTypes}
-        availableTargetDevices={await getAvailableTargetDevices()}
+        availableTargetDevices={availableTargetDevicesData}
+        devicesForConditions={devicesForConditionsData}
+        allLocations={allLocationsData}
+        allAreas={allAreasData}
       />
     </div>
   );

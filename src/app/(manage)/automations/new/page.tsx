@@ -2,14 +2,15 @@ import { Separator } from "@/components/ui/separator";
 import React from "react";
 import AutomationForm from "@/components/automations/AutomationForm";
 import { db } from "@/data/db";
-import { connectors, devices } from "@/data/db/schema"; // Import devices
+import { connectors, devices, locations, areas } from "@/data/db/schema"; // Import locations and areas
 import { type AutomationConfig } from '@/lib/automation-schemas';
-import { DeviceType } from "@/lib/mappings/definitions"; 
+import { DeviceType, ArmedState } from "@/lib/mappings/definitions"; 
 import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
 import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions"; // Import actionHandlers and IDeviceActionHandler
 import { inArray, asc } from "drizzle-orm"; // Import inArray and asc
 import type { Metadata } from 'next';
 import { getDeviceTypeIconName } from '@/lib/mappings/presentation'; // Use getDeviceTypeIconName instead of getDeviceTypeIcon directly
+import type { Location, Area } from '@/types';
 
 // Define AutomationFormData to match the structure expected by the form
 interface AutomationFormData {
@@ -64,12 +65,20 @@ async function getAvailableTargetDevices() {
             id: true,
             name: true,
             standardizedDeviceType: true,
-            type: true 
+            type: true
+        },
+        with: {
+            areaDevices: {
+                columns: {
+                    areaId: true
+                }
+            }
         },
         where: inArray(devices.type, rawTypesArray),
         orderBy: [asc(devices.name)]
     });
-    const mappedDevices = actionableDbDevices.map((d: typeof actionableDbDevices[number]) => {
+    
+    const mappedDevices = actionableDbDevices.map((d: any) => {
         const stdType = d.standardizedDeviceType as DeviceType;
         return {
             id: d.id,
@@ -77,11 +86,63 @@ async function getAvailableTargetDevices() {
             displayType: d.standardizedDeviceType || d.type || 'Unknown Type',
             iconName: d.standardizedDeviceType
                 ? getDeviceTypeIconName(stdType)
-                : getDeviceTypeIconName(DeviceType.Unmapped)
+                : getDeviceTypeIconName(DeviceType.Unmapped),
+            areaId: d.areaDevices && d.areaDevices.length > 0 ? d.areaDevices[0].areaId : null,
+            locationId: null // We'll need to join with areas to get this later if needed
         };
     });
     console.log(`[DEBUG NEW_PAGE] Returning devices for dropdown (count: ${mappedDevices.length}):`, JSON.stringify(mappedDevices.slice(0,3)));
     return mappedDevices;
+}
+
+async function getDevicesForConditions() {
+    const conditionDevices = await db.query.devices.findMany({
+        columns: {
+            id: true,
+            name: true
+        },
+        with: {
+            areaDevices: {
+                columns: {
+                    areaId: true
+                }
+            }
+        },
+        orderBy: [asc(devices.name)]
+    });
+    
+    return conditionDevices.map((d: any) => ({
+        id: d.id,
+        name: d.name,
+        areaId: d.areaDevices && d.areaDevices.length > 0 ? d.areaDevices[0].areaId : null,
+        locationId: null // We'll need to join with areas to get this later if needed
+    }));
+}
+
+async function getAllLocations(): Promise<Location[]> {
+    const dbLocations = await db.select({
+        id: locations.id,
+        parentId: locations.parentId,
+        name: locations.name,
+        path: locations.path,
+        createdAt: locations.createdAt,
+        updatedAt: locations.updatedAt
+    }).from(locations).orderBy(asc(locations.name));
+    
+    return dbLocations;
+}
+
+async function getAllAreas(): Promise<Area[]> {
+    const dbAreas = await db.select({
+        id: areas.id,
+        name: areas.name,
+        locationId: areas.locationId,
+        armedState: areas.armedState,
+        createdAt: areas.createdAt,
+        updatedAt: areas.updatedAt
+    }).from(areas).orderBy(asc(areas.name));
+    
+    return dbAreas;
 }
 
 function getSourceDeviceTypeOptions(): MultiSelectOption[] {
@@ -97,10 +158,20 @@ function getSourceDeviceTypeOptions(): MultiSelectOption[] {
 
 export default async function NewAutomationPage() {
   // Fetch data concurrently
-  const [availableConnectorsData, availableTargetDevicesData, sourceDeviceTypeOptionsData] = await Promise.all([
+  const [
+    availableConnectorsData, 
+    availableTargetDevicesData, 
+    sourceDeviceTypeOptionsData,
+    devicesForConditionsData,
+    allLocationsData,
+    allAreasData
+  ] = await Promise.all([
     getAvailableConnectors(),
     getAvailableTargetDevices(),
-    Promise.resolve(getSourceDeviceTypeOptions()) // Wrap sync function for Promise.all
+    Promise.resolve(getSourceDeviceTypeOptions()), // Wrap sync function for Promise.all
+    getDevicesForConditions(),
+    getAllLocations(),
+    getAllAreas()
   ]);
 
   const initialData: AutomationFormData = {
@@ -131,6 +202,9 @@ export default async function NewAutomationPage() {
           availableConnectors={availableConnectorsData}
           sourceDeviceTypeOptions={sourceDeviceTypeOptionsData}
           availableTargetDevices={availableTargetDevicesData}
+          devicesForConditions={devicesForConditionsData}
+          allLocations={allLocationsData}
+          allAreas={allAreasData}
         />
       </div>
     </div>

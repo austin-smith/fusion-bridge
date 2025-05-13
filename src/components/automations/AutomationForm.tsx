@@ -8,9 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
-import { Trash2, Plus, ChevronDown, ChevronUp, HelpCircle, Info, X } from 'lucide-react';
+import { Trash2, Plus, ChevronDown, ChevronUp, HelpCircle, Info, X, Check, ChevronsUpDown } from 'lucide-react';
 import {
     AutomationConfigSchema,
     type AutomationConfig,
@@ -52,7 +54,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { TriangleAlert, Bookmark, Globe, Power } from 'lucide-react';
+import { TriangleAlert, Bookmark, Globe, Power, Bell } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
 import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
 import { 
@@ -63,12 +65,16 @@ import {
   formatActionDetail 
 } from '@/lib/automation-types';
 import { AutomationActionType } from '@/lib/automation-types';
+import { priorityOptions } from '@/lib/pushover-constants';
+import type { Location, Area } from '@/types';
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface AutomationFormData {
     id: string;
     name: string;
     enabled: boolean;
     configJson: AutomationConfig;
+    locationScopeId?: string | null;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -77,7 +83,8 @@ const FormSchema = z.object({
     id: z.string(),
     name: z.string().min(1),
     enabled: z.boolean(),
-    config: AutomationConfigSchema
+    config: AutomationConfigSchema,
+    locationScopeId: z.string().uuid().nullable().optional(),
 });
 
 export type AutomationFormValues = z.infer<typeof FormSchema>;
@@ -88,13 +95,17 @@ interface AutomationFormProps {
     initialData: AutomationFormData;
     availableConnectors: Pick<ConnectorSelect, 'id' | 'name' | 'category'>[];
     sourceDeviceTypeOptions: MultiSelectOption[];
-    availableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; }>;
+    availableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; areaId?: string | null; locationId?: string | null; }>;
+    devicesForConditions: Array<{ id: string; name: string; areaId?: string | null; locationId?: string | null; }>;
+    allLocations: Location[];
+    allAreas: Area[];
 }
 
 export type InsertableFieldNames = 
     | keyof z.infer<typeof CreateEventActionParamsSchema>
     | keyof z.infer<typeof CreateBookmarkParamsSchema>
     | Exclude<keyof z.infer<typeof SendHttpRequestActionParamsSchema>, 'headers'>
+    | keyof z.infer<typeof import('@/lib/automation-schemas').SendPushNotificationActionParamsSchema>
     | `headers.${number}.keyTemplate`
     | `headers.${number}.valueTemplate`;
 
@@ -149,20 +160,52 @@ const defaultAction: AutomationAction = {
     params: { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' }
 };
 
+const NO_LOCATION_SCOPE_VALUE = '__none__'; // Define a constant for the 'no scope' value
+
+// Helper function to add internal IDs for stable keys in RuleBuilder
+const addInternalIds = (node: any): any => {
+    if (!node) return node;
+    // Assign ID if missing. Cloning happens *before* this function is called.
+    if (node._internalId === undefined) { 
+        node._internalId = crypto.randomUUID();
+    }
+
+    if (node.all || node.any) {
+        const groupType = node.all ? 'all' : 'any';
+        // Recurse directly on children - cloning is handled before initial call
+        const children = node[groupType] || []; 
+        node[groupType] = children.map(addInternalIds);
+    }
+    return node;
+};
+
 export default function AutomationForm({
     initialData,
     availableConnectors,
     sourceDeviceTypeOptions,
-    availableTargetDevices = []
+    availableTargetDevices = [],
+    devicesForConditions,
+    allLocations,
+    allAreas,
 }: AutomationFormProps) {
 
     const router = useRouter();
     const [isLoading, setIsLoading] = React.useState<boolean>(false);
+    const [locationScopePopoverOpen, setLocationScopePopoverOpen] = React.useState(false);
 
     const [temporalConditionsExpanded, setTemporalConditionsExpanded] = React.useState<boolean>(
         // Only expand by default if there are existing temporal conditions
         Boolean(initialData?.configJson?.temporalConditions?.length)
     );
+
+    // Defensively default to empty arrays if props are undefined
+    const safeAllLocations = Array.isArray(allLocations) ? allLocations : [];
+    const safeAllAreas = Array.isArray(allAreas) ? allAreas : [];
+    // availableTargetDevices already defaults to [] in props destructuring
+
+    // Check if essential data for conditions is ready
+    // Note: We assume initialData is always passed, even for 'new' where it has default structure
+    const conditionsDataReady = devicesForConditions && allLocations && allAreas;
 
     const massageInitialData = (data: AutomationFormData): AutomationFormValues => {
         const config = data.configJson;
@@ -219,13 +262,38 @@ export default function AutomationForm({
             };
         });
 
+        // Helper to get a deep clone of initial conditions or a cloned default
+        const getClonedInitialConditions = () => {
+            if (config.conditions && (config.conditions.all || config.conditions.any) && (config.conditions.all?.length || config.conditions.any?.length)) {
+                return JSON.parse(JSON.stringify(config.conditions));
+            }
+            // Always return a new clone of the default if no valid existing conditions
+            return JSON.parse(JSON.stringify(defaultRuleGroup)); 
+        };
+        const initialConditionsWithIds = addInternalIds(getClonedInitialConditions());
+        
+        // Helper to get a deep clone of an event filter or a cloned default
+        const getClonedEventFilter = (eventFilter?: JsonRuleGroup) => {
+            if (eventFilter && (eventFilter.all || eventFilter.any) && (eventFilter.all?.length || eventFilter.any?.length)) {
+                return JSON.parse(JSON.stringify(eventFilter));
+            }
+            // Always return a new clone of the default if no valid existing filter
+            return JSON.parse(JSON.stringify(defaultEventFilterRuleGroup));
+        };
+
+        const initialTemporalConditionsWithIds = initialTemporalConditions.map(cond => ({
+            ...cond,
+            eventFilter: addInternalIds(getClonedEventFilter(cond.eventFilter))
+        }));
+
         return {
             id: data.id,
             name: data.name,
             enabled: data.enabled,
+            locationScopeId: data.locationScopeId ?? null,
             config: {
-                conditions: config.conditions && (config.conditions.all || config.conditions.any) ? config.conditions : defaultRuleGroup,
-                temporalConditions: initialTemporalConditions as TemporalCondition[],
+                conditions: initialConditionsWithIds,
+                temporalConditions: initialTemporalConditionsWithIds as TemporalCondition[],
                 actions: initialActions as AutomationAction[]
             }
         };
@@ -291,9 +359,10 @@ export default function AutomationForm({
         } catch (error) { console.error("Error setting field value:", error, { currentFieldName }); }
     };
 
+    const watchedLocationScopeId = form.watch('locationScopeId');
+
     const onSubmit = async (data: AutomationFormValues) => {
         setIsLoading(true);
-        console.log("Form values received by onSubmit:", data);
         
         const processedConfig = { 
             ...data.config, 
@@ -325,10 +394,9 @@ export default function AutomationForm({
         const payloadForApi = {
             name: data.name,
             enabled: data.enabled,
-            config: processedConfig
+            config: processedConfig,
+            locationScopeId: data.locationScopeId,
         };
-        
-        console.log("Submitting data to API:", payloadForApi);
         
         const isEditing = initialData.id !== 'new';
         const apiUrl = isEditing ? `/api/automations/${initialData.id}` : '/api/automations';
@@ -397,23 +465,120 @@ export default function AutomationForm({
                         <CardHeader><CardTitle>General Settings</CardTitle></CardHeader>
                         <CardContent>
                              <input type="hidden" {...form.register("id")} />
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <FormField 
                                     control={form.control}
                                     name="name"
                                     render={({ field, fieldState }) => (
-                                    <FormItem>
-                                        <FormLabel className={cn(fieldState.error && "text-destructive")}>Automation Name</FormLabel>
+                                    <FormItem className="flex flex-col">
+                                        <FormLabel className={cn("mb-1.5", fieldState.error && "text-destructive")}>Automation Name</FormLabel>
                                         <FormControl><Input {...field} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                        <FormDescription className={descriptionStyles}>Give your automation a descriptive name.</FormDescription>
+                                        <FormMessage />
                                     </FormItem>
                                 )} />
+                                <FormField
+                                  control={form.control}
+                                  name="locationScopeId"
+                                  render={({ field, fieldState }) => {
+                                    // Explicitly watch the value to ensure display updates correctly
+                                    const watchedValue = form.watch('locationScopeId'); 
+                                    
+                                    // Calculate display based on watched value
+                                    const locationName = watchedValue && watchedValue !== NO_LOCATION_SCOPE_VALUE
+                                        ? (allLocations.find(loc => loc.id === watchedValue)?.name ?? '[Invalid/Missing Location]') 
+                                        : "Any Location" ;
+
+                                    return (
+                                        <FormItem className="flex flex-col">
+                                            <FormLabel className={cn("mb-1.5", fieldState.error && "text-destructive")}>Location Scope</FormLabel>
+                                            <Popover open={locationScopePopoverOpen} onOpenChange={setLocationScopePopoverOpen}>
+                                                <PopoverTrigger asChild>
+                                                    <FormControl>
+                                                        <Button
+                                                            variant="outline"
+                                                            role="combobox"
+                                                            aria-expanded={locationScopePopoverOpen}
+                                                            className={cn("w-full justify-between font-normal", fieldState.error && 'border-destructive', !field.value && "text-muted-foreground")}
+                                                            disabled={isLoading}
+                                                        >
+                                                            <span className="truncate">
+                                                                {/* Use the calculated locationName based on watched value */} 
+                                                                {locationName}
+                                                            </span>
+                                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                                        </Button>
+                                                    </FormControl>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-full p-0" style={{width: 'var(--radix-popover-trigger-width)'}}>
+                                                    <Command>
+                                                        <CommandInput placeholder="Search location..." />
+                                                        <CommandList>
+                                                            <CommandEmpty>No location found.</CommandEmpty>
+                                                            <CommandGroup>
+                                                                <CommandItem
+                                                                    key={NO_LOCATION_SCOPE_VALUE}
+                                                                    value={NO_LOCATION_SCOPE_VALUE} // Allows searching for "Any Location"
+                                                                    onSelect={() => {
+                                                                        field.onChange(null);
+                                                                        setLocationScopePopoverOpen(false);
+                                                                    }}
+                                                                >
+                                                                    <Check
+                                                                        className={cn(
+                                                                            "mr-2 h-4 w-4",
+                                                                            // Check visibility based on watched value
+                                                                            (!watchedValue || watchedValue === NO_LOCATION_SCOPE_VALUE) ? "opacity-100" : "opacity-0"
+                                                                        )}
+                                                                    />
+                                                                    Any Location
+                                                                </CommandItem>
+                                                                {allLocations.sort((a,b) => a.name.localeCompare(b.name)).map(loc => (
+                                                                    <CommandItem 
+                                                                        key={loc.id} 
+                                                                        value={loc.name} // Search by name
+                                                                        onSelect={() => {
+                                                                            field.onChange(loc.id);
+                                                                            setLocationScopePopoverOpen(false);
+                                                                        }}
+                                                                    >
+                                                                        <Check
+                                                                            className={cn(
+                                                                                "mr-2 h-4 w-4",
+                                                                                // Check visibility based on watched value
+                                                                                watchedValue === loc.id ? "opacity-100" : "opacity-0"
+                                                                            )}
+                                                                        />
+                                                                        {loc.name}
+                                                                    </CommandItem>
+                                                                ))}
+                                                            </CommandGroup>
+                                                        </CommandList>
+                                                    </Command>
+                                                </PopoverContent>
+                                            </Popover>
+                                            <FormDescription className={descriptionStyles}>Optionally limit this automation to a specific location.</FormDescription>
+                                            <FormMessage />
+                                        </FormItem>
+                                    );
+                                }}
+                                />
                                 <FormField control={form.control} name="enabled" render={({ field }) => (
-                                    <FormItem className="flex flex-col pt-2">
+                                    <FormItem className="flex flex-col">
                                         <FormLabel className="mb-1.5">Status</FormLabel>
                                         <div className="flex items-center space-x-2">
                                             <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLoading} aria-label="Toggle Automation Enabled State" /></FormControl>
-                                            <span className="text-sm text-muted-foreground">{field.value ? "Enabled" : "Disabled"}</span>
+                                            {field.value ? (
+                                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/50 dark:text-green-300 dark:border-green-800/50">
+                                                    Enabled
+                                                </Badge>
+                                            ) : (
+                                                <Badge variant="outline" className="bg-gray-50 text-gray-500 border-gray-200 dark:bg-gray-800/80 dark:text-gray-300 dark:border-gray-700/50">
+                                                    Disabled
+                                                </Badge>
+                                            )}
                                         </div>
+                                        <FormDescription className={descriptionStyles}>Enable or disable this automation.</FormDescription>
                                         <FormMessage />
                                     </FormItem>
                                 )} />
@@ -429,162 +594,201 @@ export default function AutomationForm({
                                 Define the primary event trigger and optional subsequent time-based conditions.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-6"> 
-                            {/* --- Trigger Conditions Section --- */}
-                            <div>
-                                <h3 className="text-sm font-semibold mb-3">Primary Conditions (if this happens...)</h3>
-                                <FormField
-                                    control={form.control}
-                                    name="config.conditions"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <RuleBuilder value={field.value} onChange={field.onChange} />
-                                            <FormDescription className={descriptionStyles}>Define conditions based on the triggering event&apos;s state.</FormDescription>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                            </div>
+                        {/* Conditionally render content */}
+                        {conditionsDataReady ? (
+                            <CardContent className="space-y-6"> 
+                                {/* --- Trigger Conditions Section --- */}
+                                <div>
+                                    <h3 className="text-sm font-semibold mb-3">Primary Conditions (if this happens...)</h3>
+                                    <FormField
+                                        control={form.control}
+                                        name="config.conditions"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <RuleBuilder 
+                                                    value={field.value} 
+                                                    onChange={field.onChange} 
+                                                    locationScopeId={watchedLocationScopeId}
+                                                    allLocations={safeAllLocations}
+                                                    allAreas={safeAllAreas}
+                                                    allDevices={devicesForConditions}
+                                                />
+                                                <FormDescription className={descriptionStyles}>Define conditions based on the triggering event&apos;s state.</FormDescription>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                </div>
 
-                            {/* --- Separator --- */}
-                            <hr className="my-6" />
+                                {/* --- Separator --- */}
+                                <hr className="my-6" />
 
-                            {/* --- Temporal Conditions Section with Accordion --- */}
-                            <div>
-                                <h3 className="text-sm font-semibold mb-3">Temporal Conditions (and if...)</h3>
-                                
-                                <Accordion 
-                                    type="single"
-                                    collapsible
-                                    defaultValue={undefined}
-                                    onValueChange={(value) => setTemporalConditionsExpanded(!!value)}
-                                >
-                                    <AccordionItem value="temporal-conditions" className="border-0">
-                                        <div className="flex items-center justify-between">
-                                            <p className="text-xs text-muted-foreground">
-                                                {temporalConditionsFields.length > 0 
-                                                    ? `${temporalConditionsFields.length} temporal condition${temporalConditionsFields.length > 1 ? 's' : ''} configured` 
-                                                    : "Optionally add conditions based on other events happening near the trigger time."}
-                                            </p>
-                                            <AccordionTrigger className="py-0" />
-                                        </div>
-                                        <AccordionContent>
-                                            <div className="pt-4">
-                                                <div className="space-y-4">
-                                                    {/* --- Map Temporal Conditions --- */}
-                                                    {temporalConditionsFields.map((fieldItem, index) => (
-                                                        <Card key={fieldItem.id} className="relative border border-blue-200 dark:border-blue-800 pt-8 bg-blue-50/30 dark:bg-blue-950/20">
-                                                            <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 text-muted-foreground hover:text-destructive h-6 w-6" onClick={() => removeTemporalCondition(index)}><Trash2 className="h-4 w-4" /><span className="sr-only">Remove Temporal Condition</span></Button>
-                                                            <CardContent className="space-y-4">
-                                                                <FormField name={`config.temporalConditions.${index}.type`} render={({ field, fieldState }) => (
-                                                                    <FormItem>
-                                                                        <FormLabel>Condition</FormLabel>
-                                                                        <div className="flex items-start gap-2">
-                                                                            <Select onValueChange={field.onChange} value={field.value}>
+                                {/* --- Temporal Conditions Section with Accordion --- */}
+                                <div>
+                                    <h3 className="text-sm font-semibold mb-3">Temporal Conditions (and if...)</h3>
+                                    
+                                    <Accordion 
+                                        type="single"
+                                        collapsible
+                                        defaultValue={undefined}
+                                        onValueChange={(value) => setTemporalConditionsExpanded(!!value)}
+                                    >
+                                        <AccordionItem value="temporal-conditions" className="border-0">
+                                            <div className="flex items-center justify-between">
+                                                <p className="text-xs text-muted-foreground">
+                                                    {temporalConditionsFields.length > 0 
+                                                        ? `${temporalConditionsFields.length} temporal condition${temporalConditionsFields.length > 1 ? 's' : ''} configured` 
+                                                        : "Optionally add conditions based on other events happening near the trigger time."}
+                                                </p>
+                                                <AccordionTrigger className="py-0" />
+                                            </div>
+                                            <AccordionContent>
+                                                <div className="pt-4">
+                                                    <div className="space-y-4">
+                                                        {/* --- Map Temporal Conditions --- */}
+                                                        {temporalConditionsFields.map((fieldItem, index) => (
+                                                            <Card key={fieldItem.id} className="relative border border-blue-200 dark:border-blue-800 pt-8 bg-blue-50/30 dark:bg-blue-950/20">
+                                                                <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 text-muted-foreground hover:text-destructive h-6 w-6" onClick={() => removeTemporalCondition(index)}><Trash2 className="h-4 w-4" /><span className="sr-only">Remove Temporal Condition</span></Button>
+                                                                <CardContent className="space-y-4">
+                                                                    <FormField name={`config.temporalConditions.${index}.type`} render={({ field, fieldState }) => (
+                                                                        <FormItem>
+                                                                            <FormLabel>Condition</FormLabel>
+                                                                            <div className="flex items-start gap-2">
+                                                                                <Select onValueChange={field.onChange} value={field.value}>
+                                                                                    <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
+                                                                                    <SelectContent>
+                                                                                        <SelectItem value="eventOccurred">Any matching event occurred</SelectItem>
+                                                                                        <SelectItem value="noEventOccurred">No matching event occurred</SelectItem>
+                                                                                        <SelectItem value="eventCountEquals">Matching event count =</SelectItem>
+                                                                                        <SelectItem value="eventCountLessThan">Matching event count &lt;</SelectItem>
+                                                                                        <SelectItem value="eventCountGreaterThan">Matching event count &gt;</SelectItem>
+                                                                                        <SelectItem value="eventCountLessThanOrEqual">Matching event count &le;</SelectItem>
+                                                                                        <SelectItem value="eventCountGreaterThanOrEqual">Matching event count &ge;</SelectItem>
+                                                                                    </SelectContent>
+                                                                                </Select>
+                                                                                {/* --- Conditionally render Count Input INLINE --- */}
+                                                                                {[ 'eventCountEquals', 'eventCountLessThan', 'eventCountGreaterThan', 'eventCountLessThanOrEqual', 'eventCountGreaterThanOrEqual' ].includes(field.value) && (
+                                                                                    <FormControl>
+                                                                                        <Input 
+                                                                                            {...form.register(`config.temporalConditions.${index}.expectedEventCount`, { valueAsNumber: true })}
+                                                                                            type="number" 
+                                                                                            min="0" 
+                                                                                            step="1" 
+                                                                                            placeholder="Count" 
+                                                                                            disabled={isLoading} 
+                                                                                            className={cn("w-[100px]", fieldState.error && 'border-destructive')} 
+                                                                                        />
+                                                                                    </FormControl>
+                                                                                )}
+                                                                            </div>
+                                                                            {/* Display description/message below the flex container */}
+                                                                            <FormDescription className={descriptionStyles}>
+                                                                                Select the condition type and specify count if needed.
+                                                                            </FormDescription>
+                                                                            <FormMessage />
+                                                                        </FormItem>
+                                                                    )} />
+
+                                                                    <FormField name={`config.temporalConditions.${index}.scoping`} render={({ field, fieldState }) => (
+                                                                        <FormItem>
+                                                                            <FormLabel>Check Events From</FormLabel>
+                                                                            <Select onValueChange={field.onChange} value={field.value ?? 'anywhere'}>
                                                                                 <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
                                                                                 <SelectContent>
-                                                                                    <SelectItem value="eventOccurred">Any matching event occurred</SelectItem>
-                                                                                    <SelectItem value="noEventOccurred">No matching event occurred</SelectItem>
-                                                                                    <SelectItem value="eventCountEquals">Matching event count =</SelectItem>
-                                                                                    <SelectItem value="eventCountLessThan">Matching event count &lt;</SelectItem>
-                                                                                    <SelectItem value="eventCountGreaterThan">Matching event count &gt;</SelectItem>
-                                                                                    <SelectItem value="eventCountLessThanOrEqual">Matching event count &le;</SelectItem>
-                                                                                    <SelectItem value="eventCountGreaterThanOrEqual">Matching event count &ge;</SelectItem>
+                                                                                    <SelectItem value="anywhere">Anywhere</SelectItem>
+                                                                                    <SelectItem value="sameArea">Devices in same area</SelectItem>
+                                                                                    <SelectItem value="sameLocation">Devices in same location</SelectItem>
                                                                                 </SelectContent>
                                                                             </Select>
-                                                                            {/* --- Conditionally render Count Input INLINE --- */}
-                                                                            {[ 'eventCountEquals', 'eventCountLessThan', 'eventCountGreaterThan', 'eventCountLessThanOrEqual', 'eventCountGreaterThanOrEqual' ].includes(field.value) && (
+                                                                            <FormDescription className={descriptionStyles}>Scope the devices checked by this condition.</FormDescription>
+                                                                            <FormMessage />
+                                                                        </FormItem>
+                                                                    )} />
+                                                                    <FormField name={`config.temporalConditions.${index}.eventFilter`} render={({ field }) => (
+                                                                        <FormItem>
+                                                                            <FormLabel>Event Filter Criteria</FormLabel>
+                                                                            
+                                                                            <RuleBuilder 
+                                                                                value={field.value} 
+                                                                                onChange={field.onChange} 
+                                                                                locationScopeId={watchedLocationScopeId}
+                                                                                allLocations={safeAllLocations}
+                                                                                allAreas={safeAllAreas}
+                                                                                allDevices={devicesForConditions}
+                                                                            />
+                                                                            
+                                                                            <FormDescription className={descriptionStyles}>Define criteria that matching events must meet.</FormDescription>
+                                                                            <FormMessage />
+                                                                        </FormItem>
+                                                                    )} />
+                                                                   
+                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                                                                        <FormField name={`config.temporalConditions.${index}.timeWindowSecondsBefore`} render={({ field, fieldState }) => (
+                                                                            <FormItem>
+                                                                                <FormLabel>Seconds Before Trigger</FormLabel>
                                                                                 <FormControl>
-                                                                                    <Input 
-                                                                                        {...form.register(`config.temporalConditions.${index}.expectedEventCount`, { valueAsNumber: true })}
-                                                                                        type="number" 
-                                                                                        min="0" 
-                                                                                        step="1" 
-                                                                                        placeholder="Count" 
-                                                                                        disabled={isLoading} 
-                                                                                        className={cn("w-[100px]", fieldState.error && 'border-destructive')} 
-                                                                                    />
+                                                                                    <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
                                                                                 </FormControl>
-                                                                            )}
-                                                                        </div>
-                                                                        {/* Display description/message below the flex container */}
-                                                                        <FormDescription className={descriptionStyles}>
-                                                                            Select the condition type and specify count if needed.
-                                                                        </FormDescription>
-                                                                        <FormMessage />
-                                                                    </FormItem>
-                                                                )} />
-
-                                                                <FormField name={`config.temporalConditions.${index}.scoping`} render={({ field, fieldState }) => (
-                                                                    <FormItem>
-                                                                        <FormLabel>Check Events From</FormLabel>
-                                                                        <Select onValueChange={field.onChange} value={field.value ?? 'anywhere'}>
-                                                                            <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
-                                                                            <SelectContent>
-                                                                                <SelectItem value="anywhere">Anywhere</SelectItem>
-                                                                                <SelectItem value="sameArea">Devices in same area</SelectItem>
-                                                                                <SelectItem value="sameLocation">Devices in same location</SelectItem>
-                                                                            </SelectContent>
-                                                                        </Select>
-                                                                        <FormDescription className={descriptionStyles}>Scope the devices checked by this condition.</FormDescription>
-                                                                        <FormMessage />
-                                                                    </FormItem>
-                                                                )} />
-                                                                <FormField name={`config.temporalConditions.${index}.eventFilter`} render={({ field }) => (
-                                                                    <FormItem>
-                                                                        <FormLabel>Event Filter Criteria</FormLabel>
-                                                                        
-                                                                        <RuleBuilder 
-                                                                            value={field.value} 
-                                                                            onChange={field.onChange} 
-                                                                        />
-                                                                        
-                                                                        <FormDescription className={descriptionStyles}>Define criteria that matching events must meet.</FormDescription>
-                                                                        <FormMessage />
-                                                                    </FormItem>
-                                                                )} />
-                                                               
-                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                                                                    <FormField name={`config.temporalConditions.${index}.timeWindowSecondsBefore`} render={({ field, fieldState }) => (
-                                                                        <FormItem>
-                                                                            <FormLabel>Seconds Before Trigger</FormLabel>
-                                                                            <FormControl>
-                                                                                <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
-                                                                            </FormControl>
-                                                                            <FormDescription className={descriptionStyles}>Check for events up to this many seconds before the trigger.</FormDescription>
-                                                                            <FormMessage />
-                                                                        </FormItem>
-                                                                    )} />
-                                                                    <FormField name={`config.temporalConditions.${index}.timeWindowSecondsAfter`} render={({ field, fieldState }) => (
-                                                                        <FormItem>
-                                                                            <FormLabel>Seconds After Trigger</FormLabel>
-                                                                            <FormControl>
-                                                                                <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
-                                                                            </FormControl>
-                                                                            <FormDescription className={descriptionStyles}>Check for events up to this many seconds after the trigger.</FormDescription>
-                                                                            <FormMessage />
-                                                                        </FormItem>
-                                                                    )} />
-                                                                </div>
-                                                            </CardContent>
-                                                        </Card>
-                                                    ))}
-                                                    <Button 
-                                                        type="button" 
-                                                        variant="outline" 
-                                                        size="sm" 
-                                                        onClick={() => appendTemporalCondition({ id: crypto.randomUUID(), ...defaultTemporalCondition })} 
-                                                        disabled={isLoading}
-                                                    >
-                                                        <Plus className="h-4 w-4 mr-1" /> Add Temporal Condition
-                                                    </Button>
+                                                                                <FormDescription className={descriptionStyles}>Check for events up to this many seconds before the trigger.</FormDescription>
+                                                                                <FormMessage />
+                                                                            </FormItem>
+                                                                        )} />
+                                                                        <FormField name={`config.temporalConditions.${index}.timeWindowSecondsAfter`} render={({ field, fieldState }) => (
+                                                                            <FormItem>
+                                                                                <FormLabel>Seconds After Trigger</FormLabel>
+                                                                                <FormControl>
+                                                                                    <Input type="number" min="0" step="1" placeholder="e.g., 120" disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} value={field.value === undefined || field.value === null ? '' : String(field.value)} onChange={(e) => { const val = e.target.value; field.onChange(val === '' ? undefined : Number(val)); }} onBlur={field.onBlur} name={field.name} ref={field.ref} />
+                                                                                </FormControl>
+                                                                                <FormDescription className={descriptionStyles}>Check for events up to this many seconds after the trigger.</FormDescription>
+                                                                                <FormMessage />
+                                                                            </FormItem>
+                                                                        )} />
+                                                                    </div>
+                                                                </CardContent>
+                                                            </Card>
+                                                        ))}
+                                                        <Button 
+                                                            type="button" 
+                                                            variant="outline" 
+                                                            size="sm" 
+                                                            onClick={() => appendTemporalCondition({ id: crypto.randomUUID(), ...defaultTemporalCondition })} 
+                                                            disabled={isLoading}
+                                                        >
+                                                            <Plus className="h-4 w-4 mr-1" /> Add Temporal Condition
+                                                        </Button>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        </AccordionContent>
-                                    </AccordionItem>
-                                </Accordion>
-                            </div>
-                        </CardContent>
+                                            </AccordionContent>
+                                        </AccordionItem>
+                                    </Accordion>
+                                </div>
+                            </CardContent>
+                        ) : (
+                            <CardContent className="space-y-6">
+                                {/* Skeleton for Primary Conditions */}
+                                <div>
+                                    <h3 className="text-sm font-semibold mb-3">Primary Conditions (if this happens...)</h3>
+                                    <div className="space-y-2 p-2 border rounded">
+                                        <div className="flex gap-2">
+                                            <Skeleton className="h-9 w-1/4" />
+                                            <Skeleton className="h-9 w-[100px]" />
+                                            <Skeleton className="h-9 w-1/3" />
+                                            <Skeleton className="h-9 w-10" />
+                                        </div>
+                                    </div>
+                                    <Skeleton className="h-4 w-3/4 mt-1" /> {/* FormDescription */}
+                                </div>
+                                {/* --- Separator --- */}
+                                <hr className="my-6" />
+                                {/* Skeleton for Temporal Conditions */}
+                                <div>
+                                    <h3 className="text-sm font-semibold mb-3">Temporal Conditions (and if...)</h3>
+                                    <Skeleton className="h-6 w-full" /> {/* Accordion Trigger area */}
+                                    {/* Optionally add a skeleton for one condition item if needed */}
+                                    {/* <Skeleton className="h-40 w-full mt-4 border rounded" /> */}
+                                </div>
+                            </CardContent>
+                        )}
                     </Card>
 
                     {/* Actions Section - Made into accordion for each action */}
@@ -689,6 +893,12 @@ export default function AutomationForm({
                                                                                     targetDeviceInternalId: sortedAvailableTargetDevices.length > 0 ? sortedAvailableTargetDevices[0].id : '',
                                                                                     targetState: ActionableState.SET_ON
                                                                                 };
+                                                                            } else if (newType === AutomationActionType.SEND_PUSH_NOTIFICATION) {
+                                                                                newActionParams = { 
+                                                                                    titleTemplate: '',
+                                                                                    messageTemplate: '',
+                                                                                    priority: 0
+                                                                                };
                                                                             } else { 
                                                                                 console.warn(`Unexpected action type: ${value}. Defaulting to minimal sendHttpRequest.`); 
                                                                                 newActionParams = { urlTemplate: '', method: 'GET'} as any;
@@ -706,6 +916,7 @@ export default function AutomationForm({
                                                                             <SelectItem value={AutomationActionType.CREATE_EVENT}>{getActionTitle(AutomationActionType.CREATE_EVENT)}</SelectItem>
                                                                             <SelectItem value={AutomationActionType.SEND_HTTP_REQUEST}>{getActionTitle(AutomationActionType.SEND_HTTP_REQUEST)}</SelectItem>
                                                                             <SelectItem value={AutomationActionType.SET_DEVICE_STATE}>{getActionTitle(AutomationActionType.SET_DEVICE_STATE)}</SelectItem>
+                                                                            <SelectItem value={AutomationActionType.SEND_PUSH_NOTIFICATION}>{getActionTitle(AutomationActionType.SEND_PUSH_NOTIFICATION)}</SelectItem>
                                                                         </SelectContent>
                                                                     </Select>
                                                                 </FormControl>
@@ -795,6 +1006,7 @@ export default function AutomationForm({
                                                           actionType === AutomationActionType.CREATE_BOOKMARK ? 'border-green-300 dark:border-green-700' : 
                                                           actionType === AutomationActionType.SEND_HTTP_REQUEST ? 'border-purple-300 dark:border-purple-700' : 
                                                           actionType === AutomationActionType.SET_DEVICE_STATE ? 'border-amber-300 dark:border-amber-700' : 
+                                                          actionType === AutomationActionType.SEND_PUSH_NOTIFICATION ? 'border-orange-300 dark:border-orange-700' : 
                                                           'border-muted'}`}>
                                                         <h3 className="text-sm font-medium text-muted-foreground mb-2">Action Parameters</h3>
                                                         <p className="text-xs text-muted-foreground mb-2"> 
@@ -802,6 +1014,7 @@ export default function AutomationForm({
                                                             {actionType === AutomationActionType.CREATE_EVENT && "Creates an event in the target Piko system."} 
                                                             {actionType === AutomationActionType.SEND_HTTP_REQUEST && "Sends an HTTP request."} 
                                                             {actionType === AutomationActionType.SET_DEVICE_STATE && "Changes the state of a specified device (e.g., turn on/off)."}
+                                                            {actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && "Sends a push notification via the Pushover service."}
                                                         </p>
                                                         
                                                         {/* Action type specific fields */}
@@ -988,6 +1201,83 @@ export default function AutomationForm({
                                                                         Select the device to control and the state to set it to.
                                                                     </FormDescription>
                                                                 </div>
+                                                            </>
+                                                        )}
+                                                        
+                                                        {actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && (
+                                                            <>
+                                                                <FormField 
+                                                                    control={form.control}
+                                                                    name={`config.actions.${index}.params.titleTemplate`}
+                                                                    render={({ field, fieldState }) => (
+                                                                        <FormItem>
+                                                                            <div className="flex items-center justify-between">
+                                                                                <FormLabel>Title</FormLabel>
+                                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('titleTemplate', index, token, 'action')} />
+                                                                            </div>
+                                                                            <FormControl><Input placeholder="Notification title" {...field} value={field.value ?? ''} disabled={isLoading} className={cn("w-full", fieldState.error && 'border-destructive')} /></FormControl>
+                                                                            <FormDescription className={descriptionStyles}>Optional title for the notification.</FormDescription>
+                                                                            <FormMessage />
+                                                                        </FormItem>
+                                                                    )}
+                                                                />
+
+                                                                <FormField 
+                                                                    control={form.control}
+                                                                    name={`config.actions.${index}.params.messageTemplate`}
+                                                                    render={({ field, fieldState }) => (
+                                                                        <FormItem>
+                                                                            <div className="flex items-center justify-between">
+                                                                                <FormLabel>Message</FormLabel>
+                                                                                <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('messageTemplate', index, token, 'action')} />
+                                                                            </div>
+                                                                            <FormControl><Textarea placeholder="Notification message content" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
+                                                                            <FormDescription className={descriptionStyles}>The main content of the notification.</FormDescription>
+                                                                            <FormMessage />
+                                                                        </FormItem>
+                                                                    )}
+                                                                />
+
+                                                                <FormField 
+                                                                    control={form.control}
+                                                                    name={`config.actions.${index}.params.priority`}
+                                                                    render={({ field, fieldState }) => {
+                                                                        // Find the selected option to display its label in the trigger
+                                                                        const selectedOption = priorityOptions.find(option => option.value === field.value);
+                                                                        return (
+                                                                            <FormItem>
+                                                                                <FormLabel>Priority</FormLabel>
+                                                                                <Select 
+                                                                                    onValueChange={(value) => field.onChange(parseInt(value, 10))} 
+                                                                                    defaultValue={field.value?.toString() ?? '0'} 
+                                                                                    disabled={isLoading}
+                                                                                >
+                                                                                    <FormControl>
+                                                                                        <SelectTrigger className={cn("w-[220px]", fieldState.error && 'border-destructive')}>
+                                                                                            <SelectValue asChild>
+                                                                                                <span>{selectedOption ? selectedOption.label : "Select Priority"}</span>
+                                                                                            </SelectValue>
+                                                                                        </SelectTrigger>
+                                                                                    </FormControl>
+                                                                                    <SelectContent>
+                                                                                        {priorityOptions.map((option) => (
+                                                                                            <SelectItem key={option.value} value={option.value.toString()}>
+                                                                                                <div className="flex flex-col">
+                                                                                                    <span className="font-medium">{option.label}</span>
+                                                                                                    <span className="text-xs text-muted-foreground">{option.description}</span>
+                                                                                                </div>
+                                                                                            </SelectItem>
+                                                                                        ))}
+                                                                                    </SelectContent>
+                                                                                </Select>
+                                                                                <FormDescription className={descriptionStyles}>
+                                                                                    Affects notification delivery and sound.
+                                                                                </FormDescription>
+                                                                                <FormMessage />
+                                                                            </FormItem>
+                                                                        );
+                                                                    }}
+                                                                />
                                                             </>
                                                         )}
                                                         

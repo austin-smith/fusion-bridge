@@ -62,10 +62,11 @@ export type DeviceWithConnector = {
   serverId?: string | null;      // Optional: Piko server ID
   serverName?: string | null;    // Optional: Piko server name (denormalized)
   pikoServerDetails?: any | null; // Using any for now for PikoServer
-  areaIds?: string[]; // <-- NEW: Optional list of Area IDs this device belongs to
-  associationCount?: number | null; // <<< ADD Optional association count
-  deviceTypeInfo?: TypedDeviceInfo;  // <<< ADD Optional mapped type info
-  displayState?: DisplayState; // <-- ADD Optional display state from sync/events
+  areaId?: string | null;
+  locationId?: string | null; 
+  associationCount?: number | null;
+  deviceTypeInfo?: TypedDeviceInfo;
+  displayState?: DisplayState;
 };
 
 // Interface for Piko Server details (based on DB schema)

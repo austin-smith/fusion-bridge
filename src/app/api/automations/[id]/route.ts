@@ -5,11 +5,14 @@ import { AutomationConfigSchema } from '@/lib/automation-schemas';
 import { z } from 'zod';
 import { eq, sql } from 'drizzle-orm';
 
-// Validation schema uses the updated AutomationConfigSchema implicitly
+// Schema for validating the PUT request body
 const PutBodySchema = z.object({
-    name: z.string().min(1, { message: "Name is required" }),
-    enabled: z.boolean().optional(), 
-    config: AutomationConfigSchema, 
+    name: z.string().min(1, { message: "Name is required" }).optional(),
+    enabled: z.boolean().optional(),
+    config: AutomationConfigSchema.optional(),
+    locationScopeId: z.string().uuid().nullable().optional(), // Add optional, nullable locationScopeId
+}).refine(data => Object.keys(data).length > 0, { 
+    message: "At least one field must be provided for update"
 });
 
 /**
@@ -17,11 +20,15 @@ const PutBodySchema = z.object({
  * Fetches a specific automation configuration by ID.
  */
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
   try {
     const { id } = await params;
+
+    if (!id) {
+      return NextResponse.json({ message: "Automation ID is required" }, { status: 400 });
+    }
 
     // Select core automation fields
     const result = await db
@@ -32,6 +39,7 @@ export async function GET(
         configJson: automations.configJson,
         createdAt: automations.createdAt,
         updatedAt: automations.updatedAt,
+        locationScopeId: automations.locationScopeId,
       })
       .from(automations)
       .where(eq(automations.id, id))
@@ -54,37 +62,67 @@ export async function GET(
  * Updates a specific connector-agnostic automation configuration.
  */
 export async function PUT(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
   try {
     const { id } = await params;
-    const body = await request.json();
 
+    if (!id) {
+      return NextResponse.json({ message: "Automation ID is required" }, { status: 400 });
+    }
+
+    const body = await request.json();
     const validationResult = PutBodySchema.safeParse(body);
+
     if (!validationResult.success) {
       return NextResponse.json({ message: "Invalid request body", errors: validationResult.error.flatten().fieldErrors }, { status: 400 });
     }
-
-    const { name, enabled, config } = validationResult.data;
     
-    // Update the automation record
-    const updatedAutomation = await db
-      .update(automations)
-      .set({
-        name: name,
-        enabled: enabled,
-        configJson: config,
-        updatedAt: sql`(unixepoch('now', 'subsec') * 1000)`,
-      })
-      .where(eq(automations.id, id))
-      .returning();
-
-    if (!updatedAutomation || updatedAutomation.length === 0) {
-      return NextResponse.json({ message: "Automation not found or failed to update" }, { status: 404 });
+    // Check if automation exists
+    const [existing] = await db.select({ id: automations.id }).from(automations).where(eq(automations.id, id)).limit(1);
+    if (!existing) {
+      return NextResponse.json({ message: "Automation not found" }, { status: 404 });
     }
 
-    return NextResponse.json(updatedAutomation[0]);
+    // Extract validated data
+    const updateData = validationResult.data;
+    
+    // Construct the update object, explicitly including nullable locationScopeId
+    const updatePayload: Partial<typeof automations.$inferInsert> = {};
+    if (updateData.name !== undefined) updatePayload.name = updateData.name;
+    if (updateData.enabled !== undefined) updatePayload.enabled = updateData.enabled;
+    if (updateData.config !== undefined) updatePayload.configJson = updateData.config;
+    // Handle locationScopeId explicitly to allow setting it to null
+    if ('locationScopeId' in updateData) { 
+      updatePayload.locationScopeId = updateData.locationScopeId;
+    }
+    
+    // Add updatedAt timestamp
+    updatePayload.updatedAt = new Date();
+
+    const [updatedAutomation] = await db
+      .update(automations)
+      .set(updatePayload)
+      .where(eq(automations.id, id))
+      .returning();
+      
+    // Fetch and return the full updated record including locationScopeId
+    const result = await db
+      .select({
+        id: automations.id,
+        name: automations.name,
+        enabled: automations.enabled,
+        createdAt: automations.createdAt,
+        updatedAt: automations.updatedAt,
+        configJson: automations.configJson,
+        locationScopeId: automations.locationScopeId,
+      })
+      .from(automations)
+      .where(eq(automations.id, updatedAutomation.id))
+      .limit(1);
+
+    return NextResponse.json(result[0]);
 
   } catch (error) {
     console.error(`Failed to update automation:`, error);
@@ -100,21 +138,25 @@ export async function PUT(
  * Deletes a specific automation configuration.
  */
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
   try {
     const { id } = await params;
-    const deleted = await db
-        .delete(automations)
-        .where(eq(automations.id, id))
-        .returning({ deletedId: automations.id });
 
-    if (!deleted || deleted.length === 0) {
+    if (!id) {
+      return NextResponse.json({ message: "Automation ID is required" }, { status: 400 });
+    }
+
+    // Check if automation exists before deleting
+    const [existing] = await db.select({ id: automations.id }).from(automations).where(eq(automations.id, id)).limit(1);
+    if (!existing) {
       return NextResponse.json({ message: "Automation not found" }, { status: 404 });
     }
 
-    return new NextResponse(null, { status: 204 });
+    await db.delete(automations).where(eq(automations.id, id));
+
+    return NextResponse.json({ message: "Automation deleted successfully" }, { status: 200 });
 
   } catch (error) {
     console.error(`Failed to delete automation:`, error);

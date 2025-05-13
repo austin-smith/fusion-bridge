@@ -156,6 +156,7 @@ export const automations = sqliteTable("automations", {
   // Stores the AutomationConfig object with primaryTrigger (standardized types) 
   // and secondaryConditions (standardized types, time windows)
   configJson: text("config_json", { mode: "json" }).notNull().$type<AutomationConfig>(), 
+  locationScopeId: text("location_scope_id").references(() => locations.id, { onDelete: 'cascade' }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
 }, (table) => ({
@@ -340,3 +341,13 @@ export const twoFactorRelations = relations(twoFactor, ({ one }) => ({
         references: [user.id],
     }),
 }));
+
+// --- NEW: Service Configurations Table ---
+export const serviceConfigurations = sqliteTable("service_configurations", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  type: text("type").notNull(),
+  configEnc: text("config_enc").notNull(), // Encrypted JSON blob
+  isEnabled: integer("is_enabled", { mode: "boolean" }).default(true).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});

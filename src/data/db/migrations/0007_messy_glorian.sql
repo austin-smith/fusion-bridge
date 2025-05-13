@@ -1,0 +1,1 @@
+ALTER TABLE `automations` ADD `location_scope_id` text REFERENCES locations(id);

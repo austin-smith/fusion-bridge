@@ -43,6 +43,20 @@
       "when": 1746917059570,
       "tag": "0005_past_shocker",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1747028733439,
+      "tag": "0006_nifty_shadowcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1747085707048,
+      "tag": "0007_messy_glorian",
+      "breakpoints": true
     }
   ]
 }

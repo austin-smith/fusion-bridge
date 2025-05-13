@@ -28,9 +28,7 @@ export default async function LoginPage() {
   // If users exist or the DB check failed, render the login form
   return (
     <>
-      <div className="w-full max-w-sm">
-        <LoginForm />
-      </div>
+      <LoginForm />
       <AddToHomeScreenPrompt />
     </>
   );

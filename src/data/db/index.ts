@@ -61,7 +61,7 @@ function getDbInstance(): DrizzleInstance {
     ensureDbDir();
     const sqlite = new Database(sqlitePath);
     clientInstance = sqlite;
-    const sqliteDb = drizzleSqlite(sqlite, { schema, logger: false });
+    const sqliteDb = drizzleSqlite(sqlite, { schema, logger: true });
     dbInstance = sqliteDb as unknown as DrizzleInstance;
     console.log('SQLite database instance created (cast to async interface).'); // Specific to SQLite
   }

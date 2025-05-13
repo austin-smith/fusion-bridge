@@ -2,7 +2,7 @@ import { Separator } from "@/components/ui/separator";
 import React from "react";
 import AutomationForm from "@/components/automations/AutomationForm";
 import { db } from "@/data/db"; 
-import { connectors, devices, automations as automationsSchema } from "@/data/db/schema";
+import { connectors, devices, automations as automationsSchema, locations, areas, areaDevices } from "@/data/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
 import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
 import { redirect, notFound } from 'next/navigation';
@@ -10,6 +10,7 @@ import { type AutomationConfig, type AutomationAction, type TemporalCondition } 
 import { DeviceType } from "@/lib/mappings/definitions";
 import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions";
 import { getDeviceTypeIconName } from "@/lib/mappings/presentation";
+import type { Location, Area } from '@/types';
 
 // Define specific params type for this page
 interface EditAutomationPageParams {
@@ -22,59 +23,33 @@ interface AutomationFormData {
   name: string;
   enabled: boolean;
   configJson: AutomationConfig;
+  locationScopeId?: string | null;
   createdAt: Date;
   updatedAt: Date;
-}
-
-async function getAvailableTargetDevices() {
-    const allSupportedRawTypesByAnyHandler = new Set<string>();
-    actionHandlers.forEach((handler: IDeviceActionHandler) => {
-        if (typeof handler.getControllableRawTypes === 'function') {
-            const rawTypes = handler.getControllableRawTypes();
-            rawTypes.forEach((rawType: string) => {
-                allSupportedRawTypesByAnyHandler.add(rawType);
-            });
-        } 
-    });
-
-    const rawTypesArray = Array.from(allSupportedRawTypesByAnyHandler);
-    console.log(`[DEBUG EDIT_PAGE] Collected rawTypesArray for DB query:`, rawTypesArray);
-
-    if (rawTypesArray.length === 0) {
-        console.warn("[AutomationForm Data / (manage)] No controllable raw types found. No devices will be targetable.");
-        return [];
-    }
-
-    const actionableDbDevices = await db.query.devices.findMany({
-        columns: {
-            id: true,
-            name: true,
-            standardizedDeviceType: true,
-            type: true 
-        },
-        where: inArray(devices.type, rawTypesArray),
-        orderBy: [asc(devices.name)]
-    });
-
-    const mappedDevices = actionableDbDevices.map((d: typeof actionableDbDevices[number]) => {
-        const stdType = d.standardizedDeviceType as DeviceType; 
-        return {
-            id: d.id,
-            name: d.name,
-            displayType: d.standardizedDeviceType || d.type || 'Unknown Type',
-            iconName: d.standardizedDeviceType ? getDeviceTypeIconName(stdType) : getDeviceTypeIconName(DeviceType.Unmapped) 
-        };
-    });
-    console.log(`[DEBUG EDIT_PAGE] Returning devices for dropdown (count: ${mappedDevices.length}):`, JSON.stringify(mappedDevices.slice(0,3)));
-    return mappedDevices;
 }
 
 // Define the page component using the correct Next.js App Router pattern
 export default async function EditAutomationPage({ params }: { params: Promise<EditAutomationPageParams> }) {
   const { id } = await params;
   
-  // Data fetching logic (Promise.all, etc.) remains here
-  const [automationResult, availableConnectorsResult, availableTargetDevicesResult, sourceDeviceTypeOptionsResult] = await Promise.all([
+  // Calculate synchronous options outside Promise.all
+  const formSourceDeviceTypeOptions = Object.values(DeviceType)
+    .filter(type => type !== DeviceType.Unmapped)
+    .sort((a, b) => a.localeCompare(b))
+    .map(typeValue => ({ 
+        value: typeValue, 
+        label: typeValue 
+    }));
+    
+  // Data fetching logic
+  const [
+    automationResult, 
+    availableConnectorsResult, 
+    // We will fetch all devices here and then process them
+    allDbDevicesWithJoins, 
+    allLocationsResult, 
+    allAreasResult
+  ] = await Promise.all([
     db.query.automations.findFirst({
       where: eq(automationsSchema.id, id),
     }),
@@ -83,16 +58,19 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
         name: connectors.name,
         category: connectors.category,
       }).from(connectors).orderBy(asc(connectors.name)),
-    getAvailableTargetDevices(), // This function needs to be defined above or imported
-    Promise.resolve( 
-      Object.values(DeviceType)
-        .filter(type => type !== DeviceType.Unmapped)
-        .sort((a, b) => a.localeCompare(b))
-        .map(typeValue => ({ 
-            value: typeValue, 
-            label: typeValue 
-        }))
-    )
+    // NEW: Fetch all devices with necessary fields including join for areaId
+    db.select({
+        id: devices.id,
+        name: devices.name,
+        type: devices.type, // The device type string from the database, used by actionHandlers to determine controllability
+        standardizedDeviceType: devices.standardizedDeviceType, // For displaying target devices
+        areaId: areaDevices.areaId, // Joined from areaDevices - Used by RuleBuilder via allAreas prop
+    }).from(devices)
+      .leftJoin(areaDevices, eq(devices.id, areaDevices.deviceId))
+      // No need to join 'areas' here; RuleBuilder uses areaId + allAreas prop.
+      .orderBy(asc(devices.name)),
+    db.query.locations.findMany({ orderBy: [asc(locations.name)] }) as Promise<Location[]>,
+    db.query.areas.findMany({ orderBy: [asc(areas.name)] }) as Promise<Area[]>,
   ]);
 
   if (!automationResult) {
@@ -101,8 +79,8 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
 
   const automation = automationResult;
   const formAvailableConnectors = availableConnectorsResult;
-  const formAvailableTargetDevices = availableTargetDevicesResult;
-  const formSourceDeviceTypeOptions = sourceDeviceTypeOptionsResult;
+  const formAllLocations = allLocationsResult;
+  const formAllAreas = allAreasResult;
   
   let configJsonData: AutomationConfig = { 
     conditions: { all: [] }, 
@@ -147,10 +125,55 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
       id: automation.id,
       name: automation.name ?? '', // Ensure name is not null
       enabled: automation.enabled ?? true, // Ensure enabled is not null
+      locationScopeId: automation.locationScopeId ?? null,
       configJson: configJsonData,
       createdAt: automation.createdAt ?? new Date(), // Ensure createdAt is not null
       updatedAt: automation.updatedAt ?? new Date(), // Ensure updatedAt is not null
   };
+
+  // --- START: Process allDbDevicesWithJoins to create the two lists ---
+  
+  // Determine controllable raw types from action handlers
+  const allSupportedRawTypesByAnyHandler = new Set<string>();
+  actionHandlers.forEach((handler: IDeviceActionHandler) => {
+      if (typeof handler.getControllableRawTypes === 'function') {
+          const rawTypes = handler.getControllableRawTypes();
+          rawTypes.forEach((rawType: string) => {
+              allSupportedRawTypesByAnyHandler.add(rawType);
+          });
+      } 
+  });
+  const rawTypesArray = Array.from(allSupportedRawTypesByAnyHandler);
+
+  // 1. Determine Targetable Devices (for Actions)
+  let formAvailableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; areaId?: string | null; }> = [];
+  if (rawTypesArray.length > 0) {
+      formAvailableTargetDevices = allDbDevicesWithJoins
+          .filter(d => rawTypesArray.includes(d.type)) // Filter by controllable raw types
+          .map(d => {
+              const stdType = d.standardizedDeviceType as DeviceType;
+              // This list is for Action targets, display fields are important.
+              return {
+                  id: d.id,
+                  name: d.name,
+                  displayType: d.standardizedDeviceType || d.type || 'Unknown Type',
+                  iconName: d.standardizedDeviceType ? getDeviceTypeIconName(stdType) : getDeviceTypeIconName(DeviceType.Unmapped),
+                  areaId: d.areaId, // Include areaId, might be useful for display/context
+              };
+          });
+  }
+
+  // 2. Prepare Full List for Conditions (for RuleBuilder)
+  // RuleBuilder expects: { id: string; name: string; areaId?: string | null; }
+  // It uses the areaId to look up the area in the `allAreas` prop (which contains area.locationId)
+  // to perform location-based scoping.
+  const devicesForConditions = allDbDevicesWithJoins.map(d => ({
+      id: d.id,
+      name: d.name,
+      areaId: d.areaId, // This is crucial for RuleBuilder's existing logic
+  }));
+
+  // --- END: Process allDbDevicesWithJoins ---
 
   return (
     <div className="flex-1 space-y-4 p-4 pt-6 md:p-8">
@@ -167,6 +190,9 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
           availableConnectors={formAvailableConnectors}
           sourceDeviceTypeOptions={formSourceDeviceTypeOptions}
           availableTargetDevices={formAvailableTargetDevices}
+          devicesForConditions={devicesForConditions}
+          allLocations={formAllLocations}
+          allAreas={formAllAreas}
         />
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { Power, Bookmark, Globe, TriangleAlert, HelpCircle } from 'lucide-react';
+import { Power, Bookmark, Globe, TriangleAlert, HelpCircle, Bell } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Enum for automation action types
@@ -7,6 +7,7 @@ export enum AutomationActionType {
   CREATE_BOOKMARK = 'createBookmark',
   SEND_HTTP_REQUEST = 'sendHttpRequest',
   SET_DEVICE_STATE = 'setDeviceState',
+  SEND_PUSH_NOTIFICATION = 'sendPushNotification',
 }
 
 // Define all styling and information in a single map
@@ -100,6 +101,15 @@ export const ACTION_TYPE_INFO: Record<AutomationActionType, ActionTypeInfo> = {
                           
       return `→ ${stateDisplay} ${deviceName}`;
     }
+  },
+  
+  [AutomationActionType.SEND_PUSH_NOTIFICATION]: {
+    displayName: 'Send Push Notification',
+    icon: Bell,
+    iconColorClass: 'text-orange-600 dark:text-orange-400',
+    bgColorClass: 'bg-orange-50/40 dark:bg-orange-950/20',
+    borderColorClass: 'border-orange-200 dark:border-orange-800',
+    formatter: () => '→ via Pushover Service'
   }
 };
 
