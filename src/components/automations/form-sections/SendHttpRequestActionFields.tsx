@@ -18,7 +18,7 @@ import { Trash2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TokenInserter } from '@/components/automations/TokenInserter';
 import { AVAILABLE_AUTOMATION_TOKENS } from '@/lib/automation-tokens';
-import type { InsertableFieldNames } from './ActionItem'; // Import from local ActionItem for now
+import type { InsertableFieldNames } from './ActionItem';
 import type { AutomationFormValues } from '../AutomationForm';
 
 const descriptionStyles = "text-xs text-muted-foreground mt-1";
