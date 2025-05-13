@@ -25,6 +25,7 @@ const TestPayloadSchema = z.object({
   url: z.string().url().optional(),
   urlTitle: z.string().optional(),
   timestamp: z.number().int().positive().optional(),
+  targetUserKey: z.string().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -61,7 +62,8 @@ export async function POST(request: NextRequest) {
       monospace,
       url,
       urlTitle,
-      timestamp
+      timestamp,
+      targetUserKey
     } = validation.data;
 
     // Basic validation for attachment data coherence
@@ -89,7 +91,15 @@ export async function POST(request: NextRequest) {
       ...(timestamp && { timestamp }),
     };
 
-    const result = await sendPushoverNotification(config.apiToken, config.groupKey, pushoverParams);
+    // Determine the recipient key
+    const recipientKey = targetUserKey && targetUserKey.trim() !== '' 
+        ? targetUserKey 
+        : config.groupKey; // Fallback to the configured group key
+
+    console.log(`[API /services/pushover/test] Determined recipient key: ${recipientKey.substring(0,5)}...`);
+
+    // Use the determined recipient key in the driver call
+    const result = await sendPushoverNotification(config.apiToken, recipientKey, pushoverParams);
 
     if (result.success) {
       return NextResponse.json({ success: true, requestId: result.pushoverRequestId });

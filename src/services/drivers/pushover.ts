@@ -98,13 +98,13 @@ export async function getGroupInfo(
  * Sends a notification via the Pushover API.
  * 
  * @param apiToken Your Pushover application's API token.
- * @param groupKey The Pushover user or group key to send the message to.
+ * @param recipientKey The Pushover user or group key to send the message to.
  * @param params The resolved message parameters.
  * @returns A promise resolving to an object indicating success or failure, along with API response details.
  */
 export async function sendPushoverNotification(
   apiToken: string,
-  groupKey: string,
+  recipientKey: string,
   params: ResolvedPushoverMessageParams
 ): Promise<{
   success: boolean;
@@ -114,9 +114,9 @@ export async function sendPushoverNotification(
   errorMessage?: string; // General error message for network issues or unexpected errors
   rawResponse?: any; // The raw response body for debugging
 }> {
-  if (!apiToken || !groupKey) {
-    console.error('[Pushover Driver] API token or Group key is missing.');
-    return { success: false, errorMessage: 'API token or Group key is missing.' };
+  if (!apiToken || !recipientKey) {
+    console.error('[Pushover Driver] API token or Recipient key is missing.');
+    return { success: false, errorMessage: 'API token or Recipient key is missing.' };
   }
   
   // Validate parameters with Zod
@@ -136,7 +136,7 @@ export async function sendPushoverNotification(
 
   const payload: any = {
     token: apiToken,
-    user: groupKey,
+    user: recipientKey,
     message: validParams.message,
   };
 
@@ -171,7 +171,7 @@ export async function sendPushoverNotification(
     payload.expire = validParams.expire;
   }
 
-  console.log(`[Pushover Driver] Sending notification to group ${groupKey.substring(0,5)}... with title: ${validParams.title || '(App Name)'}`);
+  console.log(`[Pushover Driver] Sending notification to recipient ${recipientKey.substring(0,5)}... with title: ${validParams.title || '(App Name)'}`);
 
   try {
     // Construct URL using base constant and path

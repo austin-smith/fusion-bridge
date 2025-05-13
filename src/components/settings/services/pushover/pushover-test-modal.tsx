@@ -20,7 +20,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, Send, Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, Send, Settings, ChevronDown, ChevronUp, Users } from 'lucide-react';
 import type { PushoverConfig } from '@/data/repositories/service-configurations';
 import type { ResolvedPushoverMessageParams } from '@/types/pushover-types';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -33,6 +33,7 @@ const formSchema = z.object({
   message: z.string().min(1, 'Message is required').default('This is a test message from Fusion! 🔔 '),
   attachment: z.instanceof(File).optional().nullable()
     .refine(file => !file || file.size <= 5 * 1024 * 1024, `Max file size is 5MB.`), // Validate size
+  targetUserKey: z.string().optional().default('__all__'), // __all__ represents the group key
   device: z.string().optional().default(''),
   priority: z.union([
     z.literal(-2),
@@ -72,11 +73,24 @@ interface PushoverTestModalProps {
   pushoverConfig: PushoverConfig | null;
 }
 
+// Define a type for the users fetched for the dropdown
+interface PushoverUserForSelect {
+    user: string; // User key
+    memo: string; // Memo for display
+    device?: string | null; // Optional specific device
+}
+
 export function PushoverTestModal({ isOpen, onOpenChange, pushoverConfig }: PushoverTestModalProps) {
   const [attachmentState, setAttachmentState] = useState<{ file: File | null; base64: string | null; type: string | null }>({ file: null, base64: null, type: null });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [unixTimestamp, setUnixTimestamp] = useState<number | undefined>(undefined);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [isTargetUserSelectOpen, setIsTargetUserSelectOpen] = useState(false);
+
+  // New state for users dropdown
+  const [groupUsers, setGroupUsers] = useState<PushoverUserForSelect[]>([]);
+  const [isFetchingUsers, setIsFetchingUsers] = useState(false);
+  const [fetchUsersError, setFetchUsersError] = useState<string | null>(null);
 
   const form = useForm<PushoverTestFormValues>({
     resolver: zodResolver(formSchema),
@@ -102,6 +116,39 @@ export function PushoverTestModal({ isOpen, onOpenChange, pushoverConfig }: Push
     }
   }, [timestampInputValue]);
 
+  // Effect to fetch users when modal opens
+  useEffect(() => {
+    async function fetchUsers() {
+      if (isOpen && pushoverConfig?.groupKey) {
+        setIsFetchingUsers(true);
+        setFetchUsersError(null);
+        setGroupUsers([]); // Clear previous users
+        try {
+          // Use the existing endpoint
+          const response = await fetch('/api/services/pushover/group-users/list');
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Failed to fetch users: ${response.statusText}`);
+          }
+          const users: PushoverUserForSelect[] = await response.json();
+          setGroupUsers(users);
+        } catch (error) {
+          console.error("Error fetching Pushover group users:", error);
+          setFetchUsersError(error instanceof Error ? error.message : "An unknown error occurred while fetching users.");
+          toast.error("Failed to load users", { description: error instanceof Error ? error.message : undefined });
+        } finally {
+          setIsFetchingUsers(false);
+        }
+      } else if (!isOpen) {
+        // Clear users when modal is closed
+        setGroupUsers([]);
+        setFetchUsersError(null);
+        setIsFetchingUsers(false);
+      }
+    }
+    fetchUsers();
+  }, [isOpen, pushoverConfig?.groupKey]);
+
   // Reset form state
   const handleOpenChange = (open: boolean) => {
     if (!open) {
@@ -110,6 +157,12 @@ export function PushoverTestModal({ isOpen, onOpenChange, pushoverConfig }: Push
         setAttachmentState({ file: null, base64: null, type: null });
         setUnixTimestamp(undefined);
         setIsAdvancedOpen(false);
+        // Reset user fetching state
+        setGroupUsers([]);
+        setIsFetchingUsers(false);
+        setFetchUsersError(null);
+        // Reset select open state
+        setIsTargetUserSelectOpen(false);
         const fileInput = document.getElementById('attachment-input') as HTMLInputElement;
         if (fileInput) fileInput.value = '';
         setIsSubmitting(false);
@@ -156,13 +209,16 @@ export function PushoverTestModal({ isOpen, onOpenChange, pushoverConfig }: Push
       payload.attachment_type = attachmentState.type;
     }
 
+    // Add targetUserKey to the payload if a specific user is selected
+    const finalTargetUserKey = values.targetUserKey && values.targetUserKey !== '__all__' ? values.targetUserKey : undefined;
+
     try {
       const response = await fetch('/api/services/pushover/test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, targetUserKey: finalTargetUserKey }), // Add targetUserKey to the payload
       });
 
       const data = await response.json();
@@ -248,6 +304,75 @@ export function PushoverTestModal({ isOpen, onOpenChange, pushoverConfig }: Push
                       <FormControl>
                         <Textarea {...field} rows={3} disabled={isSubmitting} />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="targetUserKey"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center">
+                        <Users className="h-4 w-4 mr-1.5 text-muted-foreground" /> Target User
+                      </FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                        disabled={isSubmitting || isFetchingUsers || !!fetchUsersError || !pushoverConfig?.groupKey}
+                        open={isTargetUserSelectOpen}
+                        onOpenChange={setIsTargetUserSelectOpen}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="text-left">
+                            <SelectValue placeholder={
+                              isFetchingUsers ? "Loading users..." : 
+                              !pushoverConfig?.groupKey ? "Configure group key first" :
+                              fetchUsersError ? "Error loading users" : 
+                              "Select target user..."
+                            }>
+                              {field.value === '__all__' 
+                                ? <span className="text-sm">All Users</span>
+                                : (() => {
+                                    const selectedUser = groupUsers.find(u => u.user === field.value);
+                                    return (
+                                      <span className="text-sm">
+                                        {selectedUser 
+                                          ? (selectedUser.memo || `User Key: ${selectedUser.user.substring(0, 7)}...`) 
+                                          : (field.value && field.value !== '__all__' ? `Key: ${field.value.substring(0, 7)}...` : "Select target user...")
+                                        }
+                                      </span>
+                                    );
+                                  })()
+                              }
+                            </SelectValue>
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__all__">
+                            <div className="flex flex-col items-start text-left">
+                               <span className="font-medium">All Users</span>
+                               <span className="text-xs text-muted-foreground">Send to all users in the configured group.</span>
+                            </div>
+                          </SelectItem>
+                          {groupUsers.length > 0 && groupUsers.map(user => (
+                            <SelectItem key={user.user} value={user.user}>
+                               <div className="flex flex-col items-start text-left">
+                                <span className="font-medium">{user.memo || `User Key: ${user.user.substring(0, 7)}...`}</span>
+                                {user.memo && <span className="text-xs text-muted-foreground">Key: {user.user.substring(0, 7)}...</span>}
+                                {user.device && <span className="text-xs text-muted-foreground">Device: {user.device}</span>}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {fetchUsersError && <FormMessage className="text-destructive">{fetchUsersError}</FormMessage>}
+                      {isTargetUserSelectOpen && (
+                        <FormDescription className="text-xs pt-1">
+                          Select a specific user to send the notification to, or send to all users in the group.
+                        </FormDescription>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
