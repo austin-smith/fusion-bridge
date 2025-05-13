@@ -90,11 +90,7 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     }
     return `${format(startTime, 'h:mm:ss a')} - ${format(endTime, 'h:mm:ss a')}`;
   }, [startTime, endTime]);
-
-  // Debug logs
-  // console.log(`[EventGroupCard] Received areas prop for group ${groupKey}:`, areas);
-  // console.log(`[EventGroupCard] Rendering Group: ${groupKey}, Area ID: ${areaId}, Area Name: ${areaName}`);
-
+  
   // --- Area Piko Camera Calculation (as before) --- 
   const areaPikoCamera = useMemo(() => {
     if (!areaId) return null;

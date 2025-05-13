@@ -10,26 +10,12 @@ export async function GET(request: NextRequest) {
   const timestampMsStr = searchParams.get('timestamp'); // Use 'timestamp' as sent by frontend
   const size = searchParams.get('size');
 
-  // --- DEBUG LOG: Incoming Params ---
-  console.log(`[API Thumb] Req Params - ConnectorID: ${connectorId}, CameraID: ${cameraId}, Timestamp: ${timestampMsStr}, Size: ${size}`); // <-- Use cameraId in log
-  // --- END DEBUG --- 
-
   if (!connectorId || !cameraId) { // <-- Check cameraId
     console.error('[API Thumb] Error: Missing connectorId or cameraId'); // <-- Update error log
     return NextResponse.json({ success: false, error: 'Missing connectorId or cameraId' }, { status: 400 }); // <-- Update error message
   }
 
   try {
-    // --- Use Helper from piko.ts ---
-    // The getTokenAndConfig call is not directly needed here because 
-    // pikoDriver.getPikoDeviceThumbnail will call fetchPikoApiData, 
-    // which internally calls getTokenAndConfig using the connectorId.
-    // const { config, token } = await pikoDriver.getTokenAndConfig(connectorId); 
-    
-    // --- DEBUG LOG: Config & Token ---
-    // console.log(`[API Thumb] Fetched Config Type: ${config?.type}, Token Access Token Present: ${!!token?.accessToken}`);
-    // --- END DEBUG --- 
-
     // --- Fetch Thumbnail ---
     const timestampNum = timestampMsStr ? parseInt(timestampMsStr, 10) : undefined;
     console.log(`[API Thumb] Calling getPikoDeviceThumbnail with: ConnectorID=${connectorId}, CameraID=${cameraId}, Timestamp=${timestampNum}, Size=${size}`);
@@ -41,14 +27,6 @@ export async function GET(request: NextRequest) {
       size ?? undefined
       // Removed superfluous arguments
     );
-
-    // --- DEBUG LOG: Blob Result ---
-    if (thumbnailBlob instanceof Blob) {
-        console.log(`[API Thumb] Received Blob - Size: ${thumbnailBlob.size}, Type: ${thumbnailBlob.type}`);
-    } else {
-        console.log(`[API Thumb] Received Non-Blob Result:`, thumbnailBlob);
-    }
-    // --- END DEBUG --- 
 
     // Ensure we actually received a Blob before attempting to return it
     if (!(thumbnailBlob instanceof Blob)) {

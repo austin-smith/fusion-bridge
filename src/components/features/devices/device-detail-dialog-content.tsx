@@ -290,15 +290,6 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   }
   // --- END: Logic ---
 
-  // Debug logging for state changes
-  useEffect(() => {
-    console.log('Available Piko Cameras:', availablePikoCameras);
-    console.log('Selected Piko Camera IDs:', Array.from(selectedPikoCameraIds));
-    console.log('Available YoLink Devices:', availableYoLinkDevices);
-    console.log('Selected YoLink Device IDs:', Array.from(selectedYoLinkDeviceIds));
-    console.log('Loading State:', isLoadingAssociations);
-  }, [availablePikoCameras, selectedPikoCameraIds, availableYoLinkDevices, selectedYoLinkDeviceIds, isLoadingAssociations]);
-
   // Fetch available devices and current associations
   useEffect(() => {
     // Use device directly

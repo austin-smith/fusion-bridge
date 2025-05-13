@@ -64,15 +64,6 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
   const [typeFilter, setTypeFilter] = useState<string>('all'); 
   const [connectorFilter, setConnectorFilter] = useState<string>('all');
 
-  // <<< START DEBUG LOGGING >>>
-  useEffect(() => {
-      console.log('AreaDeviceAssignmentDialog received allDevices prop:', allDevices);
-      if(allDevices?.length > 0) {
-          console.log('AreaDeviceAssignmentDialog first device in prop:', allDevices[0]);
-      }
-  }, [allDevices]);
-  // <<< END DEBUG LOGGING >>>
-
   // --- Reusable function to fetch current assignments ---
   const refetchAssignments = useCallback(async () => {
     if (!area) {
@@ -161,12 +152,6 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
       cell: ({ row }) => {
         const deviceId = row.original.id;
         const isChecked = getDisplayedCheckedState(deviceId);
-        
-        // <<< START DEBUG LOGGING >>>
-        if (deviceId) { // Only log if deviceId is present
-            console.log(`Rendering checkbox cell for deviceId: ${deviceId}, row.original:`, row.original);
-        }
-        // <<< END DEBUG LOGGING >>>
 
         // Wrap Checkbox to control alignment and padding
         return (

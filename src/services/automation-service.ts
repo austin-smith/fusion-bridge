@@ -764,7 +764,6 @@ async function evaluateTemporalCondition(
         // Modify findEvents to return full events, not just boolean
         // console.log(`[evaluateTemporalCondition] ABOUT TO CALL findEventsInWindow. Filter:`, JSON.stringify(repoFilter)); // Log before the await
         candidateEvents = await findEventsInWindow(repoFilter); // Call the directly imported function
-        // console.log(`[evaluateTemporalCondition] Found ${candidateEvents.length} candidate events within time window and scope.`); // Debug log
     } catch (error) {
         // This catch is for errors *calling* findEventsInWindow (e.g., module load issues)
         console.error(`[evaluateTemporalCondition] Error calling findEventsInWindow. Filter: ${JSON.stringify(repoFilter)}`, error);
@@ -814,7 +813,6 @@ async function evaluateTemporalCondition(
             const value = resolvePath(eventFacts, path); // Resolve against the constructed eventFacts
             minimalTemporalFacts[path] = (value === undefined ? null : value);
         });
-        // console.log(`[evaluateTemporalCondition] Evaluating event filter for event ${event.eventId} with MINIMAL facts:`, minimalTemporalFacts); // Debug log
         // --- End flatten --- 
         
         try {

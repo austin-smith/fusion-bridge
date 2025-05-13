@@ -843,13 +843,6 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     try {
       const response = await fetch('/api/devices'); // Assuming this is the endpoint
       const data: ApiResponse<DeviceWithConnector[]> = await response.json();
-      
-      // <<< START DEBUG LOGGING >>>
-      console.log('[fetchAllDevices Store Action] Raw API response data:', data);
-      if (data.success && data.data) {
-          console.log('[fetchAllDevices Store Action] First device from API:', data.data[0]);
-      }
-      // <<< END DEBUG LOGGING >>>
 
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to fetch devices');

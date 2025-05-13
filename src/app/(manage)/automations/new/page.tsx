@@ -54,7 +54,6 @@ async function getAvailableTargetDevices() {
         }
     });
     const rawTypesArray = Array.from(allSupportedRawTypesByAnyHandler);
-    console.log(`[DEBUG NEW_PAGE] Collected rawTypesArray for DB query:`, rawTypesArray);
 
     if (rawTypesArray.length === 0) {
         console.warn("[AutomationForm Data] No controllable raw types found. No devices will be targetable.");
@@ -91,7 +90,6 @@ async function getAvailableTargetDevices() {
             locationId: null // We'll need to join with areas to get this later if needed
         };
     });
-    console.log(`[DEBUG NEW_PAGE] Returning devices for dropdown (count: ${mappedDevices.length}):`, JSON.stringify(mappedDevices.slice(0,3)));
     return mappedDevices;
 }
 
