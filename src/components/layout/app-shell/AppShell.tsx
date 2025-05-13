@@ -35,8 +35,8 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
 
             <div className="flex-1 w-full max-w-full overflow-hidden">
               <div className="h-full w-full overflow-auto">
-                <div className="w-full max-w-full p-4 md:p-6">
-                  <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+                <div className="w-full max-w-ful">
+                  <main className="flex-1 overflow-y-auto p-4">
                     {children}
                   </main>
                 </div>

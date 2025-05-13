@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/data/db';
 import { connectors, devices } from '@/data/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
@@ -30,6 +30,14 @@ interface RepoEnrichedEvent {
   areaName: string | null; // <-- RE-ADDED: From areas table via eventsRepository
 }
 
+// --- Modified Pagination Metadata Interface ---
+interface ApiPaginationMetadata {
+  currentPage: number;
+  itemsPerPage: number;
+  hasNextPage: boolean;
+}
+// --- End Modified Pagination Metadata Interface ---
+
 // Interface for the final enriched event data returned by the API
 interface ApiEnrichedEvent {
   id: number;
@@ -60,13 +68,43 @@ interface ApiEnrichedEvent {
 }
 
 // GET handler to fetch events
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // Fetch enriched events directly from the repository
-    const recentEnrichedEvents: RepoEnrichedEvent[] = await eventsRepository.getRecentEvents(200);
+    // --- Pagination --- 
+    const searchParams = request.nextUrl.searchParams;
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const offset = (page - 1) * limit;
 
-    // Map the repository results to the API response structure
-    const apiEvents = recentEnrichedEvents.map((event: RepoEnrichedEvent): ApiEnrichedEvent => {
+    // --- ADDED: Read and prepare filters from query parameters ---
+    const eventCategoriesRaw = searchParams.get('eventCategories');
+    const connectorCategory = searchParams.get('connectorCategory') || undefined; // Use undefined if not present or empty
+
+    let eventCategories: string[] | undefined = undefined;
+    if (eventCategoriesRaw) {
+      eventCategories = eventCategoriesRaw.split(',').map(cat => cat.trim()).filter(cat => cat.length > 0);
+      if (eventCategories.length === 0) {
+        eventCategories = undefined; // Treat empty array after split/filter as no filter
+      }
+    }
+
+    const filters = {
+      eventCategories: eventCategories,
+      connectorCategory: connectorCategory
+    };
+    // --- END ADDED ---
+
+    // MODIFIED: Pass filters to the repository function
+    const recentEnrichedEvents: RepoEnrichedEvent[] = await eventsRepository.getRecentEvents(limit, offset, filters);
+
+    // Determine if there is a next page
+    const hasNextPage = recentEnrichedEvents.length > limit;
+
+    // Slice the array to return only the requested number of items
+    const eventsForCurrentPage = recentEnrichedEvents.slice(0, limit);
+
+    // Map the repository results for the current page to the API response structure
+    const apiEvents = eventsForCurrentPage.map((event: RepoEnrichedEvent): ApiEnrichedEvent => {
       let payload: Record<string, any> | null = null;
       let rawPayload: Record<string, any> | null = null;
       let displayState: DisplayState | undefined = undefined;
@@ -166,7 +204,22 @@ export async function GET() {
       return finalEventObject;
     });
 
-    return NextResponse.json({ success: true, data: apiEvents });
+    // --- Modified Pagination Metadata --- 
+    const paginationMetadata: ApiPaginationMetadata = {
+      itemsPerPage: limit,
+      currentPage: page,
+      hasNextPage: hasNextPage, // <-- Use the calculated flag
+    };
+    // --- End Modified Pagination Metadata ---
+
+    // ADDED: Log to check returned data length
+    console.log(`[API] page: ${page}, limit: ${limit}, eventsForCurrentPage.length: ${eventsForCurrentPage.length}, hasNextPage: ${hasNextPage}`);
+
+    return NextResponse.json({ 
+      success: true, 
+      data: apiEvents, // CORRECTED: Should be apiEvents (mapped data)
+      pagination: paginationMetadata // <-- Include modified pagination metadata
+    });
 
   } catch (error) {
     console.error('Error fetching events:', error);

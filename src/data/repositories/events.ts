@@ -8,7 +8,15 @@ import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
 
 // Maximum number of events to keep
 // TODO: Consider basing cleanup on time window instead of fixed count if rules need longer history
-const MAX_EVENTS = 1000;
+const MAX_EVENTS = 100000;
+
+// --- ADDED: Interface for getRecentEvents filters ---
+interface RecentEventsFilters {
+  eventCategories?: string[];
+  connectorCategory?: string;
+  // Add other potential global filters here if needed in the future
+}
+// --- END ADDED ---
 
 // Interface for the filter parameters of findEventsInWindow
 export interface FindEventsFilter {
@@ -115,12 +123,10 @@ export async function findEventsInWindow(filter: FindEventsFilter): Promise<Stan
             dbResults = await db
                 .select(selectFields) // selectFields includes connectorCategory
                 .from(events)
-                // --- JOIN devices to filter by standardizedDeviceType/Subtype ---
                 .innerJoin(devices, and(
                     eq(events.connectorId, devices.connectorId),
                     eq(events.deviceId, devices.deviceId)
                 ))
-                // --- JOIN connectors needed for category info --- 
                 .innerJoin(connectors, eq(events.connectorId, connectors.id))
                 .where(and(...joinConditions))
                 .orderBy(desc(events.timestamp)); // Order by timestamp might be useful
@@ -219,9 +225,26 @@ export async function storeStandardizedEvent(stdEvent: StandardizedEvent) {
 
 /**
  * Gets recent events from the database, enriched with device, connector, and area info.
+ * Now supports filtering by event categories and connector category.
  */
-export async function getRecentEvents(limit = 100) {
+export async function getRecentEvents(limit = 100, offset = 0, filters?: RecentEventsFilters) {
   try {
+    // Fetch limit + 1 to check if there are more records for the next page
+    const actualLimitToFetch = limit + 1; 
+
+    // --- ADDED: Build dynamic WHERE conditions based on filters ---
+    const conditions: SQL[] = [];
+
+    if (filters?.eventCategories && filters.eventCategories.length > 0) {
+      conditions.push(inArray(events.standardizedEventCategory, filters.eventCategories as EventCategory[]));
+    }
+
+    if (filters?.connectorCategory && filters.connectorCategory.toLowerCase() !== 'all' && filters.connectorCategory !== '') {
+      // Assuming 'all' or empty string means no filter for connector category
+      conditions.push(eq(connectors.category, filters.connectorCategory));
+    }
+    // --- END ADDED ---
+
     const recentEnrichedEvents = await db
       .select({
         // Event fields
@@ -257,10 +280,13 @@ export async function getRecentEvents(limit = 100) {
       .leftJoin(connectors, eq(connectors.id, events.connectorId))
       .leftJoin(areaDevices, eq(areaDevices.deviceId, devices.id)) // Use devices.id (internal UUID)
       .leftJoin(areas, eq(areas.id, areaDevices.areaId))
+      // --- MODIFIED: Apply dynamic conditions ---
+      .where(conditions.length > 0 ? and(...conditions) : undefined) // Pass undefined if no conditions to avoid empty AND()
       .orderBy(desc(events.timestamp))
-      .limit(limit);
+      .limit(actualLimitToFetch) // <-- Use limit + 1
+      .offset(offset);
 
-    return recentEnrichedEvents;
+    return recentEnrichedEvents; // <-- Return potentially limit + 1 records
     
   } catch (err) {
     console.error('Failed to get recent events:', err);

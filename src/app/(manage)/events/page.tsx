@@ -93,6 +93,14 @@ import type { EnrichedEvent } from '@/types/events';
 import { EventCardView } from '@/components/features/events/EventCardView';
 import { EventCardViewSkeleton } from '@/components/features/events/event-card-view-skeleton';
 
+// --- Interface for Pagination Metadata from API ---
+interface PaginationMetadata {
+  itemsPerPage: number;
+  currentPage: number;
+  hasNextPage: boolean;
+}
+// --- End Interface ---
+
 // --- ADDED BACK EventTag --- 
 const EventTag = ({ 
   icon, 
@@ -169,6 +177,7 @@ export default function EventsPage() {
     pageIndex: 0,
     pageSize: 50,
   });
+  const [tablePageCount, setTablePageCount] = useState<number>(0);
   const [connectorCategoryFilter, setConnectorCategoryFilter] = useState('all');
   const initialEventCategories = Object.keys(EVENT_CATEGORY_DISPLAY_MAP).filter(
     categoryKey => categoryKey !== EventCategory.DIAGNOSTICS
@@ -177,6 +186,15 @@ export default function EventsPage() {
   
   // State for view mode with localStorage persistence
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table'); // Default to table view, consistent with server
+
+  // --- ADDED: Refs for managing fetch logic ---
+  const isInitialLoadRef = useRef(true);
+  const prevPageIndexRef = useRef(pagination.pageIndex);
+  const prevPageSizeRef = useRef(pagination.pageSize);
+  // --- ADDED: Refs for previous filter states ---
+  const prevEventCategoryFilterRef = useRef(eventCategoryFilter);
+  const prevConnectorCategoryFilterRef = useRef(connectorCategoryFilter);
+  // --- END ADDED ---
 
   // Effect to load and set viewMode from localStorage after initial render
   useEffect(() => {
@@ -247,19 +265,34 @@ export default function EventsPage() {
     document.title = 'Events // Fusion';
   }, []);
 
-  // Function to fetch events
-  const fetchEvents = useCallback(async (isInitialLoad = false) => {
+  // MODIFIED: fetchEvents signature and URL construction
+  const fetchEvents = useCallback(async (
+    page: number, 
+    pageSize: number, 
+    isInitialLoad = false,
+    currentEventCategories: string[],
+    currentConnectorCategory: string
+  ): Promise<{ pagination: PaginationMetadata | null; actualDataLength: number } | null> => {
     try {
-      const response = await fetch('/api/events');
+      const params = new URLSearchParams();
+      params.append('page', String(page));
+      params.append('limit', String(pageSize));
+
+      if (currentEventCategories.length > 0) {
+        params.append('eventCategories', currentEventCategories.join(','));
+      }
+      if (currentConnectorCategory && currentConnectorCategory.toLowerCase() !== 'all') {
+        params.append('connectorCategory', currentConnectorCategory);
+      }
+
+      const response = await fetch(`/api/events?${params.toString()}`);
 
       if (!response.ok) {
         let errorMessage = `HTTP error! Status: ${response.status}`;
         try {
-          // Try to get a more specific error message from the API response body
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
         } catch (jsonError) {
-          // Ignore JSON parsing error if the body isn't valid JSON
           console.warn('Failed to parse error response body as JSON:', jsonError);
         }
         throw new Error(errorMessage);
@@ -268,30 +301,26 @@ export default function EventsPage() {
       const data = await response.json();
 
       if (!data.success) {
-        // Handle cases where the API returns success: false even with a 200 status
         throw new Error(data.error || 'API returned success: false');
       }
 
       setEvents(data.data || []);
+      // MODIFIED: Return pagination data instead of setting state
+      return { pagination: data.pagination as PaginationMetadata | null, actualDataLength: data.data.length };
 
     } catch (error) {
       console.error('Error fetching events:', error);
-      // Display a user-friendly message based on the error type
       const displayMessage = error instanceof Error ? error.message : 'An unknown error occurred while fetching events';
-      // Only toast on initial load failure or if specifically needed, avoid spamming toasts on interval failures
       if (isInitialLoad) {
          toast.error(displayMessage);
       } else {
-         console.warn(`Background fetch failed: ${displayMessage}`); // Log subsequent errors quietly
+         console.warn(`Background fetch failed: ${displayMessage}`);
       }
+      return null; // Return null on error
     } finally {
-      // Only set loading to false on the initial load attempt
-      // Subsequent background fetches shouldn't affect the loading state
-      if (isInitialLoad) {
-        setLoading(false);
-      }
+      // setLoading is now handled by the calling useEffects
     }
-  }, []);
+  }, []); // Dependencies remain empty for fetchEvents itself
 
   // Function to fetch specific device details
   const fetchDeviceDetails = useCallback(async (deviceId: string) => {
@@ -382,18 +411,120 @@ export default function EventsPage() {
   }, [allDevices.length, fetchAllDevices]); // Depend on length and action
   // <-- END ADDED -->
 
+  // --- REVISED: Initial Load and Polling useEffect ---
   useEffect(() => {
+    if (!tableRef.current) return; 
+
     setLoading(true);
-    fetchEvents(true);
+    console.log('[EventsPage] Initial/Polling useEffect: Fetching initial data.');
+    fetchEvents(pagination.pageIndex + 1, pagination.pageSize, true, eventCategoryFilter, connectorCategoryFilter)
+      .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
+        if (fetchResult && fetchResult.pagination) {
+          const pMeta = fetchResult.pagination;
+          if (tableRef.current) {
+            const newPageCount = pMeta.hasNextPage ? pMeta.currentPage + 1 : pMeta.currentPage;
+            setTablePageCount(newPageCount);
+          }
+        } else if (fetchResult && fetchResult.pagination === null) {
+          if (tableRef.current) {
+            const pageCountForNoMeta = fetchResult.actualDataLength > 0 ? pagination.pageIndex + 1 : Math.max(1, pagination.pageIndex);
+            setTablePageCount(pageCountForNoMeta);
+          }
+        } else {
+          console.warn('[EventsPage] Initial fetch: fetchEvents returned null.');
+        }
+        isInitialLoadRef.current = false;
+        prevPageIndexRef.current = pagination.pageIndex;
+        prevPageSizeRef.current = pagination.pageSize;
+        prevEventCategoryFilterRef.current = eventCategoryFilter;
+        prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
+      })
+      .finally(() => {
+        setLoading(false); 
+      });
 
     const intervalId = setInterval(() => {
-      fetchEvents(false);
+      if (!tableRef.current) return;
+      console.log('[EventsPage] Polling useEffect: Polling for data.');
+      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter)
+        .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
+          if (fetchResult && fetchResult.pagination) {
+            const pMeta = fetchResult.pagination;
+            if (tableRef.current) {
+              const newPageCount = pMeta.hasNextPage ? pMeta.currentPage + 1 : pMeta.currentPage;
+              setTablePageCount(newPageCount);
+            }
+          } else if (fetchResult && fetchResult.pagination === null) {
+            if (tableRef.current) {
+              const pageCountForNoMeta = fetchResult.actualDataLength > 0 ? pagination.pageIndex + 1 : Math.max(1, pagination.pageIndex);
+              setTablePageCount(pageCountForNoMeta);
+            }
+          } 
+        });
     }, 5000);
 
     return () => {
       clearInterval(intervalId);
+      isInitialLoadRef.current = true;
     };
-  }, [fetchEvents]);
+  }, [fetchEvents, pagination.pageIndex, pagination.pageSize, eventCategoryFilter, connectorCategoryFilter]);
+  // --- END REVISED ---
+
+  // --- REVISED: useEffect for actual pagination OR filter changes by the user ---
+  useEffect(() => {
+    if (!tableRef.current) return; 
+    if (isInitialLoadRef.current) {
+      return; 
+    }
+
+    const pageIndexChanged = pagination.pageIndex !== prevPageIndexRef.current;
+    const pageSizeChanged = pagination.pageSize !== prevPageSizeRef.current;
+    const eventCategoriesChanged = JSON.stringify(eventCategoryFilter) !== JSON.stringify(prevEventCategoryFilterRef.current);
+    const connectorCategoryChanged = connectorCategoryFilter !== prevConnectorCategoryFilterRef.current;
+
+    if (eventCategoriesChanged || connectorCategoryChanged) {
+      console.log('[EventsPage] Filter change detected.');
+      prevEventCategoryFilterRef.current = eventCategoryFilter;
+      prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
+      if (pagination.pageIndex !== 0) {
+        console.log('[EventsPage] Resetting to page 0 due to filter change.');
+        tableRef.current.setPageIndex(0);
+        return;
+      }
+    }
+
+    if (pageIndexChanged || pageSizeChanged || ((eventCategoriesChanged || connectorCategoryChanged) && pagination.pageIndex === 0)) {
+      setLoading(true); 
+      console.log('[EventsPage] Pagination/Filter useEffect: Change requiring fetch. Fetching data.', 
+                  { pageIndex: pagination.pageIndex, pageSize: pagination.pageSize, eventCategories: eventCategoryFilter, connectorCategory: connectorCategoryFilter });
+      
+      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter)
+        .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
+          if (fetchResult && fetchResult.pagination) {
+            const pMeta = fetchResult.pagination;
+            if (tableRef.current) {
+              const newPageCount = pMeta.hasNextPage ? pMeta.currentPage + 1 : pMeta.currentPage;
+              setTablePageCount(newPageCount);
+            }
+          } else if (fetchResult && fetchResult.pagination === null) {
+            if (tableRef.current) {
+              const pageCountForNoMeta = fetchResult.actualDataLength > 0 ? pagination.pageIndex + 1 : Math.max(1, pagination.pageIndex);
+              setTablePageCount(pageCountForNoMeta);
+            }
+          } else {
+            console.warn('[EventsPage] Pagination/Filter fetch: fetchEvents returned null.');
+          }
+          prevPageIndexRef.current = pagination.pageIndex;
+          prevPageSizeRef.current = pagination.pageSize;
+          prevEventCategoryFilterRef.current = eventCategoryFilter;
+          prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
+        })
+        .finally(() => {
+          setLoading(false); 
+        });
+    }
+  }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter]);
+  // --- END REVISED ---
 
   // Effect to save viewMode to localStorage when it changes
   useEffect(() => {
@@ -440,18 +571,26 @@ export default function EventsPage() {
   // Define columns for TanStack Table
   const columns = useMemo<ColumnDef<EnrichedEvent>[]>(() => [
     {
-      accessorKey: 'connectorCategory',
+      accessorKey: 'connectorName',
+      id: 'connectorName',
       header: "Connector",
       enableSorting: true,
       enableColumnFilter: true,
-      filterFn: (row, columnId, value) => {
-        if (value === 'all') return true;
-        return row.original.connectorCategory?.toLowerCase() === value;
+      filterFn: (row, columnId, filterValue) => {
+        // ADDED: Log filterFn execution
+        console.log(`[EventsPage] filterFn for '${columnId}': filterValue='${filterValue}', rowValue='${row.original.connectorName || 'System'}'`);
+        // END ADDED
+        const name = row.original.connectorName || 'System';
+        const filterText = String(filterValue || '').toLowerCase();
+        if (!filterText) {
+          return true;
+        }
+        return name.toLowerCase().includes(filterText);
       },
       cell: ({ row }) => {
         const connectorName = row.original.connectorName;
         const connectorCategory = row.original.connectorCategory;
-        const fullText = connectorName || 'System'; // Text for the tooltip
+        const fullText = connectorName || 'System';
 
         return (
           <TooltipProvider delayDuration={100}>
@@ -459,20 +598,22 @@ export default function EventsPage() {
               <TooltipTrigger asChild>
                 <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
                   <ConnectorIcon connectorCategory={connectorCategory} size={12} />
-                  {/* Span handles truncation */}
                   <span className="block max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap text-xs">
                     {fullText}
                   </span>
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
-                {/* Show full text in tooltip */}
                 <p>{fullText}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
         );
       },
+    },
+    {
+      accessorKey: 'connectorCategory',
+      id: 'connectorCategoryGlobalFilter',
     },
     {
       accessorKey: 'deviceName',
@@ -553,7 +694,7 @@ export default function EventsPage() {
       accessorKey: 'eventCategory',
       header: "Event Category",
       enableSorting: true,
-      enableColumnFilter: true,
+      enableColumnFilter: false,
       cell: ({ row }) => (
         <Badge variant="outline">
           {EVENT_CATEGORY_DISPLAY_MAP[row.original.eventCategory as EventCategory] || row.original.eventCategory}
@@ -581,9 +722,7 @@ export default function EventsPage() {
           <TooltipProvider delayDuration={100}>
             <Tooltip>
               <TooltipTrigger asChild>
-                {/* Badge acts as the trigger, but content inside is truncated */}
                 <Badge variant="outline" className="font-normal">
-                  {/* Span inside the badge handles truncation */}
                   <span className="block max-w-[150px] overflow-hidden text-ellipsis whitespace-nowrap">
                     {typeDisplayName}
                     {subtypeDisplayName && (
@@ -593,7 +732,6 @@ export default function EventsPage() {
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
-                {/* Show full text in tooltip */}
                 <p>{fullText}</p>
               </TooltipContent>
             </Tooltip>
@@ -619,10 +757,8 @@ export default function EventsPage() {
           <TooltipProvider delayDuration={100}>
             <Tooltip>
               <TooltipTrigger asChild>
-                {/* Using div for tooltip trigger still, but badge inside has icon */}
                 <div className="max-w-32 whitespace-nowrap overflow-hidden text-ellipsis cursor-default">
                   <Badge variant="outline" className="inline-flex items-center gap-1 px-2 py-0.5">
-                     {/* Render the dynamic icon */}
                     {React.createElement(StateIcon, { className: "h-3 w-3 flex-shrink-0" })}
                     <span>{displayState}</span>
                   </Badge>
@@ -693,26 +829,22 @@ export default function EventsPage() {
       enableSorting: false,
       enableColumnFilter: false,
       cell: ({ row }) => {
-        // Simple setup: Prepare event data and add placeholders
         const eventData = {
           ...row.original,
           connectorCategory: row.original.connectorCategory || 'system',
         } as EnrichedEvent; 
 
-        // Always add placeholder URLs for testing
         eventData.thumbnailUrl = '/placeholder-thumbnail.jpg';
         eventData.videoUrl = '/placeholder-video.mp4';
 
         return (
           <div className="flex items-center gap-1">
-            {/* --- Single Unconditional Video Dialog --- */}
             <Dialog>
               <TooltipProvider delayDuration={100}>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <DialogTrigger asChild>
                       <Button variant="outline" size="icon" className="h-6 w-6 flex-shrink-0">
-                        {/* Using Play icon */}
                         <Play className="h-4 w-4" />
                       </Button>
                     </DialogTrigger>
@@ -730,12 +862,10 @@ export default function EventsPage() {
                   </DialogTitle>
                 </DialogHeader>
                 
-                {/* Video Player - Now First for Visual Priority */}
                 <div className="aspect-video bg-muted rounded-md flex items-center justify-center mb-2 mt-4">
                   <p className="text-muted-foreground">Video Player for {eventData.videoUrl} goes here</p>
                 </div>
                 
-                {/* Camera Selector */}
                 <div className="mb-2">
                   <Select disabled>
                     <SelectTrigger className="w-full bg-muted/40">
@@ -744,7 +874,6 @@ export default function EventsPage() {
                   </Select>
                 </div>
                 
-                {/* Context Area: Device/Tags on Left, Time on Right */}
                 <div className="grid grid-cols-[1fr_auto] gap-x-4 items-start mb-4">
                   <div className="flex flex-wrap gap-1.5">
                     <div className="w-full px-0.5 mb-0.5">
@@ -793,14 +922,10 @@ export default function EventsPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-            {/* --- End Single Unconditional Video Dialog --- */}
-
-            {/* Existing Details Button */}
             <EventDetailDialogContent
               event={{
                 ...eventData,
                 bestShotUrlComponents: eventData.bestShotUrlComponents ? {
-                  // Determine 'type' based on pikoSystemId presence
                   type: eventData.bestShotUrlComponents.pikoSystemId ? 'cloud' : 'local',
                   pikoSystemId: eventData.bestShotUrlComponents.pikoSystemId,
                   connectorId: eventData.bestShotUrlComponents.connectorId,
@@ -819,6 +944,11 @@ export default function EventsPage() {
   const table = useReactTable({
     data: events,
     columns,
+    initialState: {
+      columnVisibility: {
+        'connectorCategoryGlobalFilter': false, // Keep this column hidden
+      }
+    },
     state: {
       sorting,
       columnFilters,
@@ -836,25 +966,27 @@ export default function EventsPage() {
     getPaginationRowModel: getPaginationRowModel(),
     enableMultiSort: true,
     getRowId: (originalRow) => originalRow.eventUuid,
+    manualPagination: true,
+    manualFiltering: false,
+    pageCount: tablePageCount,
   });
 
-  // --- BEGIN NEW: displayedEvents memo for global filtering ---
+  // --- ADDED: Ref to hold table instance for effects ---
+  const tableRef = useRef(table);
+  useEffect(() => {
+    tableRef.current = table;
+  }, [table]);
+  // --- END ADDED ---
+
   const displayedEvents = useMemo(() => {
-    return events.filter(event => {
-      const connectorMatch = connectorCategoryFilter === 'all' || event.connectorCategory === connectorCategoryFilter;
-      const eventCatMatch = eventCategoryFilter.length > 0
-                            ? eventCategoryFilter.includes(event.eventCategory)
-                            : false;
-      return connectorMatch && eventCatMatch;
-    });
-  }, [events, connectorCategoryFilter, eventCategoryFilter]);
-  // --- END NEW: displayedEvents memo ---
+    return events;
+  }, [events]);
+  // --- END MODIFIED ---
 
   // Define page actions
   const pageActions = (
     <>
       <EventViewToggle viewMode={viewMode} onViewModeChange={setViewMode} />
-      {/* Conditional Full-Screen Button - only shows in card view */}
       {viewMode === 'card' && (
         <TooltipProvider delayDuration={100}>
           <Tooltip>
@@ -957,18 +1089,14 @@ export default function EventsPage() {
     </>
   );
 
-  // RETURN STATEMENT MODIFICATION
   if (isCardViewFullScreen && viewMode === 'card') {
     return (
       <div ref={cardViewContainerRef} className="fixed inset-0 bg-background z-50 h-screen w-screen overflow-hidden">
-        {/* Minimal header for full screen with exit button */}
         <div className="absolute top-0 left-0 right-0 p-2 flex justify-end bg-background/80 backdrop-blur-sm z-10">
           <TooltipProvider delayDuration={100}>
             <Tooltip>
               <TooltipTrigger asChild>
-                 {/* This button will now primarily rely on the Escape key or browser UI to exit, 
-                     but can still call toggleCardViewFullScreen to programmatically exit */}
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleCardViewFullScreen}>
+                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleCardViewFullScreen}>
                   <Minimize className="h-5 w-5" />
                   <span className="sr-only">Exit Full Screen</span>
                 </Button>
@@ -989,15 +1117,14 @@ export default function EventsPage() {
   // Default page rendering (when not in full-screen card view)
   return (
     <div className="flex flex-col h-full p-4 md:p-6">
-      <TooltipProvider> {/* TooltipProvider for the main page content */}
+      <TooltipProvider>
         <PageHeader 
           title="Events"
           description="View incoming events from connected devices."
           icon={<Activity className="h-6 w-6" />}
-          actions={pageActions} // pageActions now includes the full-screen toggle
+          actions={pageActions}
         />
 
-        {/* Device Detail Dialog */}
         <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
           <DialogContent className="max-w-3xl max-h-[90vh]">
             <DialogTitle className="sr-only">Device Details</DialogTitle>
@@ -1018,7 +1145,6 @@ export default function EventsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Conditional Messages & Skeleton */}
         <div className="flex-shrink-0">
            {(loading || (displayedEvents.length > 0 && (areas.length === 0 || allDevices.length === 0))) && displayedEvents.length === 0 ? (
             viewMode === 'card' 
@@ -1031,7 +1157,6 @@ export default function EventsPage() {
           ) : null}
         </div>
 
-        {/* Conditional Rendering for View Mode */}
         {!loading && displayedEvents.length > 0 && areas.length > 0 && allDevices.length > 0 ? (
           <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
             {viewMode === 'table' ? (
