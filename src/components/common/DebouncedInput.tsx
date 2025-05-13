@@ -50,7 +50,7 @@ export function DebouncedInput({
   // IMPORTANT: We only want this effect to re-run if inputValue or debounce changes.
   // externalValue is used in the condition but shouldn't trigger re-running the timeout setup
   // itself, only the logic inside it. reportChangeCallbackRef is stable due to useRef.
-  }, [inputValue, debounce]); 
+  }, [inputValue, debounce, externalValue]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value); // Update internal state immediately as user types

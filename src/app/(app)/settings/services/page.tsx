@@ -11,6 +11,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { TbBrandPushover } from "react-icons/tb";
+import { useSession } from '@/lib/auth/client';
+import { redirect } from 'next/navigation';
 
 // Skeleton for the form area
 const ServiceConfigSkeleton = () => {
@@ -44,6 +46,7 @@ const ServiceConfigSkeleton = () => {
 };
 
 export default function ServiceSettingsPage() {
+  const { data: session, isPending: isSessionLoading } = useSession();
   const [pushoverConfig, setPushoverConfig] = useState<PushoverConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +58,15 @@ export default function ServiceSettingsPage() {
   useEffect(() => {
     document.title = 'Settings // Fusion';
   }, []);
+
+  useEffect(() => {
+    if (!isSessionLoading && session?.user) {
+      const userRole = (session.user as any)?.role;
+      if (userRole !== 'admin') {
+        redirect('/');
+      }
+    }
+  }, [session, isSessionLoading]);
 
   const fetchConfiguration = useCallback(async () => {
     setIsLoading(true);
@@ -74,6 +86,24 @@ export default function ServiceSettingsPage() {
   useEffect(() => {
     fetchConfiguration();
   }, [fetchConfiguration]);
+
+  // If session is loading or user is not an admin yet and redirect hasn't happened, show a loading state or nothing
+  if (isSessionLoading || !session?.user || (session.user as any)?.role !== 'admin') {
+    // You might want a more sophisticated loading skeleton here that matches the page structure
+    // For now, returning null or a simple loader to prevent flicker/content display before redirect
+    return (
+        <div className="container py-6">
+            <PageHeader
+              title="Settings"
+              description="Configure application settings and third-party integrations."
+              icon={<Settings className="h-6 w-6" />}
+            />
+            <div className="grid gap-6 mt-6">
+              <ServiceConfigSkeleton />
+            </div>
+        </div>
+    );
+  }
 
   return (
     <div className="container py-6">

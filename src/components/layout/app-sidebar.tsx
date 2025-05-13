@@ -121,6 +121,20 @@ export function AppSidebar() {
     // The visibility will be handled with CSS conditionally in the rendering
   }, []); // Empty dependency array since navGroups is static
 
+  // Helper function to determine if an admin-only item should be shown
+  const canViewAdminItem = (): boolean => {
+    // Explicitly get userRole from session within the function scope for clarity
+    const currentDynamicUserRole = (session?.user as any)?.role;
+    if (initialUserRole === 'admin') {
+      return true;
+    }
+    // Check dynamic role from session if initialRole is not admin
+    if (!isPending && session?.user && currentDynamicUserRole === 'admin') {
+      return true;
+    }
+    return false; // Default to false if no admin conditions are met
+  };
+
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
@@ -168,15 +182,14 @@ export function AppSidebar() {
                       const Icon = item.icon;
                       const active = isActive(item.href);
                       
-                      // Special handling for Users item - avoid flicker by using SSR role
-                      const isUsersItem = item.label === 'Users';
-                      const showUsersItem =
-                        isUsersItem
-                          ? initialUserRole === 'admin' || (!isPending && session?.user && userRole === 'admin')
-                          : true;
+                      // Determine if the item should be shown based on role
+                      let showItem = true; // Default to true
+                      if (item.label === 'Users' || item.label === 'Settings') {
+                        showItem = canViewAdminItem();
+                      }
                       
-                      // Skip rendering completely if it's Users item and shouldn't be shown
-                      if (isUsersItem && !showUsersItem) {
+                      // Skip rendering completely if item shouldn't be shown
+                      if (!showItem) {
                         return null;
                       }
                       

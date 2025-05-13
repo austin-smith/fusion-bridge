@@ -252,6 +252,10 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   const [pikoCameraPopoverOpen, setPikoCameraPopoverOpen] = useState(false);
   const [yolinkDevicePopoverOpen, setYolinkDevicePopoverOpen] = useState(false);
 
+  // Refs for Popover Triggers to manage focus on close
+  const pikoCameraTriggerRef = useRef<HTMLButtonElement>(null);
+  const yolinkDeviceTriggerRef = useRef<HTMLButtonElement>(null);
+
   // --- State for Thumbnail & Live Video --- 
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [isThumbnailLoading, setIsThumbnailLoading] = useState(false);
@@ -269,6 +273,17 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   useEffect(() => {
     currentThumbnailUrlRef.current = thumbnailUrl;
   }, [thumbnailUrl]);
+
+  // Refs to hold latest values for unmount cleanup
+  const latestThumbnailUrlForUnmountRef = useRef<string | null>(null);
+  const latestPreloadingUrlForUnmountRef = useRef<string | null>(null);
+  const latestUrlToRevokeForUnmountRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    latestThumbnailUrlForUnmountRef.current = thumbnailUrl;
+    latestPreloadingUrlForUnmountRef.current = preloadingUrlRef.current;
+    latestUrlToRevokeForUnmountRef.current = urlToRevokeRef.current;
+  }); // No dependency array, runs after every render to capture latest values
 
   // --- START: Logic to get Piko System ID and Connection Type ---
   let pikoSystemIdForVideo: string | undefined = undefined;
@@ -527,15 +542,45 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     const intervalId = setInterval(fetchThumbnail, 10000);
     return () => {
       clearInterval(intervalId);
-      // Clean up any object URLs still in memory
-      if (currentThumbnailUrlRef.current) URL.revokeObjectURL(currentThumbnailUrlRef.current);
-      if (preloadingUrlRef.current) URL.revokeObjectURL(preloadingUrlRef.current);
-      if (urlToRevokeRef.current) URL.revokeObjectURL(urlToRevokeRef.current);
-      // Clear refs on cleanup as well
-      preloadingUrlRef.current = null;
-      urlToRevokeRef.current = null;
+      // When this effect cleans up (e.g., showLiveVideo becomes true, device changes, or unmount),
+      // any URL that was in the process of being preloaded should be revoked.
+      if (preloadingUrlRef.current) {
+        URL.revokeObjectURL(preloadingUrlRef.current);
+        console.log(`[Auto-Refresh Cleanup] Revoked preloadingUrl: ${preloadingUrlRef.current}`);
+        preloadingUrlRef.current = null; // Clear the ref
+      }
+      // The `currentThumbnailUrlRef.current` (which is the `thumbnailUrl` state) and
+      // `urlToRevokeRef.current` (which was the `thumbnailUrl` before the pending preload)
+      // should NOT be revoked here. Their lifecycle is managed by the preloading
+      // success/error handlers (which update `thumbnailUrl` state and revoke old URLs)
+      // and the component's final unmount cleanup.
     };
   }, [device.connectorCategory, device.deviceTypeInfo?.type, showLiveVideo, fetchThumbnail, device.connectorId, device.deviceId]);
+
+  // Final unmount cleanup for any remaining object URLs
+  useEffect(() => {
+    return () => {
+      const finalThumbnail = latestThumbnailUrlForUnmountRef.current;
+      const finalPreloading = latestPreloadingUrlForUnmountRef.current;
+      const finalToRevoke = latestUrlToRevokeForUnmountRef.current;
+
+      // Revoke the last successfully displayed thumbnail
+      if (finalThumbnail) {
+        URL.revokeObjectURL(finalThumbnail);
+        console.log(`[Component Unmount] Revoked final thumbnailUrl: ${finalThumbnail}`);
+      }
+      // Revoke any URL that was being preloaded, if different from the final displayed one
+      if (finalPreloading && finalPreloading !== finalThumbnail) {
+        URL.revokeObjectURL(finalPreloading);
+        console.log(`[Component Unmount] Revoked final preloadingUrl: ${finalPreloading}`);
+      }
+      // Fallback for urlToRevokeRef, if it's an orphaned URL (should ideally be null or same as finalThumbnail/finalPreloading)
+      if (finalToRevoke && finalToRevoke !== finalThumbnail && finalToRevoke !== finalPreloading) {
+        URL.revokeObjectURL(finalToRevoke);
+        console.log(`[Component Unmount] Revoked final urlToRevoke: ${finalToRevoke}`);
+      }
+    };
+  }, []); // Empty dependency array ensures this runs only on unmount
 
   // --- Handle Saving Associations ---
   const handleSaveAssociations = async () => {
@@ -1055,9 +1100,13 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                       Select Piko cameras related to this YoLink device.
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                      <Popover open={pikoCameraPopoverOpen} onOpenChange={setPikoCameraPopoverOpen}>
+                      <Popover 
+                        open={pikoCameraPopoverOpen} 
+                        onOpenChange={setPikoCameraPopoverOpen}
+                      >
                         <PopoverTrigger asChild>
                           <Button
+                            ref={pikoCameraTriggerRef}
                             variant="outline"
                             role="combobox"
                             aria-expanded={pikoCameraPopoverOpen}
@@ -1070,7 +1119,15 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-[300px] p-0">
+                        <PopoverContent 
+                          className="w-[300px] p-0"
+                          onCloseAutoFocus={(event) => {
+                            if (pikoCameraTriggerRef.current) {
+                              event.preventDefault(); // Prevent Radix's default focus return
+                              pikoCameraTriggerRef.current.focus();
+                            }
+                          }}
+                        >
                           <Command>
                             <CommandInput placeholder="Search Piko cameras..." />
                             <CommandList>
@@ -1168,9 +1225,13 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                       Select YoLink devices related to this device.
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                      <Popover open={yolinkDevicePopoverOpen} onOpenChange={setYolinkDevicePopoverOpen}>
+                      <Popover 
+                        open={yolinkDevicePopoverOpen} 
+                        onOpenChange={setYolinkDevicePopoverOpen}
+                      >
                         <PopoverTrigger asChild>
                           <Button
+                            ref={yolinkDeviceTriggerRef}
                             variant="outline"
                             role="combobox"
                             aria-expanded={yolinkDevicePopoverOpen}
@@ -1183,7 +1244,15 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-[300px] p-0">
+                        <PopoverContent 
+                          className="w-[300px] p-0"
+                          onCloseAutoFocus={(event) => {
+                            if (yolinkDeviceTriggerRef.current) {
+                              event.preventDefault(); // Prevent Radix's default focus return
+                              yolinkDeviceTriggerRef.current.focus();
+                            }
+                          }}
+                        >
                           <Command>
                             <CommandInput placeholder="Search YoLink devices..." />
                             <CommandList>

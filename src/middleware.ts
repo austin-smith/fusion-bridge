@@ -63,12 +63,13 @@ export const config = {
    * - _next/image (image optimization files)
    * - /icons/ (custom icons folder)
    * - favicon.ico (favicon file)
+   * - manifest.json (web app manifest file)
    *
    * Adjust the negative lookaheads as needed.
    * If the root path ('/') should be protected, remove it from matcher or handle in middleware logic.
    */
   matcher: [
     // This regex aims to exclude specific paths and prefixes from middleware processing.
-    '/((?!api/auth|api/webhooks|api/startup|_next/static|_next/image|icons/|favicon\.ico|opengraph-image\.png).*)',
+    '/((?!api/auth|api/webhooks|api/startup|_next/static|_next/image|icons/|favicon\.ico|opengraph-image\.png|manifest\.json).*)',
   ],
 };

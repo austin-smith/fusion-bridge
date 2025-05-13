@@ -14,7 +14,8 @@ import {
   HelpCircle,
   Layers,
   CheckCircle2, 
-  XCircle
+  XCircle,
+  Copy
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -156,8 +157,10 @@ export function AutomationCardView() {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const data = await response.json();
-      setAutomations(data as AutomationApiResponse[]);
+      const data = await response.json() as AutomationApiResponse[];
+      // Sort automations by name alphabetically
+      const sortedData = data.sort((a, b) => a.name.localeCompare(b.name));
+      setAutomations(sortedData);
     } catch (e) {
       console.error('Failed to fetch automations:', e);
       setError('Failed to load automations.');
@@ -285,6 +288,8 @@ interface AutomationCardProps {
 function AutomationCard({ automation, refreshData, connectors, targetDevices }: AutomationCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isCloning, setIsCloning] = useState(false);
+  const router = useRouter();
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -308,6 +313,32 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices }: 
       toast.error(`Failed to delete automation. ${error instanceof Error ? error.message : ''}`);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleClone = async () => {
+    setIsCloning(true);
+    try {
+      const response = await fetch(`/api/automations/${automation.id}/clone`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        let errorDetails = `API Error: ${response.status}`;
+        try {
+          const errorJson = await response.json();
+          errorDetails = errorJson.message || errorDetails;
+        } catch {}
+        throw new Error(errorDetails);
+      }
+      // Get the newly created automation from the response
+      const newAutomation = await response.json(); 
+      toast.success(`Automation "${automation.name}" cloned successfully as "${newAutomation.name}".`);
+      router.push(`/automations/${newAutomation.id}`); // Navigate to the edit page of the new automation
+    } catch (error) {
+      console.error('Clone failed:', error);
+      toast.error(`Failed to clone automation. ${error instanceof Error ? error.message : ''}`);
+    } finally {
+      setIsCloning(false);
     }
   };
 
@@ -368,23 +399,55 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices }: 
                 )}
               </Badge>
               
-              <Button asChild variant="ghost" size="icon">
-                <Link href={`/automations/${automation.id}`}>
-                  <Pencil className="h-4 w-4" />
-                  <span className="sr-only">Edit automation</span>
-                </Link>
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button asChild variant="ghost" size="icon">
+                    <Link href={`/automations/${automation.id}`}>
+                      <Pencil className="h-4 w-4" />
+                      <span className="sr-only">Edit automation</span>
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Edit automation</p>
+                </TooltipContent>
+              </Tooltip>
               
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={() => setShowDeleteDialog(true)}
-                disabled={isDeleting}
-              >
-                <Trash2 className="h-4 w-4" />
-                <span className="sr-only">Delete automation</span>
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleClone}
+                    disabled={isCloning || isDeleting}
+                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-500/10 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-500/10"
+                  >
+                    <Copy className="h-4 w-4" />
+                    <span className="sr-only">Clone automation</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Clone automation</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => setShowDeleteDialog(true)}
+                    disabled={isDeleting}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span className="sr-only">Delete automation</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Delete automation</p>
+                </TooltipContent>
+              </Tooltip>
             </div>
           </div>
         </CardHeader>
