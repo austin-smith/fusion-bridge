@@ -543,7 +543,7 @@ export default function DevicesPage() {
                       </PopoverTrigger>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>{device.connectorCategory === 'yolink' ? `${count} associated Piko cameras` : `${count} associated YoLink devices`}</p>
+                      <p>{device.connectorCategory === 'yolink' ? `${count} associated Piko cameras` : `${count} associated devices`}</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>

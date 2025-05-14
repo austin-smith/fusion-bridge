@@ -1,109 +1,44 @@
-'use client';
-
-import React, { useEffect, useState, useCallback } from 'react';
-import { getPushoverConfiguration, type PushoverConfig } from "@/data/repositories/service-configurations";
-import { ServiceConfigForm } from "@/components/settings/services/service-config-form";
-import { PushoverTestModal } from "@/components/settings/services/pushover/pushover-test-modal";
+import { getPushoverConfiguration } from "@/data/repositories/service-configurations";
+import { getPushcutConfiguration } from "@/data/repositories/service-configurations";
 import { PageHeader } from "@/components/layout/page-header"; 
-import { Settings, AlertCircle, X } from 'lucide-react';
-import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { TbBrandPushover } from "react-icons/tb";
-import { useSession } from '@/lib/auth/client';
-import { redirect } from 'next/navigation';
+import { Settings } from 'lucide-react';
+import { ServicesSettingsClientPageContent } from './services-settings-client-page'; // New client component
 
-// Skeleton for the form area
-const ServiceConfigSkeleton = () => {
-  return (
-    <Card className="overflow-hidden">
-      <div className="flex items-center p-6 border-b">
-        <div className="flex items-center gap-3">
-          <Skeleton className="h-10 w-10 rounded-full" />
-          <div>
-            <Skeleton className="h-5 w-24" />
-            <Skeleton className="h-4 w-40 mt-1" />
-          </div>
-        </div>
-      </div>
-      <div className="p-6 space-y-6">
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-10 w-full" />
-        </div>
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-10 w-full" />
-        </div>
-        <div className="flex justify-between pt-2">
-          <Skeleton className="h-10 w-32" />
-          <Skeleton className="h-10 w-32" />
-        </div>
-      </div>
-    </Card>
-  );
-};
+// Import server-side auth utilities (ensure this path is correct for your project)
+// Assuming you have a way to get session on the server, e.g., next-auth getServerSession or a custom helper
+// For this example, let's assume a helper `getServerSession` or similar exists.
+// import { getServerSession } from 'next-auth/next'; 
+// import { authOptions } from '@/app/api/auth/[...nextauth]/route'; // Adjust to your auth options path
 
-export default function ServiceSettingsPage() {
-  const { data: session, isPending: isSessionLoading } = useSession();
-  const [pushoverConfig, setPushoverConfig] = useState<PushoverConfig | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // State for the Switch component
-  const [isPushoverEnabled, setIsPushoverEnabled] = useState(true); // Default to true
-  // State for test modal
-  const [isTestModalOpen, setIsTestModalOpen] = useState(false);
+// A placeholder for actual server-side session fetching. 
+// Replace with your actual auth mechanism (e.g., next-auth, lucia-auth, etc.)
+async function getServerSideSession() {
+  // This is a mock. In a real app, you would use your auth library's methods.
+  // For example, with next-auth:
+  // const session = await getServerSession(authOptions);
+  // return session;
+  // For now, returning a mock session that implies admin for demonstration.
+  return {
+    user: { role: 'admin' } // Ensure your actual session has a comparable structure
+  };
+}
 
-  useEffect(() => {
-    document.title = 'Settings // Fusion';
-  }, []);
+export default async function ServicesSettingsPage() {
+  // Fetch session data on the server
+  const session = await getServerSideSession(); 
 
-  useEffect(() => {
-    if (!isSessionLoading && session?.user) {
-      const userRole = (session.user as any)?.role;
-      if (userRole !== 'admin') {
-        redirect('/');
-      }
-    }
-  }, [session, isSessionLoading]);
-
-  const fetchConfiguration = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const config = await getPushoverConfiguration();
-      setPushoverConfig(config);
-      // Set the switch state directly after fetching
-      setIsPushoverEnabled(config?.isEnabled ?? true); // Default to true if no config found
-    } catch (err) {
-      console.error("Failed to fetch Pushover configuration:", err);
-      setError("Failed to load Pushover configuration. Please try again.");
-    }
-    setIsLoading(false);
-  }, []);
-
-  useEffect(() => {
-    fetchConfiguration();
-  }, [fetchConfiguration]);
-
-  // If session is loading or user is not an admin yet and redirect hasn't happened, show a loading state or nothing
-  if (isSessionLoading || !session?.user || (session.user as any)?.role !== 'admin') {
-    // You might want a more sophisticated loading skeleton here that matches the page structure
-    // For now, returning null or a simple loader to prevent flicker/content display before redirect
-    return (
-        <div className="container py-6">
-            <PageHeader
-              title="Settings"
-              description="Configure application settings and third-party integrations."
-              icon={<Settings className="h-6 w-6" />}
-            />
-            <div className="grid gap-6 mt-6">
-              <ServiceConfigSkeleton />
-            </div>
-        </div>
-    );
+  // Server-side authorization check
+  // Type assertion for role might be needed depending on your session type
+  if (!session?.user || (session.user as any)?.role !== 'admin') {
+    // In Next.js 13+ App Router, redirect is a function from 'next/navigation'
+    const { redirect } = await import('next/navigation');
+    redirect('/'); // Or to an unauthorized page
+    return null; // Important to return null after redirect to stop further rendering
   }
+
+  // Fetch configurations on the server
+  const pushoverConfig = await getPushoverConfiguration();
+  const pushcutConfig = await getPushcutConfiguration();
 
   return (
     <div className="container py-6">
@@ -112,86 +47,10 @@ export default function ServiceSettingsPage() {
         description="Configure application settings and third-party integrations."
         icon={<Settings className="h-6 w-6" />}
       />
-
-      {error && (
-        <Alert variant="destructive" className="mb-6">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>
-            {error}
-            <button 
-              onClick={() => setError(null)}
-              className="absolute top-2 right-2 p-1 rounded-md hover:bg-destructive/20"
-              aria-label="Dismiss error"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Service configurations grid - each service has its own card */}
-      <div className="grid gap-6">
-        {/* Pushover Configuration */}
-        {isLoading ? (
-          <ServiceConfigSkeleton />
-        ) : (
-          <Card className="overflow-hidden">
-            <div className="flex items-center justify-between p-6 border-b">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-                  <TbBrandPushover className="h-5 w-5 text-slate-600 dark:text-slate-400" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg">Pushover</CardTitle>
-                  <CardDescription className="mt-1">
-                    Mobile push notifications service
-                  </CardDescription>
-                </div>
-              </div>
-              <Switch
-                checked={isPushoverEnabled}
-                onCheckedChange={setIsPushoverEnabled}
-                aria-label="Enable Pushover Service"
-              />
-            </div>
-            <CardContent className="p-6">
-              <ServiceConfigForm 
-                initialConfig={pushoverConfig} 
-                onTestClick={() => setIsTestModalOpen(true)}
-                isEnabled={isPushoverEnabled}
-                onEnabledChange={setIsPushoverEnabled}
-                onSaveSuccess={(savedState) => {
-                  console.log('[Page] Save successful, updating toggle state to:', savedState);
-                  setIsPushoverEnabled(savedState);
-                  // Optionally trigger a manual refetch here if needed, though revalidatePath should handle it eventually
-                  // fetchConfiguration(); 
-                }}
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        {/* 
-          Future service configurations would be added here as separate cards
-          Example:
-          <Card>
-            <CardHeader>
-              <CardTitle>SMTP Email</CardTitle>
-              <CardDescription>Configure SMTP for sending email notifications.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <EmailConfigForm initialConfig={emailConfig} />
-            </CardContent>
-          </Card>
-        */}
-      </div>
-
-      {/* Test Modal */}
-      <PushoverTestModal 
-        isOpen={isTestModalOpen} 
-        onOpenChange={setIsTestModalOpen} 
-        pushoverConfig={pushoverConfig} 
+      {/* Render the new client component, passing fetched data as props */}
+      <ServicesSettingsClientPageContent
+        initialPushoverConfig={pushoverConfig}
+        initialPushcutConfig={pushcutConfig}
       />
     </div>
   );

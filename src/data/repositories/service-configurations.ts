@@ -3,6 +3,7 @@
 import { db } from '@/data/db';
 import { serviceConfigurations } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
+import type { PushcutConfig, PushcutStoredConfig } from '@/types/pushcut-types';
 
 export interface BaseServiceConfig {
   id: string;
@@ -15,6 +16,9 @@ export interface PushoverConfig extends BaseServiceConfig {
   apiToken: string;
   groupKey: string;
 }
+
+// Union type for all possible service configurations
+export type AnyServiceConfig = PushoverConfig | PushcutConfig;
 
 // Interface for the data stored *inside* the configEnc blob for Pushover
 interface PushoverStoredConfig {
@@ -125,6 +129,101 @@ export async function upsertPushoverConfiguration(
     }
   } catch (error) {
     console.error("[ServiceConfigRepo] Error upserting Pushover configuration:", error);
+    return { success: false, message: 'Database operation failed.' };
+  }
+}
+
+/**
+ * Fetches the Pushcut service configuration.
+ * @returns The Pushcut configuration object or null if not found.
+ */
+export async function getPushcutConfiguration(): Promise<PushcutConfig | null> {
+  try {
+    const configRecord = await db
+      .select({
+        id: serviceConfigurations.id,
+        configEnc: serviceConfigurations.configEnc,
+        isEnabled: serviceConfigurations.isEnabled,
+      })
+      .from(serviceConfigurations)
+      .where(eq(serviceConfigurations.type, 'PUSHCUT')) // Filter by PUSHCUT type
+      .limit(1)
+      .then(res => res[0]);
+
+    if (configRecord) {
+      const storedConfig = JSON.parse(configRecord.configEnc) as PushcutStoredConfig;
+      
+      const fullConfig: PushcutConfig = {
+        id: configRecord.id,
+        type: 'pushcut', // Set the type explicitly
+        isEnabled: configRecord.isEnabled,
+        apiKey: storedConfig.apiKey,
+      };
+      return fullConfig;
+    }
+    return null;
+  } catch (error) {
+    console.error("[ServiceConfigRepo] Error fetching Pushcut configuration:", error);
+    return null;
+  }
+}
+
+/**
+ * Creates or updates the Pushcut service configuration.
+ * @param apiKey The Pushcut API Key.
+ * @param isEnabled Whether the service is enabled.
+ * @returns An object indicating success or failure.
+ */
+export async function upsertPushcutConfiguration(
+  apiKey: string,
+  isEnabled: boolean
+): Promise<{ success: boolean; message?: string; id?: string }> {
+  if (!apiKey) {
+    return { success: false, message: 'API Key is required.' };
+  }
+
+  const configToStore: PushcutStoredConfig = {
+    apiKey,
+  };
+
+  const configEnc = JSON.stringify(configToStore);
+
+  try {
+    const existingConfig = await db
+      .select({ id: serviceConfigurations.id })
+      .from(serviceConfigurations)
+      .where(eq(serviceConfigurations.type, 'PUSHCUT')) // Filter by PUSHCUT type
+      .limit(1)
+      .then(res => res[0]);
+
+    if (existingConfig) {
+      // Update existing configuration
+      await db
+        .update(serviceConfigurations)
+        .set({
+          configEnc: configEnc,
+          isEnabled: isEnabled,
+          updatedAt: new Date(),
+        })
+        .where(eq(serviceConfigurations.id, existingConfig.id));
+      console.log("[ServiceConfigRepo] Updated Pushcut configuration:", existingConfig.id);
+      return { success: true, id: existingConfig.id };
+    } else {
+      // Insert new configuration
+      const newConfig = await db
+        .insert(serviceConfigurations)
+        .values({
+          type: 'PUSHCUT', // Set the type to PUSHCUT
+          configEnc: configEnc,
+          isEnabled: isEnabled,
+        })
+        .returning({ id: serviceConfigurations.id });
+      const newId = newConfig[0]?.id;
+      console.log("[ServiceConfigRepo] Created new Pushcut configuration:", newId);
+      return { success: true, id: newId };
+    }
+  } catch (error) {
+    console.error("[ServiceConfigRepo] Error upserting Pushcut configuration:", error);
     return { success: false, message: 'Database operation failed.' };
   }
 } 
