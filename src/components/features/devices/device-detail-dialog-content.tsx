@@ -238,12 +238,12 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   // const displayDevice = device as ...;
 
   // --- State for Associations ---
-  // For YoLink -> Piko associations
+  // For device -> Piko associations
   const [availablePikoCameras, setAvailablePikoCameras] = useState<DeviceOption[]>([]);
   const [selectedPikoCameraIds, setSelectedPikoCameraIds] = useState<Set<string>>(new Set());
-  // For Piko -> YoLink associations
-  const [availableYoLinkDevices, setAvailableYoLinkDevices] = useState<DeviceOption[]>([]);
-  const [selectedYoLinkDeviceIds, setSelectedYoLinkDeviceIds] = useState<Set<string>>(new Set());
+  // For device associations
+  const [availableLinkedDevices, setAvailableLinkedDevices] = useState<DeviceOption[]>([]);
+  const [selectedLinkedDeviceIds, setSelectedLinkedDeviceIds] = useState<Set<string>>(new Set());
   const [fetchedAllDevices, setFetchedAllDevices] = useState<DeviceDetailProps[]>([]); // Added state for all devices
   
   const [isLoadingAssociations, setIsLoadingAssociations] = useState(false);
@@ -301,18 +301,19 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
 
   // Fetch available devices and current associations
   useEffect(() => {
-    // Use device directly
-    if (device.connectorCategory !== 'yolink' && device.connectorCategory !== 'piko') return;
-
     const fetchData = async () => {
       setIsLoadingAssociations(true);
       setAssociationError(null);
       
-      // Reset selections
-      setSelectedPikoCameraIds(new Set());
-      setAvailablePikoCameras([]);
-      setSelectedYoLinkDeviceIds(new Set());
-      setAvailableYoLinkDevices([]);
+      // Reset selections based on current device type
+      if (device.connectorCategory !== 'piko') { // For non-Piko devices (e.g., YoLink, and potentially others)
+        setSelectedPikoCameraIds(new Set());
+        setAvailablePikoCameras([]);
+      }
+      if (device.connectorCategory === 'piko') { // For Piko devices
+        setSelectedLinkedDeviceIds(new Set());
+        setAvailableLinkedDevices([]);
+      }
 
       try {
         // 1. Fetch all devices
@@ -324,9 +325,9 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         const allDevicesList = allDevicesData.data || [];
         setFetchedAllDevices(allDevicesList); // Store all devices in state
         
-        // Filter for either Piko cameras or YoLink devices based on the current device type
-        if (device.connectorCategory === 'yolink') {
-          // Get Piko cameras when viewing a YoLink device
+        // Filter for either Piko cameras or other devices based on the current device type
+        if (device.connectorCategory !== 'piko') { // Current device is NOT a Piko camera (e.g., YoLink, other sensors/switches)
+          // Get Piko cameras to associate with the current non-Piko device
           const pikoCameras = allDevicesList
             .filter((d: DeviceDetailProps) => d.connectorCategory === 'piko' && d.deviceTypeInfo?.type === 'Camera') 
             .map((d: DeviceDetailProps): DeviceOption => ({ value: d.deviceId, label: d.name }))
@@ -339,28 +340,28 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
           const associationsData = await associationsResponse.json();
           if (!associationsData.success) throw new Error(associationsData.error || 'Failed to fetch current associations data');
           
-          // The API returns an array of Piko Camera IDs for a specific YoLink device
+          // The API returns an array of Piko Camera IDs for a specific device
           setSelectedPikoCameraIds(new Set(associationsData.data || []));
         } 
-        else if (device.connectorCategory === 'piko') {
-          // Get YoLink devices when viewing any Piko device
-          const yolinkDevices = allDevicesList
-            .filter((d: DeviceDetailProps) => d.connectorCategory === 'yolink')
+        else if (device.connectorCategory === 'piko') { // Current device IS a Piko camera
+          // Get other devices to associate with this Piko camera
+          const otherDevicesToAssociate = allDevicesList
+            .filter((d: DeviceDetailProps) => d.deviceId !== device.deviceId) // Any device except itself
             .map((d: DeviceDetailProps): DeviceOption => ({ value: d.deviceId, label: d.name }))
             .sort((a: DeviceOption, b: DeviceOption) => a.label.localeCompare(b.label));
-          setAvailableYoLinkDevices(yolinkDevices);
+          setAvailableLinkedDevices(otherDevicesToAssociate);
           
-          // 2. Fetch associated YoLink device IDs using the pikoCameraId
-          console.log(`UI: Fetching YoLink associations for Piko device ${device.deviceId}`);
+          // 2. Fetch associated device IDs using the pikoCameraId
+          console.log(`UI: Fetching associated devices for Piko device ${device.deviceId}`);
           const associationsResponse = await fetch(`/api/device-associations?pikoCameraId=${device.deviceId}`);
           if (!associationsResponse.ok) throw new Error('Failed to fetch associations');
           const associationsData = await associationsResponse.json();
           if (!associationsData.success) throw new Error(associationsData.error || 'Failed to fetch associations data');
           
-          // The API now directly returns an array of YoLink device IDs
-          const yolinkDeviceIds = associationsData.data || [];
-          console.log(`UI: Received ${yolinkDeviceIds.length} associated YoLink device IDs.`);
-          setSelectedYoLinkDeviceIds(new Set(yolinkDeviceIds));
+          // The API now directly returns an array of device IDs
+          const linkedDeviceIds = associationsData.data || [];
+          console.log(`UI: Received ${linkedDeviceIds.length} associated device IDs.`);
+          setSelectedLinkedDeviceIds(new Set(linkedDeviceIds));
         }
 
       } catch (err: unknown) {
@@ -584,8 +585,8 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     try {
       let response;
       
-      if (device.connectorCategory === 'yolink') {
-        // Save YoLink -> Piko associations
+      if (device.connectorCategory !== 'piko') { // Current device is non-Piko (e.g. YoLink)
+        // Save associations: current non-Piko device -> selected Piko cameras
         response = await fetch('/api/device-associations', {
           method: 'PUT',
           headers: {
@@ -600,36 +601,36 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         console.log(`UI: Saving associations for Piko device ${device.deviceId}`);
         
         const pikoDeviceId = device.deviceId;
-        const currentlySelectedYoLinkIds = Array.from(selectedYoLinkDeviceIds);
-        console.log(`UI: Currently selected YoLink devices: [${currentlySelectedYoLinkIds.join(', ')}]`);
+        const currentlySelectedLinkedDeviceIds = Array.from(selectedLinkedDeviceIds);
+        console.log(`UI: Currently selected linked devices: [${currentlySelectedLinkedDeviceIds.join(', ')}]`);
         
         // Fetch initial state to determine diffs
         const initialAssocResponse = await fetch(`/api/device-associations?pikoCameraId=${pikoDeviceId}`);
         if (!initialAssocResponse.ok) throw new Error('Failed to fetch initial associations for Piko camera');
         const initialAssocData = await initialAssocResponse.json();
-        const initialYoLinkDeviceIds = new Set<string>(initialAssocData.data || []);
+        const initialAssociatedDeviceIds = new Set<string>(initialAssocData.data || []);
         
         const updates: { deviceId: string, pikoCameraIds: string[] }[] = [];
 
         // Devices to ADD this Piko camera association to:
-        for (const yolinkId of currentlySelectedYoLinkIds) {
-          if (!initialYoLinkDeviceIds.has(yolinkId)) {
-            const currentPikoAssocRes = await fetch(`/api/device-associations?deviceId=${yolinkId}`);
+        for (const associatedDevId of currentlySelectedLinkedDeviceIds) {
+          if (!initialAssociatedDeviceIds.has(associatedDevId)) {
+            const currentPikoAssocRes = await fetch(`/api/device-associations?deviceId=${associatedDevId}`);
             const currentPikoAssocData = currentPikoAssocRes.ok ? await currentPikoAssocRes.json() : { data: [] };
             const currentPikoIds = new Set<string>(currentPikoAssocData.data || []);
             currentPikoIds.add(pikoDeviceId);
-            updates.push({ deviceId: yolinkId, pikoCameraIds: Array.from(currentPikoIds).sort() });
+            updates.push({ deviceId: associatedDevId, pikoCameraIds: Array.from(currentPikoIds).sort() });
           }
         }
 
         // Devices to REMOVE this Piko camera association from:
-        for (const yolinkId of initialYoLinkDeviceIds) {
-          if (!selectedYoLinkDeviceIds.has(yolinkId)) {
-            const currentPikoAssocRes = await fetch(`/api/device-associations?deviceId=${yolinkId}`);
+        for (const associatedDevId of initialAssociatedDeviceIds) {
+          if (!selectedLinkedDeviceIds.has(associatedDevId)) {
+            const currentPikoAssocRes = await fetch(`/api/device-associations?deviceId=${associatedDevId}`);
             const currentPikoAssocData = currentPikoAssocRes.ok ? await currentPikoAssocRes.json() : { data: [] };
             const currentPikoIds = new Set<string>(currentPikoAssocData.data || []);
             currentPikoIds.delete(pikoDeviceId);
-            updates.push({ deviceId: yolinkId, pikoCameraIds: Array.from(currentPikoIds).sort() });
+            updates.push({ deviceId: associatedDevId, pikoCameraIds: Array.from(currentPikoIds).sort() });
           }
         }
         
@@ -851,15 +852,15 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   };
 
   // Function to handle removing a single association 
-  const handleRemoveAssociation = (id: string, type: 'piko' | 'yolink') => {
-    if (type === 'piko') {
+  const handleRemoveAssociation = (idToRemove: string, context: 'currentDeviceLinksToPikoCam' | 'pikoCamLinksToDevice') => {
+    if (context === 'currentDeviceLinksToPikoCam') { // Current device is non-Piko, removing a Piko cam from its list
       const updatedSelections = new Set(selectedPikoCameraIds);
-      updatedSelections.delete(id);
+      updatedSelections.delete(idToRemove);
       setSelectedPikoCameraIds(updatedSelections);
-    } else {
-      const updatedSelections = new Set(selectedYoLinkDeviceIds);
-      updatedSelections.delete(id);
-      setSelectedYoLinkDeviceIds(updatedSelections);
+    } else { // Current device is Piko, removing an associated device from its list
+      const updatedSelections = new Set(selectedLinkedDeviceIds);
+      updatedSelections.delete(idToRemove);
+      setSelectedLinkedDeviceIds(updatedSelections);
     }
   };
 
@@ -1070,9 +1071,9 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
 
         {/* Accordion for other sections */}
         <Accordion type="single" collapsible className="w-full">
-          {/* YoLink Device Association Section (Conditional) */}
-          {device.connectorCategory === 'yolink' && (
-            <AccordionItem value="yolink-associations">
+          {/* Device Association Section (Conditional) */}
+          {device.connectorCategory !== 'piko' && (
+            <AccordionItem value="device-to-piko-associations">
               <AccordionTrigger className="text-sm font-medium">
                 <div className="flex items-center">
                   Associated Piko Cameras
@@ -1101,7 +1102,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                 ) : (
                   <div className="space-y-4 py-1">
                     <div className="text-sm text-muted-foreground">
-                      Select Piko cameras related to this YoLink device.
+                      Select Piko cameras related to this device.
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                       <MultiSelectComboBox
@@ -1141,7 +1142,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  handleRemoveAssociation(id, 'piko');
+                                  handleRemoveAssociation(id, 'currentDeviceLinksToPikoCam');
                                 }}
                               >
                                 <X className="h-3 w-3" />
@@ -1160,16 +1161,16 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
 
           {/* Piko Device Association Section (Conditional) */}
           {device.connectorCategory === 'piko' && (
-            <AccordionItem value="piko-associations">
+            <AccordionItem value="piko-to-device-associations">
               <AccordionTrigger className="text-sm font-medium">
                 <div className="flex items-center">
-                  Associated YoLink Devices
+                  Associated Devices
                   {!isLoadingAssociations && (
                     <Badge 
-                      variant={selectedYoLinkDeviceIds.size > 0 ? "secondary" : "outline"} 
+                      variant={selectedLinkedDeviceIds.size > 0 ? "secondary" : "outline"} 
                       className="ml-2 text-xs font-normal px-2 py-0.5"
                     >
-                      {selectedYoLinkDeviceIds.size}
+                      {selectedLinkedDeviceIds.size}
                     </Badge>
                   )}
                 </div>
@@ -1189,15 +1190,15 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                 ) : (
                   <div className="space-y-4 py-1">
                     <div className="text-sm text-muted-foreground">
-                      Select YoLink devices related to this device.
+                      Select devices to associate with this Piko camera.
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                       <MultiSelectComboBox
-                        options={availableYoLinkDevices} // DeviceOption matches MultiSelectOption structure
-                        selected={Array.from(selectedYoLinkDeviceIds)}
-                        onChange={(newSelected) => setSelectedYoLinkDeviceIds(new Set(newSelected))}
-                        placeholder={availableYoLinkDevices.length === 0 ? "No YoLink devices found" : "Select YoLink devices..."}
-                        emptyText={isLoadingAssociations ? "Loading..." : "No YoLink devices found."}
+                        options={availableLinkedDevices} 
+                        selected={Array.from(selectedLinkedDeviceIds)}
+                        onChange={(newSelected) => setSelectedLinkedDeviceIds(new Set(newSelected))}
+                        placeholder={availableLinkedDevices.length === 0 ? "No devices found" : "Select devices..."}
+                        emptyText={isLoadingAssociations ? "Loading..." : "No devices found."}
                         className="w-full sm:w-[300px]"
                         popoverContentClassName="w-[300px]" // Maintain consistent popover width
                       />
@@ -1211,16 +1212,16 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                       </Button>
                     </div>
                     
-                    {selectedYoLinkDeviceIds.size > 0 && (
+                    {selectedLinkedDeviceIds.size > 0 && (
                       <div className="flex flex-wrap gap-2 mt-3">
-                        {Array.from(selectedYoLinkDeviceIds).map(id => {
-                          const yolink = availableYoLinkDevices.find(d => d.value === id);
-                          const yolinkDetails = fetchedAllDevices.find(d => d.deviceId === id);
-                          const YoLinkIcon = yolinkDetails?.deviceTypeInfo?.type ? getDeviceTypeIcon(yolinkDetails.deviceTypeInfo.type) : HelpCircle;
-                          return yolink ? (
+                        {Array.from(selectedLinkedDeviceIds).map(id => {
+                          const linkedDevice = availableLinkedDevices.find(d => d.value === id);
+                          const deviceDetailsForIcon = fetchedAllDevices.find(d => d.deviceId === id);
+                          const DeviceIcon = deviceDetailsForIcon?.deviceTypeInfo?.type ? getDeviceTypeIcon(deviceDetailsForIcon.deviceTypeInfo.type) : HelpCircle;
+                          return linkedDevice ? (
                             <Badge key={id} variant="secondary" className="flex items-center gap-1.5 px-2 py-1"> {/* Increased gap slightly */}
-                              <YoLinkIcon className="h-3.5 w-3.5 text-muted-foreground" /> {/* Icon with text-muted-foreground */}
-                              <span>{yolink.label}</span>
+                              <DeviceIcon className="h-3.5 w-3.5 text-muted-foreground" /> {/* Icon with text-muted-foreground */}
+                              <span>{linkedDevice.label}</span>
                               <Button 
                                 type="button" 
                                 variant="ghost" 
@@ -1229,11 +1230,11 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  handleRemoveAssociation(id, 'yolink');
+                                  handleRemoveAssociation(id, 'pikoCamLinksToDevice');
                                 }}
                               >
                                 <X className="h-3 w-3" />
-                                <span className="sr-only">Remove {yolink.label}</span>
+                                <span className="sr-only">Remove {linkedDevice.label}</span>
                               </Button>
                             </Badge>
                           ) : null;
