@@ -80,6 +80,7 @@ export function MultiSelectComboBox({ // Renamed to MultiSelectComboBox
         </Button>
       </PopoverTrigger>
       <PopoverContent 
+        side="top"
         className={cn("p-0", popoverContentClassName)} // REMOVED h-80, allowing natural sizing based on CommandList
         style={{ width: popoverWidth }} // Set width to match trigger
         // The following prevents focus auto-management which can be useful in complex forms/dialogs

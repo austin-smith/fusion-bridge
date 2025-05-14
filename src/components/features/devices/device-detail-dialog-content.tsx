@@ -244,6 +244,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   // For Piko -> YoLink associations
   const [availableYoLinkDevices, setAvailableYoLinkDevices] = useState<DeviceOption[]>([]);
   const [selectedYoLinkDeviceIds, setSelectedYoLinkDeviceIds] = useState<Set<string>>(new Set());
+  const [fetchedAllDevices, setFetchedAllDevices] = useState<DeviceDetailProps[]>([]); // Added state for all devices
   
   const [isLoadingAssociations, setIsLoadingAssociations] = useState(false);
   const [isSavingAssociations, setIsSavingAssociations] = useState(false);
@@ -320,12 +321,13 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         const allDevicesData = await allDevicesResponse.json();
         if (!allDevicesData.success) throw new Error(allDevicesData.error || 'Failed to fetch device list data');
         
-        const allDevices = allDevicesData.data || [];
+        const allDevicesList = allDevicesData.data || [];
+        setFetchedAllDevices(allDevicesList); // Store all devices in state
         
         // Filter for either Piko cameras or YoLink devices based on the current device type
         if (device.connectorCategory === 'yolink') {
           // Get Piko cameras when viewing a YoLink device
-          const pikoCameras = allDevices
+          const pikoCameras = allDevicesList
             .filter((d: DeviceDetailProps) => d.connectorCategory === 'piko' && d.deviceTypeInfo?.type === 'Camera') 
             .map((d: DeviceDetailProps): DeviceOption => ({ value: d.deviceId, label: d.name }))
             .sort((a: DeviceOption, b: DeviceOption) => a.label.localeCompare(b.label));
@@ -342,7 +344,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         } 
         else if (device.connectorCategory === 'piko') {
           // Get YoLink devices when viewing any Piko device
-          const yolinkDevices = allDevices
+          const yolinkDevices = allDevicesList
             .filter((d: DeviceDetailProps) => d.connectorCategory === 'yolink')
             .map((d: DeviceDetailProps): DeviceOption => ({ value: d.deviceId, label: d.name }))
             .sort((a: DeviceOption, b: DeviceOption) => a.label.localeCompare(b.label));
@@ -698,9 +700,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   );
 
   // Get the icon component for the current device type, with fallback
-  const DeviceIcon = device.deviceTypeInfo?.type 
-    ? getDeviceTypeIcon(device.deviceTypeInfo.type) 
-    : HelpCircle; // Use HelpCircle if type is missing
+  const IconComponent = getDeviceTypeIcon(device.deviceTypeInfo?.type ?? DeviceType.Unmapped);
 
   // --- BEGIN Action Button Logic --- 
   const isActionable = 
@@ -872,7 +872,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
       <DialogHeader className="pb-4 border-b">
         {/* First Row: Icon, Title, Status */}
         <div className="flex items-center gap-2">
-          <DeviceIcon className="h-5 w-5 text-muted-foreground" /> 
+          <IconComponent className="h-5 w-5 text-muted-foreground" /> 
           <DialogTitle>{device.name}</DialogTitle>
           <DeviceStatusBadge />
         </div>
@@ -889,7 +889,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
               {/* 2. Device Type/Subtype Badge - Conditional rendering */}
               {device.deviceTypeInfo?.type && (
                 <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                  <DeviceIcon className="h-3 w-3 text-muted-foreground" /> 
+                  <IconComponent className="h-3 w-3 text-muted-foreground" /> 
                   <span className="text-xs">
                     {device.deviceTypeInfo.type}
                     {device.deviceTypeInfo.subtype && (
@@ -1014,7 +1014,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                 label="Type" 
                 value={device.deviceTypeInfo?.type ? ( 
                   <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                    <DeviceIcon className="h-3 w-3 text-muted-foreground" /> 
+                    <IconComponent className="h-3 w-3 text-muted-foreground" /> 
                     <span className="text-xs">
                       {device.deviceTypeInfo.type}
                       {device.deviceTypeInfo.subtype && (
@@ -1127,8 +1127,11 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                       <div className="flex flex-wrap gap-2 mt-3">
                         {Array.from(selectedPikoCameraIds).map(id => {
                           const camera = availablePikoCameras.find(c => c.value === id);
+                          const cameraDetails = fetchedAllDevices.find(d => d.deviceId === id);
+                          const CameraIcon = cameraDetails?.deviceTypeInfo?.type ? getDeviceTypeIcon(cameraDetails.deviceTypeInfo.type) : HelpCircle;
                           return camera ? (
-                            <Badge key={id} variant="secondary" className="flex items-center gap-1 px-2 py-1">
+                            <Badge key={id} variant="secondary" className="flex items-center gap-1.5 px-2 py-1"> {/* Increased gap slightly */}
+                              <CameraIcon className="h-3.5 w-3.5 text-muted-foreground" /> {/* Icon with text-muted-foreground */}
                               <span>{camera.label}</span>
                               <Button 
                                 type="button" 
@@ -1212,8 +1215,11 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                       <div className="flex flex-wrap gap-2 mt-3">
                         {Array.from(selectedYoLinkDeviceIds).map(id => {
                           const yolink = availableYoLinkDevices.find(d => d.value === id);
+                          const yolinkDetails = fetchedAllDevices.find(d => d.deviceId === id);
+                          const YoLinkIcon = yolinkDetails?.deviceTypeInfo?.type ? getDeviceTypeIcon(yolinkDetails.deviceTypeInfo.type) : HelpCircle;
                           return yolink ? (
-                            <Badge key={id} variant="secondary" className="flex items-center gap-1 px-2 py-1">
+                            <Badge key={id} variant="secondary" className="flex items-center gap-1.5 px-2 py-1"> {/* Increased gap slightly */}
+                              <YoLinkIcon className="h-3.5 w-3.5 text-muted-foreground" /> {/* Icon with text-muted-foreground */}
                               <span>{yolink.label}</span>
                               <Button 
                                 type="button" 
