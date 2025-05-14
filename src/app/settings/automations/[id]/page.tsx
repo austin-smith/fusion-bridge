@@ -6,7 +6,6 @@ import { notFound } from 'next/navigation';
 import AutomationForm from '@/components/automations/AutomationForm';
 import type { AutomationConfig, AutomationAction, TemporalCondition } from '@/lib/automation-schemas';
 import { deviceIdentifierMap } from '@/lib/mappings/identification';
-import type { MultiSelectOption } from '@/components/ui/multi-select-combobox';
 import { DeviceType, DeviceSubtype, ArmedState } from '@/lib/mappings/definitions';
 import type { Connector } from '@/lib/types';
 import { getDeviceTypeIconName } from '@/lib/mappings/presentation';

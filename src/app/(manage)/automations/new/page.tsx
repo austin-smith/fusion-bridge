@@ -5,7 +5,7 @@ import { db } from "@/data/db";
 import { connectors, devices, locations, areas } from "@/data/db/schema"; // Import locations and areas
 import { type AutomationConfig } from '@/lib/automation-schemas';
 import { DeviceType, ArmedState } from "@/lib/mappings/definitions"; 
-import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
+import type { Option as MultiSelectOption } from "@/components/ui/multi-select-combobox";
 import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions"; // Import actionHandlers and IDeviceActionHandler
 import { inArray, asc } from "drizzle-orm"; // Import inArray and asc
 import type { Metadata } from 'next';
@@ -20,14 +20,6 @@ interface AutomationFormData {
     configJson: AutomationConfig; 
     createdAt: Date; 
     updatedAt: Date; 
-}
-
-// Update MultiSelectOption to expect iconName (align with combobox definition change later)
-// Note: Could import MultiSelectOption from combobox and extend/omit, but simple interface is fine here.
-interface PageMultiSelectOption {
-  value: string;
-  label: string;
-  iconName?: string;
 }
 
 // Set page title metadata

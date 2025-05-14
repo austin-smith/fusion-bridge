@@ -2,7 +2,7 @@ import React from 'react';
 import { Separator } from "@/components/ui/separator";
 import AutomationForm from "@/components/automations/AutomationForm";
 import { type AutomationConfig } from '@/lib/automation-schemas';
-import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
+import type { Option as MultiSelectOption } from "@/components/ui/multi-select-combobox";
 import type { Metadata } from 'next';
 
 // Core imports that were potentially missing from the broader file context

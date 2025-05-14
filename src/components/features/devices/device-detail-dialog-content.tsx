@@ -8,7 +8,7 @@ import { getDisplayStateIcon } from '@/lib/mappings/presentation';
 import { getDeviceTypeIcon } from "@/lib/mappings/presentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon, PowerIcon, PowerOffIcon } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon, PowerIcon, PowerOffIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   DialogHeader,
@@ -54,6 +54,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import type { PikoConfig } from '@/services/drivers/piko'; // Import PikoConfig type
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { MultiSelectComboBox } from '@/components/ui/multi-select-combobox';
 
 // Define the shape of the expected prop, compatible with DisplayedDevice from page.tsx
 // It needs all fields used internally, *excluding* the original 'status' field.
@@ -248,14 +249,6 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   const [isSavingAssociations, setIsSavingAssociations] = useState(false);
   const [associationError, setAssociationError] = useState<string | null>(null);
   
-  // Separate popover states for each type
-  const [pikoCameraPopoverOpen, setPikoCameraPopoverOpen] = useState(false);
-  const [yolinkDevicePopoverOpen, setYolinkDevicePopoverOpen] = useState(false);
-
-  // Refs for Popover Triggers to manage focus on close
-  const pikoCameraTriggerRef = useRef<HTMLButtonElement>(null);
-  const yolinkDeviceTriggerRef = useRef<HTMLButtonElement>(null);
-
   // --- State for Thumbnail & Live Video --- 
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [isThumbnailLoading, setIsThumbnailLoading] = useState(false);
@@ -665,8 +658,6 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         throw new Error(errorMsg);
       }
       toast.success('Device associations saved successfully!');
-      setPikoCameraPopoverOpen(false);
-      setYolinkDevicePopoverOpen(false);
     } catch (err: unknown) {
       console.error("Error saving associations:", err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to save associations.';
@@ -857,6 +848,19 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
          )}
       </div>
     );
+  };
+
+  // Function to handle removing a single association 
+  const handleRemoveAssociation = (id: string, type: 'piko' | 'yolink') => {
+    if (type === 'piko') {
+      const updatedSelections = new Set(selectedPikoCameraIds);
+      updatedSelections.delete(id);
+      setSelectedPikoCameraIds(updatedSelections);
+    } else {
+      const updatedSelections = new Set(selectedYoLinkDeviceIds);
+      updatedSelections.delete(id);
+      setSelectedYoLinkDeviceIds(updatedSelections);
+    }
   };
 
   return (
@@ -1100,69 +1104,15 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                       Select Piko cameras related to this YoLink device.
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                      <Popover 
-                        open={pikoCameraPopoverOpen} 
-                        onOpenChange={setPikoCameraPopoverOpen}
-                      >
-                        <PopoverTrigger asChild>
-                          <Button
-                            ref={pikoCameraTriggerRef}
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={pikoCameraPopoverOpen}
-                            className="w-full sm:w-[300px] justify-between"
-                            disabled={availablePikoCameras.length === 0}
-                          >
-                            {selectedPikoCameraIds.size > 0
-                              ? `${selectedPikoCameraIds.size} camera${selectedPikoCameraIds.size > 1 ? 's' : ''} selected`
-                              : (availablePikoCameras.length === 0 ? "No Piko cameras found" : "Select Piko cameras...")}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent 
-                          className="w-[300px] p-0"
-                          onCloseAutoFocus={(event) => {
-                            if (pikoCameraTriggerRef.current) {
-                              event.preventDefault(); // Prevent Radix's default focus return
-                              pikoCameraTriggerRef.current.focus();
-                            }
-                          }}
-                        >
-                          <Command>
-                            <CommandInput placeholder="Search Piko cameras..." />
-                            <CommandList>
-                              <CommandEmpty>No cameras found.</CommandEmpty>
-                              <CommandGroup>
-                                {availablePikoCameras.map((camera) => (
-                                  <CommandItem
-                                    key={camera.value}
-                                    value={camera.value}
-                                    onSelect={(currentValue: string) => {
-                                      setSelectedPikoCameraIds(prev => {
-                                        const next = new Set(prev);
-                                        if (next.has(currentValue)) {
-                                          next.delete(currentValue);
-                                        } else {
-                                          next.add(currentValue);
-                                        }
-                                        return next;
-                                      });
-                                    }}
-                                  >
-                                    <Check
-                                      className={cn(
-                                        "mr-2 h-4 w-4",
-                                        selectedPikoCameraIds.has(camera.value) ? "opacity-100" : "opacity-0"
-                                      )}
-                                    />
-                                    {camera.label}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                      <MultiSelectComboBox
+                        options={availablePikoCameras} // DeviceOption matches MultiSelectOption structure
+                        selected={Array.from(selectedPikoCameraIds)}
+                        onChange={(newSelected) => setSelectedPikoCameraIds(new Set(newSelected))}
+                        placeholder={availablePikoCameras.length === 0 ? "No Piko cameras found" : "Select Piko cameras..."}
+                        emptyText={isLoadingAssociations ? "Loading..." : "No Piko cameras found."}
+                        className="w-full sm:w-[300px]"
+                        popoverContentClassName="w-[300px]" // Maintain consistent popover width
+                      />
                       <Button 
                         onClick={handleSaveAssociations} 
                         disabled={isLoadingAssociations || isSavingAssociations}
@@ -1178,8 +1128,22 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                         {Array.from(selectedPikoCameraIds).map(id => {
                           const camera = availablePikoCameras.find(c => c.value === id);
                           return camera ? (
-                            <Badge key={id} variant="secondary" className="px-2 py-1">
-                              {camera.label}
+                            <Badge key={id} variant="secondary" className="flex items-center gap-1 px-2 py-1">
+                              <span>{camera.label}</span>
+                              <Button 
+                                type="button" 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-4 w-4 p-0 ml-1 hover:bg-secondary-foreground/10 rounded-full"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleRemoveAssociation(id, 'piko');
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                                <span className="sr-only">Remove {camera.label}</span>
+                              </Button>
                             </Badge>
                           ) : null;
                         })}
@@ -1225,69 +1189,15 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                       Select YoLink devices related to this device.
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                      <Popover 
-                        open={yolinkDevicePopoverOpen} 
-                        onOpenChange={setYolinkDevicePopoverOpen}
-                      >
-                        <PopoverTrigger asChild>
-                          <Button
-                            ref={yolinkDeviceTriggerRef}
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={yolinkDevicePopoverOpen}
-                            className="w-full sm:w-[300px] justify-between"
-                            disabled={availableYoLinkDevices.length === 0}
-                          >
-                            {selectedYoLinkDeviceIds.size > 0
-                              ? `${selectedYoLinkDeviceIds.size} device${selectedYoLinkDeviceIds.size > 1 ? 's' : ''} selected`
-                              : (availableYoLinkDevices.length === 0 ? "No YoLink devices found" : "Select YoLink devices...")}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent 
-                          className="w-[300px] p-0"
-                          onCloseAutoFocus={(event) => {
-                            if (yolinkDeviceTriggerRef.current) {
-                              event.preventDefault(); // Prevent Radix's default focus return
-                              yolinkDeviceTriggerRef.current.focus();
-                            }
-                          }}
-                        >
-                          <Command>
-                            <CommandInput placeholder="Search YoLink devices..." />
-                            <CommandList>
-                              <CommandEmpty>No devices found.</CommandEmpty>
-                              <CommandGroup>
-                                {availableYoLinkDevices.map((yolink) => (
-                                  <CommandItem
-                                    key={yolink.value}
-                                    value={yolink.value}
-                                    onSelect={(currentValue: string) => {
-                                      setSelectedYoLinkDeviceIds(prev => {
-                                        const next = new Set(prev);
-                                        if (next.has(currentValue)) {
-                                          next.delete(currentValue);
-                                        } else {
-                                          next.add(currentValue);
-                                        }
-                                        return next;
-                                      });
-                                    }}
-                                  >
-                                    <Check
-                                      className={cn(
-                                        "mr-2 h-4 w-4",
-                                        selectedYoLinkDeviceIds.has(yolink.value) ? "opacity-100" : "opacity-0"
-                                      )}
-                                    />
-                                    {yolink.label}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                      <MultiSelectComboBox
+                        options={availableYoLinkDevices} // DeviceOption matches MultiSelectOption structure
+                        selected={Array.from(selectedYoLinkDeviceIds)}
+                        onChange={(newSelected) => setSelectedYoLinkDeviceIds(new Set(newSelected))}
+                        placeholder={availableYoLinkDevices.length === 0 ? "No YoLink devices found" : "Select YoLink devices..."}
+                        emptyText={isLoadingAssociations ? "Loading..." : "No YoLink devices found."}
+                        className="w-full sm:w-[300px]"
+                        popoverContentClassName="w-[300px]" // Maintain consistent popover width
+                      />
                       <Button 
                         onClick={handleSaveAssociations} 
                         disabled={isLoadingAssociations || isSavingAssociations}
@@ -1303,8 +1213,22 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                         {Array.from(selectedYoLinkDeviceIds).map(id => {
                           const yolink = availableYoLinkDevices.find(d => d.value === id);
                           return yolink ? (
-                            <Badge key={id} variant="secondary" className="px-2 py-1">
-                              {yolink.label}
+                            <Badge key={id} variant="secondary" className="flex items-center gap-1 px-2 py-1">
+                              <span>{yolink.label}</span>
+                              <Button 
+                                type="button" 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-4 w-4 p-0 ml-1 hover:bg-secondary-foreground/10 rounded-full"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleRemoveAssociation(id, 'yolink');
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                                <span className="sr-only">Remove {yolink.label}</span>
+                              </Button>
                             </Badge>
                           ) : null;
                         })}

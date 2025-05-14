@@ -4,7 +4,6 @@ import AutomationForm from "@/components/automations/AutomationForm";
 import { db } from "@/data/db"; 
 import { connectors, devices, automations as automationsSchema, locations, areas, areaDevices } from "@/data/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
-import type { MultiSelectOption } from "@/components/ui/multi-select-combobox";
 import { redirect, notFound } from 'next/navigation';
 import { type AutomationConfig, type AutomationAction, type TemporalCondition } from "@/lib/automation-schemas";
 import { DeviceType } from "@/lib/mappings/definitions";

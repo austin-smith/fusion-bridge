@@ -1,158 +1,113 @@
 "use client"
 
 import * as React from "react"
-import { Check, ChevronsUpDown, X } from "lucide-react"
+import { Check, ChevronsUpDown } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "@/components/ui/command"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
-export type MultiSelectOption = {
+export type Option = {
   value: string
   label: string
-  icon?: React.ComponentType<{ className?: string }>
 }
 
-interface MultiSelectComboboxProps {
-  options: MultiSelectOption[]
+interface MultiSelectProps {
+  options: Option[]
   selected: string[]
   onChange: (selected: string[]) => void
-  className?: string
   placeholder?: string
-  disabled?: boolean
+  emptyText?: string
+  className?: string
+  popoverContentClassName?: string;
 }
 
-export function MultiSelectCombobox({
+export function MultiSelectComboBox({ // Renamed to MultiSelectComboBox
   options,
   selected,
   onChange,
-  className,
   placeholder = "Select options...",
-  disabled = false,
-}: MultiSelectComboboxProps) {
+  emptyText = "No options found.",
+  className,
+  popoverContentClassName,
+}: MultiSelectProps) {
   const [open, setOpen] = React.useState(false)
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const [popoverWidth, setPopoverWidth] = React.useState("auto");
 
-  const handleSelect = (value: string) => {
-    onChange([...selected, value])
-  }
+  const handleSelect = React.useCallback(
+    (value: string) => {
+      const updatedSelected = selected.includes(value)
+        ? selected.filter((item) => item !== value)
+        : [...selected, value]
+      onChange(updatedSelected)
+    },
+    [selected, onChange],
+  )
 
-  const handleDeselect = (value: string) => {
-    onChange(selected.filter((s) => s !== value))
-  }
+  const selectedLabels = React.useMemo(
+    () =>
+      selected
+        .map((value) => options.find((option) => option.value === value)?.label)
+        .filter(Boolean)
+        .join(", "),
+    [selected, options],
+  )
 
-  // Get label for a given value
-  const getLabel = (value: string) => options.find(opt => opt.value === value)?.label || value;
+  React.useEffect(() => {
+    if (open && triggerRef.current) {
+      setPopoverWidth(`${triggerRef.current.offsetWidth}px`);
+    } else if (!open) {
+      // Optional: Reset width when closed if it can cause layout shifts, 
+      // or keep it to prevent resizing flicker if re-opened quickly.
+      // setPopoverWidth("auto"); 
+    }
+  }, [open, options]); // Re-evaluate if options change while open affecting trigger width indirectly
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild disabled={disabled}>
+      <PopoverTrigger asChild>
         <Button
+          ref={triggerRef}
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className={cn("w-full justify-between h-auto min-h-10", className)}
-          onClick={() => setOpen(!open)}
+          className={cn("w-full justify-between", className)} // Ensure button takes available width
         >
-          <div className="flex gap-1 flex-wrap">
-            {selected.length === 0 && (
-               <span className="text-muted-foreground">{placeholder}</span>
-            )}
-            {selected.map((value) => (
-              <Badge
-                variant="secondary"
-                key={value}
-                className="mr-1 mb-1"
-                // onClick={() => handleDeselect(value)} // Make badges removable if needed
-              >
-                {getLabel(value)}
-                <button
-                  type="button" // Prevent form submission
-                  className="ml-1 ring-offset-background rounded-full outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      handleDeselect(value)
-                    }
-                  }}
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                  }}
-                  onClick={() => handleDeselect(value)}
-                >
-                  <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                </button>
-              </Badge>
-            ))}
-          </div>
-          <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+          <span className="truncate">{selected.length > 0 ? selectedLabels : placeholder}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] h-72 p-0">
+      <PopoverContent 
+        className={cn("p-0", popoverContentClassName)} // REMOVED h-80, allowing natural sizing based on CommandList
+        style={{ width: popoverWidth }} // Set width to match trigger
+        // The following prevents focus auto-management which can be useful in complex forms/dialogs
+        // Test thoroughly if you uncomment these, as default Radix focus handling is usually good.
+        // onOpenAutoFocus={(e) => e.preventDefault()} 
+        // onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         <Command>
-          <CommandInput placeholder="Search..." />
-          <CommandList>
-            <CommandEmpty>No results found.</CommandEmpty>
+          <CommandInput placeholder="Search options..." className="h-9" />
+          <CommandList className="flex-1">
+            <CommandEmpty>{emptyText}</CommandEmpty>
             <CommandGroup>
-             <ScrollArea className="max-h-60">
-                {options.map((option) => {
-                  const isSelected = selected.includes(option.value)
-                  return (
-                    <CommandItem
-                      key={option.value}
-                      value={option.value} // Ensure value is set for search
-                      onSelect={() => {
-                        if (isSelected) {
-                          handleDeselect(option.value)
-                        } else {
-                          handleSelect(option.value)
-                        }
-                        // Keep popover open for multiple selections if desired
-                        // setOpen(true) 
-                      }}
-                    >
-                      <Check
-                        className={cn(
-                          "mr-2 h-4 w-4",
-                          isSelected ? "opacity-100" : "opacity-0"
-                        )}
-                      />
-                      {option.icon && (
-                        <option.icon className="mr-2 h-4 w-4 text-muted-foreground" />
-                      )}
-                      {option.label}
-                    </CommandItem>
-                  )
-                })}
-               </ScrollArea>
+              {options.map((option) => (
+                <CommandItem 
+                  key={option.value} 
+                  value={option.label}
+                  onSelect={() => {
+                    handleSelect(option.value);
+                    // setOpen(false); // Close popover on select for single-select feel, or keep open for multi
+                  }}
+                >
+                  <Check
+                    className={cn("mr-2 h-4 w-4", selected.includes(option.value) ? "opacity-100" : "opacity-0")}
+                  />
+                  {option.label}
+                </CommandItem>
+              ))}
             </CommandGroup>
-            {selected.length > 0 && (
-              <>
-                <CommandSeparator />
-                <CommandGroup>
-                  <CommandItem
-                    onSelect={() => onChange([])}
-                    className="justify-center text-center text-destructive"
-                  >
-                    Clear selection
-                  </CommandItem>
-                </CommandGroup>
-              </>
-            )}
           </CommandList>
         </Command>
       </PopoverContent>
