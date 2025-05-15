@@ -114,10 +114,12 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, areas, all
         {timeSegments.map((segment, segIndex) => {
           return (
             <div key={segment.label + segIndex}>
-              <h3 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide sticky top-0 bg-background/95 backdrop-blur-sm z-10 py-2">
-                {segment.label}
-              </h3>
-              {/* Revert to standard grid layout for all segments */}
+              <div className="flex items-center mb-3 sticky top-0 bg-background/95 backdrop-blur-sm z-10 py-2">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">
+                  {segment.label}
+                </h3>
+                <div className="flex-grow border-t border-border ml-4"></div>
+              </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {segment.groups.map((group) => {
                   return (

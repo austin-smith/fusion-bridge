@@ -21,6 +21,10 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from 'sonner';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Clock } from "lucide-react";
+import { format, parse } from "date-fns";
 
 const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/; // HH:MM format
 
@@ -150,15 +154,87 @@ export const ScheduleFormDialog: React.FC<ScheduleFormDialogProps> = ({ open, on
           
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="armTimeLocal">Arm Time (Local)</Label>
-              <Input id="armTimeLocal" type="time" {...form.register("armTimeLocal")} />
+              <Label htmlFor="armTimeLocal">Arm Time</Label>
+              <Controller
+                name="armTimeLocal"
+                control={form.control}
+                render={({ field }) => (
+                  <div className="relative">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !field.value && "text-muted-foreground"
+                          )}
+                        >
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          {field.value 
+                            ? format(parse(field.value, 'HH:mm', new Date()), 'h:mm a')
+                            : "Select time"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <div className="p-3 space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <Input
+                              id="armTime"
+                              type="time"
+                              value={field.value}
+                              onChange={(e) => field.onChange(e.target.value)}
+                              className="w-full"
+                            />
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                )}
+              />
               {form.formState.errors.armTimeLocal && (
                 <p className="text-sm text-red-500 mt-1">{form.formState.errors.armTimeLocal.message}</p>
               )}
             </div>
             <div>
-              <Label htmlFor="disarmTimeLocal">Disarm Time (Local)</Label>
-              <Input id="disarmTimeLocal" type="time" {...form.register("disarmTimeLocal")} />
+              <Label htmlFor="disarmTimeLocal">Disarm Time</Label>
+              <Controller
+                name="disarmTimeLocal"
+                control={form.control}
+                render={({ field }) => (
+                  <div className="relative">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !field.value && "text-muted-foreground"
+                          )}
+                        >
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          {field.value 
+                            ? format(parse(field.value, 'HH:mm', new Date()), 'h:mm a')
+                            : "Select time"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <div className="p-3 space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <Input
+                              id="disarmTime"
+                              type="time"
+                              value={field.value}
+                              onChange={(e) => field.onChange(e.target.value)}
+                              className="w-full"
+                            />
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                )}
+              />
               {form.formState.errors.disarmTimeLocal && (
                 <p className="text-sm text-red-500 mt-1">{form.formState.errors.disarmTimeLocal.message}</p>
               )}
