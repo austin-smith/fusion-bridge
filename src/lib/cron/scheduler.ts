@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { processAreaArmingSchedules } from '@/lib/actions/areaSecurityActions';
+import { processAreaArmingSchedules } from '@/lib/actions/area-alarm-actions';
 import type { ScheduledTask } from 'node-cron';
 
 let cronJob: ScheduledTask | null = null;
