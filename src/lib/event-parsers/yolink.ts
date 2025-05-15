@@ -20,10 +20,12 @@ import {
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
 import crypto from 'crypto'; // Import crypto for UUID generation
+import { processAndPersistEvent } from '@/lib/events/eventProcessor'; // Import the central processor
+
 // --- BEGIN DB Imports ---
-import { db } from '@/data/db';
-import { devices } from '@/data/db/schema';
-import { eq, and } from 'drizzle-orm';
+// import { db } from '@/data/db';
+// import { devices } from '@/data/db/schema';
+// import { eq, and } from 'drizzle-orm';
 // --- END DB Imports ---
 
 // --- YoLink Intermediate State Mapping (Internal to this parser) ---
@@ -109,7 +111,7 @@ export async function parseYoLinkEvent(
     ) {
         console.warn('[YoLink Parser] Received event missing essential fields (event, time, deviceId):', rawEvent);
         // Cannot even create an UNKNOWN event without basic fields, return empty.
-        return []; 
+        return [];
     }
 
     // Type assertion after validation
@@ -120,6 +122,8 @@ export async function parseYoLinkEvent(
     const identifier = event.event.split('.')[0]; // e.g., "DoorSensor"
     const deviceInfo = getDeviceTypeInfo('yolink', identifier);
 
+    const standardizedEvents: StandardizedEvent[] = [];
+
     // --- BEGIN Add Power Report Handling ---
     if (event.event.endsWith('.powerReport')) {
         console.log(`[YoLink Parser] Detected Power Report: ${event.event} for device ${event.deviceId}`);
@@ -128,7 +132,7 @@ export async function parseYoLinkEvent(
             message: `YoLink Power Report: ${event.event}`,
             rawEventPayload: event.data
         };
-        return [{
+        standardizedEvents.push({
             eventId: crypto.randomUUID(),
             timestamp: timestamp,
             connectorId: connectorId,
@@ -138,28 +142,57 @@ export async function parseYoLinkEvent(
             type: EventType.POWER_CHECK_IN,    
             payload: payload,
             originalEvent: event,
-        }];
+        });
     }
     // --- END Add Power Report Handling ---
 
-    // We process UNKNOWN events even for unmapped devices, 
-    // as the event itself occurred and might be relevant.
-    // If you want to completely ignore unmapped devices, move the check here.
-    // if (deviceInfo.type === DeviceType.Unmapped) {
-    //     return [];
-    // }
+    // --- BEGIN State Change Events (.Alert, .StatusChange) ---
+    else if (event.event.endsWith('.Alert') || event.event.endsWith('.StatusChange')) {
+        if (deviceInfo.type !== DeviceType.Unmapped && event.data?.state !== undefined) {
+            const rawState = event.data.state;
+            const intermediateState = translateRawYoLinkState(deviceInfo, rawState);
 
-    // --- Attempt to Parse Specific Known Event Types ---
+            if (intermediateState) {
+                const displayState = intermediateStateToDisplayString(intermediateState, deviceInfo);
+                if (displayState) {
+                    const payload: StateChangedPayload = {
+                        intermediateState: intermediateState,
+                        displayState: displayState,
+                    };
+                    standardizedEvents.push({
+                        eventId: crypto.randomUUID(),
+                        timestamp: timestamp,
+                        connectorId: connectorId,
+                        deviceId: event.deviceId,
+                        deviceInfo: deviceInfo,
+                        category: EventCategory.DEVICE_STATE,
+                        type: EventType.STATE_CHANGED,
+                        payload: payload,
+                        originalEvent: event,
+                    });
+                } else {
+                    console.warn(`[YoLink Parser][${connectorId}] Could not map intermediate state '${intermediateState}' to display state for device ${event.deviceId} during ${event.event}`);
+                }
+            } else {
+                 console.warn(`[YoLink Parser] State Change for ${event.event}: Could not translate raw YoLink state '${String(rawState)}' for ${event.deviceId}.`);
+            }
+        } else if (deviceInfo.type === DeviceType.Unmapped) {
+            console.warn(`[YoLink Parser] State Change event '${event.event}' for unmapped device ${event.deviceId}. Cannot process state.`);
+        } else { // event.data?.state is undefined
+             console.warn(`[YoLink Parser] State Change event '${event.event}' for device ${event.deviceId} is missing 'data.state'. Cannot determine state.`);
+        }
+    }
+    // --- END State Change Events ---
 
-    // --- BEGIN Check for Diagnostic Report --- 
-    if (event.event.endsWith('.Report')) {
+    // --- BEGIN Check for Generic Diagnostic Report --- 
+    else if (event.event.endsWith('.Report')) { // This catches other '.Report' types not covered by '.powerReport'
         console.log(`[YoLink Parser] Detected Diagnostic Report: ${event.event} for device ${event.deviceId}`);
         const payload: UnknownEventPayload = { 
             originalEventType: event.event,
             message: `YoLink Diagnostic Report: ${event.event}`,
             rawEventPayload: event.data
         };
-        return [{
+        standardizedEvents.push({
             eventId: crypto.randomUUID(),
             timestamp: timestamp,
             connectorId: connectorId,
@@ -169,62 +202,9 @@ export async function parseYoLinkEvent(
             type: EventType.DEVICE_CHECK_IN,    
             payload: payload,
             originalEvent: event,
-        }];
+        });
     }
-    // --- END Check for Diagnostic Report ---
-
-    let successfullyParsed = false;
-
-    // 1. Check for State Change
-    if (event.data?.state !== undefined && deviceInfo.type !== DeviceType.Unmapped) {
-        const rawState = event.data.state;
-        const intermediateState = translateRawYoLinkState(deviceInfo, rawState);
-
-        if (intermediateState) {
-            const displayState = intermediateStateToDisplayString(intermediateState, deviceInfo);
-            if (displayState) {
-                // <<< --- BEGIN DB UPDATE LOGIC --- >>>
-                try {
-                    console.log(`[YoLink Parser] Updating DB status for ${event.deviceId} to '${displayState}'`);
-                    await db.update(devices)
-                      .set({ 
-                          status: displayState, // Store the final display string
-                          updatedAt: new Date() 
-                      })
-                      .where(and(
-                          eq(devices.connectorId, connectorId),
-                          eq(devices.deviceId, event.deviceId) // Match on external ID
-                      ));
-                    console.log(`[YoLink Parser] DB status updated successfully for ${event.deviceId}`);
-                } catch (dbError) {
-                    console.error(`[YoLink Parser] Failed to update DB status for ${event.deviceId}:`, dbError);
-                    // Log error but continue processing the event for the store/UI
-                }
-                // <<< --- END DB UPDATE LOGIC --- >>>
-                
-                const payload: StateChangedPayload = {
-                    intermediateState: intermediateState,
-                    displayState: displayState,
-                };
-                successfullyParsed = true;
-                return [{
-                    eventId: crypto.randomUUID(),
-                    timestamp: timestamp,
-                    connectorId: connectorId,
-                    deviceId: event.deviceId,
-                    deviceInfo: deviceInfo,
-                    category: EventCategory.DEVICE_STATE,
-                    type: EventType.STATE_CHANGED,
-                    payload: payload,
-                    originalEvent: event,
-                }];
-            } else {
-                console.warn(`[YoLink Parser][${connectorId}] Could not map intermediate state '${intermediateState}' to display state for device ${event.deviceId}`);
-            }
-        } else {
-             console.warn(`[YoLink Parser] State Change: Could not translate raw YoLink state '${rawState}' for ${event.deviceId}.`);
-        }
-    }
+    // --- END Check for Generic Diagnostic Report ---
 
     // --- BATTERY HANDLING REMOVED ---
 
@@ -233,15 +213,15 @@ export async function parseYoLinkEvent(
 
 
     // --- Catch-all for Unknown/Unhandled Events --- 
-    // If no specific handler succeeded above, create an UNKNOWN event.
-    if (!successfullyParsed) {
-        console.warn(`[YoLink Parser] Creating UNKNOWN_EXTERNAL_EVENT for unhandled event type or structure. Device: ${event.deviceId}, Original Event Type: ${event.event}`);
+    // If no specific handler created an event above, create an UNKNOWN event.
+    if (standardizedEvents.length === 0) {
+        console.warn(`[YoLink Parser] Creating UNKNOWN_EXTERNAL_EVENT for unhandled/unparseable event. Device: ${event.deviceId}, Original Event Type: ${event.event}`);
         const payload: UnknownEventPayload = {
             originalEventType: event.event,
             message: `Unknown or unhandled YoLink event: ${event.event}`,
             rawEventPayload: event.data
         };
-        return [{
+        standardizedEvents.push({
             eventId: crypto.randomUUID(),
             timestamp: timestamp,
             connectorId: connectorId,
@@ -251,9 +231,8 @@ export async function parseYoLinkEvent(
             type: EventType.UNKNOWN_EXTERNAL_EVENT,
             payload: payload,
             originalEvent: event,
-        }];
+        });
     }
 
-    // Should not be reached if logic is correct, but satisfy TypeScript return paths
-    return []; 
+    return standardizedEvents;
 } 

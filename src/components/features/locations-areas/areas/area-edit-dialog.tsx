@@ -159,7 +159,7 @@ export const AreaEditDialog: React.FC<AreaEditDialogProps> = ({
               </Button>
                {/* Disable submit if no locations exist */}
               <Button type="submit" disabled={isSubmitting || allLocations.length === 0}>
-                {isSubmitting ? (isEditing ? 'Saving...' : 'Creating...') : (isEditing ? 'Save Changes' : 'Create Area')}
+                {isSubmitting ? (isEditing ? 'Saving...' : 'Creating...') : (isEditing ? 'Save' : 'Create Area')}
               </Button>
             </DialogFooter>
           </form>

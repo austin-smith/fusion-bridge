@@ -72,6 +72,7 @@ export const devices = sqliteTable("devices", {
   vendor: text("vendor"),
   model: text("model"),
   url: text("url"),
+  isSecurityDevice: integer("is_security_device", { mode: "boolean" }).default(false).notNull(),
   rawDeviceData: text("raw_device_data", { mode: "json" }).$type<Record<string, unknown> | null>(), // Store the raw device data object from the API as JSON string
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
@@ -166,28 +167,40 @@ export const automations = sqliteTable("automations", {
 // --- NEW: Locations Table ---
 export const locations = sqliteTable("locations", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  parentId: text("parent_id").references((): AnySQLiteColumn => locations.id, { onDelete: 'cascade' }), // Self-referencing FK - Type is correct now
+  parentId: text("parent_id").references((): AnySQLiteColumn => locations.id, { onDelete: 'cascade' }), 
   name: text("name").notNull(),
-  path: text("path").notNull(), // Materialized path (e.g., "rootId.childId.grandchildId")
+  path: text("path").notNull(), 
+  timeZone: text("time_zone").notNull(),
+  externalId: text("external_id"),
+  addressStreet: text("address_street").notNull(),
+  addressCity: text("address_city").notNull(),
+  addressState: text("address_state").notNull(),
+  addressPostalCode: text("address_postal_code").notNull(),
+  notes: text("notes"), 
+  activeArmingScheduleId: text("active_arming_schedule_id").references(() => armingSchedules.id, { onDelete: 'set null' }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
-    // Indexes
     parentIdx: index("locations_parent_idx").on(table.parentId),
-    pathIdx: index("locations_path_idx").on(table.path), // Index for path-based queries
+    pathIdx: index("locations_path_idx").on(table.path),
+    activeArmingScheduleIdx: index("locations_active_arming_schedule_idx").on(table.activeArmingScheduleId), // Index for FK
 }));
 
-// Relations for Locations (Self-referencing and to Areas)
+// Relations for Locations
 export const locationsRelations = relations(locations, ({ one, many }) => ({
-  parent: one(locations, { // Relation to parent location
+  parent: one(locations, { 
     fields: [locations.parentId],
     references: [locations.id],
     relationName: 'parentLocation',
   }),
-  children: many(locations, { // Relation to child locations
-    relationName: 'parentLocation', // Must match the parent's relationName
+  children: many(locations, { 
+    relationName: 'parentLocation',
   }),
-  areas: many(areas), // Relation to Areas located within this Location
+  areas: many(areas), 
+  activeArmingSchedule: one(armingSchedules, { // <-- ADDED relation
+    fields: [locations.activeArmingScheduleId],
+    references: [armingSchedules.id],
+  }),
 }));
 
 // --- NEW: Areas Table ---
@@ -196,19 +209,29 @@ export const areas = sqliteTable("areas", {
   locationId: text("location_id").references(() => locations.id, { onDelete: 'cascade' }).notNull(),
   name: text("name").notNull(),
   armedState: text("armed_state").$type<ArmedState>().notNull().default(ArmedState.DISARMED),
+  lastArmedStateChangeReason: text("last_armed_state_change_reason"), 
+  nextScheduledArmTime: integer("next_scheduled_arm_time", { mode: "timestamp" }), 
+  nextScheduledDisarmTime: integer("next_scheduled_disarm_time", { mode: "timestamp" }), 
+  isArmingSkippedUntil: integer("is_arming_skipped_until", { mode: "timestamp" }), 
+  overrideArmingScheduleId: text("override_arming_schedule_id").references(() => armingSchedules.id, { onDelete: 'set null' }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
     locationIdx: index("areas_location_idx").on(table.locationId),
+    overrideArmingScheduleIdx: index("areas_override_arming_schedule_idx").on(table.overrideArmingScheduleId), // Index for FK
 }));
 
-// Relations for Areas (to Location and AreaDevices junction)
+// Relations for Areas
 export const areasRelations = relations(areas, ({ one, many }) => ({
-  location: one(locations, { // Relation back to the Location
+  location: one(locations, { 
     fields: [areas.locationId],
     references: [locations.id],
   }),
-  areaDevices: many(areaDevices), // Relation to the junction table
+  areaDevices: many(areaDevices), 
+  overrideArmingSchedule: one(armingSchedules, { // <-- ADDED relation
+    fields: [areas.overrideArmingScheduleId],
+    references: [armingSchedules.id],
+  }),
 }));
 
 // --- NEW: AreaDevices Junction Table ---
@@ -234,6 +257,29 @@ export const areaDevicesRelations = relations(areaDevices, ({ one }) => ({
     fields: [areaDevices.deviceId],
     references: [devices.id],
   }),
+}));
+
+// --- NEW: ArmingSchedules Table ---
+export const armingSchedules = sqliteTable("arming_schedules", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(), // Nullable, for identifying the schedule e.g., "Weekday Evenings"
+  daysOfWeek: text("days_of_week", { mode: "json" }).notNull().$type<number[]>(), // e.g. [0,1,2,3,4] for Mon-Fri
+  armTimeLocal: text("arm_time_local").notNull(), // e.g., "09:00"
+  disarmTimeLocal: text("disarm_time_local").notNull(), // e.g., "18:00"
+  isEnabled: integer("is_enabled", { mode: "boolean" }).default(true).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  // No direct FKs to areas or locations needed here; this is a lookup table.
+  // Index on isEnabled might be useful if querying for active schedules frequently.
+  isEnabledIdx: index("arming_schedules_is_enabled_idx").on(table.isEnabled),
+}));
+
+// Relations for ArmingSchedules - this table is now a lookup, so it has no outgoing relations to specific locations/areas.
+// It will be referenced BY locations and areas.
+export const armingSchedulesRelations = relations(armingSchedules, ({ many }) => ({
+  // Example if other tables needed to know all locations/areas using this schedule (complex)
+  // For now, this can be empty or used for other purposes if a schedule needs to link to something else directly.
 }));
 
 // --- Better Auth Core Schema (Renamed to defaults) ---

@@ -447,7 +447,7 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
             onClick={handleSaveChanges} 
             disabled={isSubmitting || isLoadingAssignments || Object.keys(changedDeviceIds).length === 0} // Check if object is empty
           >
-            {isSubmitting ? 'Saving...' : 'Save Changes'}
+            {isSubmitting ? 'Saving...' : 'Save'}
           </Button>
         </DialogFooter>
       </DialogContent>

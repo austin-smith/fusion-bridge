@@ -413,7 +413,7 @@ export default function AutomationForm({
 
                     <div className="flex justify-end space-x-2 mt-8">
                         <Button type="submit" disabled={isLoading || !form.formState.isValid}>
-                            {isLoading ? 'Saving...' : (initialData.id === 'new' ? 'Create Automation' : 'Save Changes')}
+                            {isLoading ? 'Saving...' : (initialData.id === 'new' ? 'Create Automation' : 'Save')}
                         </Button>
                     </div>
                 </form>

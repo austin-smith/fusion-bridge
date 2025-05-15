@@ -651,7 +651,7 @@ function SubmitButton() {
         <Button type="submit" disabled={pending} className="ml-auto" size="sm">
             {/* Only show loader when pending, otherwise just text */}
             {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Save Changes
+            Save
         </Button>
     );
 } 

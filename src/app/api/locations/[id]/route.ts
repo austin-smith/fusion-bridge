@@ -12,12 +12,17 @@ import { z } from 'zod';
 //  };
 // }
 
-// --- Validation Schema ---
+// --- Validation Schema for Update ---
 const updateLocationSchema = z.object({
   name: z.string().min(1, "Name cannot be empty").optional(),
   parentId: z.string().uuid("Invalid parent ID format").nullable().optional(),
-}).refine(data => data.name !== undefined || data.parentId !== undefined, {
-  message: "Either name or parentId must be provided for update",
+  timeZone: z.string().min(1, "Timezone cannot be empty").optional(),
+  externalId: z.string().nullable().optional(),
+  addressStreet: z.string().min(1, "Street address cannot be empty").optional(),
+  addressCity: z.string().min(1, "City cannot be empty").optional(),
+  addressState: z.string().min(1, "State cannot be empty").optional(),
+  addressPostalCode: z.string().min(1, "Postal code cannot be empty").optional(),
+  notes: z.string().nullable().optional(),
 });
 
 // Fetch a specific location by ID - Correct Next.js 15 signature
@@ -50,18 +55,17 @@ export async function GET(
   }
 }
 
-// Update a location (name and/or parentId) - Correct Next.js 15 signature
+// Update an existing location
 export async function PUT(
   request: Request, 
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params; // Await params
-
-  if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
-    return NextResponse.json({ success: false, error: "Invalid ID format" }, { status: 400 });
-  }
-
   try {
+    const { id: locationId } = await params;
+    if (!locationId) {
+      return NextResponse.json({ success: false, error: "Location ID is required" }, { status: 400 });
+    }
+
     const body = await request.json();
     const validation = updateLocationSchema.safeParse(body);
 
@@ -69,92 +73,70 @@ export async function PUT(
       return NextResponse.json({ success: false, error: "Invalid input", details: validation.error.flatten() }, { status: 400 });
     }
 
-    const { name, parentId } = validation.data;
-
-    // Fetch the current location
-    const [currentLocation] = await db.select().from(locations).where(eq(locations.id, id)).limit(1);
-
-    if (!currentLocation) {
+    const currentValues = await db.select().from(locations).where(eq(locations.id, locationId)).limit(1);
+    if (currentValues.length === 0) {
       return NextResponse.json({ success: false, error: "Location not found" }, { status: 404 });
     }
 
-    const updates: Partial<Location> = { updatedAt: new Date() };
-    if (name !== undefined) {
-      updates.name = name;
-    }
+    const dataToUpdate = validation.data;
+    let newPath = currentValues[0].path;
 
-    let newPath = currentLocation.path;
-    const oldPath = currentLocation.path;
-    let parentChanged = false;
-
-    // Check if parentId is explicitly provided in the request and different from current
-    if (parentId !== undefined && parentId !== currentLocation.parentId) {
-        parentChanged = true;
-        updates.parentId = parentId;
-
-        if (parentId === null) { // Moving to root
-            newPath = id;
-        } else {
-            // Prevent making a location its own parent
-            if (parentId === id) {
-                return NextResponse.json({ success: false, error: "Cannot set a location as its own parent" }, { status: 400 });
-            }
-
-            // Fetch the new parent
-            const [newParent] = await db.select({ path: locations.path }).from(locations).where(eq(locations.id, parentId)).limit(1);
-            if (!newParent) {
-                return NextResponse.json({ success: false, error: "New parent location not found" }, { status: 404 });
-            }
-
-            // Prevent creating cycles (check if new parent is a descendant of the current location)
-            if (newParent.path.startsWith(`${currentLocation.path}.`)) {
-                 return NextResponse.json({ success: false, error: "Cannot move location under one of its own descendants" }, { status: 400 });
-            }
-
-            newPath = `${newParent.path}.${id}`;
+    // If parentId is explicitly being changed (even to null)
+    if (dataToUpdate.parentId !== undefined) {
+      if (dataToUpdate.parentId === null) { // Moving to root
+        newPath = locationId;
+      } else { // Moving under a new parent
+        const parent = await db.select({ path: locations.path }).from(locations).where(eq(locations.id, dataToUpdate.parentId)).limit(1);
+        if (!parent || parent.length === 0) {
+          return NextResponse.json({ success: false, error: "New parent location not found" }, { status: 404 });
         }
-        updates.path = newPath;
+        // Prevent self-parenting or circular dependencies (simple check)
+        if (dataToUpdate.parentId === locationId || parent[0].path.startsWith(currentValues[0].path)) {
+             return NextResponse.json({ success: false, error: "Invalid parent ID assignment creating a circular dependency." }, { status: 400 });
+        }
+        newPath = `${parent[0].path}.${locationId}`;
+      }
+      // Note: This doesn't recursively update paths of children. That's a more complex operation.
     }
+    
+    const updatePayload: Partial<Omit<Location, 'id' | 'createdAt' | 'updatedAt' | 'path'>> & { path?: string } = {};
 
-    // Perform updates
-    // Use transaction only if parent changed, otherwise simple update
-    if (parentChanged) {
-        console.log(`Parent changed for ${id}. Old path: ${oldPath}, New path: ${newPath}`);
-        await db.transaction(async (tx) => {
-             // 1. Update the main location's parent and path
-            await tx.update(locations).set(updates).where(eq(locations.id, id));
-            
-            // 2. Update descendants (if the path actually changed)
-            if (newPath !== oldPath) {
-                 console.log(`Calling updateDescendantPaths for ${id}...`);
-                 // We need to call the helper function outside the main transaction logic but pass tx
-                 // Drizzle transactions work by passing the tx object
-                 // Re-implementing descendant update logic here for simplicity within transaction
-                 const descendants = await tx.select({ id: locations.id, path: locations.path })
-                    .from(locations)
-                    .where(like(locations.path, `${oldPath}.%`));
-
-                 for (const descendant of descendants) {
-                    const remainingPath = descendant.path.substring(oldPath.length);
-                    const descendantNewPath = `${newPath}${remainingPath}`;
-                    console.log(` TX: Updating descendant ${descendant.id} path from ${descendant.path} to ${descendantNewPath}`);
-                    await tx.update(locations)
-                      .set({ path: descendantNewPath, updatedAt: new Date() })
-                      .where(eq(locations.id, descendant.id));
-                 }
+    // Dynamically build the update payload to only include provided fields
+    for (const key in dataToUpdate) {
+        if (Object.prototype.hasOwnProperty.call(dataToUpdate, key)) {
+            const typedKey = key as keyof typeof dataToUpdate;
+            if (dataToUpdate[typedKey] !== undefined) {
+                (updatePayload as any)[typedKey] = dataToUpdate[typedKey];
             }
-        });
-    } else if (Object.keys(updates).length > 1) { // Only update if there's something besides updatedAt
-        await db.update(locations).set(updates).where(eq(locations.id, id));
+        }
     }
+    
+    if (newPath !== currentValues[0].path) {
+        updatePayload.path = newPath;
+    }
+    
+    // Add updatedAt timestamp
+    (updatePayload as any).updatedAt = new Date();
 
-    // Fetch the final updated location to return
-    const [updatedLocation] = await db.select().from(locations).where(eq(locations.id, id)).limit(1);
+
+    if (Object.keys(updatePayload).length === 0 || (Object.keys(updatePayload).length === 1 && 'updatedAt' in updatePayload && newPath === currentValues[0].path)) {
+      // No actual data changed other than updatedAt and path not changing
+      return NextResponse.json({ success: true, data: currentValues[0] as Location, message: "No changes detected." });
+    }
+    
+    const [updatedLocation] = await db.update(locations)
+      .set(updatePayload)
+      .where(eq(locations.id, locationId))
+      .returning();
+
+    if (!updatedLocation) {
+      return NextResponse.json({ success: false, error: "Failed to update location or location not found" }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true, data: updatedLocation as Location });
 
   } catch (error) {
-    console.error(`Error updating location ${id}:`, error);
+    console.error("Error updating location:", error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ success: false, error: `Failed to update location: ${errorMessage}` }, { status: 500 });
   }

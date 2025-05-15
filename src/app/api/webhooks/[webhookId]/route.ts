@@ -10,6 +10,9 @@ import { storeStandardizedEvent } from '@/data/repositories/events'; // Import t
 import { useFusionStore } from '@/stores/store'; // Import Zustand store if needed for real-time updates
 import { recordWebhookActivity } from '@/services/webhook-service'; // <-- Import the new function
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
+import { parsePikoEvent } from '@/lib/event-parsers/piko'; // Import the Piko parser
+import { parseYoLinkEvent } from '@/lib/event-parsers/yolink'; // Import the YoLink parser
+import { processAndPersistEvent } from '@/lib/events/eventProcessor'; // <-- ADDED import
 
 // Header names
 const NETBOX_SIGNATURE_HEADER = 'x-hub-signature-256'; 
@@ -235,25 +238,22 @@ export async function POST(
       console.log(`[Webhook ${connectorId}] Received NetBox 'Event' type payload: ${eventPayload.Descname} (ID: ${eventPayload.Activityid})`);
       
       // Parse the NetBox event
-      const standardizedEvent = parseNetboxEvent(eventPayload, connectorId);
+      const standardizedEvents = await parseNetboxEvent(eventPayload, connectorId);
 
-      if (standardizedEvent) {
-        console.log(`[Webhook ${connectorId}] Parsed NetBox event into StandardizedEvent: ${standardizedEvent.eventId}`);
-        
-        // Store the standardized event in the database
-        await storeStandardizedEvent(standardizedEvent);
-        
-        // Optional: Notify frontend via Zustand store (uncomment if needed)
-        // useFusionStore.getState().processStandardizedEvent(standardizedEvent);
-
-        // Record activity after successful processing
-        recordWebhookActivity(connectorId);
-        return NextResponse.json({ success: true, message: 'NetBox Event processed' }, { status: 200 });
-      } else {
-        // Parser returned null (e.g., unmapped Descname we decided to ignore)
-        console.log(`[Webhook ${connectorId}] NetBox event not processed (parser returned null). Descname: ${eventPayload.Descname}`);
-        return NextResponse.json({ success: true, message: 'NetBox Event received but not processed (unmapped/irrelevant)' }, { status: 200 });
+      for (const stdEvent of standardizedEvents) {
+        try {
+          await processAndPersistEvent(stdEvent);
+          useFusionStore.getState().processStandardizedEvent(stdEvent);
+        } catch (e) {
+          console.error(`[Webhook Handler][${connectorId}] Error processing standardized NetBox event ${stdEvent.eventId}:`, e);
+        }
       }
+      console.log(`[Webhook Handler][${connectorId}] NetBox event(s) processed and handed off.`);
+      // For NetBox, we might not have a direct "device" status to update from the webhook itself,
+      // as events are more transactional. Status updates happen via polling if at all for NetBox.
+      // responseMessage = 'NetBox Event Processed';
+      recordWebhookActivity(connectorId);
+      return NextResponse.json({ success: true, message: 'NetBox Event processed' }, { status: 200 });
 
     } else {
       console.warn(`[Webhook ${connectorId}] Received unhandled payload type '${payload.Type}' or category '${connectorInfo.category}'.`);

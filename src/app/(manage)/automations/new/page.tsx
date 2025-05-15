@@ -115,6 +115,11 @@ async function getAllLocations(): Promise<Location[]> {
         parentId: locations.parentId,
         name: locations.name,
         path: locations.path,
+        timeZone: locations.timeZone,
+        addressStreet: locations.addressStreet,
+        addressCity: locations.addressCity,
+        addressState: locations.addressState, 
+        addressPostalCode: locations.addressPostalCode,
         createdAt: locations.createdAt,
         updatedAt: locations.updatedAt
     }).from(locations).orderBy(asc(locations.name));

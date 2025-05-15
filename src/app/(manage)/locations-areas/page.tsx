@@ -4,11 +4,13 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Terminal, Loader2, Plus, MoreHorizontal, ChevronDown, ChevronRight, ArrowUpDown, ArrowDown, ArrowUp, Building, MapPin, Settings, Link, ShieldCheck, ShieldOff, ShieldAlert, Trash2, Shield, Pencil, PanelLeftOpen, PanelLeftClose, Move, Search, Video } from 'lucide-react';
-import { LocationEditDialog } from '@/components/features/locations/location-edit-dialog';
-import { AreaEditDialog } from '@/components/features/areas/area-edit-dialog';
-import { AreaDeviceAssignmentDialog } from '@/components/features/areas/area-device-assignment-dialog';
-import { AreaCameraWallDialog } from '@/components/features/areas/AreaCameraWallDialog';
-import { AreaCard } from '@/components/features/areas/AreaCard';
+import { LocationEditDialog } from '@/components/features/locations-areas/locations/location-edit-dialog';
+import { AreaEditDialog } from '@/components/features/locations-areas/areas/area-edit-dialog';
+import { AreaDeviceAssignmentDialog } from '@/components/features/locations-areas/areas/area-device-assignment-dialog';
+import { AreaCameraWallDialog } from '@/components/features/locations-areas/areas/area-camera-wall-dialog';
+import { AreaCard } from '@/components/features/locations-areas/areas/AreaCard';
+import AreaStatusDisplay from '@/components/alarm/AreaStatusDisplay';
+import { LocationTreeView } from '@/components/features/locations-areas/locations/location-tree-view';
 import type { Area, Location, DeviceWithConnector } from "@/types/index";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from 'sonner';
 import { ArmedState, ArmedStateDisplayNames, DeviceType } from "@/lib/mappings/definitions";
-import { AreaDevicesSubRow } from '@/components/features/areas/AreaDevicesSubRow';
+import { AreaDevicesSubRow } from '@/components/features/locations-areas/areas/AreaDevicesSubRow';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from '@/lib/utils';
@@ -59,6 +61,15 @@ import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { produce } from 'immer';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/page-header';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { format, parse } from 'date-fns';
 
 export default function LocationsAreasPage() {
 
@@ -91,6 +102,11 @@ export default function LocationsAreasPage() {
     isLoadingAllDevices,
     errorAllDevices,
     fetchAllDevices,
+    armingSchedules,
+    isLoadingArmingSchedules,
+    fetchArmingSchedules,
+    setLocationDefaultSchedule,
+    setAreaOverrideSchedule,
   } = useFusionStore((state) => ({
     locations: state.locations,
     isLoadingLocations: state.isLoadingLocations,
@@ -115,6 +131,11 @@ export default function LocationsAreasPage() {
     isLoadingAllDevices: state.isLoadingAllDevices,
     errorAllDevices: state.errorAllDevices,
     fetchAllDevices: state.fetchAllDevices,
+    armingSchedules: state.armingSchedules,
+    isLoadingArmingSchedules: state.isLoadingArmingSchedules,
+    fetchArmingSchedules: state.fetchArmingSchedules,
+    setLocationDefaultSchedule: state.setLocationDefaultSchedule,
+    setAreaOverrideSchedule: state.setAreaOverrideSchedule,
   }));
 
   const [isLocationDialogOpen, setIsLocationDialogOpen] = useState(false);
@@ -142,7 +163,6 @@ export default function LocationsAreasPage() {
   const [showTreeView, setShowTreeView] = useState<boolean | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [selectedArea, setSelectedArea] = useState<Area | null>(null);
-  const [expandedLocations, setExpandedLocations] = useState<Record<string, boolean>>({});
 
   // dnd-kit sensors
   const sensors = useSensors(
@@ -173,7 +193,8 @@ export default function LocationsAreasPage() {
     fetchLocations();
     fetchAreas();
     fetchAllDevices();
-  }, [fetchLocations, fetchAreas, fetchAllDevices]);
+    fetchArmingSchedules();
+  }, [fetchLocations, fetchAreas, fetchAllDevices, fetchArmingSchedules]);
 
   // Handler for when the assign devices dialog open state changes
   const handleAssignDevicesDialogChange = (isOpen: boolean) => {
@@ -297,16 +318,6 @@ export default function LocationsAreasPage() {
     setIsAreaDeleteDialogOpen(false);
   };
 
-  const handleArmAction = async (area: Area, state: ArmedState) => {
-    const result = await updateAreaArmedState(area.id, state);
-    if (result) {
-        const stateFormatted = state.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
-        toast.success(`Area "${area.name}" set to ${stateFormatted}.`);
-    } else {
-        toast.error(`Failed to update armed state for area "${area.name}".`);
-    }
-  };
-
   const handleOpenAssignDevicesDialog = (area: Area | null) => {
     if (!area) return;
     setAreaToAssignDevices(area);
@@ -315,10 +326,6 @@ export default function LocationsAreasPage() {
 
   const toggleAreaDevices = (areaId: string) => {
     setExpandedAreaDevices(prev => ({ ...prev, [areaId]: !prev[areaId] }));
-  };
-
-  const toggleLocationExpansion = (locationId: string) => {
-    setExpandedLocations(prev => ({ ...prev, [locationId]: !prev[locationId] }));
   };
 
   // Scroll to location element
@@ -407,71 +414,13 @@ export default function LocationsAreasPage() {
                                (searchTerm !== '' || !areasByLocation['unassigned'] || areasByLocation['unassigned'].length === 0);
   const hasOriginalData = locations.length > 0 || areas.length > 0;
 
-  // --- UPDATED: Reference original area data in tree view rendering --- 
-  const renderTreeItem = (location: Location) => {
-    const locationAreas = areasByLocation[location.id] || []; // Use ORIGINAL areas
-    const isExpanded = expandedLocations[location.id] || false;
-    const isSelected = selectedLocation?.id === location.id;
-
-    return (
-      <div key={location.id} className="mb-2">
-        <div 
-          className={cn(
-            "flex items-center py-1.5 px-2 rounded-md text-sm cursor-pointer",
-            isSelected && !selectedArea ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"
-          )}
-          onClick={() => {
-            setSelectedLocation(location);
-            setSelectedArea(null);
-            scrollToLocation(location.id);
-          }}
-        >
-          <Button variant="ghost" size="sm" className="h-5 w-5 p-0 mr-1" onClick={(e) => {
-            e.stopPropagation();
-            toggleLocationExpansion(location.id);
-          }}>
-            {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          </Button>
-          <Building className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
-          <span className="truncate flex-grow">{location.name}</span>
-          <Badge variant="outline" className="ml-1">{locationAreas.length}</Badge>
-        </div>
-        
-        {isExpanded && locationAreas.length > 0 && (
-          <div className="pl-6 mt-1 space-y-1">
-            {locationAreas.map(area => (
-              <div
-                key={area.id}
-                className={cn(
-                  "flex items-center py-1 px-2 rounded-md text-sm cursor-pointer",
-                  selectedArea?.id === area.id ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"
-                )}
-                onClick={() => {
-                  setSelectedArea(area);
-                  setSelectedLocation(location);
-                  
-                  // Find the area card element
-                  const areaElement = document.getElementById(`area-${area.id}`);
-                  if (areaElement) {
-                    areaElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }
-                }}
-              >
-                <MapPin className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
-                <span className="truncate">{area.name}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        
-        {isExpanded && locationAreas.length === 0 && (
-          <div className="pl-6 mt-1">
-            <p className="text-xs text-muted-foreground py-1 px-2">No areas in this location</p>
-          </div>
-        )}
-      </div>
-    );
-  };
+  // ---> ADDED: Handler for item selection from LocationTreeView
+  const handleTreeSelectItem = useCallback((item: { type: 'location' | 'area', location: Location | null, area: Area | null }) => {
+    setSelectedLocation(item.location);
+    setSelectedArea(item.area);
+    // Scrolling is now handled within LocationTreeView after selection
+  }, []);
+  // <--- END ADDED
 
   const AreaCardWrapper = ({ area, children }: { area: Area; children: React.ReactNode }) => {
       const { setNodeRef, isOver } = useDroppable({
@@ -488,45 +437,6 @@ export default function LocationsAreasPage() {
           >
               {React.cloneElement(children as React.ReactElement, { isSelected, isOver })}
           </div>
-    );
-  };
-
-  // --- UPDATED: Render unassigned areas only if search is inactive --- 
-  const renderUnassignedAreas = () => {
-    const unassignedAreas = areasByLocation['unassigned'] || []; // Use ORIGINAL areas
-    // Only show if search is empty and there are unassigned areas
-    if (searchTerm !== '' || unassignedAreas.length === 0) return null; 
-    
-    return (
-      <div className="mt-4 pt-3 border-t">
-        <div className="text-xs font-semibold uppercase text-muted-foreground mb-2 px-2">
-          Unassigned Areas
-        </div>
-        <div className="space-y-1">
-          {unassignedAreas.map(area => (
-            <div
-              key={area.id}
-              className={cn(
-                "flex items-center py-1 px-2 rounded-md text-sm cursor-pointer ml-2",
-                selectedArea?.id === area.id ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"
-              )}
-              onClick={() => {
-                setSelectedArea(area);
-                setSelectedLocation(null);
-                
-                // Find the area card element using the ID from AreaCardWrapper
-                const areaElement = document.getElementById(`area-${area.id}`);
-                if (areaElement) {
-                  areaElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-              }}
-            >
-              <MapPin className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
-              <span className="truncate">{area.name}</span>
-            </div>
-          ))}
-        </div>
-      </div>
     );
   };
 
@@ -640,6 +550,21 @@ export default function LocationsAreasPage() {
     setLocationArmLoading(prev => ({ ...prev, [locationId]: false }));
   };
 
+  // Add this new handler for area-specific arming
+  const handleAreaArmAction = async (area: Area, state: ArmedState) => {
+    try {
+      const success = await updateAreaArmedState(area.id, state);
+      if (success) {
+        toast.success(`Area "${area.name}" ${state === ArmedState.DISARMED ? 'disarmed' : `armed (${ArmedStateDisplayNames[state]})`}.`);
+      } else {
+        toast.error(`Failed to update area "${area.name}".`);
+      }
+    } catch (error) {
+      console.error("Error updating area state:", error);
+      toast.error(`An error occurred while updating area state.`);
+    }
+  };
+
   // --- ADDED: Handlers for Camera Wall Dialog ---
   const handleOpenCameraWallDialog = (area: Area | null) => {
     if (!area) return;
@@ -654,6 +579,39 @@ export default function LocationsAreasPage() {
     }
   };
   // --- END ADDED ---
+
+  // --- NEW: Handlers for setting schedules ---
+  const handleSetLocationDefaultSchedule = async (locationId: string, newScheduleId: string | null) => {
+    // The value from Select will be string or "null_value_placeholder"
+    const finalScheduleId = newScheduleId === 'null_value_placeholder' ? null : newScheduleId;
+    await setLocationDefaultSchedule(locationId, finalScheduleId);
+    // Toast and error handling is in the store action
+  };
+
+  const handleSetAreaOverrideSchedule = async (areaId: string, newScheduleId: string | null) => {
+    const finalScheduleId = newScheduleId === 'null_value_placeholder' ? null : newScheduleId;
+    await setAreaOverrideSchedule(areaId, finalScheduleId);
+    // Toast and error handling is in the store action
+  };
+  // --- END NEW ---
+
+  // Determine effective schedule for display (short form)
+  const getScheduleDisplay = (scheduleId: string | null | undefined) => {
+    if (!scheduleId) return null;
+    const found = armingSchedules.find(s => s.id === scheduleId);
+    return found ? found.name : null;
+  };
+
+  // Add function to format time in a readable way
+  const formatTime = (timeString: string): string => {
+    try {
+      const date = parse(timeString, 'HH:mm', new Date());
+      return format(date, 'h:mma'); // Convert 24-hour format to 12-hour with am/pm, no space
+    } catch (error) {
+      console.warn(`Invalid time string for formatting: ${timeString}`, error);
+      return timeString; // Fallback to original string if parsing fails
+    }
+  };
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -681,40 +639,44 @@ export default function LocationsAreasPage() {
 
         <div className="flex flex-grow overflow-hidden"> 
           {showTreeView && (
-            <div className="w-64 pr-2 pl-4 border-r flex-shrink-0 flex flex-col"> {/* Add border and flex-col */} 
-              <div className="mb-4 pb-3 border-b pt-4"> {/* Adjust padding */}
-                <h3 className="font-medium text-sm mb-3">Locations Hierarchy</h3>
-                {hasOriginalData && (
-                  <Button variant="secondary" size="sm" className="w-full" onClick={() => handleOpenLocationDialog(null)}>
-                    <Plus className="h-3.5 w-3.5" /> Add Location
-                  </Button>
-                )}
-              </div>
-              <ScrollArea className="flex-grow"> 
-                {filteredSortedLocations.map(location => renderTreeItem(location))}
-                {renderUnassignedAreas()}
-                {isFilteredEmptyState && (
-                  <div className="px-2 pt-4 text-center">
-                    <p className="text-sm text-muted-foreground mb-1">No locations or areas found.</p>
-                    <Button variant="link" size="sm" className="h-auto p-0" onClick={() => handleOpenLocationDialog(null)}>
-                      Add your first location
-                    </Button>
-                  </div>
-                )}
-              </ScrollArea>
-            </div>
+            <LocationTreeView
+              allLocations={locations}
+              allAreas={areas}
+              searchTerm={searchTerm}
+              selectedLocationId={selectedLocation?.id || null}
+              selectedAreaId={selectedArea?.id || null}
+              onSelectItem={handleTreeSelectItem}
+              onAddLocationClick={() => handleOpenLocationDialog(null)}
+              hasOriginalData={hasOriginalData}
+              // No explicit className needed here, default styling applies
+            />
           )}
 
           <ScrollArea className="flex-1"> 
              <div className={cn("p-4 md:p-6", showTreeView ? "md:pr-6" : "md:px-6")}> {/* Add padding */} 
-               {(isLoadingLocations || isLoadingAreas) && renderLoading()}
+               {(isLoadingLocations || isLoadingAreas || isLoadingArmingSchedules) && renderLoading()} {/* Adjusted loading check */}
                {errorLocations && renderError(errorLocations, 'Locations')}
                {errorAreas && renderError(errorAreas, 'Areas')}
                
-               {!isLoadingLocations && !isLoadingAreas && !errorLocations && !errorAreas && (
+               {!isLoadingLocations && !isLoadingAreas && !isLoadingArmingSchedules && !errorLocations && !errorAreas && (
                    <div className="space-y-6">
                        {filteredSortedLocations.map(location => {
-                           const locationAreas = areasByLocation[location.id] || []; // Use ORIGINAL areas
+                           const locationAreas = areasByLocation[location.id] || [];
+                           // ---> MODIFIED: Check if location (or its areas) should be visible based on tree selection or search
+                           // If a location is selected in the tree, show it.
+                           // If an area is selected, show its parent location.
+                           // If no tree selection, show all filtered locations (current behavior).
+                           const isLocationSelectedInTree = selectedLocation?.id === location.id && !selectedArea;
+                           const isAreaUnderThisLocationSelectedInTree = selectedArea?.locationId === location.id;
+                           
+                           // When search is active, the tree's filtering (passed via filteredSortedLocations) handles visibility.
+                           // When search is inactive and tree is visible:
+                           //  - If a location is selected, only show that location.
+                           //  - If an area is selected, only show its parent location.
+                           //  - If nothing is selected in tree (and tree is shown), show all. This case needs care if we want to "focus" based on tree.
+                           // For now, rely on filteredSortedLocations which is based on search.
+                           // The tree selection primarily drives scrolling and highlighting, not filtering of the main content for now.
+
                            return (
                                <Card 
                                  key={location.id} 
@@ -754,11 +716,9 @@ export default function LocationsAreasPage() {
                                                </Tooltip>
                                                <DropdownMenuContent align="end">
                                                  <DropdownMenuItem onClick={() => handleLocationArmAction(location.id, ArmedState.ARMED_AWAY)}>
-                                                   {/* <ShieldCheck className="h-4 w-4 mr-2" /> // Icon provided by shadcn class */} 
                                                    Arm Away
                                                  </DropdownMenuItem>
                                                  <DropdownMenuItem onClick={() => handleLocationArmAction(location.id, ArmedState.ARMED_STAY)}>
-                                                   {/* <ShieldCheck className="h-4 w-4 mr-2" /> // Icon provided by shadcn class */}
                                                    Arm Stay
                                                  </DropdownMenuItem>
                                                </DropdownMenuContent>
@@ -818,26 +778,92 @@ export default function LocationsAreasPage() {
                                              </DropdownMenu>
                                          </div>
                                      </CardHeader>
-                                     <CardContent className="pt-0 bg-muted/25 rounded-b-lg"> 
+                                     <CardContent className="pt-4 pb-4 bg-muted/25 rounded-b-lg space-y-4"> {/* Added pb-4 and space-y-4 */}
+                                         {/* --- Location Default Schedule Select --- */}
+                                         <div className="border border-dashed rounded-md p-2.5 bg-transparent">
+                                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                             <div className="space-y-0.5">
+                                               <h4 className="text-sm font-medium text-muted-foreground">Default Arming Schedule</h4>
+                                               <p className="text-xs text-muted-foreground/70">
+                                                 Applied to all areas in this location unless overridden
+                                               </p>
+                                             </div>
+                                             <Select 
+                                               value={location.activeArmingScheduleId || 'null_value_placeholder'}
+                                               onValueChange={(value) => handleSetLocationDefaultSchedule(location.id, value)}
+                                             >
+                                               <SelectTrigger className="w-full sm:w-[240px] h-8 border-dashed">
+                                                 <SelectValue placeholder="Select default schedule...">
+                                                   {location.activeArmingScheduleId ? 
+                                                     armingSchedules.find(s => s.id === location.activeArmingScheduleId)?.name : 
+                                                     "None"}
+                                                 </SelectValue>
+                                               </SelectTrigger>
+                                               <SelectContent>
+                                                 <SelectItem value="null_value_placeholder">
+                                                   <div className="flex flex-col w-full">
+                                                     <span>None</span>
+                                                     <span className="text-muted-foreground text-xs">
+                                                       Location will not be automatically armed or disarmed
+                                                     </span>
+                                                   </div>
+                                                 </SelectItem>
+                                                 {armingSchedules.map(schedule => (
+                                                   <SelectItem key={schedule.id} value={schedule.id}>
+                                                     <div className="flex flex-col w-full">
+                                                       <span>{schedule.name}</span>
+                                                       <span className="text-muted-foreground text-xs">
+                                                         {formatTime(schedule.armTimeLocal)} - {formatTime(schedule.disarmTimeLocal)}
+                                                       </span>
+                                                     </div>
+                                                   </SelectItem>
+                                                 ))}
+                                               </SelectContent>
+                                             </Select>
+                                           </div>
+                                         </div>
+                                         {/* --- End Location Default Schedule Select --- */}
+
                                          {locationAreas.length > 0 ? (
-                                             locationAreas.map(area => (
-                                                 <AreaCardWrapper key={area.id} area={area}>
+                                             locationAreas.map(area => {
+                                               // Modify the effectiveSchedule determination to not include "(Default)" in the string
+                                               const effectiveSchedule = area.overrideArmingScheduleId 
+                                                 ? getScheduleDisplay(area.overrideArmingScheduleId)
+                                                 : location.activeArmingScheduleId 
+                                                   ? getScheduleDisplay(location.activeArmingScheduleId)
+                                                   : 'None';
+
+                                               // Add a flag to indicate if it's using the default schedule
+                                               const isUsingLocationDefault = !area.overrideArmingScheduleId && !!location.activeArmingScheduleId;
+
+                                               return (
+                                                 <div key={`area-display-wrapper-${area.id}`} className="mb-3">
+                                                   <AreaCardWrapper key={area.id} area={area}>
                                                      <AreaCard 
-                                                         area={area}
-                                                         allDevices={allDevices}
-                                                         isSelected={selectedArea?.id === area.id}
-                                                         isDevicesExpanded={expandedAreaDevices[area.id] ?? false}
-                                                         locationArmLoading={locationArmLoading[location.id]}
-                                                         onToggleDetails={toggleAreaDevices}
-                                                         onAssignDevices={handleOpenAssignDevicesDialog}
-                                                         onEditArea={handleOpenAreaDialog}
-                                                         onDeleteArea={handleOpenAreaDeleteDialog}
-                                                         onArmAction={handleArmAction}
-                                                         onViewCameras={handleOpenCameraWallDialog}
-                                                         // isOver is managed by AreaCardWrapper and passed down
+                                                       area={area}
+                                                       allDevices={allDevices}
+                                                       isSelected={selectedArea?.id === area.id}
+                                                       isDevicesExpanded={expandedAreaDevices[area.id] ?? false}
+                                                       locationArmLoading={locationArmLoading[location.id]} 
+                                                       onToggleDetails={toggleAreaDevices}
+                                                       onAssignDevices={handleOpenAssignDevicesDialog}
+                                                       onEditArea={handleOpenAreaDialog}
+                                                       onDeleteArea={handleOpenAreaDeleteDialog}
+                                                       onViewCameras={handleOpenCameraWallDialog}
+                                                       onArmAction={handleAreaArmAction}
+                                                       scheduleInfo={{
+                                                         effective: effectiveSchedule,
+                                                         locationDefault: getScheduleDisplay(location.activeArmingScheduleId),
+                                                         onChange: (value: string) => handleSetAreaOverrideSchedule(area.id, value),
+                                                         value: area.overrideArmingScheduleId || 'null_value_placeholder',
+                                                         schedules: armingSchedules,
+                                                         isUsingLocationDefault: isUsingLocationDefault
+                                                       }}
                                                      />
-                                                 </AreaCardWrapper>
-                                             ))
+                                                   </AreaCardWrapper>
+                                                 </div>
+                                               );
+                                             })
                                          ) : (
                                              <div className="px-4 py-6 text-center">
                                                  <div className="rounded-full bg-muted p-3 mb-2 inline-flex">
@@ -864,24 +890,44 @@ export default function LocationsAreasPage() {
                                    <CardDescription>These areas are not linked to any specific location.</CardDescription>
                                </CardHeader>
                                <CardContent>
-                                   {areasByLocation['unassigned'].map(area => (
-                                       <AreaCardWrapper key={area.id} area={area}>
-                                           <AreaCard 
+                                   {areasByLocation['unassigned'].map(area => {
+                                       // Get effective schedule display info for unassigned area
+                                       const effectiveSchedule = area.overrideArmingScheduleId 
+                                         ? armingSchedules.find(s => s.id === area.overrideArmingScheduleId)?.name || 'Unknown'
+                                         : 'None';
+                                       
+                                       // For unassigned areas, there is no location default
+                                       const hasLocationDefault = false;
+
+                                       return (
+                                         <div key={`unassigned-area-display-wrapper-${area.id}`} className="mb-3">
+                                           <AreaCardWrapper key={area.id} area={area}>
+                                             <AreaCard 
                                                area={area}
                                                allDevices={allDevices}
                                                isSelected={selectedArea?.id === area.id}
                                                isDevicesExpanded={expandedAreaDevices[area.id] ?? false}
-                                               locationArmLoading={false} // Unassigned areas don't belong to a location
+                                               locationArmLoading={false} 
                                                onToggleDetails={toggleAreaDevices}
                                                onAssignDevices={handleOpenAssignDevicesDialog}
                                                onEditArea={handleOpenAreaDialog}
                                                onDeleteArea={handleOpenAreaDeleteDialog}
-                                               onArmAction={handleArmAction}
                                                onViewCameras={handleOpenCameraWallDialog}
-                                               // isOver is managed by AreaCardWrapper and passed down
-                                           />
-                                       </AreaCardWrapper>
-                                   ))}
+                                               onArmAction={handleAreaArmAction}
+                                               scheduleInfo={{
+                                                 effective: effectiveSchedule,
+                                                 locationDefault: null, // No location default for unassigned areas
+                                                 onChange: (value: string) => handleSetAreaOverrideSchedule(area.id, value),
+                                                 value: area.overrideArmingScheduleId || 'null_value_placeholder',
+                                                 schedules: armingSchedules,
+                                                 isUnassigned: true,
+                                                 isUsingLocationDefault: false // Unassigned areas can't use location defaults
+                                               }}
+                                             />
+                                           </AreaCardWrapper>
+                                         </div>
+                                       );
+                                   })}
                                </CardContent>
                            </Card>
                        )}
@@ -895,23 +941,25 @@ export default function LocationsAreasPage() {
                                   <CardTitle className="mb-2 ">
                                     {hasOriginalData && searchTerm !== '' 
                                      ? "No locations match your search term. Try adjusting your filter."
-                                     : <>Locations represent physical buildings or sites... {/* rest of original message */}
-                                        <br/>Use them to organize your devices and control security by zone.
-                                      </>
+                                     : "Locations represent physical buildings or sites." // Simplified from original combined message
                                     }
                                   </CardTitle>
                                   <CardDescription className="mb-6 max-w-md">
                                     {hasOriginalData && searchTerm !== ''
-                                     ? "No locations match your search term. Try adjusting your filter."
-                                     : // Locations represent physical buildings or sites...
-                                       <>
-                                        <br/>Use them to organize your devices and control security by zone.
-                                      </>
+                                     ? "" // No extra description needed if search term yields no results
+                                     : "Use them to organize your devices and control security by zone." // Simplified
                                     }
                                   </CardDescription>
-                                  {!hasOriginalData && (
+                                  {/* Logic for button when NO data and NO search term */}
+                                  {!hasOriginalData && searchTerm === '' && (
                                     <Button onClick={() => handleOpenLocationDialog(null)} className="gap-2">
                                       <Plus className="h-4 w-4" /> Add Your First Location
+                                    </Button>
+                                  )}
+                                  {/* Logic for button when there IS data but search yields nothing */}
+                                  {hasOriginalData && searchTerm !== '' && isFilteredEmptyState && (
+                                    <Button variant="outline" onClick={() => setSearchTerm('')} className="gap-2">
+                                      Clear Search
                                     </Button>
                                   )}
                                 </CardContent>
@@ -932,6 +980,7 @@ export default function LocationsAreasPage() {
           locationToEdit={editingLocation}
           allLocations={locations}
           onSubmit={handleLocationDialogSubmit}
+          armingSchedules={armingSchedules}
         />
         
         <AlertDialog open={isLocationDeleteDialogOpen} onOpenChange={setIsLocationDeleteDialogOpen}>

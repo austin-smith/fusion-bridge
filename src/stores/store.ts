@@ -4,7 +4,9 @@ import { toast } from 'sonner'; // <-- Import toast
 import { PikoServer } from '@/types';
 import type { StandardizedEvent } from '@/types/events';
 import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, ArmedState, ActionableState, ON, OFF } from '@/lib/mappings/definitions';
-import type { DeviceWithConnector, ConnectorWithConfig, Location, Area, ApiResponse } from '@/types/index';
+import type { DeviceWithConnector, ConnectorWithConfig, Location, Area, ApiResponse, ArmingSchedule } from '@/types/index';
+// Re-export the ArmingSchedule type
+export type { ArmingSchedule } from '@/types/index';
 import { YoLinkConfig } from '@/services/drivers/yolink';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import type { DashboardEvent } from '@/app/api/events/dashboard/route';
@@ -12,6 +14,23 @@ import type { User } from '@/lib/actions/user-actions'; // Import User type
 
 // Enable Immer plugin for Map/Set support
 enableMapSet();
+
+// Type definitions for arming schedules
+export interface NewArmingScheduleData {
+  name: string;
+  daysOfWeek: number[];
+  armTimeLocal: string;
+  disarmTimeLocal: string;
+  isEnabled: boolean;
+}
+
+export interface UpdateArmingScheduleData {
+  name?: string;
+  daysOfWeek?: number[];
+  armTimeLocal?: string;
+  disarmTimeLocal?: string;
+  isEnabled?: boolean;
+}
 
 // Type for connection status representation in the store (shared)
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown' | 'reconnecting' | 'error';
@@ -116,6 +135,11 @@ interface FusionState {
   isLoadingAreas: boolean;
   errorAreas: string | null;
   
+  // --- NEW: Arming Schedules State ---
+  armingSchedules: ArmingSchedule[];
+  isLoadingArmingSchedules: boolean;
+  errorArmingSchedules: string | null;
+  
   // --- NEW: Event Dashboard State ---
   dashboardEvents: DashboardEvent[];
   isLoadingDashboardEvents: boolean;
@@ -203,6 +227,21 @@ interface FusionState {
 
   // --- NEW: User List Refresh Action ---
   triggerUserListRefresh: () => void;
+
+  // --- NEW ZUSTAND ACTIONS FOR AREA SECURITY ---
+  armArea: (areaId: string) => Promise<boolean>;
+  disarmArea: (areaId: string) => Promise<boolean>;
+  skipNextArmForArea: (areaId: string) => Promise<boolean>;
+  // Optional: refreshAreaSecurityStatus: (areaId: string) => Promise<void>; 
+
+  // --- NEW: Arming Schedule Actions ---
+  fetchArmingSchedules: () => Promise<void>;
+  addArmingSchedule: (scheduleData: NewArmingScheduleData) => Promise<ArmingSchedule | null>;
+  updateArmingSchedule: (id: string, scheduleData: UpdateArmingScheduleData) => Promise<ArmingSchedule | null>;
+  deleteArmingSchedule: (id: string) => Promise<boolean>;
+  setLocationDefaultSchedule: (locationId: string, scheduleId: string | null) => Promise<boolean>;
+  setAreaOverrideSchedule: (areaId: string, scheduleId: string | null) => Promise<boolean>;
+  // --- END NEW ---
 }
 
 // Initial state for MQTT (default)
@@ -264,6 +303,11 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   areas: [],
   isLoadingAreas: false,
   errorAreas: null,
+  
+  // --- NEW: Arming Schedules Initial State ---
+  armingSchedules: [],
+  isLoadingArmingSchedules: false,
+  errorArmingSchedules: null,
   
   // --- NEW: Event Dashboard Initial State ---
   dashboardEvents: [],
@@ -856,7 +900,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: Fetch Dashboard Events Action ---
+  // NEW: Fetch dashboard events
   fetchDashboardEvents: async () => {
     set({ isLoadingDashboardEvents: true, errorDashboardEvents: null });
     try {
@@ -963,8 +1007,257 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   // --- NEW: User List Refresh Action ---
   triggerUserListRefresh: () => set({ lastUserListUpdateTimestamp: Date.now() }),
 
-  // REMOVE addDashboardEvent action implementation
+  // --- NEW ZUSTAND ACTIONS IMPLEMENTATION ---
+  armArea: async (areaId: string) => {
+    const loadingToastId = toast.loading(`Arming area ${areaId.substring(0,6)}...`);
+    try {
+      const response = await fetch(`/api/areas/${areaId}/security/arm`, { method: 'POST' });
+      const data: ApiResponse<{ area: Area }> = await response.json(); // Assuming API returns { area: UpdatedArea }
+      if (!response.ok || !data.success || !data.data?.area) {
+        throw new Error(data.error || 'Failed to arm area');
+      }
+      const updatedAreaFromApi = data.data.area;
+      set(produce((draft: Draft<FusionState>) => {
+        const areaIndex = draft.areas.findIndex(a => a.id === areaId);
+        if (areaIndex !== -1) {
+          // Merge updates: keep existing fields, overwrite with API response
+          draft.areas[areaIndex] = { ...draft.areas[areaIndex], ...updatedAreaFromApi };
+        }
+      }));
+      toast.success(`Area ${areaId.substring(0,6)} armed.`);
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error arming area ${areaId}:`, message);
+      toast.error(`Failed to arm area: ${message}`);
+      return false;
+    } finally {
+      toast.dismiss(loadingToastId);
+    }
+  },
 
-  // REMOVE markEventAsSeen action implementation
+  disarmArea: async (areaId: string) => {
+    const loadingToastId = toast.loading(`Disarming area ${areaId.substring(0,6)}...`);
+    try {
+      const response = await fetch(`/api/areas/${areaId}/security/disarm`, { method: 'POST' });
+      const data: ApiResponse<{ area: Area }> = await response.json(); 
+      if (!response.ok || !data.success || !data.data?.area) {
+        throw new Error(data.error || 'Failed to disarm area');
+      }
+      const updatedAreaFromApi = data.data.area;
+      set(produce((draft: Draft<FusionState>) => {
+        const areaIndex = draft.areas.findIndex(a => a.id === areaId);
+        if (areaIndex !== -1) {
+          draft.areas[areaIndex] = { ...draft.areas[areaIndex], ...updatedAreaFromApi };
+        }
+      }));
+      toast.success(`Area ${areaId.substring(0,6)} disarmed.`);
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error disarming area ${areaId}:`, message);
+      toast.error(`Failed to disarm area: ${message}`);
+      return false;
+    } finally {
+      toast.dismiss(loadingToastId);
+    }
+  },
+
+  skipNextArmForArea: async (areaId: string) => {
+    const loadingToastId = toast.loading(`Skipping next arm for area ${areaId.substring(0,6)}...`);
+    try {
+      const response = await fetch(`/api/areas/${areaId}/security/skip-next-arm`, { method: 'POST' });
+      const data: ApiResponse<{ area: Area }> = await response.json(); 
+      if (!response.ok || !data.success || !data.data?.area) {
+        throw new Error(data.error || 'Failed to skip next arm');
+      }
+      const updatedAreaFromApi = data.data.area;
+      set(produce((draft: Draft<FusionState>) => {
+        const areaIndex = draft.areas.findIndex(a => a.id === areaId);
+        if (areaIndex !== -1) {
+          draft.areas[areaIndex] = { ...draft.areas[areaIndex], ...updatedAreaFromApi };
+        }
+      }));
+      toast.success(`Next arm for area ${areaId.substring(0,6)} will be skipped.`);
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error skipping next arm for area ${areaId}:`, message);
+      toast.error(`Failed to skip next arm: ${message}`);
+      return false;
+    } finally {
+      toast.dismiss(loadingToastId);
+    }
+  },
+
+  // --- NEW: Arming Schedule Actions ---
+  fetchArmingSchedules: async () => {
+    set({ isLoadingArmingSchedules: true, errorArmingSchedules: null });
+    try {
+      const response = await fetch('/api/alarm/arming-schedules');
+      const data: ApiResponse<ArmingSchedule[]> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch arming schedules');
+      }
+      // Convert date strings to Date objects if necessary, API might already do this
+      const schedulesWithDates = (data.data || []).map(schedule => ({
+        ...schedule,
+        createdAt: new Date(schedule.createdAt),
+        updatedAt: new Date(schedule.updatedAt),
+      }));
+      set({ armingSchedules: schedulesWithDates, isLoadingArmingSchedules: false });
+      console.log('[FusionStore] Arming schedules loaded:', schedulesWithDates.length);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error("Error fetching arming schedules:", message);
+      set({ isLoadingArmingSchedules: false, errorArmingSchedules: message, armingSchedules: [] });
+    }
+  },
+
+  addArmingSchedule: async (scheduleData) => {
+    try {
+      const response = await fetch('/api/alarm/arming-schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(scheduleData),
+      });
+      
+      const data: ApiResponse<ArmingSchedule> = await response.json();
+      if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || 'Failed to create arming schedule');
+      }
+      
+      set((state) => ({
+        armingSchedules: [...state.armingSchedules, data.data!].sort((a, b) => a.name.localeCompare(b.name)),
+      }));
+      
+      toast.success('Arming schedule created successfully');
+      return data.data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Error creating arming schedule:', message);
+      toast.error(`Failed to create arming schedule: ${message}`);
+      return null;
+    }
+  },
+
+  updateArmingSchedule: async (id, scheduleData) => {
+    try {
+      const response = await fetch(`/api/alarm/arming-schedules/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(scheduleData),
+      });
+      
+      const data: ApiResponse<ArmingSchedule> = await response.json();
+      if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || 'Failed to update arming schedule');
+      }
+      
+      set((state) => ({
+        armingSchedules: state.armingSchedules.map(schedule => 
+          schedule.id === id ? data.data! : schedule
+        ).sort((a, b) => a.name.localeCompare(b.name)),
+      }));
+      
+      toast.success('Arming schedule updated successfully');
+      return data.data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error updating arming schedule ${id}:`, message);
+      toast.error(`Failed to update arming schedule: ${message}`);
+      return null;
+    }
+  },
+
+  deleteArmingSchedule: async (id) => {
+    const loadingToastId = toast.loading('Deleting arming schedule...');
+    try {
+      const response = await fetch(`/api/alarm/arming-schedules/${id}`, {
+        method: 'DELETE',
+      });
+      
+      const data: ApiResponse<{ id: string }> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to delete arming schedule');
+      }
+      
+      set((state) => ({
+        armingSchedules: state.armingSchedules.filter(schedule => schedule.id !== id),
+      }));
+      
+      toast.success('Arming schedule deleted successfully');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error deleting arming schedule ${id}:`, message);
+      toast.error(`Failed to delete arming schedule: ${message}`);
+      return false;
+    } finally {
+      toast.dismiss(loadingToastId);
+    }
+  },
+
+  setLocationDefaultSchedule: async (locationId: string, scheduleId: string | null) => {
+    const loadingToastId = toast.loading('Setting location default schedule...');
+    try {
+      const response = await fetch(`/api/alarm/locations/${locationId}/default-schedule`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduleId }), // API expects { scheduleId: "uuid" | null }
+      });
+      const data: ApiResponse<Location> = await response.json();
+      if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || 'Failed to set location default schedule.');
+      }
+      const updatedLocation = data.data;
+      set(produce((draft: Draft<FusionState>) => {
+        const locIndex = draft.locations.findIndex(l => l.id === locationId);
+        if (locIndex !== -1) {
+          draft.locations[locIndex].activeArmingScheduleId = updatedLocation.activeArmingScheduleId;
+           draft.locations[locIndex].updatedAt = new Date(updatedLocation.updatedAt); // Ensure updatedAt is a Date
+        }
+      }));
+      toast.success('Location default schedule updated.');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      toast.error(`Failed to set default schedule: ${message}`);
+      return false;
+    } finally {
+      toast.dismiss(loadingToastId);
+    }
+  },
+
+  setAreaOverrideSchedule: async (areaId: string, scheduleId: string | null) => {
+    const loadingToastId = toast.loading('Setting area override schedule...');
+    try {
+      const response = await fetch(`/api/alarm/areas/${areaId}/override-schedule`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduleId }), // API expects { scheduleId: "uuid" | null }
+      });
+      const data: ApiResponse<Area> = await response.json();
+      if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || 'Failed to set area override schedule.');
+      }
+      const updatedArea = data.data;
+      set(produce((draft: Draft<FusionState>) => {
+        const areaIndex = draft.areas.findIndex(a => a.id === areaId);
+        if (areaIndex !== -1) {
+          draft.areas[areaIndex].overrideArmingScheduleId = updatedArea.overrideArmingScheduleId;
+          draft.areas[areaIndex].updatedAt = new Date(updatedArea.updatedAt); // Ensure updatedAt is a Date
+        }
+      }));
+      toast.success('Area override schedule updated.');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      toast.error(`Failed to set override schedule: ${message}`);
+      return false;
+    } finally {
+      toast.dismiss(loadingToastId);
+    }
+  },
 
 })); 

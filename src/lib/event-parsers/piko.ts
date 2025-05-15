@@ -3,6 +3,7 @@ import { EventCategory, EventType, EventSubtype, DeviceType } from '@/lib/mappin
 import { PikoJsonRpcEventParams, PikoDeviceRaw } from '@/services/drivers/piko';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import crypto from 'crypto';
+import { processAndPersistEvent } from '@/lib/events/eventProcessor';
 
 // Define the possible EventTypes this parser can return
 type ParsedPikoEventType = EventType.ANALYTICS_EVENT 
@@ -21,61 +22,49 @@ type ParsedPikoEventType = EventType.ANALYTICS_EVENT
  * @param rawEventParams The `eventParams` object from the Piko JSON-RPC message.
  * @param deviceGuidMap A map where keys are Piko Device GUIDs (eventResourceId) 
  *                      and values are the corresponding PikoDeviceRaw info.
- * @returns An array containing a single StandardizedEvent corresponding to the parsed Piko event type, 
- *          or an empty array if the event is ignored or unparseable.
+ * @returns A Promise resolving to void, as events are processed centrally.
  */
-export function parsePikoEvent(
+export async function parsePikoEvent(
     connectorId: string, 
     rawEventParams: PikoJsonRpcEventParams | undefined | null,
-    deviceGuidMap: Map<string, PikoDeviceRaw> | null // Added map parameter
-): StandardizedEvent[] { 
+    deviceGuidMap: Map<string, PikoDeviceRaw> | null 
+): Promise<StandardizedEvent[]> {
 
-    // --- Basic Validation ---
     if (!rawEventParams) {
         console.warn(`[Piko Parser][${connectorId}] Received null or undefined event params.`);
         return [];
     }
 
-    // Ensure essential fields for an analytics event are present
     const deviceGuid = rawEventParams.eventResourceId;
     if (!deviceGuid || !rawEventParams.eventTimestampUsec) {
         console.warn(`[Piko Parser][${connectorId}] Received event params missing eventResourceId (GUID) or eventTimestampUsec:`, rawEventParams);
         return [];
     }
 
-    // --- Extract Data ---
-    const deviceId = deviceGuid; // Use the resource ID GUID as our standardized deviceId
+    const deviceId = deviceGuid; 
     let timestamp: Date;
     try {
-        // Piko timestamp is MICROSECONDS since epoch. Divide by 1000 to get ms.
         const timestampMs = BigInt(rawEventParams.eventTimestampUsec) / 1000n; 
         timestamp = new Date(Number(timestampMs));
     } catch (e) {
         console.error(`[Piko Parser][${connectorId}] Failed to parse timestamp: ${rawEventParams.eventTimestampUsec}`, e);
-        timestamp = new Date(); // Fallback to now if parsing fails
+        timestamp = new Date(); 
     }
 
-    // --- Get Device Info ---
     let pikoDeviceTypeString: string | undefined;
     if (deviceGuidMap) {
         const pikoDevice = deviceGuidMap.get(deviceId);
-        pikoDeviceTypeString = pikoDevice?.deviceType; // e.g., "Camera", "Encoder"
+        pikoDeviceTypeString = pikoDevice?.deviceType;
     } else {
         console.warn(`[Piko Parser][${connectorId}] Device GUID map was not provided. Cannot determine specific Piko device type.`);
-        // If no map, we can't determine the type string to look up
     }
 
-    // Use the Piko deviceType string (if found) as the identifier for mapping
     const deviceInfo = getDeviceTypeInfo('piko', pikoDeviceTypeString); 
     
-    // Handle cases where the Piko device type wasn't found or isn't mapped
     if (deviceInfo.type === DeviceType.Unmapped) {
         console.warn(`[Piko Parser][${connectorId}] Could not map Piko device type string '${pikoDeviceTypeString}' for GUID ${deviceId}. Event source type is unknown.`);
-        // Decide if we should still create an event with Unmapped type, or return null
-        // Let's proceed with Unmapped for now, the event still occurred.
     }
 
-    // --- Construct Payload --- 
     const payload: Record<string, any> = {
         caption: rawEventParams.caption,
         description: rawEventParams.description,
@@ -85,22 +74,17 @@ export function parsePikoEvent(
         objectTrackId: rawEventParams.objectTrackId,
     };
 
-    // --- Determine Specific Event Type & Subtype ---
-    let specificEventType: ParsedPikoEventType = EventType.ANALYTICS_EVENT; // Default
-    let specificEventSubtype: EventSubtype | undefined = undefined; // NEW: For subtype
-    const inputPortId = rawEventParams.inputPortId?.toLowerCase(); // Normalize for reliable checking
+    let specificEventType: ParsedPikoEventType = EventType.ANALYTICS_EVENT; 
+    let specificEventSubtype: EventSubtype | undefined = undefined; 
+    const inputPortId = rawEventParams.inputPortId?.toLowerCase(); 
     const pikoEventType = rawEventParams.eventType;
-
-    // Define allowed Piko event types
     const allowedPikoEventTypes = ['analyticsSdkObjectDetected', 'analyticsSdkEvent'];
 
-    // Filter out events not matching the allowed Piko event types
     if (!pikoEventType || !allowedPikoEventTypes.includes(pikoEventType)) {
-        console.warn(`[Piko Parser][${connectorId}] Received Piko event with eventType '${pikoEventType || 'undefined'}'. This type is not one of the allowed types (${allowedPikoEventTypes.join(', ')}), so the event will be discarded.`);
+        console.warn(`[Piko Parser][${connectorId}] Received Piko event with eventType '${pikoEventType || 'undefined'}'. Not an allowed type. Event discarded.`);
         return [];
     }
 
-    // 1. Handle specific inputPortId mappings first
     if (inputPortId === 'cvedia.rt.loitering') {
         specificEventType = EventType.LOITERING;
     } else if (inputPortId === 'cvedia.rt.armed_person') {
@@ -111,28 +95,17 @@ export function parsePikoEvent(
         specificEventType = EventType.INTRUSION;
     } else if (inputPortId === 'cvedia.rt.crossing') {
         specificEventType = EventType.LINE_CROSSING;
-    }
-    // 2. Fallback check for OBJECT_DETECTED based on eventType
-    else if (pikoEventType === 'analyticsSdkObjectDetected') {
+    } else if (pikoEventType === 'analyticsSdkObjectDetected') {
         specificEventType = EventType.OBJECT_DETECTED;
-        // Determine subtype based on inputPortId content
         if (inputPortId?.includes('person')) {
             specificEventSubtype = EventSubtype.PERSON;
         } else if (inputPortId?.includes('vehicle')) {
             specificEventSubtype = EventSubtype.VEHICLE;
         }
-        // If neither 'person' nor 'vehicle' is found in inputPortId, 
-        // the subtype remains undefined, which is acceptable for a generic OBJECT_DETECTED event.
-    }
-    // 3. Fallback check for generic ANALYTICS_EVENT based on eventType
-    else if (pikoEventType === 'analyticsSdkEvent') {
-        // The specificEventType is already defaulted to ANALYTICS_EVENT,
-        // but this explicitly confirms it if the Piko eventType matches.
+    } else if (pikoEventType === 'analyticsSdkEvent') {
         specificEventType = EventType.ANALYTICS_EVENT;
     }
 
-    // --- Create Standardized Event ---
-    // Use the determined specificEventType and add subtype if available
     const standardizedEvent: StandardizedEvent = {
         eventId: crypto.randomUUID(),
         timestamp: timestamp,
@@ -140,12 +113,11 @@ export function parsePikoEvent(
         deviceId: deviceId,
         category: EventCategory.ANALYTICS,
         type: specificEventType,
-        subtype: specificEventSubtype, // NEW: Add subtype
+        subtype: specificEventSubtype, 
         deviceInfo: deviceInfo,
         payload: payload,
         originalEvent: rawEventParams,
     };
 
-    // console.log(`[Piko Parser][${connectorId}] Successfully parsed event:`, standardizedEvent.eventId);
     return [standardizedEvent];
 } 

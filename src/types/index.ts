@@ -46,22 +46,22 @@ export interface ApiResponse<T> {
 // Device type from the database, potentially augmented with connector info
 // (Adjust based on actual usage, e.g., in API responses or store)
 export type DeviceWithConnector = {
-  id: string;             // Our internal UUID
-  deviceId: string;       // External ID from the connector
+  id: string;
+  deviceId: string;
   connectorId: string;
-  connectorCategory: string; // Using string for now, can refine later
-  connectorName?: string; // <<< ADD Optional connector name
+  connectorCategory: string;
+  connectorName?: string;
   name: string;
-  type: string;           // Original type string from source
+  type: string;
   status?: string | null;
   vendor?: string | null;
   model?: string | null;
   url?: string | null;
-  createdAt: Date;        // <<< MAKE REQUIRED
-  updatedAt: Date;        // <<< MAKE REQUIRED
-  serverId?: string | null;      // Optional: Piko server ID
-  serverName?: string | null;    // Optional: Piko server name (denormalized)
-  pikoServerDetails?: any | null; // Using any for now for PikoServer
+  createdAt: Date;
+  updatedAt: Date;
+  serverId?: string | null;
+  serverName?: string | null;
+  pikoServerDetails?: any | null;
   areaId?: string | null;
   locationId?: string | null; 
   associationCount?: number | null;
@@ -89,8 +89,16 @@ export interface Location {
   parentId: string | null; // UUID of the parent location, or null for root
   name: string;
   path: string; // Materialized path (e.g., "rootId.childId.grandchildId")
+  timeZone: string; // Added: IANA Time Zone (e.g., "America/New_York")
+  externalId?: string | null; // Added: Optional external identifier
+  addressStreet: string; // Updated: Street address (now required)
+  addressCity: string; // Updated: City (now required)
+  addressState: string; // Updated: State/Province (now required)
+  addressPostalCode: string; // Updated: Postal/Zip code (now required)
+  notes?: string | null; // Added: Optional notes
   createdAt: Date;
   updatedAt: Date;
+  activeArmingScheduleId?: string | null;
   // Optional: Populated for hierarchical display, not stored directly in DB table this way
   children?: Location[];
   areas?: Area[]; // Areas directly within this location (optional population)
@@ -104,10 +112,28 @@ export interface Area {
   armedState: ArmedState; // <-- Use imported Enum
   createdAt: Date;
   updatedAt: Date;
+  overrideArmingScheduleId?: string | null;
+  nextScheduledArmTime?: string | null; // ISO date string (as typically used in API responses/Zustand state for dates)
+  nextScheduledDisarmTime?: string | null; // ISO date string
+  lastArmedStateChangeReason?: string | null;
+  isArmingSkippedUntil?: string | null; // ISO date string
+  locationName?: string; // Convenience field, often populated from a join
+
   // Optional: Populated for display, not stored directly in DB table this way
   location?: Location | null; // The parent location details
   deviceIds?: string[]; // IDs of devices assigned to this area
   devices?: DeviceWithConnector[]; // Full device details (optional population)
+}
+
+export interface ArmingSchedule {
+  id: string;
+  name: string;
+  daysOfWeek: number[]; // 0 (Sun) to 6 (Sat)
+  armTimeLocal: string; // HH:mm format
+  disarmTimeLocal: string; // HH:mm format
+  isEnabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // You can add other shared types here as needed 
