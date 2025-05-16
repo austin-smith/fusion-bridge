@@ -8,7 +8,7 @@ import { db } from '@/data/db';
 import { connectors } from '@/data/db/schema';
 import { eq, and } from 'drizzle-orm';
 import * as eventsRepository from '@/data/repositories/events';
-import { processEvent } from '@/services/automation-service'; // Import the automation processor
+import { processAndPersistEvent } from '@/lib/events/eventProcessor'; // <--- MODIFIED: Import central event processor
 import { parseYoLinkEvent } from '@/lib/event-parsers/yolink'; // <-- Import the new parser
 import { useFusionStore } from '@/stores/store'; // <-- Import Zustand store
 import { Connector } from '@/types'; // Import Connector type
@@ -392,9 +392,14 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
                   try {
                       const standardizedEvents = await parseYoLinkEvent(associatedConnectorId, rawEvent);
                       for (const stdEvent of standardizedEvents) {
-                          try { await eventsRepository.storeStandardizedEvent(stdEvent); } catch (e) { console.error(`Store error for ${stdEvent.eventId}:`, e); continue; }
+                          try {
+                              // processAndPersistEvent handles DB storage and automation triggers
+                              await processAndPersistEvent(stdEvent); 
+                          } catch (e) { 
+                              console.error(`[MQTT Service] Error during processAndPersistEvent for ${stdEvent.eventId}:`, e); 
+                              continue; // Skip to next event if processing fails
+                          }
                           try { useFusionStore.getState().processStandardizedEvent(stdEvent); } catch (e) { console.error(`Zustand error for ${stdEvent.eventId}:`, e); }
-                          processEvent(stdEvent).catch(err => { console.error(`Automation error for ${stdEvent.eventId}:`, err); });
                       }
                       // Update last event data for this homeId
                       const count = await eventsRepository.getEventCount(); 

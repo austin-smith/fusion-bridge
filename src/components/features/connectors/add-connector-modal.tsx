@@ -599,7 +599,7 @@ export function AddConnectorModal() {
 
       // Test the connection via backend
       toast.loading('Testing connection...', { id: 'connection-test' });
-      const response = await fetch('/api/test-connection', {
+      const response = await fetch('/api/connectors/test-connection', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -701,7 +701,7 @@ export function AddConnectorModal() {
       if (!isEditMode && values.category === 'genea') {
         console.log("Attempting implicit Genea API key verification on submit...");
         try {
-          const testResponse = await fetch('/api/test-connection', {
+          const testResponse = await fetch('/api/connectors/test-connection', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 

@@ -47,6 +47,14 @@ import { ChangePasswordDialog } from './change-password-dialog';
 import { useFusionStore } from '@/stores/store'; // Import Zustand store
 import { authClient } from '@/lib/auth/client'; // Import authClient
 import QRCode from "react-qr-code"; // Import QR Code component
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"; // Added Select for theme
+import { PREFERRED_THEME_FAMILY_KEY } from "@/components/common/theme-provider"; // Import the key
 
 // Define the expected user prop structure
 interface UserData {
@@ -99,6 +107,21 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
     const [verificationCode, setVerificationCode] = useState('');
     const [verificationError, setVerificationError] = useState<string | null>(null);
     const [intendedAction, setIntendedAction] = useState<'enable' | 'disable' | 'regenerate' | null>(null);
+
+    // --- Theme Family State ---
+    // Initialize with value from localStorage or 'default'
+    const [selectedThemeFamily, setSelectedThemeFamily] = useState<string>('default');
+
+    React.useEffect(() => {
+        const currentThemeFamily = localStorage.getItem(PREFERRED_THEME_FAMILY_KEY) || 'default';
+        setSelectedThemeFamily(currentThemeFamily);
+        // Initial application of the class is handled by ThemeProvider, but good to ensure consistency if needed
+        // if (currentThemeFamily === 'cosmic-night') {
+        //     document.documentElement.classList.add('cosmic-night');
+        // } else {
+        //     document.documentElement.classList.remove('cosmic-night');
+        // }
+    }, []);
 
     const userInitial = user.name ? user.name.charAt(0).toUpperCase() : (user.email ? user.email.charAt(0).toUpperCase() : '?');
 
@@ -298,6 +321,27 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
         setTwoFactorStep(TwoFactorStep.ConfirmPassword);
     }
     
+    // --- Theme Family Change Handler ---
+    const handleThemeFamilyChange = (newThemeFamilyValue: string) => {
+        setSelectedThemeFamily(newThemeFamilyValue); // Update local state for the select component
+        localStorage.setItem(PREFERRED_THEME_FAMILY_KEY, newThemeFamilyValue);
+        
+        // Manually add/remove the class for immediate effect
+        if (newThemeFamilyValue === 'cosmic-night') {
+            document.documentElement.classList.add('cosmic-night');
+        } else {
+            document.documentElement.classList.remove('cosmic-night');
+        }
+        // Also dispatch a storage event so ThemeProvider in other tabs can pick it up if necessary,
+        // though ThemeProvider already listens to 'storage' events directly.
+        window.dispatchEvent(new StorageEvent('storage', {
+            key: PREFERRED_THEME_FAMILY_KEY,
+            newValue: newThemeFamilyValue,
+            oldValue: localStorage.getItem(PREFERRED_THEME_FAMILY_KEY), // This might be slightly off if setItem is async but good enough
+            storageArea: localStorage,
+        }));
+    };
+    
      // --- Backup Code Copy Helper ---
     const copyToClipboard = (text: string) => {
         navigator.clipboard.writeText(text).then(() => {
@@ -378,6 +422,30 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                         <SubmitButton />
                     </CardFooter>
                 </form>
+            </Card>
+
+            {/* --- NEW: Appearance Card --- */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Appearance</CardTitle>
+                    <CardDescription>Customize the look and feel of the application.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="space-y-1">
+                        <Label htmlFor="theme-family-select">Theme</Label>
+                        <Select value={selectedThemeFamily} onValueChange={handleThemeFamilyChange}>
+                            <SelectTrigger id="theme-family-select" className="w-[180px]">
+                                <SelectValue placeholder="Select theme family" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="default">System Default</SelectItem>
+                                <SelectItem value="cosmic-night">Cosmic Night</SelectItem>
+                                <SelectItem value="t3-chat">T3 Chat</SelectItem>
+                                {/* Add other theme families here as needed */}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </CardContent>
             </Card>
 
             {/* --- Security Section --- */}
@@ -651,7 +719,7 @@ function SubmitButton() {
         <Button type="submit" disabled={pending} className="ml-auto" size="sm">
             {/* Only show loader when pending, otherwise just text */}
             {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Save Changes
+            Save
         </Button>
     );
 } 

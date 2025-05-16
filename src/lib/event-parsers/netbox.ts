@@ -3,18 +3,19 @@ import { NetBoxEventWebhookPayload } from '@/types/netbox';
 import { EventCategory, EventType, EventSubtype } from '@/lib/mappings/definitions';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import crypto from 'crypto'; // Use Node.js crypto for UUID
+import { processAndPersistEvent } from '@/lib/events/eventProcessor'; // Import the central processor
 
 /**
  * Parses a raw NetBox "Event" type webhook payload into a StandardizedEvent.
  * 
  * @param payload The raw NetBox event payload.
  * @param connectorId The ID of the connector that received this event.
- * @returns A StandardizedEvent object or null if the event cannot be parsed or is irrelevant.
+ * @returns A Promise resolving to void, as the event is processed centrally, or null if parsing fails early.
  */
-export function parseNetboxEvent(
+export async function parseNetboxEvent(
   payload: NetBoxEventWebhookPayload,
   connectorId: string
-): StandardizedEvent | null {
+): Promise<StandardizedEvent[]> {
   // Destructure all potential fields, including optional ones
   const {
     Descname,
@@ -86,15 +87,15 @@ export function parseNetboxEvent(
       category = EventCategory.UNKNOWN;
       type = EventType.UNKNOWN_EXTERNAL_EVENT;
       subtype = undefined;
-      // Optionally, you could choose to return null here if unmapped events aren't useful
-      // return null; 
+      // If choosing not to process unmapped events further, can return early:
+      // return; 
   }
 
   // Determine the deviceId, preferring Nodeunique
-  const deviceId = Nodeunique ?? Nodename;
-  if (!deviceId) {
+  const deviceIdToUse = Nodeunique ?? Nodename;
+  if (!deviceIdToUse) {
     console.warn('[Netbox Parser] No Nodeunique or Nodename found in payload. Cannot determine deviceId.', payload);
-    return null; // Cannot proceed without a device identifier
+    return []; // Cannot proceed without a device identifier
   }
 
   // Parse the timestamp
@@ -140,16 +141,17 @@ export function parseNetboxEvent(
   const standardizedEvent: StandardizedEvent = {
     eventId: crypto.randomUUID(),
     connectorId,
-    deviceId,
+    deviceId: deviceIdToUse,
     timestamp: eventTimestamp,
     category,
     type,
     ...(subtype && { subtype }), // Conditionally add subtype
-    // deviceInfo, // REMOVED - Will be added later if needed
+    // deviceInfo: undefined, // Explicitly undefined as it's not determined here
     payload: standardizedPayload,
     originalEvent: payload, // Store the raw payload
   };
 
   console.log(`[Netbox Parser] Created StandardizedEvent: ${standardizedEvent.eventId} for Descname: '${Descname}'`);
-  return standardizedEvent;
+  
+  return [standardizedEvent];
 } 

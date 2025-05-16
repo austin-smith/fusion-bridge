@@ -9,7 +9,14 @@ import { z } from 'zod';
 // --- Validation Schema ---
 const createLocationSchema = z.object({
   name: z.string().min(1, "Name cannot be empty"),
-  parentId: z.string().uuid("Invalid parent ID format").nullable().optional(), // Optional and can be null
+  parentId: z.string().uuid("Invalid parent ID format").nullable().optional(),
+  timeZone: z.string().min(1, "Timezone cannot be empty"),
+  externalId: z.string().nullable().optional(),
+  addressStreet: z.string().min(1, "Street address cannot be empty"),
+  addressCity: z.string().min(1, "City cannot be empty"),
+  addressState: z.string().min(1, "State cannot be empty"),
+  addressPostalCode: z.string().min(1, "Postal code cannot be empty"),
+  notes: z.string().nullable().optional(),
 });
 
 // Fetch all locations
@@ -38,7 +45,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Invalid input", details: validation.error.flatten() }, { status: 400 });
     }
 
-    const { name, parentId } = validation.data;
+    const { name, parentId, timeZone, externalId, addressStreet, addressCity, addressState, addressPostalCode, notes } = validation.data;
     const newId = crypto.randomUUID();
     let path = newId; // Default path for root locations
 
@@ -57,6 +64,13 @@ export async function POST(request: Request) {
       name,
       parentId: parentId || null,
       path,
+      timeZone,
+      externalId: externalId || null,
+      addressStreet,
+      addressCity,
+      addressState,
+      addressPostalCode,
+      notes: notes || null,
       // createdAt and updatedAt have default values in schema
     }).returning(); // Return the created object
 
