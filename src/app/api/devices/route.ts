@@ -3,13 +3,14 @@ import { db } from '@/data/db';
 import { devices, connectors, pikoServers, cameraAssociations, areas, areaDevices } from '@/data/db/schema';
 import { eq, count, and, inArray, sql } from 'drizzle-orm';
 import * as yolinkDriver from '@/services/drivers/yolink';
+import { getRawStateStringFromYoLinkData } from '@/services/drivers/yolink';
 import * as pikoDriver from '@/services/drivers/piko';
 import * as geneaDriver from '@/services/drivers/genea';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import type { DeviceWithConnector, PikoServer, Connector } from '@/types';
 import { useFusionStore } from '@/stores/store';
 import type { TypedDeviceInfo, IntermediateState, DisplayState } from '@/lib/mappings/definitions';
-import { DeviceType, BinaryState, ContactState, ON, OFF, CANONICAL_STATE_MAP, OFFLINE, ONLINE } from '@/lib/mappings/definitions';
+import { DeviceType, BinaryState, ContactState, ON, OFF, CANONICAL_STATE_MAP, OFFLINE, ONLINE, LockStatus } from '@/lib/mappings/definitions';
 
 // Helper function to get association count
 async function getAssociationCount(
@@ -477,16 +478,9 @@ async function syncYoLinkDevices(
               } else {
                   // Device is online or online status is not explicitly in stateData root (or stateData.online is true).
                   // Attempt to find a physical state if one exists.
-                  let rawStateValue: string | undefined = undefined;
-
-                  if (typeof stateData?.state === 'string') {
-                      rawStateValue = stateData.state; // Common for Switch, Outlet
-                  } else if (typeof stateData?.state === 'object' && stateData.state !== null && typeof (stateData.state as any).state === 'string') {
-                      rawStateValue = (stateData.state as any).state; // Common for DoorSensor, nested state
-                  } else if (typeof stateData?.power === 'string') {
-                      rawStateValue = stateData.power; // Some devices might use a top-level 'power' field
-                  }
-                  // Add more common patterns here if observed for other device types
+                  // Use the centralized helper to extract the raw state string
+                  // stateData is the direct response from getDeviceState, which can be the state object itself.
+                  const rawStateValue = getRawStateStringFromYoLinkData(stdTypeInfo, stateData);
 
                   if (rawStateValue) {
                       // We have a rawStateValue, now map it based on our standardized device type
@@ -512,6 +506,13 @@ async function syncYoLinkDevices(
                               break;
                           // Add other DeviceType mappings as needed if their rawStateValues need specific interpretation
                           // (e.g., DeviceType.Lock might have 'locked'/'unlocked')
+                          case DeviceType.Lock:
+                              if (rawStateValue === 'locked') {
+                                  intermediateState = LockStatus.Locked;
+                              } else if (rawStateValue === 'unlocked') {
+                                  intermediateState = LockStatus.Unlocked;
+                              }
+                              break;
                       }
 
                       if (intermediateState) {

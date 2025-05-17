@@ -21,6 +21,7 @@ import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
 import crypto from 'crypto'; // Import crypto for UUID generation
 import { processAndPersistEvent } from '@/lib/events/eventProcessor'; // Import the central processor
+import { getRawStateStringFromYoLinkData } from '@/services/drivers/yolink';
 
 // --- BEGIN DB Imports ---
 // import { db } from '@/data/db';
@@ -67,7 +68,7 @@ function translateRawYoLinkState(deviceInfo: TypedDeviceInfo, rawState: string |
 
 // --- YoLink Raw Event Structure (Based on Provided Example) ---
 interface RawYoLinkData {
-    state?: string;
+    state?: string | { lock?: string; [key: string]: any }; // Allow string or object for state
     alertType?: string;
     battery?: number; // Field may exist, but we won't process it into an event for now
     version?: string;
@@ -149,7 +150,8 @@ export async function parseYoLinkEvent(
     // --- BEGIN State Change Events (.Alert, .StatusChange) ---
     else if (event.event.endsWith('.Alert') || event.event.endsWith('.StatusChange') || event.event.endsWith('.setState')) {
         if (deviceInfo.type !== DeviceType.Unmapped && event.data?.state !== undefined) {
-            const rawState = event.data.state;
+            const rawState = getRawStateStringFromYoLinkData(deviceInfo, event.data?.state);
+
             const intermediateState = translateRawYoLinkState(deviceInfo, rawState);
 
             if (intermediateState) {

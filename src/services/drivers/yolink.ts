@@ -3,6 +3,10 @@
 import { z } from 'zod';
 import { calculateExpiresAt, isTokenExpiring } from '@/lib/token-utils';
 import { updateConnectorConfig } from '@/data/repositories/connectors';
+// --- BEGIN ADD IMPORTS FOR HELPER ---
+import type { TypedDeviceInfo } from '@/lib/mappings/definitions';
+import { DeviceType } from '@/lib/mappings/definitions';
+// --- END ADD IMPORTS FOR HELPER ---
 
 export interface YoLinkConfig {
   uaid: string;
@@ -881,3 +885,64 @@ export async function getDeviceState(
   }
 }
 // --- END Add getDeviceState Function --- 
+
+// --- BEGIN PASTE AND EXPORT HELPER FUNCTION ---
+/**
+ * Extracts a raw state string from YoLink device data.
+ * This function is designed to handle various structures of the 'state' field
+ * in YoLink API responses or event data.
+ *
+ * @param deviceInfo Standardized device type information.
+ * @param dataState The 'state' portion of the YoLink data, which can be a string or an object.
+ * @returns The extracted raw state string (e.g., "open", "locked", "on"), or undefined if not found/applicable.
+ */
+export function getRawStateStringFromYoLinkData(
+    deviceInfo: TypedDeviceInfo,
+    dataState: string | { 
+        lock?: string; 
+        state?: string | { lock?: string; state?: string };
+        power?: string;
+        [key: string]: any; 
+    } | undefined | null
+): string | undefined {
+    if (dataState === undefined || dataState === null) {
+        return undefined;
+    }
+
+    // 1. Handle direct string state
+    if (typeof dataState === 'string') {
+        return dataState;
+    }
+
+    // 2. Handle object states more consolidated
+    if (typeof dataState === 'object' && dataState !== null) { // Consolidated check
+        // DeviceType specific logic for Lock
+        if (deviceInfo.type === DeviceType.Lock) {
+            if (typeof dataState.lock === 'string') { return dataState.lock; }
+            // Assign to variable to avoid repeated access for nested state
+            const nestedLockState = dataState.state;
+            if (typeof nestedLockState === 'object' && nestedLockState !== null && typeof nestedLockState.lock === 'string') {
+                return nestedLockState.lock;
+            }
+        }
+
+        // Generic patterns
+        const nestedStateProperty = dataState.state; // Reuse for generic checks
+        if (typeof nestedStateProperty === 'object' && nestedStateProperty !== null && typeof nestedStateProperty.state === 'string') {
+            return nestedStateProperty.state;
+        }
+        // Handles case where dataState.state is directly a string after the object check above failed
+        if (typeof nestedStateProperty === 'string') { 
+            return nestedStateProperty;
+        }
+        // Check for a direct "power" property
+        if (typeof dataState.power === 'string') {
+            return dataState.power;
+        }
+        // Add other common top-level properties if needed for other device types
+    }
+
+    console.warn(`[YoLink Driver Helper] Could not extract raw state string for device type ${deviceInfo.type}. Input dataState:`, dataState);
+    return undefined;
+}
+// --- END PASTE AND EXPORT HELPER FUNCTION --- 
