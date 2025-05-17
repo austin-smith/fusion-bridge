@@ -147,7 +147,7 @@ export async function parseYoLinkEvent(
     // --- END Add Power Report Handling ---
 
     // --- BEGIN State Change Events (.Alert, .StatusChange) ---
-    else if (event.event.endsWith('.Alert') || event.event.endsWith('.StatusChange')) {
+    else if (event.event.endsWith('.Alert') || event.event.endsWith('.StatusChange') || event.event.endsWith('.setState')) {
         if (deviceInfo.type !== DeviceType.Unmapped && event.data?.state !== undefined) {
             const rawState = event.data.state;
             const intermediateState = translateRawYoLinkState(deviceInfo, rawState);
