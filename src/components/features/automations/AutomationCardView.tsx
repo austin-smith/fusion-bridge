@@ -13,13 +13,16 @@ import {
   Power,
   HelpCircle,
   Layers,
-  CheckCircle2, 
+  CheckCircle2,
   XCircle,
-  Copy
+  Copy,
+  MapPin,
+  MoreVertical
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
 // UI Components
 import { 
@@ -52,13 +55,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 // Types
 import type { AutomationConfig } from '@/lib/automation-schemas';
-import { ActionableState } from '@/lib/mappings/definitions';
-import { 
-  getActionTitle, 
-  getActionIcon, 
+import {
   getActionIconProps,
-  formatActionDetail, 
-  getActionStyling 
+  formatActionDetail,
 } from '@/lib/automation-types';
 
 // Interface for API response
@@ -66,9 +65,10 @@ interface AutomationApiResponse {
   id: string;
   name: string;
   enabled: boolean;
-  createdAt: string; 
+  createdAt: string;
   updatedAt: string;
   configJson: AutomationConfig | null;
+  locationScopeId?: string | null;
 }
 
 // Add types for connectors and devices
@@ -85,22 +85,45 @@ interface TargetDevice {
   iconName: string;
 }
 
+// --- NEW: Add Location and Area types ---
+interface Location {
+  id: string;
+  name: string;
+}
+
+interface Area {
+  id: string;
+  name: string;
+}
+// --- END NEW ---
+
 // Update the skeleton for a single-column layout
 function AutomationCardSkeleton() {
   return (
     <div className="space-y-4">
       {Array.from({ length: 4 }).map((_, index) => (
         <Card key={index} className="overflow-hidden">
-          <div className="p-4 pb-2 border-b">
-            <div className="flex items-center justify-between">
-              <Skeleton className="h-6 w-1/3 mb-1" />
+          <div className="pb-2 border-b p-4">
+            {/* Grid layout matching the actual card header */}
+            <div className="grid grid-cols-[1fr,auto] gap-2 w-full">
+              {/* Title area with truncation - MATCHES ACTUAL COMPONENT */}
+              <div className="flex items-center space-x-2 overflow-hidden">
+                <div className="overflow-hidden">
+                  <CardTitle className="truncate block font-semibold">
+                    <Skeleton className="h-6 w-1/3" />
+                  </CardTitle>
+                </div>
+              </div>
               
-              <div className="flex items-center gap-2">
-                <div className="h-5 w-20 flex items-center border rounded-md px-1.5">
+              {/* Controls area */}
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Status badge skeleton */}
+                <div className="h-6 w-16 flex items-center border rounded-md px-1.5">
                   <Skeleton className="h-3 w-3 rounded-full mr-1" />
-                  <Skeleton className="h-3.5 w-12" />
+                  <Skeleton className="h-3.5 w-8" />
                 </div>
                 
+                {/* Action buttons skeleton */}
                 <Skeleton className="h-8 w-8 rounded-md" />
                 <Skeleton className="h-8 w-8 rounded-md" />
               </div>
@@ -146,6 +169,10 @@ export function AutomationCardView() {
   const [error, setError] = useState<string | null>(null);
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [targetDevices, setTargetDevices] = useState<TargetDevice[]>([]);
+  // --- NEW: State for locations and areas ---
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
+  // --- END NEW ---
   const router = useRouter();
 
   // Fetch automations function
@@ -196,19 +223,54 @@ export function AutomationCardView() {
         setTargetDevices([]);
       } else {
         const devicesData = await devicesResponse.json();
-        // Handle potential API response formats
-        const devicesArray = Array.isArray(devicesData) 
-          ? devicesData 
-          : devicesData.data && Array.isArray(devicesData.data) 
-            ? devicesData.data 
+        const devicesArray = Array.isArray(devicesData)
+          ? devicesData
+          : devicesData.data && Array.isArray(devicesData.data)
+            ? devicesData.data
             : [];
         setTargetDevices(devicesArray);
       }
+
+      // --- NEW: Fetch locations ---
+      const locationsResponse = await fetch('/api/locations');
+      if (!locationsResponse.ok) {
+        console.warn(`Failed to fetch locations: ${locationsResponse.status}`);
+        setLocations([]);
+      } else {
+        const locationsData = await locationsResponse.json();
+        const locationsArray = Array.isArray(locationsData)
+          ? locationsData
+          : locationsData.data && Array.isArray(locationsData.data)
+            ? locationsData.data
+            : [];
+        setLocations(locationsArray);
+      }
+      // --- END NEW ---
+
+      // --- NEW: Fetch areas ---
+      const areasResponse = await fetch('/api/areas');
+      if (!areasResponse.ok) {
+        console.warn(`Failed to fetch areas: ${areasResponse.status}`);
+        setAreas([]);
+      } else {
+        const areasData = await areasResponse.json();
+        const areasArray = Array.isArray(areasData)
+          ? areasData
+          : areasData.data && Array.isArray(areasData.data)
+            ? areasData.data
+            : [];
+        setAreas(areasArray);
+      }
+      // --- END NEW ---
+
     } catch (e) {
-      console.error('Failed to fetch connectors or devices:', e);
-      // Set empty arrays to avoid null errors in the component
+      console.error('Failed to fetch connectors, devices, locations, or areas:', e);
       setConnectors([]);
       setTargetDevices([]);
+      // --- NEW: Set empty arrays on error ---
+      setLocations([]);
+      setAreas([]);
+      // --- END NEW ---
     }
   }, []);
 
@@ -261,7 +323,7 @@ export function AutomationCardView() {
   return (
     <TooltipProvider>
       <ScrollArea className="h-full">
-        <div className="space-y-4 p-4">
+        <div className="space-y-4">
           {automations.map((automation) => (
             <AutomationCard 
               key={automation.id} 
@@ -269,6 +331,8 @@ export function AutomationCardView() {
               refreshData={fetchAutomations} 
               connectors={connectors}
               targetDevices={targetDevices}
+              locations={locations}
+              areas={areas}
             />
           ))}
         </div>
@@ -283,9 +347,11 @@ interface AutomationCardProps {
   refreshData: () => void;
   connectors: Connector[];
   targetDevices: TargetDevice[];
+  locations: Location[];
+  areas: Area[];
 }
 
-function AutomationCard({ automation, refreshData, connectors, targetDevices }: AutomationCardProps) {
+function AutomationCard({ automation, refreshData, connectors, targetDevices, locations, areas }: AutomationCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
@@ -351,6 +417,8 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices }: 
   // Create sorted arrays like in AutomationForm - with safety checks
   const safeConnectors = Array.isArray(connectors) ? connectors : [];
   const safeTargetDevices = Array.isArray(targetDevices) ? targetDevices : [];
+  const safeLocations = Array.isArray(locations) ? locations : [];
+  const safeAreas = Array.isArray(areas) ? areas : [];
   
   const pikoConnectors = safeConnectors.filter(c => c?.category === 'piko');
   const sortedPikoConnectors = [...pikoConnectors].sort((a, b) => 
@@ -366,90 +434,134 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices }: 
   const hasMoreActions = actions.length > 3;
   const hiddenActionCount = actions.length - visibleActions.length;
 
+  // --- NEW: Derive currentRuleLocationScope ---
+  const currentRuleLocationScope = automation.locationScopeId && safeLocations.length > 0
+    ? safeLocations.find(loc => loc.id === automation.locationScopeId)
+    : null;
+  // --- END NEW ---
+
   // Get status color class based on enabled state
   const getStatusColorClass = (enabled: boolean): string => {
     return enabled
       ? 'bg-green-500/20 text-green-600 border border-green-500/20'
       : 'bg-slate-300/20 text-slate-500 border border-slate-300/20';
   };
-
-  // Remove border color function - use the shared styling instead
-  const getCardBorderColor = () => {
-    return "border-l-border"; // Use the neutral border color from the theme
-  };
-
+  
   return (
     <>
       <Card className="overflow-hidden hover:shadow-md transition-shadow">
-        <CardHeader className="pb-2 border-b">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg font-semibold">
-              {automation.name}
-            </CardTitle>
+        <CardHeader className="p-4 border-b">
+          {/* Using grid for reliable layout with truncation */}
+          <div className="grid grid-cols-[1fr,auto] gap-2 w-full">
+            {/* Title area with truncation */}
+            <div className="flex items-center space-x-2 overflow-hidden">
+              <div className="overflow-hidden">
+                <CardTitle className="text-lg truncate block font-semibold">
+                  {automation.name}
+                </CardTitle>
+              </div>
+              {currentRuleLocationScope && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Scoped to: {currentRuleLocationScope.name}</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
             
-            {/* Status badge and action buttons grouped together */}
-            <div className="flex items-center gap-2">
-              <div className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(automation.enabled)}`}>
-                {automation.enabled ? (
-                  <>
-                    Enabled
-                  </>
-                ) : (
-                  <>
-                    Disabled
-                  </>
-                )}
+            {/* Status badge and action buttons - will not shrink */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Full status pill on sm+ screens */}
+              <div className={`hidden sm:inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(automation.enabled)}`}>
+                {automation.enabled ? 'Enabled' : 'Disabled'}
+              </div>
+              {/* Icon-only badge on small screens */}
+              <div className={`sm:hidden inline-flex items-center justify-center p-1 rounded-md ${getStatusColorClass(automation.enabled)}`}>
+                {automation.enabled
+                  ? <CheckCircle2 className="h-4 w-4" />
+                  : <XCircle className="h-4 w-4" />
+                }
               </div>
               
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button asChild variant="ghost" size="icon">
-                    <Link href={`/automations/${automation.id}`}>
+              {/* Individual actions shown at sm+ */}
+              <div className="hidden sm:flex items-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button asChild variant="ghost" size="icon">
+                      <Link href={`/automations/${automation.id}`}>
+                        <Pencil className="h-4 w-4" />
+                        <span className="sr-only">Edit automation</span>
+                      </Link>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Edit automation</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleClone}
+                      disabled={isCloning || isDeleting}
+                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-500/10 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-500/10"
+                    >
+                      <Copy className="h-4 w-4" />
+                      <span className="sr-only">Clone automation</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Clone automation</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => setShowDeleteDialog(true)}
+                      disabled={isDeleting}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Delete automation</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Delete automation</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              {/* Dropdown on small screens */}
+              <div className="flex sm:hidden">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon">
+                      <MoreVertical className="h-5 w-5" />
+                      <span className="sr-only">Open actions menu</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => router.push(`/automations/${automation.id}`)} className="flex items-center gap-2">
                       <Pencil className="h-4 w-4" />
-                      <span className="sr-only">Edit automation</span>
-                    </Link>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Edit automation</p>
-                </TooltipContent>
-              </Tooltip>
-              
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleClone}
-                    disabled={isCloning || isDeleting}
-                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-500/10 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-500/10"
-                  >
-                    <Copy className="h-4 w-4" />
-                    <span className="sr-only">Clone automation</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Clone automation</p>
-                </TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => setShowDeleteDialog(true)}
-                    disabled={isDeleting}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    <span className="sr-only">Delete automation</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Delete automation</p>
-                </TooltipContent>
-              </Tooltip>
+                      <span>Edit</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={handleClone} className="flex items-center gap-2">
+                      <Copy className="h-4 w-4" />
+                      <span>Clone</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="flex items-center gap-2 text-destructive" onSelect={() => setShowDeleteDialog(true)}>
+                      <Trash2 className="h-4 w-4" />
+                      <span>Delete</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -474,7 +586,9 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices }: 
                             action.params, 
                             { 
                               connectors: sortedPikoConnectors, 
-                              devices: sortedTargetDevices 
+                              devices: sortedTargetDevices,
+                              areas: safeAreas,
+                              ruleLocationScope: currentRuleLocationScope
                             }
                           )}
                         </span>

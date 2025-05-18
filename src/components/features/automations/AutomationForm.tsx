@@ -210,6 +210,25 @@ export default function AutomationForm({
 
     const watchedLocationScopeId = form.watch('locationScopeId');
 
+    const currentRuleLocationScope = React.useMemo(() => {
+        if (!watchedLocationScopeId || !Array.isArray(allLocations)) {
+            return null;
+        }
+        const foundLocation = allLocations.find(loc => loc.id === watchedLocationScopeId);
+        return foundLocation ? { id: foundLocation.id, name: foundLocation.name } : null;
+    }, [watchedLocationScopeId, allLocations]);
+
+    const sortedAvailableAreas = React.useMemo(() => {
+        if (!Array.isArray(allAreas)) {
+            return [];
+        }
+        let areasToConsider = allAreas;
+        if (watchedLocationScopeId) {
+            areasToConsider = allAreas.filter(area => area.locationId === watchedLocationScopeId);
+        }
+        return [...areasToConsider].sort((a, b) => a.name.localeCompare(b.name));
+    }, [allAreas, watchedLocationScopeId]);
+
     const onSubmit = async (data: AutomationFormValues) => {
         setIsLoading(true);
         
@@ -407,6 +426,8 @@ export default function AutomationForm({
                                 handleInsertToken={handleInsertToken}
                                 sortedPikoConnectors={sortedPikoConnectors}
                                 sortedAvailableTargetDevices={sortedAvailableTargetDevices}
+                                sortedAvailableAreas={sortedAvailableAreas}
+                                currentRuleLocationScope={currentRuleLocationScope}
                             />
                         </CardContent>
                     </Card>

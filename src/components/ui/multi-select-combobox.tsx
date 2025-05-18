@@ -21,9 +21,10 @@ interface MultiSelectProps {
   emptyText?: string
   className?: string
   popoverContentClassName?: string;
+  disabled?: boolean;
 }
 
-export function MultiSelectComboBox({ // Renamed to MultiSelectComboBox
+export function MultiSelectComboBox({
   options,
   selected,
   onChange,
@@ -31,6 +32,7 @@ export function MultiSelectComboBox({ // Renamed to MultiSelectComboBox
   emptyText = "No options found.",
   className,
   popoverContentClassName,
+  disabled = false,
 }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false)
   const triggerRef = React.useRef<HTMLButtonElement>(null);
@@ -38,12 +40,13 @@ export function MultiSelectComboBox({ // Renamed to MultiSelectComboBox
 
   const handleSelect = React.useCallback(
     (value: string) => {
+      if (disabled) return;
       const updatedSelected = selected.includes(value)
         ? selected.filter((item) => item !== value)
         : [...selected, value]
       onChange(updatedSelected)
     },
-    [selected, onChange],
+    [selected, onChange, disabled],
   )
 
   const selectedLabels = React.useMemo(
@@ -66,14 +69,15 @@ export function MultiSelectComboBox({ // Renamed to MultiSelectComboBox
   }, [open, options]); // Re-evaluate if options change while open affecting trigger width indirectly
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open && !disabled} onOpenChange={(newOpenState) => !disabled && setOpen(newOpenState)}>
       <PopoverTrigger asChild>
         <Button
           ref={triggerRef}
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className={cn("w-full justify-between", className)} // Ensure button takes available width
+          className={cn("w-full justify-between", className, disabled && "cursor-not-allowed opacity-50")}
+          disabled={disabled}
         >
           <span className="truncate">{selected.length > 0 ? selectedLabels : placeholder}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -81,15 +85,11 @@ export function MultiSelectComboBox({ // Renamed to MultiSelectComboBox
       </PopoverTrigger>
       <PopoverContent 
         side="top"
-        className={cn("p-0", popoverContentClassName)} // REMOVED h-80, allowing natural sizing based on CommandList
-        style={{ width: popoverWidth }} // Set width to match trigger
-        // The following prevents focus auto-management which can be useful in complex forms/dialogs
-        // Test thoroughly if you uncomment these, as default Radix focus handling is usually good.
-        // onOpenAutoFocus={(e) => e.preventDefault()} 
-        // onCloseAutoFocus={(e) => e.preventDefault()}
+        className={cn("p-0", popoverContentClassName)}
+        style={{ width: popoverWidth }}
       >
         <Command>
-          <CommandInput placeholder="Search options..." className="h-9" />
+          <CommandInput placeholder="Search options..." className="h-9" disabled={disabled} />
           <CommandList className="flex-1">
             <CommandEmpty>{emptyText}</CommandEmpty>
             <CommandGroup>
@@ -98,9 +98,12 @@ export function MultiSelectComboBox({ // Renamed to MultiSelectComboBox
                   key={option.value} 
                   value={option.label}
                   onSelect={() => {
-                    handleSelect(option.value);
-                    // setOpen(false); // Close popover on select for single-select feel, or keep open for multi
+                    if (!disabled) {
+                        handleSelect(option.value);
+                    }
                   }}
+                  disabled={disabled}
+                  className={cn(disabled && "cursor-not-allowed text-muted-foreground")}
                 >
                   <Check
                     className={cn("mr-2 h-4 w-4", selected.includes(option.value) ? "opacity-100" : "opacity-0")}

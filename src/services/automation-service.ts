@@ -6,7 +6,7 @@ import { eq, and, inArray } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
 import * as piko from '@/services/drivers/piko'; // Assuming Piko driver functions are here
-import { type AutomationConfig, AutomationConfigSchema, type AutomationAction, type TemporalCondition, SetDeviceStateActionParamsSchema } from '@/lib/automation-schemas';
+import { type AutomationConfig, AutomationConfigSchema, type AutomationAction, type TemporalCondition, SetDeviceStateActionParamsSchema, type ArmAreaActionParamsSchema, type DisarmAreaActionParamsSchema } from '@/lib/automation-schemas';
 import pRetry from 'p-retry'; // Import p-retry
 import type { PikoCreateBookmarkPayload } from '@/services/drivers/piko'; // Import the specific payload type
 // Import other necessary drivers or services as needed
@@ -17,13 +17,20 @@ import { findEventsInWindow } from '@/data/repositories/events'; // Import the s
 import { Engine } from 'json-rules-engine';
 import type { JsonRuleCondition, JsonRuleGroup } from '@/lib/automation-schemas'; // Import rule types
 import { requestDeviceStateChange } from '@/lib/device-actions';
-import { ActionableState } from '@/lib/mappings/definitions';
+import { ActionableState, ArmedState } from '@/lib/mappings/definitions';
 // Import Pushover config repository and driver
 import { getPushoverConfiguration } from '@/data/repositories/service-configurations';
 import { sendPushoverNotification } from '@/services/drivers/pushover';
 import type { ResolvedPushoverMessageParams } from '@/types/pushover-types';
 // Import the new action schema
 import type { SendPushNotificationActionParamsSchema } from '@/lib/automation-schemas';
+import { useFusionStore } from '@/stores/store'; // Import Zustand store
+import { AutomationActionType } from '@/lib/automation-types'; // Import AutomationActionType
+
+// Helper for exhaustive checks
+function assertNever(value: never, message: string = "Unhandled discriminated union member"): never {
+    throw new Error(`${message}: ${JSON.stringify(value)}`);
+}
 
 // --- Moved Type Definition Earlier ---
 // Define structure for trigger device context, including nested location
@@ -340,7 +347,7 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
  * Executes a single automation action with retry logic.
  */
 async function executeActionWithRetry(
-    rule: { id: string; name: string },
+    rule: typeof automations.$inferSelect,
     action: AutomationAction,
     stdEvent: StandardizedEvent,
     // Use the full facts object (which might include null area/location) for tokens
@@ -355,7 +362,7 @@ async function executeActionWithRetry(
         // For other actions that use templates, resolveTokens is still needed.
         
         switch (action.type) {
-            case 'createEvent': {
+            case AutomationActionType.CREATE_EVENT: {
                 const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof import('@/lib/automation-schemas').CreateEventActionParamsSchema>;
                 if (!('sourceTemplate' in resolvedParams && 'captionTemplate' in resolvedParams && 'descriptionTemplate' in resolvedParams && 'targetConnectorId' in resolvedParams)) {
                     throw new Error(`Invalid/missing parameters for createEvent action.`);
@@ -396,7 +403,7 @@ async function executeActionWithRetry(
                 } else { console.warn(`[Rule ${rule.id}][Action createEvent] Unsupported target connector category ${targetConnector.category}`); }
                 break;
             }
-            case 'createBookmark': {
+            case AutomationActionType.CREATE_BOOKMARK: {
                 const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof import('@/lib/automation-schemas').CreateBookmarkParamsSchema>;
                 if (!('nameTemplate' in resolvedParams && 'durationMsTemplate' in resolvedParams && 'targetConnectorId' in resolvedParams)) {
                     throw new Error(`Invalid/missing parameters for createBookmark action.`);
@@ -441,7 +448,7 @@ async function executeActionWithRetry(
                 } else { console.warn(`[Rule ${rule.id}][Action createBookmark] Unsupported target connector category ${targetConnector.category}`); }
                 break;
             }
-            case 'sendHttpRequest': {
+            case AutomationActionType.SEND_HTTP_REQUEST: {
                 const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof SendHttpRequestActionParamsSchema>;
                 const headers = new Headers({ 'User-Agent': 'FusionBridge Automation/1.0' });
                 if (Array.isArray(resolvedParams.headers)) {
@@ -471,7 +478,7 @@ async function executeActionWithRetry(
                 }
                 break;
             }
-            case 'setDeviceState': {
+            case AutomationActionType.SET_DEVICE_STATE: {
                 const params = action.params as z.infer<typeof SetDeviceStateActionParamsSchema>;
 
                 // Basic validation (Zod handles schema validation, this is an extra check)
@@ -490,7 +497,7 @@ async function executeActionWithRetry(
                 break;
             }
             // --- Add Send Push Notification Case --- 
-            case 'sendPushNotification': {
+            case AutomationActionType.SEND_PUSH_NOTIFICATION: {
                 const params = action.params as z.infer<typeof SendPushNotificationActionParamsSchema>;
                 
                 // Resolve tokens for title, message, and target user key
@@ -538,11 +545,119 @@ async function executeActionWithRetry(
                 console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Successfully sent Pushover notification to ${resolvedTargetUserKey ? 'user key ' + resolvedTargetUserKey.substring(0, 7) + '...' : 'all users in group'}.`);
                 break;
             }
-            // --- End Add Case --- 
-            default: {
-                const _exhaustiveCheck: never = action;
-                console.warn(`[Rule ${rule.id}] Unknown or unhandled action type: ${(_exhaustiveCheck as any)?.type}`);
+            // --- BEGIN ARM_AREA and DISARM_AREA cases ---
+            case AutomationActionType.ARM_AREA: {
+                const params = action.params as z.infer<typeof ArmAreaActionParamsSchema>;
+                const { scoping, targetAreaIds: specificAreaIds, armMode } = params;
+                let areasToProcess: string[] = [];
+
+                if (scoping === 'SPECIFIC_AREAS') {
+                    if (!specificAreaIds || specificAreaIds.length === 0) {
+                        throw new Error(`Arm Area action for rule ${rule.id} (${rule.name}) has 'SPECIFIC_AREAS' scoping but no targetAreaIds provided.`);
+                    }
+                    areasToProcess = specificAreaIds;
+                } else if (scoping === 'ALL_AREAS_IN_SCOPE') {
+                    if (rule.locationScopeId) {
+                        const areasInLocation = await db.query.areas.findMany({
+                            where: eq(areas.locationId, rule.locationScopeId),
+                            columns: { id: true }
+                        });
+                        areasToProcess = areasInLocation.map(a => a.id);
+                        if (areasToProcess.length === 0) {
+                            console.log(`[Automation Service] Rule ${rule.id} (${rule.name}), Action armArea: No areas found in rule's location scope ID ${rule.locationScopeId}. No action taken.`);
+                            break;
+                        }
+                    } else {
+                        // Rule is not location-scoped, so 'ALL_AREAS_IN_SCOPE' means all areas in the system
+                        const allSystemAreas = await db.query.areas.findMany({ columns: { id: true } });
+                        areasToProcess = allSystemAreas.map(a => a.id);
+                        if (areasToProcess.length === 0) {
+                            console.log(`[Automation Service] Rule ${rule.id} (${rule.name}), Action armArea: No areas found in the system. No action taken.`);
+                            break;
+                        }
+                    }
+                }
+
+                if (areasToProcess.length === 0) {
+                    console.log(`[Automation Service] Rule ${rule.id} (${rule.name}), Action armArea: No areas determined for processing. Scoping: ${scoping}.`);
+                    break;
+                }
+
+                console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Attempting to arm ${areasToProcess.length} area(s) to mode ${armMode}. Area IDs: ${areasToProcess.join(', ')}`);
+                for (const areaId of areasToProcess) {
+                    try {
+                        // Directly use the store action which handles API call and toasts
+                        const success = await useFusionStore.getState().updateAreaArmedState(areaId, armMode);
+                        if (success) {
+                            console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Successfully requested arming of area ${areaId} to ${armMode}.`);
+                        } else {
+                            // Store action's toast would have already fired. Log here for service-level tracking.
+                            console.warn(`[Automation Service] Rule ${rule.id} (${rule.name}): Store action to arm area ${areaId} to ${armMode} reported failure or no change.`);
+                        }
+                    } catch (areaError) {
+                        console.error(`[Automation Service] Rule ${rule.id} (${rule.name}): Error attempting to arm area ${areaId} to ${armMode}:`, areaError);
+                        // Optionally, decide if one error should stop all, or continue (current: continue)
+                    }
+                }
+                break;
             }
+            case AutomationActionType.DISARM_AREA: {
+                const params = action.params as z.infer<typeof DisarmAreaActionParamsSchema>;
+                const { scoping, targetAreaIds: specificAreaIds } = params;
+                let areasToProcess: string[] = [];
+
+                if (scoping === 'SPECIFIC_AREAS') {
+                    if (!specificAreaIds || specificAreaIds.length === 0) {
+                        throw new Error(`Disarm Area action for rule ${rule.id} (${rule.name}) has 'SPECIFIC_AREAS' scoping but no targetAreaIds provided.`);
+                    }
+                    areasToProcess = specificAreaIds;
+                } else if (scoping === 'ALL_AREAS_IN_SCOPE') {
+                    if (rule.locationScopeId) {
+                        const areasInLocation = await db.query.areas.findMany({
+                            where: eq(areas.locationId, rule.locationScopeId),
+                            columns: { id: true }
+                        });
+                        areasToProcess = areasInLocation.map(a => a.id);
+                        if (areasToProcess.length === 0) {
+                            console.log(`[Automation Service] Rule ${rule.id} (${rule.name}), Action disarmArea: No areas found in rule's location scope ID ${rule.locationScopeId}. No action taken.`);
+                            break;
+                        }
+                    } else {
+                        const allSystemAreas = await db.query.areas.findMany({ columns: { id: true } });
+                        areasToProcess = allSystemAreas.map(a => a.id);
+                         if (areasToProcess.length === 0) {
+                            console.log(`[Automation Service] Rule ${rule.id} (${rule.name}), Action disarmArea: No areas found in the system. No action taken.`);
+                            break;
+                        }
+                    }
+                }
+
+                if (areasToProcess.length === 0) {
+                    console.log(`[Automation Service] Rule ${rule.id} (${rule.name}), Action disarmArea: No areas determined for processing. Scoping: ${scoping}.`);
+                    break;
+                }
+
+                console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Attempting to disarm ${areasToProcess.length} area(s). Area IDs: ${areasToProcess.join(', ')}`);
+                for (const areaId of areasToProcess) {
+                    try {
+                        const success = await useFusionStore.getState().updateAreaArmedState(areaId, ArmedState.DISARMED);
+                        if (success) {
+                            console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Successfully requested disarming of area ${areaId}.`);
+                        } else {
+                            console.warn(`[Automation Service] Rule ${rule.id} (${rule.name}): Store action to disarm area ${areaId} reported failure or no change.`);
+                        }
+                    } catch (areaError) {
+                        console.error(`[Automation Service] Rule ${rule.id} (${rule.name}): Error attempting to disarm area ${areaId}:`, areaError);
+                    }
+                }
+                break;
+            }
+            default:
+                // The assertNever check is commented out due to persistent TypeScript inference issues
+                // with Zod discriminated unions in this switch. A runtime check is used instead.
+                // assertNever(action.type, `Unknown or unhandled action type: ${action.type} in rule ${rule.id} (${rule.name})`);
+                console.error(`[Automation Service] FATAL: Unhandled action type: ${(action as any).type} in rule ${rule.id} (${rule.name}). This should not happen.`);
+                throw new Error(`Unhandled action type: ${(action as any).type}`);
         }
     };
 

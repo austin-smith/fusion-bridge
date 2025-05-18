@@ -1,6 +1,8 @@
 import { z } from 'zod';
 // --- Add import for ActionableState ---
 import { ActionableState } from '@/lib/mappings/definitions';
+import { AutomationActionType } from './automation-types'; 
+import { ArmedState } from './mappings/definitions'; // Import ArmedState
 
 // --- START: json-rules-engine Schemas ---
 
@@ -161,6 +163,40 @@ export const SendPushNotificationActionParamsSchema = z.object({
 });
 // --- END Add SendPushNotificationActionParamsSchema ---
 
+// --- Enums & Schemas for new Arm/Disarm Actions ---
+export const AreaScopingSchema = z.enum([
+    'SPECIFIC_AREAS', 
+    'ALL_AREAS_IN_SCOPE'
+]);
+
+export const ArmAreaActionParamsSchema = z.object({
+    scoping: AreaScopingSchema,
+    targetAreaIds: z.array(z.string().uuid()).optional(), // UUIDs of areas
+    armMode: z.enum([ArmedState.ARMED_AWAY, ArmedState.ARMED_STAY]), // Required arm mode
+}).refine(data => {
+    if (data.scoping === 'SPECIFIC_AREAS') {
+        return Array.isArray(data.targetAreaIds) && data.targetAreaIds.length > 0;
+    }
+    return true;
+}, {
+    message: "targetAreaIds must be provided and non-empty when scoping is SPECIFIC_AREAS",
+    path: ['targetAreaIds'], // Path of the error
+});
+
+export const DisarmAreaActionParamsSchema = z.object({
+    scoping: AreaScopingSchema,
+    targetAreaIds: z.array(z.string().uuid()).optional(), // UUIDs of areas
+}).refine(data => {
+    if (data.scoping === 'SPECIFIC_AREAS') {
+        return Array.isArray(data.targetAreaIds) && data.targetAreaIds.length > 0;
+    }
+    return true;
+}, {
+    message: "targetAreaIds must be provided and non-empty when scoping is SPECIFIC_AREAS",
+    path: ['targetAreaIds'], // Path of the error
+});
+// --- End Enums & Schemas ---
+
 // Schema for a single action within an automation
 // Using discriminatedUnion allows easy extension with new action types later
 export const AutomationActionSchema = z.discriminatedUnion("type", [
@@ -188,6 +224,8 @@ export const AutomationActionSchema = z.discriminatedUnion("type", [
   }),
   // Add future action types here, e.g.:
   // z.object({ type: z.literal("sendNotification"), params: SendNotificationParamsSchema }),
+  z.object({ type: z.literal(AutomationActionType.ARM_AREA), params: ArmAreaActionParamsSchema }).strict(),
+  z.object({ type: z.literal(AutomationActionType.DISARM_AREA), params: DisarmAreaActionParamsSchema }).strict(),
 ]);
 
 // Type helper for a single action
@@ -258,4 +296,17 @@ export interface AutomationRecord {
   enabled: boolean;
   createdAt: Date; 
   updatedAt: Date; 
-} 
+}
+
+// Main schema for a single automation action
+export type AutomationActionParams =
+    | z.infer<typeof CreateEventActionParamsSchema>
+    | z.infer<typeof CreateBookmarkParamsSchema>
+    | z.infer<typeof SendHttpRequestActionParamsSchema>
+    | z.infer<typeof SetDeviceStateActionParamsSchema>
+    | z.infer<typeof SendPushNotificationActionParamsSchema>
+    | z.infer<typeof ArmAreaActionParamsSchema> 
+    | z.infer<typeof DisarmAreaActionParamsSchema>;
+    
+// The overarching configuration schema for an automation rule
+// ... existing code ... 

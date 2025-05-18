@@ -440,6 +440,7 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                             <SelectContent>
                                 <SelectItem value="default">System Default</SelectItem>
                                 <SelectItem value="cosmic-night">Cosmic Night</SelectItem>
+                                <SelectItem value="remoteview">RemoteView</SelectItem>
                                 <SelectItem value="t3-chat">T3 Chat</SelectItem>
                                 {/* Add other theme families here as needed */}
                             </SelectContent>

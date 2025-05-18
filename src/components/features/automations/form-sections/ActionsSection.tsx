@@ -13,6 +13,15 @@ import { AutomationActionType } from '@/lib/automation-types';
 import type { connectors } from '@/data/db/schema';
 import type { AutomationFormValues } from '../AutomationForm'; // Adjust path as needed
 
+// Define AreaOption directly here for props
+type AreaOptionForActionsSection = {
+    id: string;
+    name: string;
+    locationId: string;
+    // Add any other fields from DbAreaType if ActionItem needs them directly from sortedAvailableAreas
+    // For now, id and name are sufficient for MultiSelectComboBox options passed from ActionItem
+};
+
 type ConnectorSelect = typeof connectors.$inferSelect;
 type TargetDeviceOption = {
     id: string;
@@ -42,6 +51,9 @@ interface ActionsSectionProps {
     // Pass sorted lists directly
     sortedPikoConnectors: Pick<ConnectorSelect, 'id' | 'name' | 'category'>[];
     sortedAvailableTargetDevices: TargetDeviceOption[];
+    // Add new props
+    sortedAvailableAreas: AreaOptionForActionsSection[]; 
+    currentRuleLocationScope?: { id: string; name: string } | null;
 }
 
 export function ActionsSection({
@@ -50,6 +62,9 @@ export function ActionsSection({
     handleInsertToken,
     sortedPikoConnectors,
     sortedAvailableTargetDevices,
+    // Destructure new props
+    sortedAvailableAreas,
+    currentRuleLocationScope,
 }: ActionsSectionProps) {
     const { fields: actionsFields, append: appendAction, remove: removeAction } = useFieldArray({
         control: form.control,
@@ -99,6 +114,9 @@ export function ActionsSection({
                         isLoading={isLoading}
                         sortedPikoConnectors={sortedPikoConnectors}
                         sortedAvailableTargetDevices={sortedAvailableTargetDevices}
+                        // Pass down the new props
+                        sortedAvailableAreas={sortedAvailableAreas}
+                        currentRuleLocationScope={currentRuleLocationScope}
                     />
                 ))}
             </Accordion>

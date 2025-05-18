@@ -1,4 +1,4 @@
-import { Power, Bookmark, Globe, TriangleAlert, HelpCircle, Bell } from 'lucide-react';
+import { Power, Bookmark, Globe, TriangleAlert, HelpCircle, Bell, ShieldCheck, ShieldOff } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Enum for automation action types
@@ -8,6 +8,8 @@ export enum AutomationActionType {
   SEND_HTTP_REQUEST = 'sendHttpRequest',
   SET_DEVICE_STATE = 'setDeviceState',
   SEND_PUSH_NOTIFICATION = 'sendPushNotification',
+  ARM_AREA = 'armArea',
+  DISARM_AREA = 'disarmArea',
 }
 
 // Define all styling and information in a single map
@@ -24,12 +26,14 @@ export interface ActionTypeInfo {
 export interface ActionContextData {
   connectors?: Array<{ id: string; name: string; category?: string }>;
   devices?: Array<{ id: string; name: string; [key: string]: any }>;
+  areas?: Array<{ id: string; name: string }>;
+  ruleLocationScope?: { id: string; name: string } | null;
 }
 
 // Complete action information map - single source of truth
 export const ACTION_TYPE_INFO: Record<AutomationActionType, ActionTypeInfo> = {
   [AutomationActionType.CREATE_EVENT]: {
-    displayName: 'Create Event',
+    displayName: 'Create Piko Event',
     icon: TriangleAlert,
     iconColorClass: 'text-blue-600 dark:text-blue-400',
     bgColorClass: 'bg-blue-50/40 dark:bg-blue-950/20',
@@ -47,7 +51,7 @@ export const ACTION_TYPE_INFO: Record<AutomationActionType, ActionTypeInfo> = {
   },
   
   [AutomationActionType.CREATE_BOOKMARK]: {
-    displayName: 'Create Bookmark',
+    displayName: 'Create Piko Bookmark',
     icon: Bookmark,
     iconColorClass: 'text-green-600 dark:text-green-400',
     bgColorClass: 'bg-green-50/40 dark:bg-green-950/20',
@@ -125,6 +129,71 @@ export const ACTION_TYPE_INFO: Record<AutomationActionType, ActionTypeInfo> = {
       
       // Default case - sending to all users in the group
       return '→ to all users via Pushover';
+    }
+  },
+
+  [AutomationActionType.ARM_AREA]: {
+    displayName: 'Arm Area',
+    icon: ShieldCheck,
+    iconColorClass: 'text-sky-600 dark:text-sky-400',
+    bgColorClass: 'bg-sky-50/40 dark:bg-sky-950/20',
+    borderColorClass: 'border-sky-200 dark:border-sky-800',
+    formatter: (params, contextData) => {
+      if (!params) return '→ (No parameters)';
+      const scoping = params.scoping;
+      const areaIds = params.targetAreaIds || [];
+      const armMode = params.armMode === 'ARMED_STAY' ? ' (Stay)' : ' (Away)';
+      const areas = contextData?.areas || [];
+      const ruleLocationScopeName = contextData?.ruleLocationScope?.name;
+
+      if (scoping === 'SPECIFIC_AREAS') {
+        if (areaIds.length === 0) return `→ Arm: No specific areas selected${armMode}`;
+        if (areaIds.length === 1) {
+          const area = areas.find(a => a.id === areaIds[0]);
+          return `→ Arm '${area?.name || areaIds[0].substring(0,6) + '...'}'${armMode}`;
+        }
+        return `→ Arm ${areaIds.length} selected areas${armMode}`;
+      }
+      if (scoping === 'ALL_AREAS_IN_SCOPE') {
+        if (ruleLocationScopeName) {
+          return `→ Arm all areas in '${ruleLocationScopeName}'${armMode}`;
+        } else {
+          return `→ Arm all areas in system${armMode}`;
+        }
+      }
+      return `→ Arm Area(s)${armMode}: Config pending`;
+    }
+  },
+
+  [AutomationActionType.DISARM_AREA]: {
+    displayName: 'Disarm Area',
+    icon: ShieldOff,
+    iconColorClass: 'text-slate-600 dark:text-slate-400',
+    bgColorClass: 'bg-slate-50/40 dark:bg-slate-950/20',
+    borderColorClass: 'border-slate-200 dark:border-slate-800',
+    formatter: (params, contextData) => {
+      if (!params) return '→ (No parameters)';
+      const scoping = params.scoping;
+      const areaIds = params.targetAreaIds || [];
+      const areas = contextData?.areas || [];
+      const ruleLocationScopeName = contextData?.ruleLocationScope?.name;
+
+      if (scoping === 'SPECIFIC_AREAS') {
+        if (areaIds.length === 0) return '→ Disarm: No specific areas selected';
+        if (areaIds.length === 1) {
+          const area = areas.find(a => a.id === areaIds[0]);
+          return `→ Disarm '${area?.name || areaIds[0].substring(0,6) + '...'}'`;
+        }
+        return `→ Disarm ${areaIds.length} selected areas`;
+      }
+      if (scoping === 'ALL_AREAS_IN_SCOPE') {
+        if (ruleLocationScopeName) {
+          return `→ Disarm all areas in '${ruleLocationScopeName}'`;
+        } else {
+          return `→ Disarm all areas in system`;
+        }
+      }
+      return `→ Disarm Area(s): Config pending`;
     }
   }
 };

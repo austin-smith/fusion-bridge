@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { 
   AccordionItem,
   AccordionTrigger,
@@ -19,7 +20,7 @@ import {
     FormLabel,
     FormMessage,
 } from "@/components/ui/form";
-import { Trash2, HelpCircle, Users } from 'lucide-react';
+import { Trash2, HelpCircle, Users, ShieldCheck, ShieldOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
     AutomationAction,
@@ -28,21 +29,33 @@ import type {
     SendHttpRequestActionParamsSchema,
     SetDeviceStateActionParamsSchema,
     SendPushNotificationActionParamsSchema,
+    ArmAreaActionParamsSchema,
+    DisarmAreaActionParamsSchema,
 } from '@/lib/automation-schemas';
 import { AutomationActionType, getActionTitle, getActionIconProps, getActionStyling, formatActionDetail } from '@/lib/automation-types';
-import { ActionableState } from '@/lib/mappings/definitions';
-import { TokenInserter } from '@/components/features/automations/TokenInserter'; // Adjust path if needed
+import { ActionableState, ArmedState } from '@/lib/mappings/definitions';
+import { TokenInserter } from '@/components/features/automations/TokenInserter';
 import { AVAILABLE_AUTOMATION_TOKENS } from '@/lib/automation-tokens';
-import { SendHttpRequestActionFields } from './SendHttpRequestActionFields'; // Adjust path as needed
-import { ConnectorIcon } from '@/components/features/connectors/connector-icon'; // Adjust path as needed
-import { getIconComponentByName } from '@/lib/mappings/presentation'; // Adjust path as needed
-import { priorityOptions } from '@/lib/pushover-constants'; // Adjust path as needed
-import type { connectors } from '@/data/db/schema';
-import type { z } from 'zod'; // Import z
-import type { AutomationFormValues } from '../AutomationForm'; // Adjust path as needed
+import { SendHttpRequestActionFields } from './SendHttpRequestActionFields';
+import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
+import { getIconComponentByName } from '@/lib/mappings/presentation';
+import { priorityOptions } from '@/lib/pushover-constants';
+import type { connectors, areas as areasTable } from '@/data/db/schema';
+import type { z } from 'zod';
+import type { AutomationFormValues } from '../AutomationForm';
+import { MultiSelectComboBox } from '@/components/ui/multi-select-combobox';
 
-// --- Add constant for the "All Users" value ---
 const ALL_USERS_PUSHOVER_VALUE = '__all__';
+
+const AREA_SCOPING_OPTIONS = [
+    { value: 'ALL_AREAS_IN_SCOPE', label: "All Areas in Scope" },
+    { value: 'SPECIFIC_AREAS', label: "Specific Areas" },
+];
+
+const ARM_MODE_OPTIONS = [
+    { value: ArmedState.ARMED_AWAY, label: "Arm Away" },
+    { value: ArmedState.ARMED_STAY, label: "Arm Stay" },
+];
 
 type ConnectorSelect = typeof connectors.$inferSelect;
 type TargetDeviceOption = {
@@ -54,13 +67,14 @@ type TargetDeviceOption = {
     locationId?: string | null;
 };
 
+type AreaOption = Pick<typeof areasTable.$inferSelect, 'id' | 'name' | 'locationId'>;
+
 const descriptionStyles = "text-xs text-muted-foreground mt-1";
 const ACTIONABLE_STATE_DISPLAY_MAP: Record<ActionableState, string> = {
     [ActionableState.SET_ON]: "Turn On",
     [ActionableState.SET_OFF]: "Turn Off",
 };
 
-// Define InsertableFieldNames here (ideally move to a shared types file later)
 export type InsertableFieldNames = 
     | keyof z.infer<typeof CreateEventActionParamsSchema>
     | keyof z.infer<typeof CreateBookmarkParamsSchema>
@@ -72,8 +86,8 @@ export type InsertableFieldNames =
 interface ActionItemProps {
   form: UseFormReturn<AutomationFormValues>;
   index: number;
-  fieldItem: Record<"id", string>; // Field item from useFieldArray
-  isOpen: boolean; // Whether this specific item accordion is open
+  fieldItem: Record<"id", string>;
+  isOpen: boolean;
   removeAction: (index: number) => void;
   handleInsertToken: (
       fieldName: InsertableFieldNames,
@@ -83,9 +97,10 @@ interface ActionItemProps {
       headerIndex?: number
   ) => void;
   isLoading: boolean;
-  // Pass sorted lists directly to avoid re-sorting
   sortedPikoConnectors: Pick<ConnectorSelect, 'id' | 'name' | 'category'>[];
   sortedAvailableTargetDevices: TargetDeviceOption[];
+  sortedAvailableAreas: AreaOption[];
+  currentRuleLocationScope?: { id: string; name: string } | null;
 }
 
 export function ActionItem({
@@ -98,17 +113,18 @@ export function ActionItem({
   isLoading,
   sortedPikoConnectors,
   sortedAvailableTargetDevices,
+  sortedAvailableAreas,
+  currentRuleLocationScope,
 }: ActionItemProps) {
   const actionType = form.watch(`config.actions.${index}.type`);
   const actionParams = form.watch(`config.actions.${index}.params`);
+  const currentScoping = form.watch(`config.actions.${index}.params.scoping`);
 
-  // State for user selection dropdown (moved to top level)
   const [groupUsers, setGroupUsers] = React.useState<Array<{ user: string; memo: string; device?: string | null }>>([]);
   const [isFetchingUsers, setIsFetchingUsers] = React.useState(false);
   const [fetchUsersError, setFetchUsersError] = React.useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
 
-  // Fetch users when dropdown is opened (moved to top level)
   React.useEffect(() => {
     if (actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && isDropdownOpen && groupUsers.length === 0 && !isFetchingUsers) {
       const fetchUsers = async () => {
@@ -144,7 +160,6 @@ export function ActionItem({
     const newType = value as AutomationAction['type'];
     let newActionParams: AutomationAction['params'];
 
-    // Determine default params based on the new type
     if (newType === AutomationActionType.CREATE_EVENT) { 
         newActionParams = { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' };
     } else if (newType === AutomationActionType.CREATE_BOOKMARK) { 
@@ -163,32 +178,43 @@ export function ActionItem({
             targetUserKeyTemplate: ALL_USERS_PUSHOVER_VALUE,
             priority: 0
         };
+    } else if (newType === AutomationActionType.ARM_AREA) {
+        newActionParams = {
+            scoping: 'ALL_AREAS_IN_SCOPE',
+            armMode: ArmedState.ARMED_AWAY,
+            targetAreaIds: []
+        } as z.infer<typeof ArmAreaActionParamsSchema>;
+    } else if (newType === AutomationActionType.DISARM_AREA) {
+        newActionParams = {
+            scoping: 'ALL_AREAS_IN_SCOPE',
+            targetAreaIds: []
+        } as z.infer<typeof DisarmAreaActionParamsSchema>;
     } else { 
         console.warn(`Unexpected action type: ${value}. Defaulting to minimal params.`); 
-        newActionParams = {} as any; // Fallback, should ideally not happen
+        newActionParams = {} as any;
     }
 
-    // Update both the type and the params
-    // Use setValue for potentially complex nested objects
     form.setValue(`config.actions.${index}.type`, newType, { shouldValidate: true, shouldDirty: true });
     form.setValue(`config.actions.${index}.params`, newActionParams, { shouldValidate: true, shouldDirty: true });
-    // field.onChange is not directly suitable here as we need to change both type and params
   };
+
+  const areaOptionsForSelect = React.useMemo(() => 
+    (sortedAvailableAreas || []).map(area => ({ value: area.id, label: area.name }))
+  , [sortedAvailableAreas]);
 
   return (
       <AccordionItem 
           key={fieldItem.id} 
-          value={`action-${index}`} // Value used by the parent Accordion
+          value={`action-${index}`}
           className={`${bgColor} border-2 ${borderColor} rounded-md overflow-hidden shadow-sm`}
       >
           <div className="relative">
               <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                  <div className="flex items-center w-full pr-14"> {/* Added pr-14 for button space */} 
+                  <div className="flex items-center w-full pr-14">
                       <div className="flex items-center flex-shrink-0">
                           <ActionIcon />
                           <span className="text-sm font-semibold">{actionTitle}</span>
                       </div>
-                      {/* Show details when action is collapsed */} 
                       {!isOpen && 
                           <div className="ml-2 overflow-hidden flex-1 w-0 flex items-center">
                               <span className="text-xs text-muted-foreground truncate inline-block w-full">
@@ -197,9 +223,11 @@ export function ActionItem({
                                       actionParams, 
                                       {
                                           connectors: sortedPikoConnectors,
-                                          devices: sortedAvailableTargetDevices
+                                          devices: sortedAvailableTargetDevices,
+                                          areas: sortedAvailableAreas || [],
+                                          ruleLocationScope: currentRuleLocationScope,
                                       },
-                                      { includeType: false } // Don't repeat type in summary
+                                      { includeType: false }
                                   )}
                               </span>
                           </div>
@@ -210,9 +238,9 @@ export function ActionItem({
                   type="button" 
                   variant="ghost" 
                   size="icon" 
-                  className="absolute right-12 top-2.5 h-6 w-6 text-destructive hover:bg-destructive/10" // Positioned next to trigger arrow
+                  className="absolute right-12 top-2.5 h-6 w-6 text-destructive hover:bg-destructive/10"
                   onClick={(e) => {
-                      e.stopPropagation(); // Prevent accordion toggle
+                      e.stopPropagation();
                       removeAction(index);
                   }}
                   disabled={isLoading}
@@ -221,20 +249,17 @@ export function ActionItem({
                   <span className="sr-only">Delete action</span>
               </Button>
           </div>
-          <AccordionContent className="px-4 pb-4 pt-2"> 
+          <AccordionContent className="px-4 pb-4 pt-2">
               <div className="space-y-4">
                   <FormField 
                       control={form.control}
-                      // Use name for validation, but value is handled by Select below
                       name={`config.actions.${index}.type`} 
                       render={({ field, fieldState }) => ( 
                           <FormItem>
                               <FormLabel>Action Type</FormLabel>
                               <FormControl>
                                   <Select
-                                      // Use the watched value for the Select's value
                                       value={actionType ?? AutomationActionType.CREATE_EVENT} 
-                                      // Use the custom handler to update type and params
                                       onValueChange={handleActionTypeChange}
                                       disabled={isLoading}
                                   >
@@ -242,12 +267,13 @@ export function ActionItem({
                                           <SelectValue placeholder="Select Action Type" />
                                       </SelectTrigger>
                                       <SelectContent>
-                                          {/* Explicitly list available types */} 
                                           <SelectItem value={AutomationActionType.CREATE_BOOKMARK}>{getActionTitle(AutomationActionType.CREATE_BOOKMARK)}</SelectItem>
                                           <SelectItem value={AutomationActionType.CREATE_EVENT}>{getActionTitle(AutomationActionType.CREATE_EVENT)}</SelectItem>
                                           <SelectItem value={AutomationActionType.SEND_HTTP_REQUEST}>{getActionTitle(AutomationActionType.SEND_HTTP_REQUEST)}</SelectItem>
                                           <SelectItem value={AutomationActionType.SET_DEVICE_STATE}>{getActionTitle(AutomationActionType.SET_DEVICE_STATE)}</SelectItem>
                                           <SelectItem value={AutomationActionType.SEND_PUSH_NOTIFICATION}>{getActionTitle(AutomationActionType.SEND_PUSH_NOTIFICATION)}</SelectItem>
+                                          <SelectItem value={AutomationActionType.ARM_AREA}>{getActionTitle(AutomationActionType.ARM_AREA)}</SelectItem>
+                                          <SelectItem value={AutomationActionType.DISARM_AREA}>{getActionTitle(AutomationActionType.DISARM_AREA)}</SelectItem>
                                       </SelectContent>
                                   </Select>
                               </FormControl>
@@ -256,7 +282,6 @@ export function ActionItem({
                       )}
                   />
                   
-                  {/* Target Connector for Event and Bookmark */} 
                   {(actionType === AutomationActionType.CREATE_EVENT || actionType === AutomationActionType.CREATE_BOOKMARK) && (
                       <FormField
                           control={form.control}
@@ -325,7 +350,6 @@ export function ActionItem({
                       />
                   )}
                   
-                  {/* Parameters section */}
                   <div className={`space-y-2 border-l-2 pl-4 ml-1 rounded-sm p-2 mt-2 bg-white/50 dark:bg-black/10 ${borderColor}`}>
                       <h3 className="text-sm font-medium text-muted-foreground mb-2">Action Parameters</h3>
                       <p className="text-xs text-muted-foreground mb-2"> 
@@ -334,12 +358,13 @@ export function ActionItem({
                           {actionType === AutomationActionType.SEND_HTTP_REQUEST && "Sends an HTTP request."}
                           {actionType === AutomationActionType.SET_DEVICE_STATE && "Changes the state of a specified device (e.g., turn on/off)."}
                           {actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && "Sends a push notification via the Pushover service."}
+                          {actionType === AutomationActionType.ARM_AREA && "Arms one or more security areas, either specific ones or all within the rule's scope."}
+                          {actionType === AutomationActionType.DISARM_AREA && "Disarms one or more security areas, either specific ones or all within the rule's scope."}
                           {!Object.values(AutomationActionType).includes(actionType as any) && "Select an action type to see parameters."}
                       </p>
                       
-                      {/* Action type specific fields */} 
                       {actionType === AutomationActionType.CREATE_EVENT && (
-                          <>
+                        <>
                               <FormField control={form.control} name={`config.actions.${index}.params.sourceTemplate`} render={({ field, fieldState }) => (
                                   <FormItem>
                                       <div className="flex items-center justify-between">
@@ -374,7 +399,7 @@ export function ActionItem({
                       )}
                       
                       {actionType === AutomationActionType.CREATE_BOOKMARK && (
-                          <>
+                        <>
                               <FormField control={form.control} name={`config.actions.${index}.params.nameTemplate`} render={({ field, fieldState }) => (
                                   <FormItem>
                                       <div className="flex items-center justify-between">
@@ -409,7 +434,6 @@ export function ActionItem({
                                                   value={field.value ?? ''} 
                                                   onChange={(e) => {
                                                       const value = e.target.value;
-                                                      // Allow empty string or positive numbers
                                                       if (value === '' || /^[0-9]+$/.test(value)) {
                                                           field.onChange(value);
                                                       }
@@ -444,17 +468,16 @@ export function ActionItem({
                       
                       {actionType === AutomationActionType.SEND_HTTP_REQUEST && (
                           <SendHttpRequestActionFields 
-                              form={form} // Pass form down
+                              form={form}
                               actionIndex={index} 
                               handleInsertToken={(fieldName, actIndex, token, headerIndex) => {
-                                  // Pass token insertion up to the main handler
                                   handleInsertToken(fieldName, actIndex, token, 'action', headerIndex);
                               }}
                           /> 
                       )}
                       
                       {actionType === AutomationActionType.SET_DEVICE_STATE && (
-                          <>
+                        <>
                               <div className="flex flex-col space-y-2 mt-2">
                                   <FormLabel className="mb-1 mt-2">Device Control Flow</FormLabel>
                                   <div className="flex items-center space-x-2">
@@ -527,7 +550,7 @@ export function ActionItem({
                       )}
                       
                       {actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && (
-                          <>
+                        <>
                               <FormField 
                                   control={form.control}
                                   name={`config.actions.${index}.params.titleTemplate`}
@@ -564,9 +587,7 @@ export function ActionItem({
                                   control={form.control}
                                   name={`config.actions.${index}.params.targetUserKeyTemplate`}
                                   render={({ field, fieldState }) => {
-                                      // Find selected user info for display
                                       const currentSelectedUser = (field.value && field.value !== ALL_USERS_PUSHOVER_VALUE) ? groupUsers.find(u => u.user === field.value) : null;
-                                      
                                       return (
                                           <FormItem>
                                               <FormLabel className="flex items-center">
@@ -581,11 +602,7 @@ export function ActionItem({
                                               >
                                                   <FormControl>
                                                       <SelectTrigger className={cn("text-left w-[220px]", fieldState.error && 'border-destructive')}>
-                                                          <SelectValue placeholder={
-                                                              isFetchingUsers ? "Loading users..." : 
-                                                              fetchUsersError ? "Error loading users" : 
-                                                              "Select target user..."
-                                                          }>
+                                                          <SelectValue placeholder={isFetchingUsers ? "Loading users..." : fetchUsersError ? "Error loading users" : "Select target user..."}>
                                                               {!field.value || field.value === ALL_USERS_PUSHOVER_VALUE
                                                                   ? <span className="text-sm">All Users</span>
                                                                   : <span className="text-sm">
@@ -646,7 +663,6 @@ export function ActionItem({
                                               <FormLabel>Priority</FormLabel>
                                               <Select 
                                                   onValueChange={(value) => field.onChange(parseInt(value, 10))} 
-                                                  // Ensure value is a string for the Select component
                                                   value={field.value?.toString() ?? '0'} 
                                                   disabled={isLoading}
                                               >
@@ -678,6 +694,163 @@ export function ActionItem({
                               />
                           </>
                       )}
+                      
+                      {/* === ARM AREA FIELDS === */} 
+                      {actionType === AutomationActionType.ARM_AREA && (
+                          <>
+                              <FormField
+                                  control={form.control}
+                                  name={`config.actions.${index}.params.scoping`}
+                                  render={({ field }) => (
+                                      <FormItem className="space-y-3">
+                                          <FormLabel>Area Scoping</FormLabel>
+                                          <FormControl>
+                                              <RadioGroup
+                                                  onValueChange={field.onChange}
+                                                  defaultValue={field.value}
+                                                  className="flex flex-col space-y-1"
+                                                  disabled={isLoading}
+                                              >
+                                                  {AREA_SCOPING_OPTIONS.map(option => (
+                                                      <FormItem key={option.value} className="flex items-center space-x-3 space-y-0">
+                                                          <FormControl>
+                                                              <RadioGroupItem value={option.value} />
+                                                          </FormControl>
+                                                          <FormLabel className="font-normal">
+                                                              {option.label}
+                                                          </FormLabel>
+                                                      </FormItem>
+                                                  ))}
+                                              </RadioGroup>
+                                          </FormControl>
+                                          <FormMessage />
+                                      </FormItem>
+                                  )}
+                              />
+
+                              {currentScoping === 'SPECIFIC_AREAS' && (
+                                  <FormField
+                                      control={form.control}
+                                      name={`config.actions.${index}.params.targetAreaIds`}
+                                      render={({ field, fieldState }) => (
+                                          <FormItem>
+                                              <FormLabel className="mr-2">Target Areas</FormLabel>
+                                              <FormControl>
+                                                <MultiSelectComboBox
+                                                    options={areaOptionsForSelect}
+                                                    selected={field.value || []}
+                                                    onChange={field.onChange}
+                                                    placeholder="Select areas..."
+                                                    className={cn("w-full max-w-md", fieldState.error && 'border-destructive')}
+                                                    disabled={isLoading || areaOptionsForSelect.length === 0}
+                                                />
+                                              </FormControl>
+                                              {areaOptionsForSelect.length === 0 && (
+                                                <FormDescription className={descriptionStyles}>
+                                                    No areas available to select.
+                                                </FormDescription>
+                                              )}
+                                              <FormMessage />
+                                          </FormItem>
+                                      )}
+                                  />
+                              )}
+
+                              <FormField
+                                  control={form.control}
+                                  name={`config.actions.${index}.params.armMode`}
+                                  render={({ field }) => (
+                                      <FormItem className="space-y-3">
+                                          <FormLabel>Arm Mode</FormLabel>
+                                          <FormControl>
+                                              <RadioGroup
+                                                  onValueChange={field.onChange}
+                                                  defaultValue={field.value}
+                                                  className="flex flex-col space-y-1"
+                                                  disabled={isLoading}
+                                              >
+                                                  {ARM_MODE_OPTIONS.map(option => (
+                                                      <FormItem key={option.value} className="flex items-center space-x-3 space-y-0">
+                                                          <FormControl>
+                                                              <RadioGroupItem value={option.value} />
+                                                          </FormControl>
+                                                          <FormLabel className="font-normal">
+                                                              {option.label}
+                                                          </FormLabel>
+                                                      </FormItem>
+                                                  ))}
+                                              </RadioGroup>
+                                          </FormControl>
+                                          <FormMessage />
+                                      </FormItem>
+                                  )}
+                              />
+                          </>
+                      )}
+
+                      {/* === DISARM AREA FIELDS === */} 
+                      {actionType === AutomationActionType.DISARM_AREA && (
+                          <>
+                              <FormField
+                                  control={form.control}
+                                  name={`config.actions.${index}.params.scoping`}
+                                  render={({ field }) => (
+                                      <FormItem className="space-y-3">
+                                          <FormLabel>Area Scoping</FormLabel>
+                                          <FormControl>
+                                              <RadioGroup
+                                                  onValueChange={field.onChange}
+                                                  defaultValue={field.value}
+                                                  className="flex flex-col space-y-1"
+                                                  disabled={isLoading}
+                                              >
+                                                  {AREA_SCOPING_OPTIONS.map(option => (
+                                                      <FormItem key={option.value} className="flex items-center space-x-3 space-y-0">
+                                                          <FormControl>
+                                                              <RadioGroupItem value={option.value} />
+                                                          </FormControl>
+                                                          <FormLabel className="font-normal">
+                                                              {option.label}
+                                                          </FormLabel>
+                                                      </FormItem>
+                                                  ))}
+                                              </RadioGroup>
+                                          </FormControl>
+                                          <FormMessage />
+                                      </FormItem>
+                                  )}
+                              />
+
+                              {currentScoping === 'SPECIFIC_AREAS' && (
+                                  <FormField
+                                      control={form.control}
+                                      name={`config.actions.${index}.params.targetAreaIds`}
+                                      render={({ field, fieldState }) => (
+                                          <FormItem>
+                                              <FormLabel className="mr-2">Target Areas</FormLabel>
+                                              <FormControl>
+                                                  <MultiSelectComboBox
+                                                      options={areaOptionsForSelect}
+                                                      selected={field.value || []}
+                                                      onChange={field.onChange}
+                                                      placeholder="Select areas..."
+                                                      className={cn("w-full max-w-md", fieldState.error && 'border-destructive')}
+                                                      disabled={isLoading || areaOptionsForSelect.length === 0}
+                                                  />
+                                              </FormControl>
+                                              {areaOptionsForSelect.length === 0 && (
+                                                <FormDescription className={descriptionStyles}>
+                                                    No areas available to select.
+                                                </FormDescription>
+                                              )}
+                                              <FormMessage /> 
+                                          </FormItem>
+                                      )}
+                                  />
+                              )}
+                          </>
+                      )}
+                      
                   </div>
               </div>
           </AccordionContent>

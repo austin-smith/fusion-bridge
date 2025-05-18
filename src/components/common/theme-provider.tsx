@@ -12,10 +12,12 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
       const preferredFamily = localStorage.getItem(PREFERRED_THEME_FAMILY_KEY);
       const classList = document.documentElement.classList;
       
-      classList.remove('cosmic-night', 't3-chat'); // Remove all known theme family classes first
+      classList.remove('cosmic-night', 't3-chat', 'remoteview'); // Remove all known theme family classes first
 
       if (preferredFamily === 'cosmic-night') {
         classList.add('cosmic-night');
+      } else if (preferredFamily === 'remoteview') {
+        classList.add('remoteview');
       } else if (preferredFamily === 't3-chat') {
         classList.add('t3-chat');
       }
