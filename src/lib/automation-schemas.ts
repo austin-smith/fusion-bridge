@@ -1,8 +1,8 @@
 import { z } from 'zod';
 // --- Add import for ActionableState ---
 import { ActionableState } from '@/lib/mappings/definitions';
-import { AutomationActionType } from './automation-types'; 
-import { ArmedState } from './mappings/definitions'; // Import ArmedState
+import { AutomationActionType, AutomationTriggerType } from './automation-types'; 
+import { ArmedState } from '@/lib/mappings/definitions'; // Import ArmedState
 
 // --- START: json-rules-engine Schemas ---
 
@@ -275,9 +275,26 @@ export const TemporalConditionSchema = z.object({
 // Type helper for a single temporal condition (automatically updated)
 export type TemporalCondition = z.infer<typeof TemporalConditionSchema>;
 
+// --- NEW: Automation Trigger Schema (Discriminated Union) ---
+// Inserted BEFORE the original AutomationConfigSchema
+export const AutomationTriggerSchema = z.discriminatedUnion("type", [
+  z.object({ 
+    type: z.literal(AutomationTriggerType.EVENT), 
+    conditions: JsonRuleGroupSchema, // This is the primary event trigger conditions
+  }),
+  z.object({ 
+    type: z.literal(AutomationTriggerType.SCHEDULED), 
+    cronExpression: z.string().min(1, "CRON expression cannot be empty."),
+    timeZone: z.string().optional(), // IANA timezone name, e.g., "America/New_York"
+  })
+]);
+
+export type AutomationTrigger = z.infer<typeof AutomationTriggerSchema>;
+
 // Schema for the overall automation configuration (already includes temporalConditions array)
 export const AutomationConfigSchema = z.object({
-  conditions: JsonRuleGroupSchema, 
+  // conditions: JsonRuleGroupSchema, // OLD field
+  trigger: AutomationTriggerSchema, // NEW field, replacing 'conditions'
   temporalConditions: z.array(TemporalConditionSchema).optional(), 
   actions: z.array(AutomationActionSchema).min(1, { message: "At least one action must be configured" }),
 });
@@ -307,6 +324,34 @@ export type AutomationActionParams =
     | z.infer<typeof SendPushNotificationActionParamsSchema>
     | z.infer<typeof ArmAreaActionParamsSchema> 
     | z.infer<typeof DisarmAreaActionParamsSchema>;
-    
-// The overarching configuration schema for an automation rule
-// ... existing code ... 
+
+// The file should end here, removing any subsequent erroneous definitions. 
+
+// --- Added Schema for full Automation Rule with conditional Timezone validation ---
+export const AutomationRuleSchema = z.object({
+    id: z.string().uuid().optional(), 
+    name: z.string().min(1, "Automation name cannot be empty."),
+    enabled: z.boolean().default(true),
+    configJson: AutomationConfigSchema, 
+    locationScopeId: z.string().uuid().nullable().optional(),
+    createdAt: z.date().optional(), 
+    updatedAt: z.date().optional(),
+}).superRefine((data, ctx) => {
+    const trigger = data.configJson.trigger; // Correctly access trigger from configJson
+
+    if (trigger.type === AutomationTriggerType.SCHEDULED) {
+        if (!data.locationScopeId) {
+            // After checking trigger.type, TS knows 'trigger' is the scheduled variant
+            // So, trigger.timeZone is available if type is SCHEDULED.
+            if (!trigger.timeZone || trigger.timeZone.trim() === "") {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ["configJson", "trigger", "timeZone"], 
+                    message: "Timezone is required for scheduled triggers if no location scope is selected.",
+                });
+            }
+        }
+    }
+});
+
+export type AutomationRule = z.infer<typeof AutomationRuleSchema>; 

@@ -675,7 +675,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   },
   updateAreaArmedState: async (id, armedState) => {
     try {
-      const response = await fetch(`/api/areas/${id}/arm-state`, {
+      const baseUrl = process.env.APP_URL || '';
+      const response = await fetch(`${baseUrl}/api/areas/${id}/arm-state`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ armedState })
@@ -970,8 +971,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     const loadingToastId = toast.loading(`Turning device ${stateDesc}...`);
 
     try {
+      const baseUrl = process.env.APP_URL || '';
       // 2. Make API Call
-      const response = await fetch(`/api/devices/${internalDeviceId}/state`, {
+      const response = await fetch(`${baseUrl}/api/devices/${internalDeviceId}/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ state: newState }),
@@ -1011,7 +1013,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   armArea: async (areaId: string) => {
     const loadingToastId = toast.loading(`Arming area ${areaId.substring(0,6)}...`);
     try {
-      const response = await fetch(`/api/areas/${areaId}/security/arm`, { method: 'POST' });
+      const baseUrl = process.env.APP_URL || '';
+      const response = await fetch(`${baseUrl}/api/areas/${areaId}/security/arm`, { method: 'POST' });
       const data: ApiResponse<{ area: Area }> = await response.json(); // Assuming API returns { area: UpdatedArea }
       if (!response.ok || !data.success || !data.data?.area) {
         throw new Error(data.error || 'Failed to arm area');
@@ -1039,7 +1042,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   disarmArea: async (areaId: string) => {
     const loadingToastId = toast.loading(`Disarming area ${areaId.substring(0,6)}...`);
     try {
-      const response = await fetch(`/api/areas/${areaId}/security/disarm`, { method: 'POST' });
+      const baseUrl = process.env.APP_URL || '';
+      const response = await fetch(`${baseUrl}/api/areas/${areaId}/security/disarm`, { method: 'POST' });
       const data: ApiResponse<{ area: Area }> = await response.json(); 
       if (!response.ok || !data.success || !data.data?.area) {
         throw new Error(data.error || 'Failed to disarm area');
@@ -1066,7 +1070,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   skipNextArmForArea: async (areaId: string) => {
     const loadingToastId = toast.loading(`Skipping next arm for area ${areaId.substring(0,6)}...`);
     try {
-      const response = await fetch(`/api/areas/${areaId}/security/skip-next-arm`, { method: 'POST' });
+      const baseUrl = process.env.APP_URL || '';
+      const response = await fetch(`${baseUrl}/api/areas/${areaId}/security/skip-next-arm`, { method: 'POST' });
       const data: ApiResponse<{ area: Area }> = await response.json(); 
       if (!response.ok || !data.success || !data.data?.area) {
         throw new Error(data.error || 'Failed to skip next arm');
@@ -1201,7 +1206,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   setLocationDefaultSchedule: async (locationId: string, scheduleId: string | null) => {
     const loadingToastId = toast.loading('Setting location default schedule...');
     try {
-      const response = await fetch(`/api/alarm/locations/${locationId}/default-schedule`, {
+      const baseUrl = process.env.APP_URL || '';
+      const response = await fetch(`${baseUrl}/api/alarm/locations/${locationId}/default-schedule`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scheduleId }), // API expects { scheduleId: "uuid" | null }
@@ -1232,7 +1238,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   setAreaOverrideSchedule: async (areaId: string, scheduleId: string | null) => {
     const loadingToastId = toast.loading('Setting area override schedule...');
     try {
-      const response = await fetch(`/api/alarm/areas/${areaId}/override-schedule`, {
+      const baseUrl = process.env.APP_URL || '';
+      const response = await fetch(`${baseUrl}/api/alarm/areas/${areaId}/override-schedule`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scheduleId }), // API expects { scheduleId: "uuid" | null }

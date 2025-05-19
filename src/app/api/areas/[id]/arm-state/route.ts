@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import type { Area } from '@/types/index';
 import { ArmedState } from '@/lib/mappings/definitions';
 import { z } from 'zod';
+import { internalSetAreaArmedState } from '@/services/area-service';
 
 // --- Validation Schema ---
 // Define the possible armed states explicitly for validation
@@ -36,23 +37,25 @@ export async function PUT( // Restore async
 
     const { armedState } = validation.data;
 
-    // Check if area exists
-    const [currentArea] = await db.select({ id: areas.id }).from(areas).where(eq(areas.id, id)).limit(1);
-    if (!currentArea) {
-      return NextResponse.json({ success: false, error: "Area not found" }, { status: 404 });
-    }
+    // Call the internal service function
+    const updatedArea = await internalSetAreaArmedState(id, armedState);
 
-    // Perform the update
-    const [updatedArea] = await db.update(areas)
-      .set({ armedState: armedState, updatedAt: new Date() })
-      .where(eq(areas.id, id))
-      .returning();
+    if (!updatedArea) {
+      // internalSetAreaArmedState returns null if area not found after its own check
+      return NextResponse.json({ success: false, error: "Area not found or failed to update" }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true, data: updatedArea as Area });
 
   } catch (error) {
-    console.error(`Error updating armed state for area ${id}:`, error);
+    console.error(`API Error updating armed state for area ${id}:`, error);
+    // The internal function might throw specific errors, or a generic one
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ success: false, error: `Failed to update armed state: ${errorMessage}` }, { status: 500 });
+    // Determine status code based on error type if possible, otherwise 500
+    let statusCode = 500;
+    if (errorMessage.startsWith("Invalid input")) statusCode = 400;
+    // Add more specific error checks if internalSetAreaArmedState throws custom errors with codes
+
+    return NextResponse.json({ success: false, error: `Failed to update armed state: ${errorMessage}` }, { status: statusCode });
   }
 } 

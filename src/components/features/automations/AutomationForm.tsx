@@ -20,7 +20,7 @@ import {
 } from '@/lib/automation-schemas';
 import { EventType, EventSubtype, ActionableState } from '@/lib/mappings/definitions';
 import type { connectors } from '@/data/db/schema';
-import { Form, FormField } from "@/components/ui/form";
+import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -31,6 +31,14 @@ import { ActionsSection } from './form-sections/ActionsSection';
 import type { InsertableFieldNames } from './form-sections/ActionItem';
 import type { Location, Area } from '@/types';
 import { Skeleton } from "@/components/ui/skeleton";
+import { AutomationTriggerType } from '@/lib/automation-types';
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Input } from "@/components/ui/input";
+import { FormDescription } from "@/components/ui/form";
+import { ScheduleBuilder } from './form-sections/ScheduleBuilder';
+import { Activity, CalendarDays } from 'lucide-react';
+import { TimezoneSelector } from '@/components/common/timezone-selector';
+import type { AutomationTrigger } from '@/lib/automation-schemas';
 
 interface AutomationFormData {
     id: string;
@@ -44,10 +52,24 @@ interface AutomationFormData {
 
 const FormSchema = z.object({
     id: z.string(),
-    name: z.string().min(1),
+    name: z.string().min(1, "Automation name is required."),
     enabled: z.boolean(),
     config: AutomationConfigSchema,
     locationScopeId: z.string().uuid().nullable().optional(),
+}).superRefine((data, ctx) => {
+    const trigger = data.config.trigger;
+
+    if (trigger.type === AutomationTriggerType.SCHEDULED) {
+        if (!data.locationScopeId) {
+            if (!trigger.timeZone || trigger.timeZone.trim() === "") {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ["config", "trigger", "timeZone"], 
+                    message: "Timezone is required for scheduled automations when no location scope is selected.",
+                });
+            }
+        }
+    }
 });
 
 export type AutomationFormValues = z.infer<typeof FormSchema>;
@@ -94,6 +116,11 @@ const getClonedInitialConditions = (configConditions?: JsonRuleGroup) => {
     return JSON.parse(JSON.stringify(defaultRuleGroup)); 
 };
 
+// Helper function to ensure a default cron expression if undefined/null/empty
+const ensureDefaultCron = (cron?: string | null): string => {
+    return cron && cron.trim() !== "" ? cron : '0 9 * * 1';
+};
+
 export default function AutomationForm({
     initialData,
     availableConnectors,
@@ -107,15 +134,61 @@ export default function AutomationForm({
     const router = useRouter();
     const [isLoading, setIsLoading] = React.useState<boolean>(false);
     const [locationScopePopoverOpen, setLocationScopePopoverOpen] = React.useState(false);
+    const [displayTriggerType, setDisplayTriggerType] = React.useState<AutomationTriggerType | null>(null);
+
+    // Caches for trigger type specific settings (using refs to avoid extra renders)
+    const initialPersistedTrigger = initialData.configJson.trigger;
+    const eventTriggerConditionsRef = React.useRef<JsonRuleGroup>(
+        initialPersistedTrigger?.type === AutomationTriggerType.EVENT
+            ? addInternalIds(getClonedInitialConditions(initialPersistedTrigger.conditions))
+            : addInternalIds(getClonedInitialConditions(undefined))
+    );
+    const scheduledTriggerConfigRef = React.useRef<{ cronExpression: string; timeZone?: string }>(
+        initialPersistedTrigger?.type === AutomationTriggerType.SCHEDULED
+            ? { cronExpression: ensureDefaultCron(initialPersistedTrigger.cronExpression), timeZone: initialPersistedTrigger.timeZone }
+            : { cronExpression: '0 9 * * 1', timeZone: undefined }
+    );
+
+    // Ref to store the previous trigger state for comparison in useEffect
+    const previousTriggerRef = React.useRef<AutomationFormValues['config']['trigger']>();
 
     const safeAllLocations = Array.isArray(allLocations) ? allLocations : [];
     const safeAllAreas = Array.isArray(allAreas) ? allAreas : [];
     const conditionsDataReady = devicesForConditions && allLocations && allAreas;
 
-    const massageInitialData = (data: AutomationFormData): AutomationFormValues => {
-        const config = data.configJson;
-        
-        const initialActions = config.actions?.map((action: AutomationAction) => {
+    // Define the function to get default values. It will be called by useForm and useEffect.
+    // This function should be pure and not cause side effects.
+    const getInitialFormValues = React.useCallback((data: AutomationFormData): AutomationFormValues => {
+        const rawConfigJson = data.configJson;
+        // console.log("[GetInitialValues] Processing data for ID:", data.id, "Name:", data.name);
+        // console.log("[GetInitialValues] Raw configJson from initialData:", JSON.stringify(rawConfigJson, null, 2));
+
+        let parsedSourceTrigger: AutomationTrigger | undefined = undefined;
+        let parsedActions: AutomationAction[] = [];
+        let parsedTemporalConditions: TemporalCondition[] = [];
+
+        if (rawConfigJson) {
+            const parseResult = AutomationConfigSchema.safeParse(rawConfigJson);
+            if (parseResult.success) {
+                // console.log("[GetInitialValues] Successfully parsed rawConfigJson with AutomationConfigSchema.");
+                parsedSourceTrigger = parseResult.data.trigger;
+                parsedActions = parseResult.data.actions || [];
+                parsedTemporalConditions = parseResult.data.temporalConditions || [];
+                // console.log("[GetInitialValues] Parsed sourceTrigger:", JSON.stringify(parsedSourceTrigger, null, 2));
+            } else {
+                // console.warn("[GetInitialValues] Failed to parse rawConfigJson with AutomationConfigSchema. Error:", parseResult.error.flatten());
+                if (rawConfigJson.trigger && typeof rawConfigJson.trigger.type === 'string') {
+                    parsedSourceTrigger = rawConfigJson.trigger as any;
+                    // console.warn("[GetInitialValues] Using rawConfigJson.trigger as a fallback for parsedSourceTrigger.");
+                }
+                parsedActions = (rawConfigJson.actions as AutomationAction[] || []);
+                parsedTemporalConditions = (rawConfigJson.temporalConditions as TemporalCondition[] || []);
+            }
+        } else {
+            // console.warn("[GetInitialValues] rawConfigJson is undefined or null.");
+        }
+
+        const initialActions = parsedActions.map((action: AutomationAction) => {
             const params = action.params as any;
             if ((action.type === 'createEvent' || action.type === 'createBookmark') && params) {
                 const targetConnectorIdValue = params.targetConnectorId ?? '';
@@ -136,20 +209,15 @@ export default function AutomationForm({
                 return { ...action, params: { ...restParamsHttp, headers: Array.isArray(headersArray) ? headersArray : [], contentType: currentContentType } };
             }
             return action;
-        }) || [];
+        });
 
-        const initialTemporalConditions = (config?.temporalConditions ?? []).map(cond => {
+        const initialTemporalConditions = parsedTemporalConditions.map(cond => {
             const type = cond.type ?? 'eventOccurred';
             let expectedCount = cond.expectedEventCount;
-            
             if (['eventCountEquals', 'eventCountLessThan', 'eventCountGreaterThan', 'eventCountLessThanOrEqual', 'eventCountGreaterThanOrEqual'].includes(type)) {
-                if (expectedCount === null || expectedCount === undefined) {
-                    expectedCount = 0;
-                }
+                if (expectedCount === null || expectedCount === undefined) expectedCount = 0;
             }
-
             const clonedEventFilterWithIds = addInternalIds(getClonedEventFilter(cond.eventFilter));
-
             return {
                 id: cond.id ?? crypto.randomUUID(), 
                 type: type,
@@ -161,52 +229,98 @@ export default function AutomationForm({
             };
         });
         
-        const initialConditionsWithIds = addInternalIds(getClonedInitialConditions(config.conditions));
+        let triggerConfigForDefaultValues: AutomationFormValues['config']['trigger'];
+        const defaultEventConfig = {
+            type: AutomationTriggerType.EVENT as const,
+            conditions: addInternalIds(getClonedInitialConditions(undefined)),
+        };
 
+        if (parsedSourceTrigger) {
+            if (parsedSourceTrigger.type === AutomationTriggerType.SCHEDULED) {
+                // console.log("[GetInitialValues] Identified as SCHEDULED from parsedSourceTrigger. DB type was:", rawConfigJson?.trigger?.type);
+                triggerConfigForDefaultValues = {
+                    type: AutomationTriggerType.SCHEDULED,
+                    cronExpression: ensureDefaultCron(parsedSourceTrigger.cronExpression),
+                    timeZone: parsedSourceTrigger.timeZone || undefined,
+                };
+            } else if (parsedSourceTrigger.type === AutomationTriggerType.EVENT) {
+                // console.log("[GetInitialValues] Identified as EVENT from parsedSourceTrigger. DB type was:", rawConfigJson?.trigger?.type);
+                triggerConfigForDefaultValues = {
+                    type: AutomationTriggerType.EVENT,
+                    conditions: addInternalIds(getClonedInitialConditions(parsedSourceTrigger.conditions)),
+                };
+            } else {
+                // console.warn("[GetInitialValues] Parsed sourceTrigger.type is unknown or not part of enum, defaulting to EVENT. Parsed type:", (parsedSourceTrigger as any).type);
+                triggerConfigForDefaultValues = defaultEventConfig;
+            }
+        } else if (data.id !== 'new' && rawConfigJson && (rawConfigJson as any).conditions) {
+            // console.warn("[GetInitialValues] Fallback: No parsedSourceTrigger, but found old top-level conditions. Defaulting to EVENT.");
+            triggerConfigForDefaultValues = {
+               type: AutomationTriggerType.EVENT,
+               conditions: addInternalIds(getClonedInitialConditions((rawConfigJson as any).conditions)),
+            };
+        } else {
+            // if (data.id !== 'new') {
+            //     console.warn("[GetInitialValues] Fallback: No parsedSourceTrigger and no old conditions for existing item. Defaulting to EVENT.");
+            // } else {
+            //     console.log("[GetInitialValues] Fallback: New item or unidentifiable/missing trigger, defaulting to EVENT.");
+            // }
+            triggerConfigForDefaultValues = defaultEventConfig;
+        }
+        
         return {
             id: data.id,
             name: data.name,
             enabled: data.enabled,
             locationScopeId: data.locationScopeId ?? null,
             config: {
-                conditions: initialConditionsWithIds,
-                temporalConditions: initialTemporalConditions as TemporalCondition[],
+                trigger: triggerConfigForDefaultValues, 
+                temporalConditions: initialTemporalConditions,
                 actions: initialActions as AutomationAction[]
             }
         };
-    };
+    }, []); // Minimal dependencies for useCallback if initialData is stable, or expand if needed.
+
+    // Memoize default form values to avoid re-running getInitialFormValues on every render
+    const defaultFormValues = React.useMemo(() => {
+        // console.log("[AutomationForm] Recalculating defaultFormValues because initialData.id changed.");
+        const values = getInitialFormValues(initialData);
+        // console.log("[AutomationForm] defaultFormValues calculated:", JSON.stringify(values, null, 2));
+        return values;
+    }, [initialData, getInitialFormValues]); // Added getInitialFormValues as a dependency
 
     const form = useForm<AutomationFormValues>({
         resolver: zodResolver(FormSchema),
-        defaultValues: massageInitialData(initialData),
+        defaultValues: defaultFormValues,
         mode: 'onTouched',
     });
 
-    const handleInsertToken = (
-        fieldName: InsertableFieldNames,
-        index: number,
-        token: string,
-        context: 'action',
-        headerIndex?: number
-    ) => {
-        let currentFieldName: string;
-        if ((fieldName as string).startsWith('headers.') && headerIndex !== undefined) {
-             const fieldKey = (fieldName as string).substring((`headers.${headerIndex}.`).length);
-             if (fieldKey === 'keyTemplate' || fieldKey === 'valueTemplate') {
-                currentFieldName = `config.actions.${index}.params.headers.${headerIndex}.${fieldKey}`;
-             } else { 
-                console.error("Invalid action header field name:", fieldName); 
-                return; 
-            }
-        } else { 
-             currentFieldName = `config.actions.${index}.params.${fieldName as Exclude<InsertableFieldNames, `headers.${number}.keyTemplate` | `headers.${number}.valueTemplate`>}`;
-         }
-        
-        try {
-            const currentValue = form.getValues(currentFieldName as any) || "";
-            form.setValue(currentFieldName as any, currentValue + token, { shouldValidate: true, shouldDirty: true });
-        } catch (error) { console.error("Error setting field value:", error, { currentFieldName }); }
-    };
+    // Effect to set/reset form when initialData.id changes
+    React.useEffect(() => {
+        // console.log("[AutomationForm] useEffect for reset triggered by initialData.id change. ID:", initialData.id);
+        form.reset(defaultFormValues);
+        // console.log("[AutomationForm] RHF state after reset:", JSON.stringify(form.getValues(), null, 2));
+
+        previousTriggerRef.current = defaultFormValues.config.trigger;
+        const reinitializedTrigger = defaultFormValues.config.trigger;
+        if (reinitializedTrigger.type === AutomationTriggerType.EVENT) {
+            eventTriggerConditionsRef.current = reinitializedTrigger.conditions;
+            scheduledTriggerConfigRef.current = { cronExpression: '0 9 * * 1', timeZone: undefined };
+        } else if (reinitializedTrigger.type === AutomationTriggerType.SCHEDULED) {
+            scheduledTriggerConfigRef.current = {
+                cronExpression: ensureDefaultCron(reinitializedTrigger.cronExpression),
+                timeZone: reinitializedTrigger.timeZone,
+            };
+            eventTriggerConditionsRef.current = addInternalIds(getClonedInitialConditions(undefined));
+        }
+    }, [initialData.id, form, defaultFormValues]);
+
+    // Initialize UI display state from form data
+    React.useEffect(() => {
+        const initialTriggerType = defaultFormValues.config.trigger?.type || AutomationTriggerType.EVENT;
+        // console.log("[AutomationForm] Initializing displayTriggerType from defaultFormValues.config.trigger.type:", initialTriggerType);
+        setDisplayTriggerType(initialTriggerType);
+    }, [defaultFormValues]); // Depend on defaultFormValues
 
     const watchedLocationScopeId = form.watch('locationScopeId');
 
@@ -229,18 +343,78 @@ export default function AutomationForm({
         return [...areasToConsider].sort((a, b) => a.name.localeCompare(b.name));
     }, [allAreas, watchedLocationScopeId]);
 
+    const initiallyHasTemporalConditions = React.useMemo(() => 
+        Boolean(initialData?.configJson?.temporalConditions?.length),
+        [initialData?.configJson?.temporalConditions]
+    );
+
     const onSubmit = async (data: AutomationFormValues) => {
         setIsLoading(true);
         
+        // console.log("FORM SUBMIT - Raw form data:", JSON.stringify(data, null, 2));
+        // console.log("FORM SUBMIT - Display trigger type:", displayTriggerType);
+        
+        if (displayTriggerType === AutomationTriggerType.EVENT) {
+            // console.log("FORM SUBMIT - Processing as EVENT trigger");
+            data.config.trigger = {
+                type: AutomationTriggerType.EVENT,
+                conditions: eventTriggerConditionsRef.current,
+            };
+        } else if (displayTriggerType === AutomationTriggerType.SCHEDULED) {
+            // console.log("FORM SUBMIT - Processing as SCHEDULED trigger");
+            // console.log("FORM SUBMIT - Scheduled settings:", {
+            //     cronExpression: scheduledTriggerConfigRef.current.cronExpression,
+            //     timeZone: scheduledTriggerConfigRef.current.timeZone,
+            // });
+            data.config.trigger = {
+                type: AutomationTriggerType.SCHEDULED,
+                cronExpression: scheduledTriggerConfigRef.current.cronExpression || '0 9 * * 1',
+                timeZone: scheduledTriggerConfigRef.current.timeZone,
+            };
+        }
+        
+        const cleanConditionNode = (conditionNode: any): any => {
+            if (!conditionNode) return conditionNode;
+            const { _internalId, ...rest } = conditionNode;
+            if (rest.all) {
+                rest.all = rest.all.map((node: any) => cleanConditionNode(node));
+            } else if (rest.any) {
+                rest.any = rest.any.map((node: any) => cleanConditionNode(node));
+            }
+            return rest;
+        };
+
+        // Process according to current trigger type in data (which we just set above)
+        let triggerPayload: AutomationTrigger;
+        const currentTriggerFromForm = data.config.trigger;
+        
+        // console.log("FORM SUBMIT - Form trigger after update:", JSON.stringify(currentTriggerFromForm, null, 2));
+
+        if (currentTriggerFromForm.type === AutomationTriggerType.EVENT) {
+            triggerPayload = {
+                type: AutomationTriggerType.EVENT,
+                conditions: cleanConditionNode(currentTriggerFromForm.conditions) 
+            };
+        } else if (currentTriggerFromForm.type === AutomationTriggerType.SCHEDULED) {
+            triggerPayload = {
+                type: AutomationTriggerType.SCHEDULED,
+                cronExpression: ensureDefaultCron(currentTriggerFromForm.cronExpression),
+                timeZone: currentTriggerFromForm.timeZone || undefined
+            };
+        } else {
+            // console.error("Unknown trigger type in form submission:", currentTriggerFromForm);
+            toast.error("Invalid trigger type. Cannot save automation.");
+            setIsLoading(false);
+            return;
+        }
+        
+        // console.log("FORM SUBMIT - Final triggerPayload:", JSON.stringify(triggerPayload, null, 2));
+        
         const processedConfig = { 
-            ...data.config, 
             actions: data.config.actions.map((action: AutomationAction) => {
-                if (action.type === 'sendHttpRequest' && !['POST', 'PUT', 'PATCH'].includes(action.params.method)) {
-                    const { bodyTemplate, contentType, ...restParams } = action.params;
+                if (action.type === 'sendHttpRequest' && !['POST', 'PUT', 'PATCH'].includes((action.params as any).method)) {
+                    const { bodyTemplate, contentType, ...restParams } = action.params as any;
                     return { ...action, params: { ...restParams, bodyTemplate: undefined, contentType: undefined } };
-                }
-                if ((action.type === 'createEvent' || action.type === 'createBookmark')) {
-                    
                 }
                 return action;
             }),
@@ -255,9 +429,7 @@ export default function AutomationForm({
                     }
                     return rest;
                 };
-
-                const { _internalId, eventFilter, ...restCond } = cond as any; 
-                
+                const { _internalId, eventFilter, ...restCond } = cond as any;                 
                 return {
                     id: restCond.id || crypto.randomUUID(),
                     type: restCond.type,
@@ -268,24 +440,17 @@ export default function AutomationForm({
                     timeWindowSecondsAfter: restCond.timeWindowSecondsAfter !== undefined ? Number(restCond.timeWindowSecondsAfter) : undefined,
                 };
             }) || [],
-            conditions: (function cleanConditionNode(conditionNode: any): any {
-                if (!conditionNode) return conditionNode;
-                const { _internalId, ...rest } = conditionNode;
-                if (rest.all) {
-                    rest.all = rest.all.map((node: any) => cleanConditionNode(node));
-                } else if (rest.any) {
-                    rest.any = rest.any.map((node: any) => cleanConditionNode(node));
-                }
-                return rest;
-            })(data.config.conditions),
+            trigger: triggerPayload, // Use the triggerPayload we created above
         };
         
         const payloadForApi = {
             name: data.name,
             enabled: data.enabled,
-            config: processedConfig,
+            config: processedConfig, // This now contains the correctly structured trigger
             locationScopeId: data.locationScopeId || null,
         };
+        
+        // console.log("FORM SUBMIT - Final API payload:", JSON.stringify(payloadForApi, null, 2));
         
         const isEditing = initialData.id !== 'new';
         const apiUrl = isEditing ? `/api/automations/${initialData.id}` : '/api/automations';
@@ -294,40 +459,54 @@ export default function AutomationForm({
         const errorMessage = isEditing ? "Failed to update automation." : "Failed to create automation.";
         
         try {
-            console.log("Submitting payload:", JSON.stringify(payloadForApi, null, 2));
+            // console.log(`FORM SUBMIT - Sending ${httpMethod} request to ${apiUrl}`);
             const response = await fetch(apiUrl, { 
                 method: httpMethod, 
                 headers: { 'Content-Type': 'application/json' }, 
                 body: JSON.stringify(payloadForApi) 
             });
+            
             if (!response.ok) {
                 let errorDetails = `API Error: ${response.status} ${response.statusText}`;
                 try { 
                     const errorJson = await response.json(); 
-                    console.error("Server error details:", errorJson);
+                    // console.error("Server error details:", errorJson);
                     errorDetails = errorJson.message || errorJson.error || errorDetails; 
-                     if (errorJson?.error?.issues) {
+                    if (errorJson?.error?.issues) {
                         const zodErrorMessages = errorJson.error.issues
                             .map((issue: any) => `${issue.path.join('.')}: ${issue.message}`)
                             .join('; ');
                         if (zodErrorMessages) errorDetails += ` (${zodErrorMessages})`;
                     } else if (errorJson.errors?.fieldErrors) {
-                         const fieldErrorMessages = Object.entries(errorJson.errors.fieldErrors || {})
+                        const fieldErrorMessages = Object.entries(errorJson.errors.fieldErrors || {})
                             .map(([field, messages]) => `${field}: ${(messages as string[]).join(', ')}`)
                             .join('; ');
-                         if (fieldErrorMessages) errorDetails += ` (${fieldErrorMessages})`;
-                     }
-                } catch { /* Ignore if response isn't JSON */ }
-                console.error(errorMessage, errorDetails);
+                        if (fieldErrorMessages) errorDetails += ` (${fieldErrorMessages})`;
+                    }
+                } catch (e) { 
+                    // console.error("Error parsing error response:", e); // Consider keeping if useful
+                }
+                // console.error(errorMessage, errorDetails);
                 throw new Error(errorDetails);
             }
+            
+            // Log the response
+            try {
+                const responseJson = await response.json();
+                // console.log("FORM SUBMIT - API response:", JSON.stringify(responseJson, null, 2));
+            } catch (e) {
+                // console.log("FORM SUBMIT - API response (not JSON):", response);
+            }
+            
             toast.success(successMessage);
             router.push('/automations');
             router.refresh();
         } catch (error) {
-            console.error("Failed to submit form:", error);
+            // console.error("Failed to submit form:", error);
             toast.error(`${errorMessage} ${error instanceof Error ? error.message : 'Please check console for details.'}`);
-        } finally { setIsLoading(false); }
+        } finally { 
+            setIsLoading(false); 
+        }
     };
 
     const pikoTargetConnectors = availableConnectors.filter(c => c.category === 'piko');
@@ -340,10 +519,34 @@ export default function AutomationForm({
         [availableTargetDevices]
     );
 
-    const initiallyHasTemporalConditions = React.useMemo(() => 
-        Boolean(initialData?.configJson?.temporalConditions?.length),
-        [initialData?.configJson?.temporalConditions]
-    );
+    // Function to insert tokens into action fields
+    const handleInsertToken = (
+        fieldName: InsertableFieldNames,
+        index: number,
+        token: string,
+        context: 'action',
+        headerIndex?: number
+    ) => {
+        let currentFieldName: string;
+        if ((fieldName as string).startsWith('headers.') && headerIndex !== undefined) {
+            const fieldKey = (fieldName as string).substring((`headers.${headerIndex}.`).length);
+            if (fieldKey === 'keyTemplate' || fieldKey === 'valueTemplate') {
+                currentFieldName = `config.actions.${index}.params.headers.${headerIndex}.${fieldKey}`;
+            } else {
+                // console.error("Invalid action header field name:", fieldName);
+                return;
+            }
+        } else {
+            currentFieldName = `config.actions.${index}.params.${fieldName as Exclude<InsertableFieldNames, `headers.${number}.keyTemplate` | `headers.${number}.valueTemplate`>}`;
+        }
+
+        try {
+            const currentValue = form.getValues(currentFieldName as any) || "";
+            form.setValue(currentFieldName as any, currentValue + token, { shouldValidate: true, shouldDirty: true });
+        } catch (error) {
+            // console.error("Error setting field value:", error, { currentFieldName });
+        }
+    };
 
     return (
         <FormProvider {...form}>
@@ -365,35 +568,160 @@ export default function AutomationForm({
 
                     <Card>
                         <CardHeader>
-                            <CardTitle>Trigger (if...)</CardTitle>
+                            <CardTitle>Trigger</CardTitle>
                             <CardDescription className="text-xs text-muted-foreground pt-1">
-                                Define the primary event trigger and optional subsequent time-based conditions.
+                                Define what will cause this automation to run.
                             </CardDescription>
                         </CardHeader>
-                        {conditionsDataReady ? (
-                            <CardContent className="space-y-6"> 
+                        <CardContent className="space-y-6">
+                            <FormField
+                                control={form.control}
+                                name="config.trigger.type"
+                                render={({ field }) => (
+                                    <FormItem className="space-y-3">
+                                        <FormLabel>Trigger Type:</FormLabel>
+                                        <FormControl>
+                                            <ToggleGroup
+                                                type="single"
+                                                variant="outline"
+                                                value={field.value}
+                                                onValueChange={(value) => {
+                                                    if (!value) return;
+                                                    const newType = value as AutomationTriggerType;
+                                                    
+                                                    // Update the display state for UI rendering
+                                                    setDisplayTriggerType(newType);
+                                                    
+                                                    // Store current state before switching
+                                                    if (field.value === AutomationTriggerType.EVENT && 
+                                                        newType === AutomationTriggerType.SCHEDULED) {
+                                                        // Save current EVENT conditions for possible later switch back
+                                                        const currentConditions = form.getValues('config.trigger.conditions');
+                                                        eventTriggerConditionsRef.current = currentConditions;
+                                                        
+                                                        // Update the form with a complete SCHEDULED trigger
+                                                        form.setValue('config.trigger', {
+                                                            type: AutomationTriggerType.SCHEDULED,
+                                                            cronExpression: scheduledTriggerConfigRef.current.cronExpression || '0 9 * * 1',
+                                                            timeZone: scheduledTriggerConfigRef.current.timeZone,
+                                                        }, { shouldValidate: true, shouldDirty: true });
+                                                        
+                                                    } else if (field.value === AutomationTriggerType.SCHEDULED && 
+                                                            newType === AutomationTriggerType.EVENT) {
+                                                        // Save current SCHEDULED settings for possible later switch back
+                                                        const currentTrigger = form.getValues('config.trigger');
+                                                        if (currentTrigger.type === AutomationTriggerType.SCHEDULED) {
+                                                            scheduledTriggerConfigRef.current = {
+                                                                cronExpression: currentTrigger.cronExpression,
+                                                                timeZone: currentTrigger.timeZone,
+                                                            };
+                                                        }
+                                                        
+                                                        // Update the form with a complete EVENT trigger
+                                                        form.setValue('config.trigger', {
+                                                            type: AutomationTriggerType.EVENT,
+                                                            conditions: eventTriggerConditionsRef.current,
+                                                        }, { shouldValidate: true, shouldDirty: true });
+                                                    }
+                                                }}
+                                                className="flex space-x-1 justify-start"
+                                            >
+                                                <ToggleGroupItem 
+                                                    value={AutomationTriggerType.EVENT} 
+                                                    aria-label="Event-based Trigger" 
+                                                    className="text-xs justify-center data-[state=on]:bg-accent data-[state=on]:text-accent-foreground px-4 py-2"
+                                                >
+                                                    <Activity className="h-4 w-4" />
+                                                    Event-based
+                                                </ToggleGroupItem>
+                                                <ToggleGroupItem 
+                                                    value={AutomationTriggerType.SCHEDULED} 
+                                                    aria-label="Scheduled Trigger" 
+                                                    className="text-xs justify-center data-[state=on]:bg-accent data-[state=on]:text-accent-foreground px-4 py-2"
+                                                >
+                                                    <CalendarDays className="h-4 w-4" />
+                                                    Scheduled
+                                                </ToggleGroupItem>
+                                            </ToggleGroup>
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+
+                            {displayTriggerType === AutomationTriggerType.EVENT && conditionsDataReady && (
                                 <TriggerConditionsSection
                                     form={form}
+                                    basePath="config.trigger.conditions"
                                     watchedLocationScopeId={watchedLocationScopeId}
                                     allLocations={safeAllLocations}
                                     allAreas={safeAllAreas}
                                     devicesForConditions={devicesForConditions}
                                 />
+                            )}
+                            
+                            {displayTriggerType === AutomationTriggerType.SCHEDULED && (
+                                <div className="space-y-4 p-4 border rounded-md bg-background">
+                                    <FormField
+                                        control={form.control}
+                                        name="config.trigger.cronExpression"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Schedule</FormLabel>
+                                                <FormControl>
+                                                    <ScheduleBuilder
+                                                        currentCronExpression={field.value || '0 9 * * 1'} 
+                                                        onCronExpressionChange={(newCron) => {
+                                                            const cronValue = ensureDefaultCron(newCron);
+                                                            
+                                                            // Update both the form field and backup ref
+                                                            field.onChange(cronValue);
+                                                            scheduledTriggerConfigRef.current.cronExpression = cronValue;
+                                                        }}
+                                                        disabled={isLoading}
+                                                    />
+                                                </FormControl>
+                                                <FormDescription className="text-xs pt-1">
+                                                   Raw CRON: <code className="p-0.5 bg-muted rounded text-xs font-mono">{field.value || 'Not set'}</code>
+                                                </FormDescription>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={form.control}
+                                        name="config.trigger.timeZone"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel className={cn(!!watchedLocationScopeId && "text-muted-foreground/70")}>Time Zone</FormLabel>
+                                                <FormControl>
+                                                    <TimezoneSelector
+                                                        value={field.value || undefined}
+                                                        onChange={(newTimeZone) => {
+                                                            const tzValue = newTimeZone || undefined;
+                                                            
+                                                            // Update both the form field and backup ref
+                                                            field.onChange(tzValue);
+                                                            scheduledTriggerConfigRef.current.timeZone = tzValue;
+                                                        }}
+                                                        disabled={isLoading || !!watchedLocationScopeId}
+                                                        placeholder={!!watchedLocationScopeId ? "Uses location's time zone" : "Select a time zone..."}
+                                                    />
+                                                </FormControl>
+                                                <FormDescription className="text-xs">
+                                                    {!!watchedLocationScopeId 
+                                                        ? "Disabled: Schedule will use the time zone of the selected location scope."
+                                                        : ""
+                                                    }
+                                                </FormDescription>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                </div>
+                            )}
 
-                                <hr className="my-6" />
-
-                                <TemporalConditionsSection
-                                    form={form}
-                                    isLoading={isLoading}
-                                    initialExpanded={initiallyHasTemporalConditions}
-                                    watchedLocationScopeId={watchedLocationScopeId}
-                                    allLocations={safeAllLocations}
-                                    allAreas={safeAllAreas}
-                                    devicesForConditions={devicesForConditions}
-                                />
-                            </CardContent>
-                        ) : (
-                            <CardContent className="space-y-6">
+                            {!conditionsDataReady && displayTriggerType === AutomationTriggerType.EVENT && (
                                 <div>
                                     <h3 className="text-sm font-semibold mb-3">Primary Conditions (if this happens...)</h3>
                                     <div className="space-y-2 p-2 border rounded">
@@ -406,13 +734,23 @@ export default function AutomationForm({
                                     </div>
                                     <Skeleton className="h-4 w-3/4 mt-1" />
                                 </div>
-                                <hr className="my-6" />
-                                <div>
-                                    <h3 className="text-sm font-semibold mb-3">Temporal Conditions (and if...)</h3>
-                                    <Skeleton className="h-6 w-full" />
-                                </div>
-                            </CardContent>
-                        )}
+                            )}
+                            
+                            {displayTriggerType === AutomationTriggerType.EVENT && (
+                                <>
+                                    <hr className="my-6" />
+                                    <TemporalConditionsSection
+                                        form={form}
+                                        isLoading={isLoading}
+                                        initialExpanded={initiallyHasTemporalConditions}
+                                        watchedLocationScopeId={watchedLocationScopeId}
+                                        allLocations={safeAllLocations}
+                                        allAreas={safeAllAreas}
+                                        devicesForConditions={devicesForConditions}
+                                    />
+                                </>
+                            )}
+                        </CardContent>
                     </Card>
 
                     <Card>
@@ -423,6 +761,7 @@ export default function AutomationForm({
                             <ActionsSection
                                 form={form}
                                 isLoading={isLoading}
+                                triggerType={displayTriggerType ?? AutomationTriggerType.EVENT}
                                 handleInsertToken={handleInsertToken}
                                 sortedPikoConnectors={sortedPikoConnectors}
                                 sortedAvailableTargetDevices={sortedAvailableTargetDevices}

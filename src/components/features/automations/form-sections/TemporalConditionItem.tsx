@@ -89,19 +89,21 @@ export function TemporalConditionItem({
                                     render={({ field: countField, fieldState: countFieldState }) => (
                                         <FormItem className="flex flex-col m-0 p-0">
                                             <FormControl>
-                                                <Input 
-                                                    {...form.register(`config.temporalConditions.${index}.expectedEventCount`, { valueAsNumber: true })} // Register here for direct number handling
-                                                    type="number" 
-                                                    min="0" 
-                                                    step="1" 
-                                                    placeholder="Count" 
-                                                    disabled={isLoading} 
-                                                    className={cn("w-[100px]", countFieldState.error && 'border-destructive')} 
-                                                    // value={countField.value === undefined || countField.value === null ? '' : String(countField.value)} // Controlled component pattern
-                                                    // onChange={(e) => {
-                                                    //     const val = e.target.value;
-                                                    //     countField.onChange(val === '' ? undefined : Number(val)); // Convert to number or undefined
-                                                    // }}
+                                                <Input
+                                                    type="number"
+                                                    min="0"
+                                                    step="1"
+                                                    placeholder="Count"
+                                                    disabled={isLoading}
+                                                    className={cn("w-[100px]", countFieldState.error && 'border-destructive')}
+                                                    value={countField.value === undefined || countField.value === null ? '' : String(countField.value)}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        countField.onChange(val === '' ? undefined : Number(val));
+                                                    }}
+                                                    onBlur={countField.onBlur}
+                                                    name={countField.name}
+                                                    ref={countField.ref}
                                                 />
                                             </FormControl>
                                             {/* Inline message for count field if needed */}
@@ -137,26 +139,28 @@ export function TemporalConditionItem({
                         <FormMessage />
                     </FormItem>
                 )} />
-                <FormField 
+                <FormField
                     control={form.control}
                     name={`config.temporalConditions.${index}.eventFilter`}
                     render={({ field }) => (
-                    <FormItem>
+                      <FormItem>
                         <FormLabel>Event Filter Criteria</FormLabel>
-                        
-                        <RuleBuilder 
-                            value={field.value as JsonRuleGroup} // Assert type needed by RuleBuilder
-                            onChange={field.onChange} 
-                            locationScopeId={watchedLocationScopeId}
-                            allLocations={allLocations}
-                            allAreas={allAreas}
-                            allDevices={devicesForConditions}
+                        <RuleBuilder
+                          value={field.value as JsonRuleGroup}
+                          onChange={field.onChange}
+                          basePath={`config.temporalConditions.${index}.eventFilter`}
+                          locationScopeId={watchedLocationScopeId}
+                          allLocations={allLocations}
+                          allAreas={allAreas}
+                          allDevices={devicesForConditions}
                         />
-                        
-                        <FormDescription className={descriptionStyles}>Define criteria that matching events must meet.</FormDescription>
+                        <FormDescription className={descriptionStyles}>
+                          Define criteria that matching events must meet.
+                        </FormDescription>
                         <FormMessage />
-                    </FormItem>
-                )} />
+                      </FormItem>
+                    )}
+                />
                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                     <FormField 

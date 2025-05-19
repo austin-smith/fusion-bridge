@@ -10,6 +10,12 @@ export enum AutomationActionType {
   SEND_PUSH_NOTIFICATION = 'sendPushNotification',
   ARM_AREA = 'armArea',
   DISARM_AREA = 'disarmArea',
+  // Add other action types here
+}
+
+export enum AutomationTriggerType {
+  EVENT = 'event',
+  SCHEDULED = 'scheduled'
 }
 
 // Define all styling and information in a single map

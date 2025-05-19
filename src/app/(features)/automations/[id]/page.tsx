@@ -5,7 +5,8 @@ import { db } from "@/data/db";
 import { connectors, devices, automations as automationsSchema, locations, areas, areaDevices } from "@/data/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
 import { redirect, notFound } from 'next/navigation';
-import { type AutomationConfig, type AutomationAction, type TemporalCondition } from "@/lib/automation-schemas";
+import { AutomationConfigSchema, type AutomationConfig, type AutomationAction, type TemporalCondition } from "@/lib/automation-schemas";
+import { AutomationTriggerType } from "@/lib/automation-types";
 import { DeviceType } from "@/lib/mappings/definitions";
 import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions";
 import { getDeviceTypeIconName } from "@/lib/mappings/presentation";
@@ -81,43 +82,35 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
   const formAllLocations = allLocationsResult;
   const formAllAreas = allAreasResult;
   
-  let configJsonData: AutomationConfig = { 
-    conditions: { all: [] }, 
+  let processedConfigJson: AutomationConfig;
+
+  const defaultConfig: AutomationConfig = {
+    trigger: { type: AutomationTriggerType.EVENT, conditions: { any: [] } },
     actions: [],
+    temporalConditions: [],
   };
-  
-  if (automation.configJson) {
-    try {
-      type PotentialConfig = {
-          conditions?: unknown;
-          actions?: unknown[]; 
-          temporalConditions?: unknown[]; 
-      };
-      let parsedConfig: PotentialConfig | null = null;
-      if (typeof automation.configJson === 'object' && automation.configJson !== null) {
-        parsedConfig = automation.configJson as PotentialConfig; 
-      } else if (typeof automation.configJson === 'string') {
-        try {
-            const parsed = JSON.parse(automation.configJson);
-            if (typeof parsed === 'object' && parsed !== null) {
-                parsedConfig = parsed as PotentialConfig;
-            }
-        } catch (jsonParseError) {
-            console.error(`JSON parsing error for automation ${automation.id}:`, jsonParseError);
-        }
-      }
-      if (parsedConfig && typeof parsedConfig === 'object' && Array.isArray(parsedConfig.actions)) {
-         configJsonData = {
-            conditions: parsedConfig.conditions ?? { all: [] },
-            temporalConditions: Array.isArray(parsedConfig.temporalConditions) 
-                                ? parsedConfig.temporalConditions as TemporalCondition[]
-                                : undefined,
-            actions: parsedConfig.actions as AutomationAction[],
-         };
-      }
-    } catch (e) {
-       console.error(`Failed to process configJson for automation ${automation.id}:`, e);
+
+  if (automation.configJson && typeof automation.configJson === 'object') {
+    const parseResult = AutomationConfigSchema.safeParse(automation.configJson);
+    if (parseResult.success) {
+      processedConfigJson = parseResult.data;
+    } else {
+      processedConfigJson = defaultConfig;
     }
+  } else if (typeof automation.configJson === 'string') {
+      try {
+          const parsedDbJson = JSON.parse(automation.configJson);
+          const parseResult = AutomationConfigSchema.safeParse(parsedDbJson);
+          if (parseResult.success) {
+              processedConfigJson = parseResult.data;
+          } else {
+              processedConfigJson = defaultConfig;
+          }
+      } catch (e) {
+          processedConfigJson = defaultConfig;
+      }
+  } else {
+    processedConfigJson = defaultConfig;
   }
   
   const initialFormData: AutomationFormData = {
@@ -125,7 +118,7 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
       name: automation.name ?? '', // Ensure name is not null
       enabled: automation.enabled ?? true, // Ensure enabled is not null
       locationScopeId: automation.locationScopeId ?? null,
-      configJson: configJsonData,
+      configJson: processedConfigJson,
       createdAt: automation.createdAt ?? new Date(), // Ensure createdAt is not null
       updatedAt: automation.updatedAt ?? new Date(), // Ensure updatedAt is not null
   };

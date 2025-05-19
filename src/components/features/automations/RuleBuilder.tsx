@@ -41,6 +41,7 @@ const PREFERRED_OPERATOR_ORDER: ReadonlyArray<z.infer<typeof JsonRulesEngineOper
 interface RuleBuilderProps {
   value: RuleNodeWithId; // Use extended type
   onChange: (newValue: RuleNodeWithId) => void; // Use extended type
+  basePath: string; // Added basePath prop
   depth?: number; // Current depth for recursion limiting
   onRemove?: () => void; // Callback to remove this node (if it's not the root)
   locationScopeId?: string | null;
@@ -232,6 +233,7 @@ const EntityCombobox: React.FC<EntityComboboxProps> = ({
 export function RuleBuilder({ 
     value,       
     onChange,    
+    basePath, // Destructured basePath
     depth = 0, 
     onRemove, 
     locationScopeId,
@@ -372,9 +374,10 @@ export function RuleBuilder({
                      )}
                      {conditions.map((item, index) => (
                          <RuleBuilder
-                             key={(item as RuleNodeWithId)._internalId!} // Non-null assertion for key
+                             key={(item as RuleNodeWithId)._internalId!} 
                              value={item}
                              onChange={handleItemChange(index, groupType, conditions)}
+                             basePath={basePath} // Pass basePath along in recursive calls
                              depth={depth + 1}
                              onRemove={handleItemRemove(index, groupType, conditions)}
                              locationScopeId={locationScopeId}

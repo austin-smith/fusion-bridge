@@ -9,9 +9,10 @@ import {
 } from "@/components/ui/accordion";
 import { ActionItem, InsertableFieldNames } from './ActionItem'; // Adjust path as needed
 import type { AutomationAction } from '@/lib/automation-schemas';
-import { AutomationActionType } from '@/lib/automation-types';
+import { AutomationActionType, AutomationTriggerType } from '@/lib/automation-types';
 import type { connectors } from '@/data/db/schema';
 import type { AutomationFormValues } from '../AutomationForm'; // Adjust path as needed
+import { ArmedState } from '@/lib/mappings/definitions'; // For default ArmArea params
 
 // Define AreaOption directly here for props
 type AreaOptionForActionsSection = {
@@ -32,15 +33,10 @@ type TargetDeviceOption = {
     locationId?: string | null;
 };
 
-// Default action to append
-const defaultAction: AutomationAction = {
-    type: AutomationActionType.CREATE_EVENT, 
-    params: { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' }
-};
-
 interface ActionsSectionProps {
     form: UseFormReturn<AutomationFormValues>;
     isLoading: boolean;
+    triggerType: AutomationTriggerType; // Added triggerType prop
     handleInsertToken: (
         fieldName: InsertableFieldNames,
         actionIndex: number,
@@ -59,6 +55,7 @@ interface ActionsSectionProps {
 export function ActionsSection({
     form,
     isLoading,
+    triggerType, // Destructure triggerType
     handleInsertToken,
     sortedPikoConnectors,
     sortedAvailableTargetDevices,
@@ -88,9 +85,28 @@ export function ActionsSection({
     };
 
     const handleAddAction = () => {
+        let defaultActionToAdd: AutomationAction;
+
+        if (triggerType === AutomationTriggerType.SCHEDULED) {
+            // Default to ARM_AREA for scheduled triggers
+            defaultActionToAdd = {
+                type: AutomationActionType.ARM_AREA,
+                params: { 
+                    scoping: 'ALL_AREAS_IN_SCOPE', // Sensible default
+                    armMode: ArmedState.ARMED_AWAY,  // Sensible default
+                    targetAreaIds: [] // Explicitly empty for ALL_AREAS_IN_SCOPE or to be filled for SPECIFIC
+                }
+            } as any; // Cast as any because AutomationAction is a union, and TS needs help here
+        } else {
+            // Default to CREATE_EVENT for event-based triggers (or any other preferred default)
+            defaultActionToAdd = {
+                type: AutomationActionType.CREATE_EVENT, 
+                params: { sourceTemplate: '', captionTemplate: '', descriptionTemplate: '', targetConnectorId: '' }
+            } as any; // Cast as any
+        }
+
         const newIndex = actionsFields.length;
-        appendAction(defaultAction);
-        // Automatically open the newly added action item
+        appendAction(defaultActionToAdd);
         setOpenActionItems(prev => [...prev, `action-${newIndex}`]);
     };
 
@@ -107,11 +123,12 @@ export function ActionsSection({
                         key={fieldItem.id}
                         form={form}
                         index={index}
-                        fieldItem={fieldItem}
+                        fieldItem={fieldItem as any} // fieldItem from useFieldArray is fine, but if ActionItem expects specific typed params, cast may be needed
                         isOpen={openActionItems.includes(`action-${index}`)} // Pass open state down
                         removeAction={removeAction}
                         handleInsertToken={handleInsertToken}
                         isLoading={isLoading}
+                        triggerType={triggerType} // Pass triggerType down to ActionItem
                         sortedPikoConnectors={sortedPikoConnectors}
                         sortedAvailableTargetDevices={sortedAvailableTargetDevices}
                         // Pass down the new props

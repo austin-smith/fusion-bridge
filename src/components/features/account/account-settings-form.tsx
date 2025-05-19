@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useActionState, useState } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { updateCurrentUser } from '@/lib/actions/user-actions';
 import type { UpdateUserResult } from '@/lib/actions/user-actions'; // Import result type
@@ -65,6 +65,15 @@ interface UserData {
     twoFactorEnabled: boolean;
 }
 
+interface ThemeOption {
+    value: string;
+    label: string;
+}
+
+interface ExtendedThemeOption extends ThemeOption {
+    dotColor: string;
+}
+
 interface AccountSettingsFormProps {
     user: UserData;
 }
@@ -115,13 +124,36 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
     React.useEffect(() => {
         const currentThemeFamily = localStorage.getItem(PREFERRED_THEME_FAMILY_KEY) || 'default';
         setSelectedThemeFamily(currentThemeFamily);
-        // Initial application of the class is handled by ThemeProvider, but good to ensure consistency if needed
-        // if (currentThemeFamily === 'cosmic-night') {
-        //     document.documentElement.classList.add('cosmic-night');
-        // } else {
-        //     document.documentElement.classList.remove('cosmic-night');
-        // }
     }, []);
+
+    // Setup dynamic theme options using computed CSS variables
+    const baseThemeOptions: ThemeOption[] = React.useMemo(() => [
+      { value: 'default', label: 'System Default' },
+      { value: 'cosmic-night', label: 'Cosmic Night' },
+      { value: 'remoteview', label: 'RemoteView' },
+      { value: 't3-chat', label: 'T3 Chat' },
+    ], []);
+    const [themeOptions, setThemeOptions] = useState<ExtendedThemeOption[]>([]);
+    useLayoutEffect(() => {
+      const root = document.documentElement;
+      const originalClasses = Array.from(root.classList);
+      const themeValues = baseThemeOptions.map(opt => opt.value);
+      const computedOptions = baseThemeOptions.map(opt => {
+        // restore original classes
+        root.className = '';
+        originalClasses.forEach(cls => root.classList.add(cls));
+        // remove theme classes
+        themeValues.forEach(tv => root.classList.remove(tv));
+        // apply this theme for preview (skip default)
+        if (opt.value !== 'default') root.classList.add(opt.value);
+        const cssValue = getComputedStyle(root).getPropertyValue('--primary').trim();
+        return { ...opt, dotColor: `hsl(${cssValue})` };
+      });
+      // restore original classes
+      root.className = '';
+      originalClasses.forEach(cls => root.classList.add(cls));
+      setThemeOptions(computedOptions);
+    }, [baseThemeOptions]);
 
     const userInitial = user.name ? user.name.charAt(0).toUpperCase() : (user.email ? user.email.charAt(0).toUpperCase() : '?');
 
@@ -438,11 +470,12 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                                 <SelectValue placeholder="Select theme family" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="default">System Default</SelectItem>
-                                <SelectItem value="cosmic-night">Cosmic Night</SelectItem>
-                                <SelectItem value="remoteview">RemoteView</SelectItem>
-                                <SelectItem value="t3-chat">T3 Chat</SelectItem>
-                                {/* Add other theme families here as needed */}
+                                {themeOptions.map((opt) => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                        <span className="inline-block h-3 w-3 rounded-full mr-2" style={{ backgroundColor: opt.dotColor }} />
+                                        {opt.label}
+                                    </SelectItem>
+                                ))}
                             </SelectContent>
                         </Select>
                     </div>

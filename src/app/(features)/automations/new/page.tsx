@@ -3,7 +3,7 @@ import React from "react";
 import AutomationForm from "@/components/features/automations/AutomationForm";
 import { db } from "@/data/db";
 import { connectors, devices, locations, areas } from "@/data/db/schema"; // Import locations and areas
-import { type AutomationConfig } from '@/lib/automation-schemas';
+import { type AutomationConfig, type AutomationTrigger } from '@/lib/automation-schemas';
 import { DeviceType, ArmedState } from "@/lib/mappings/definitions"; 
 import type { Option as MultiSelectOption } from "@/components/ui/multi-select-combobox";
 import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions"; // Import actionHandlers and IDeviceActionHandler
@@ -11,13 +11,14 @@ import { inArray, asc } from "drizzle-orm"; // Import inArray and asc
 import type { Metadata } from 'next';
 import { getDeviceTypeIconName } from '@/lib/mappings/presentation'; // Use getDeviceTypeIconName instead of getDeviceTypeIcon directly
 import type { Location, Area } from '@/types';
+import { AutomationTriggerType } from '@/lib/automation-types';
 
 // Define AutomationFormData to match the structure expected by the form
 interface AutomationFormData {
     id: string;
     name: string; 
     enabled: boolean; 
-    configJson: AutomationConfig; 
+    configJson: AutomationConfig; // Correctly use AutomationConfig here
     createdAt: Date; 
     updatedAt: Date; 
 }
@@ -174,7 +175,10 @@ export default async function NewAutomationPage() {
     name: '', // Start with an empty name
     enabled: true, // Default to enabled
     configJson: { 
-      conditions: { any: [] }, // Default conditions
+      trigger: {
+        type: AutomationTriggerType.EVENT,
+        conditions: { any: [] },
+      } as AutomationTrigger, // Explicitly cast to AutomationTrigger
       actions: [], // Default to no actions
       temporalConditions: [] // Default to no temporal conditions
     },

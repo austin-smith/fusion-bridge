@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getTimezonesForCountry, Timezone } from 'countries-and-timezones';
+import { TimezoneSelector } from '@/components/common/timezone-selector';
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -156,7 +156,6 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
       return !loc.path.startsWith(`${locationToEdit.path}.`);
   });
 
-  const timezones: Timezone[] = getTimezonesForCountry('US');
   const usStates: UsState[] = states.filter(s => !s.territory); // Filter out territories for now
 
   // Add function to format time in a readable way
@@ -338,67 +337,14 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>Time Zone</FormLabel>
-                      <Popover open={timezonePopoverOpen} onOpenChange={setTimezonePopoverOpen}>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="outline"
-                              role="combobox"
-                              aria-expanded={timezonePopoverOpen}
-                              className={cn(
-                                "w-full justify-between",
-                                !field.value && "text-muted-foreground"
-                              )}
-                            >
-                              {field.value
-                                ? timezones.find(
-                                    (tz) => tz.name === field.value
-                                  )?.name
-                                : "Select a time zone"}
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent 
-                          className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0"
-                          onWheel={(e) => e.stopPropagation()}
-                        >
-                          <Command>
-                            <CommandInput placeholder="Search time zone..." />
-                            <CommandList className="flex-1 max-h-none">
-                              <ScrollArea className="h-72">
-                                <CommandEmpty>No time zone found.</CommandEmpty>
-                                <CommandGroup>
-                                  {timezones.map((tz) => (
-                                    <CommandItem
-                                      value={tz.name}
-                                      key={tz.name}
-                                      onSelect={() => {
-                                        form.setValue("timeZone", tz.name);
-                                        setTimezonePopoverOpen(false);
-                                      }}
-                                    >
-                                      <Check
-                                        className={cn(
-                                          "h-4 w-4",
-                                          tz.name === field.value
-                                            ? "opacity-100"
-                                            : "opacity-0"
-                                        )}
-                                      />
-                                      {tz.name}
-                                      <span className="text-xs text-muted-foreground">
-                                        ({tz.utcOffsetStr})
-                                      </span>
-                                    </CommandItem>
-                                  ))}
-                                </CommandGroup>
-                                <ScrollBar orientation="vertical" />
-                              </ScrollArea>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                      <FormControl>
+                        <TimezoneSelector
+                          value={field.value}
+                          onChange={field.onChange}
+                          disabled={isSubmitting}
+                          placeholder="Select a time zone"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

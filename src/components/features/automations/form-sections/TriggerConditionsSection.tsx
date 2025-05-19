@@ -16,6 +16,7 @@ const descriptionStyles = "text-xs text-muted-foreground mt-1";
 
 interface TriggerConditionsSectionProps {
     form: UseFormReturn<AutomationFormValues>;
+    basePath: string;
     watchedLocationScopeId: string | null | undefined;
     allLocations: Location[];
     allAreas: Area[];
@@ -24,6 +25,7 @@ interface TriggerConditionsSectionProps {
 
 export function TriggerConditionsSection({
     form,
+    basePath,
     watchedLocationScopeId,
     allLocations,
     allAreas,
@@ -34,12 +36,13 @@ export function TriggerConditionsSection({
             <h3 className="text-sm font-semibold mb-3">Primary Conditions (if this happens...)</h3>
             <FormField
                 control={form.control}
-                name="config.conditions"
+                name={basePath as `config.trigger.conditions`}
                 render={({ field }) => (
                     <FormItem>
                         <RuleBuilder 
-                            value={field.value} 
+                            value={field.value as any}
                             onChange={field.onChange} 
+                            basePath={basePath}
                             locationScopeId={watchedLocationScopeId}
                             allLocations={allLocations}
                             allAreas={allAreas}

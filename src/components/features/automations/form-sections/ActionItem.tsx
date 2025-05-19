@@ -32,7 +32,7 @@ import type {
     ArmAreaActionParamsSchema,
     DisarmAreaActionParamsSchema,
 } from '@/lib/automation-schemas';
-import { AutomationActionType, getActionTitle, getActionIconProps, getActionStyling, formatActionDetail } from '@/lib/automation-types';
+import { AutomationActionType, getActionTitle, getActionIconProps, getActionStyling, formatActionDetail, AutomationTriggerType } from '@/lib/automation-types';
 import { ActionableState, ArmedState } from '@/lib/mappings/definitions';
 import { TokenInserter } from '@/components/features/automations/TokenInserter';
 import { AVAILABLE_AUTOMATION_TOKENS } from '@/lib/automation-tokens';
@@ -88,6 +88,7 @@ interface ActionItemProps {
   index: number;
   fieldItem: Record<"id", string>;
   isOpen: boolean;
+  triggerType: AutomationTriggerType;
   removeAction: (index: number) => void;
   handleInsertToken: (
       fieldName: InsertableFieldNames,
@@ -108,6 +109,7 @@ export function ActionItem({
   index,
   fieldItem,
   isOpen,
+  triggerType,
   removeAction,
   handleInsertToken,
   isLoading,
@@ -198,6 +200,17 @@ export function ActionItem({
     form.setValue(`config.actions.${index}.params`, newActionParams, { shouldValidate: true, shouldDirty: true });
   };
 
+  const availableActionTypes = React.useMemo(() => {
+    const allTypes = Object.values(AutomationActionType);
+    if (triggerType === AutomationTriggerType.SCHEDULED) {
+        return allTypes.filter(type => 
+            type === AutomationActionType.ARM_AREA || 
+            type === AutomationActionType.DISARM_AREA
+        );
+    }
+    return allTypes;
+  }, [triggerType]);
+
   const areaOptionsForSelect = React.useMemo(() => 
     (sortedAvailableAreas || []).map(area => ({ value: area.id, label: area.name }))
   , [sortedAvailableAreas]);
@@ -259,7 +272,7 @@ export function ActionItem({
                               <FormLabel>Action Type</FormLabel>
                               <FormControl>
                                   <Select
-                                      value={actionType ?? AutomationActionType.CREATE_EVENT} 
+                                      value={actionType ?? availableActionTypes[0]}
                                       onValueChange={handleActionTypeChange}
                                       disabled={isLoading}
                                   >
@@ -267,13 +280,14 @@ export function ActionItem({
                                           <SelectValue placeholder="Select Action Type" />
                                       </SelectTrigger>
                                       <SelectContent>
-                                          <SelectItem value={AutomationActionType.CREATE_BOOKMARK}>{getActionTitle(AutomationActionType.CREATE_BOOKMARK)}</SelectItem>
-                                          <SelectItem value={AutomationActionType.CREATE_EVENT}>{getActionTitle(AutomationActionType.CREATE_EVENT)}</SelectItem>
-                                          <SelectItem value={AutomationActionType.SEND_HTTP_REQUEST}>{getActionTitle(AutomationActionType.SEND_HTTP_REQUEST)}</SelectItem>
-                                          <SelectItem value={AutomationActionType.SET_DEVICE_STATE}>{getActionTitle(AutomationActionType.SET_DEVICE_STATE)}</SelectItem>
-                                          <SelectItem value={AutomationActionType.SEND_PUSH_NOTIFICATION}>{getActionTitle(AutomationActionType.SEND_PUSH_NOTIFICATION)}</SelectItem>
-                                          <SelectItem value={AutomationActionType.ARM_AREA}>{getActionTitle(AutomationActionType.ARM_AREA)}</SelectItem>
-                                          <SelectItem value={AutomationActionType.DISARM_AREA}>{getActionTitle(AutomationActionType.DISARM_AREA)}</SelectItem>
+                                          {availableActionTypes.map(type => (
+                                              <SelectItem key={type} value={type}>{getActionTitle(type)}</SelectItem>
+                                          ))}
+                                          {availableActionTypes.length === 0 && (
+                                              <div className="px-2 py-1.5 text-sm text-muted-foreground text-center">
+                                                  No actions available for this trigger type.
+                                              </div>
+                                          )}
                                       </SelectContent>
                                   </Select>
                               </FormControl>

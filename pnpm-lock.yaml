@@ -128,6 +128,9 @@ importers:
       countries-and-timezones:
         specifier: ^3.8.0
         version: 3.8.0
+      cron-parser:
+        specifier: ^5.2.0
+        version: 5.2.0
       date-fns:
         specifier: ^4.1.0
         version: 4.1.0
@@ -2386,6 +2389,10 @@ packages:
     resolution: {integrity: sha512-+Ze9h5f4dQpUwbzTm0DEkiPiZyim9VHV4/mSnT4zNYJnrnfwsKjAZPtnp7J5VzejCDgySs+2SSc6MDdCnD43GA==}
     engines: {node: '>=8.x', npm: '>=5.x'}
 
+  cron-parser@5.2.0:
+    resolution: {integrity: sha512-ED2qJtcjelmUEuoV3btwxiOm3NI8H4/eCZNX3adUkrm+/b3Xq05+YoDXyjIN57VGhskuHx/KzC367GAklo1lRg==}
+    engines: {node: '>=18'}
+
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
@@ -3428,6 +3435,7 @@ packages:
 
   libsql@0.5.8:
     resolution: {integrity: sha512-+OopMI1wM/NvAJTHf3O3+beHd1YfKLnSVsOGBl3/7UBDZ4ydVadkbBk5Hjjs9d3ALC5rBaftMY59AvwyC8MzPw==}
+    cpu: [x64, arm64, wasm32]
     os: [darwin, linux, win32]
 
   lilconfig@2.1.0:
@@ -3474,6 +3482,10 @@ packages:
     resolution: {integrity: sha512-HGGkdlPWQ0vTF8jJ5TdIqhQXZi6uh3LnNgfZ8MHiuxFfX3RZeA79r2MW2tHAZKlAVfoNE8esm3p+O6VkIvpj6w==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  luxon@3.6.1:
+    resolution: {integrity: sha512-tJLxrKJhO2ukZ5z0gyjY1zPh3Rh88Ej9P7jNrZiHMUXHae1yvI2imgOZtL1TO8TW6biMMKfTtAOoEJANgtWBMQ==}
+    engines: {node: '>=12'}
 
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -6709,6 +6721,10 @@ snapshots:
 
   countries-and-timezones@3.8.0: {}
 
+  cron-parser@5.2.0:
+    dependencies:
+      luxon: 3.6.1
+
   cross-spawn@7.0.6:
     dependencies:
       path-key: 3.1.1
@@ -7813,6 +7829,8 @@ snapshots:
   lucide-react@0.503.0(react@18.3.1):
     dependencies:
       react: 18.3.1
+
+  luxon@3.6.1: {}
 
   math-intrinsics@1.1.0: {}
 

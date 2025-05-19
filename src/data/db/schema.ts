@@ -164,6 +164,15 @@ export const automations = sqliteTable("automations", {
   // No indexes needed here currently
 }));
 
+// --- ADDED: Relations for Automations ---
+export const automationsRelations = relations(automations, ({ one }) => ({
+  location: one(locations, {
+    fields: [automations.locationScopeId],
+    references: [locations.id],
+  }),
+}));
+// --- END ADDED ---
+
 // --- NEW: Locations Table ---
 export const locations = sqliteTable("locations", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
