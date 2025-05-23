@@ -352,26 +352,9 @@ export default function AutomationForm({
         setIsLoading(true);
         
         // console.log("FORM SUBMIT - Raw form data:", JSON.stringify(data, null, 2));
-        // console.log("FORM SUBMIT - Display trigger type:", displayTriggerType);
         
-        if (displayTriggerType === AutomationTriggerType.EVENT) {
-            // console.log("FORM SUBMIT - Processing as EVENT trigger");
-            data.config.trigger = {
-                type: AutomationTriggerType.EVENT,
-                conditions: eventTriggerConditionsRef.current,
-            };
-        } else if (displayTriggerType === AutomationTriggerType.SCHEDULED) {
-            // console.log("FORM SUBMIT - Processing as SCHEDULED trigger");
-            // console.log("FORM SUBMIT - Scheduled settings:", {
-            //     cronExpression: scheduledTriggerConfigRef.current.cronExpression,
-            //     timeZone: scheduledTriggerConfigRef.current.timeZone,
-            // });
-            data.config.trigger = {
-                type: AutomationTriggerType.SCHEDULED,
-                cronExpression: scheduledTriggerConfigRef.current.cronExpression || '0 9 * * 1',
-                timeZone: scheduledTriggerConfigRef.current.timeZone,
-            };
-        }
+        // Just use the form data directly - it's the source of truth
+        const triggerFromForm = data.config.trigger;
         
         const cleanConditionNode = (conditionNode: any): any => {
             if (!conditionNode) return conditionNode;
@@ -384,31 +367,26 @@ export default function AutomationForm({
             return rest;
         };
 
-        // Process according to current trigger type in data (which we just set above)
+        // Process the trigger payload based on form data
         let triggerPayload: AutomationTrigger;
-        const currentTriggerFromForm = data.config.trigger;
         
-        // console.log("FORM SUBMIT - Form trigger after update:", JSON.stringify(currentTriggerFromForm, null, 2));
-
-        if (currentTriggerFromForm.type === AutomationTriggerType.EVENT) {
+        if (triggerFromForm.type === AutomationTriggerType.EVENT) {
             triggerPayload = {
                 type: AutomationTriggerType.EVENT,
-                conditions: cleanConditionNode(currentTriggerFromForm.conditions) 
+                conditions: cleanConditionNode(triggerFromForm.conditions) 
             };
-        } else if (currentTriggerFromForm.type === AutomationTriggerType.SCHEDULED) {
+        } else if (triggerFromForm.type === AutomationTriggerType.SCHEDULED) {
             triggerPayload = {
                 type: AutomationTriggerType.SCHEDULED,
-                cronExpression: ensureDefaultCron(currentTriggerFromForm.cronExpression),
-                timeZone: currentTriggerFromForm.timeZone || undefined
+                cronExpression: ensureDefaultCron(triggerFromForm.cronExpression),
+                timeZone: triggerFromForm.timeZone || undefined
             };
         } else {
-            // console.error("Unknown trigger type in form submission:", currentTriggerFromForm);
+            // console.error("Unknown trigger type in form submission:", triggerFromForm);
             toast.error("Invalid trigger type. Cannot save automation.");
             setIsLoading(false);
             return;
         }
-        
-        // console.log("FORM SUBMIT - Final triggerPayload:", JSON.stringify(triggerPayload, null, 2));
         
         const processedConfig = { 
             actions: data.config.actions.map((action: AutomationAction) => {
