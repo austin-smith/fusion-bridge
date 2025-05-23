@@ -24,7 +24,7 @@ import { sendPushoverNotification } from '@/services/drivers/pushover';
 import type { ResolvedPushoverMessageParams } from '@/types/pushover-types';
 // Import the new action schema
 import type { SendPushNotificationActionParamsSchema } from '@/lib/automation-schemas';
-import { internalSetAreaArmedState } from '@/services/area-service'; // Import new internal service function
+import { internalSetAreaArmedState } from '@/lib/actions/area-alarm-actions'; // Updated import
 import { AutomationActionType, AutomationTriggerType } from '@/lib/automation-types'; // Import AutomationActionType and AutomationTriggerType
 import { CronExpressionParser } from 'cron-parser'; // Using named import as per user example
 import { formatInTimeZone } from 'date-fns-tz'; // For formatting time in specific timezone
@@ -536,7 +536,7 @@ async function executeActionWithRetry(
             case AutomationActionType.CREATE_EVENT: {
                 // This action inherently relies on a triggering event context for some fields like timestamp.
                 // If stdEvent is null (scheduled trigger), we might need to adjust behavior or disallow.
-                // For now, it will try to use stdEvent if present, or tokenFactContext.schedule.triggeredAt...
+                // For now, it will try to use stdEvent if present, or tokenFactContext.schedule.triggeredAtUTC...
                 const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof import('@/lib/automation-schemas').CreateEventActionParamsSchema>;
                 // Validation as before
                 // ...
@@ -734,17 +734,19 @@ async function executeActionWithRetry(
                 console.log(`[Rule ${rule.id}][Action armArea] Attempting to arm ${areasToProcess.length} area(s) to mode ${armMode}. IDs: ${areasToProcess.join(', ')}`);
                 for (const areaId of areasToProcess) {
                     try {
-                        // Call internal service function directly
-                        const updatedArea = await internalSetAreaArmedState(areaId, armMode);
+                        const updatedArea = await internalSetAreaArmedState(areaId, armMode, {
+                            lastArmedStateChangeReason: 'automation_arm', // Added reason
+                            isArmingSkippedUntil: null,                  // Clear schedule fields
+                            nextScheduledArmTime: null,
+                            nextScheduledDisarmTime: null,
+                        });
                         if (updatedArea) {
                             console.log(`[Rule ${rule.id}][Action armArea] Successfully armed area ${areaId} to ${armMode}.`);
                         } else {
-                            // internalSetAreaArmedState returns null if area not found or other non-exception failure
                             console.warn(`[Rule ${rule.id}][Action armArea] Failed to arm area ${areaId} to ${armMode} (area not found or no update occurred).`);
                         }
                     } catch (areaError) {
                         console.error(`[Rule ${rule.id}][Action armArea] Error arming area ${areaId} to ${armMode}:`, areaError instanceof Error ? areaError.message : areaError);
-                        // Continue to next area if one fails
                     }
                 }
                 break;
@@ -786,8 +788,12 @@ async function executeActionWithRetry(
                 console.log(`[Rule ${rule.id}][Action disarmArea] Attempting to disarm ${areasToProcess.length} area(s). IDs: ${areasToProcess.join(', ')}`);
                 for (const areaId of areasToProcess) {
                     try {
-                        // Call internal service function directly
-                        const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.DISARMED);
+                        const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.DISARMED, {
+                            lastArmedStateChangeReason: 'automation_disarm', // Added reason
+                            isArmingSkippedUntil: null,                     // Clear schedule fields
+                            nextScheduledArmTime: null,
+                            nextScheduledDisarmTime: null,
+                        });
                         if (updatedArea) {
                             console.log(`[Rule ${rule.id}][Action disarmArea] Successfully disarmed area ${areaId}.`);
                         } else {
@@ -795,7 +801,6 @@ async function executeActionWithRetry(
                         }
                     } catch (areaError) {
                         console.error(`[Rule ${rule.id}][Action disarmArea] Error disarming area ${areaId}:`, areaError instanceof Error ? areaError.message : areaError);
-                        // Continue to next area if one fails
                     }
                 }
                 break;

@@ -5,7 +5,8 @@ import { eq } from 'drizzle-orm';
 import type { Area } from '@/types/index';
 import { ArmedState } from '@/lib/mappings/definitions';
 import { z } from 'zod';
-import { internalSetAreaArmedState } from '@/services/area-service';
+import { internalSetAreaArmedState } from '@/lib/actions/area-alarm-actions';
+import { revalidateTag } from 'next/cache';
 
 // --- Validation Schema ---
 // Define the possible armed states explicitly for validation
