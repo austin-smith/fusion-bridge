@@ -107,6 +107,8 @@ export default function LocationsAreasPage() {
     fetchArmingSchedules,
     setLocationDefaultSchedule,
     setAreaOverrideSchedule,
+    bulkAssignDevicesToArea,
+    bulkRemoveDevicesFromArea,
   } = useFusionStore((state) => ({
     locations: state.locations,
     isLoadingLocations: state.isLoadingLocations,
@@ -136,6 +138,8 @@ export default function LocationsAreasPage() {
     fetchArmingSchedules: state.fetchArmingSchedules,
     setLocationDefaultSchedule: state.setLocationDefaultSchedule,
     setAreaOverrideSchedule: state.setAreaOverrideSchedule,
+    bulkAssignDevicesToArea: state.bulkAssignDevicesToArea,
+    bulkRemoveDevicesFromArea: state.bulkRemoveDevicesFromArea,
   }));
 
   const [isLocationDialogOpen, setIsLocationDialogOpen] = useState(false);
@@ -1042,6 +1046,8 @@ export default function LocationsAreasPage() {
           allDevices={allDevices}
           assignDeviceAction={assignDeviceToArea}
           removeDeviceAction={removeDeviceFromArea}
+          bulkAssignDevicesAction={bulkAssignDevicesToArea}
+          bulkRemoveDevicesAction={bulkRemoveDevicesFromArea}
         />
 
         {/* --- ADDED: Camera Wall Dialog --- */} 

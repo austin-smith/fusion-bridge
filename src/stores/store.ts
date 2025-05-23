@@ -242,6 +242,10 @@ interface FusionState {
   setLocationDefaultSchedule: (locationId: string, scheduleId: string | null) => Promise<boolean>;
   setAreaOverrideSchedule: (areaId: string, scheduleId: string | null) => Promise<boolean>;
   // --- END NEW ---
+
+  // NEW: Bulk device assignment methods
+  bulkAssignDevicesToArea: (areaId: string, deviceIds: string[]) => Promise<boolean>;
+  bulkRemoveDevicesFromArea: (areaId: string, deviceIds: string[]) => Promise<boolean>;
 }
 
 // Initial state for MQTT (default)
@@ -746,6 +750,75 @@ export const useFusionStore = create<FusionState>((set, get) => ({
        console.error(`Error removing device ${deviceId} from area ${areaId}:`, message);
        set({ errorAreas: message });
        return false;
+    }
+  },
+
+  // NEW: Bulk assign devices to an area
+  bulkAssignDevicesToArea: async (areaId: string, deviceIds: string[]) => {
+    if (deviceIds.length === 0) return true; // Nothing to assign
+
+    try {
+      const response = await fetch(`/api/areas/${areaId}/devices/bulk`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          deviceIds, 
+          operation: 'assign' 
+        })
+      });
+      
+      const data: ApiResponse<{
+        areaId: string;
+        assigned: number;
+        skipped: number;
+        total: number;
+      }> = await response.json();
+      
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to bulk assign devices');
+      }
+      
+      console.log(`[Store] Bulk assigned ${data.data?.assigned || 0} devices to area ${areaId}`);
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error bulk assigning devices to area ${areaId}:`, message);
+      set({ errorAreas: message });
+      return false;
+    }
+  },
+
+  // NEW: Bulk remove devices from an area
+  bulkRemoveDevicesFromArea: async (areaId: string, deviceIds: string[]) => {
+    if (deviceIds.length === 0) return true; // Nothing to remove
+
+    try {
+      const response = await fetch(`/api/areas/${areaId}/devices/bulk`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          deviceIds, 
+          operation: 'remove' 
+        })
+      });
+      
+      const data: ApiResponse<{
+        areaId: string;
+        removed: number;
+        total: number;
+      }> = await response.json();
+      
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to bulk remove devices');
+      }
+      
+      console.log(`[Store] Bulk removed ${data.data?.removed || 0} devices from area ${areaId}`);
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error bulk removing devices from area ${areaId}:`, message);
+      set({ errorAreas: message });
+      return false;
     }
   },
 

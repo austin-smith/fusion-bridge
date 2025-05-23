@@ -43,6 +43,9 @@ interface AreaDeviceAssignmentDialogProps {
   // Pass store actions directly for simplicity
   assignDeviceAction: (areaId: string, deviceId: string) => Promise<boolean>;
   removeDeviceAction: (areaId: string, deviceId: string) => Promise<boolean>;
+  // NEW: Bulk assignment actions
+  bulkAssignDevicesAction: (areaId: string, deviceIds: string[]) => Promise<boolean>;
+  bulkRemoveDevicesAction: (areaId: string, deviceIds: string[]) => Promise<boolean>;
 }
 
 export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProps> = ({ 
@@ -52,6 +55,8 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
   allDevices,
   assignDeviceAction,
   removeDeviceAction,
+  bulkAssignDevicesAction,
+  bulkRemoveDevicesAction,
 }) => {
   const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
   const [errorAssignments, setErrorAssignments] = useState<string | null>(null);
@@ -283,52 +288,75 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
   const handleSaveChanges = async () => {
     if (!area) return;
     setIsSubmitting(true);
-    let successCount = 0;
-    let errorCount = 0;
-    const changesToProcess = Object.entries(changedDeviceIds); // Get [deviceId, shouldBeAssigned] pairs
-    const totalChanges = changesToProcess.length;
-    const promises: Promise<boolean>[] = [];
-
-    changesToProcess.forEach(([deviceId, shouldBeAssigned]) => {
+    
+    try {
+      const changesToProcess = Object.entries(changedDeviceIds); // Get [deviceId, shouldBeAssigned] pairs
+      
+      // Separate devices to assign vs remove
+      const devicesToAssign: string[] = [];
+      const devicesToRemove: string[] = [];
+      
+      changesToProcess.forEach(([deviceId, shouldBeAssigned]) => {
         const currentlyAssigned = initialAssignedIds.has(deviceId);
         if (shouldBeAssigned && !currentlyAssigned) {
-            promises.push(assignDeviceAction(area.id, deviceId));
+          devicesToAssign.push(deviceId);
         } else if (!shouldBeAssigned && currentlyAssigned) {
-            promises.push(removeDeviceAction(area.id, deviceId));
+          devicesToRemove.push(deviceId);
         }
-    });
+      });
 
-    try {
-        const results = await Promise.allSettled(promises);
-        results.forEach(result => {
-            if (result.status === 'fulfilled' && result.value === true) {
-                successCount++;
-            } else {
-                errorCount++;
-            }
-        });
+      // Use bulk operations for better performance
+      const promises: Promise<boolean>[] = [];
+      
+      if (devicesToAssign.length > 0) {
+        promises.push(bulkAssignDevicesAction(area.id, devicesToAssign));
+      }
+      
+      if (devicesToRemove.length > 0) {
+        promises.push(bulkRemoveDevicesAction(area.id, devicesToRemove));
+      }
+      
+      if (promises.length === 0) {
+        // No changes to process
+        onOpenChange(false);
+        return;
+      }
 
-        if (errorCount > 0) {
-            toast.error(`${errorCount} assignment(s) failed. Check console.`);
-        } 
-        if (successCount > 0) {
-            toast.success(`${successCount} assignment(s) updated successfully.`);
-        }
-        if (errorCount === 0 && successCount === totalChanges) {
-             onOpenChange(false); // Close dialog only if all intended changes succeeded
+      const results = await Promise.allSettled(promises);
+      
+      let successCount = 0;
+      let errorCount = 0;
+      
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value === true) {
+          successCount++;
         } else {
-            // If some failed, keep dialog open and refetch assignments
-            refetchAssignments(); // Call the reusable function
+          errorCount++;
+          console.error(`Bulk operation ${index} failed:`, result.status === 'rejected' ? result.reason : 'Unknown error');
         }
+      });
+
+      if (errorCount > 0) {
+        toast.error(`${errorCount} bulk operation(s) failed. Check console.`);
+      } 
+      if (successCount > 0) {
+        const totalDevices = devicesToAssign.length + devicesToRemove.length;
+        toast.success(`Successfully updated ${totalDevices} device assignment(s).`);
+      }
+      
+      if (errorCount === 0) {
+        onOpenChange(false); // Close dialog only if all operations succeeded
+      } else {
+        // If some failed, keep dialog open and refetch assignments
+        refetchAssignments(); // Call the reusable function
+      }
 
     } catch (error) {
-         // This catch block might not be strictly necessary if using Promise.allSettled
-        console.error("Error during assignment saving:", error);
-        toast.error("An unexpected error occurred while saving changes.");
+      console.error("Error during bulk assignment saving:", error);
+      toast.error("An unexpected error occurred while saving changes.");
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
-
   };
 
   return (
