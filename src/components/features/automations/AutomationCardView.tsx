@@ -2,16 +2,9 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { 
-  Workflow, 
   Trash2, 
   Pencil, 
   AlertTriangle, 
-  ChevronRight, 
-  TriangleAlert, 
-  Bookmark, 
-  Globe, 
-  Power,
-  HelpCircle,
   Layers,
   CheckCircle2,
   XCircle,
@@ -162,8 +155,13 @@ function AutomationCardSkeleton() {
   );
 }
 
+// Props for AutomationCardView
+interface AutomationCardViewProps {
+  selectedLocationId?: string | null;
+}
+
 // Main AutomationCardView Component
-export function AutomationCardView() {
+export function AutomationCardView({ selectedLocationId }: AutomationCardViewProps) {
   const [automations, setAutomations] = useState<AutomationApiResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -304,12 +302,24 @@ export function AutomationCardView() {
     );
   }
 
-  if (automations.length === 0) {
+  // Filter automations based on selected location
+  const filteredAutomations = selectedLocationId 
+    ? automations.filter(automation => automation.locationScopeId === selectedLocationId)
+    : automations;
+
+  if (filteredAutomations.length === 0) {
     return (
       <div className="p-4">
         <Card className="p-6 text-center">
-          <CardTitle className="mb-2">No Automations Found</CardTitle>
-          <CardDescription>Create your first automation rule to get started</CardDescription>
+          <CardTitle className="mb-2">
+            {selectedLocationId ? "No Automations Found for Selected Location" : "No Automations Found"}
+          </CardTitle>
+          <CardDescription>
+            {selectedLocationId 
+              ? "No automations are configured for the selected location. Create one to get started."
+              : "Create your first automation rule to get started"
+            }
+          </CardDescription>
           <Button asChild className="mt-4">
             <Link href="/automations/new">
               Create Automation
@@ -324,7 +334,7 @@ export function AutomationCardView() {
     <TooltipProvider>
       <ScrollArea className="h-full">
         <div className="space-y-4">
-          {automations.map((automation) => (
+          {filteredAutomations.map((automation) => (
             <AutomationCard 
               key={automation.id} 
               automation={automation} 
