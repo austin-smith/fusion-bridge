@@ -635,6 +635,7 @@ export default function AutomationForm({
                                     allLocations={safeAllLocations}
                                     allAreas={safeAllAreas}
                                     devicesForConditions={devicesForConditions}
+                                    allConnectors={availableConnectors}
                                 />
                             )}
                             
@@ -725,6 +726,7 @@ export default function AutomationForm({
                                         allLocations={safeAllLocations}
                                         allAreas={safeAllAreas}
                                         devicesForConditions={devicesForConditions}
+                                        allConnectors={availableConnectors}
                                     />
                                 </>
                             )}

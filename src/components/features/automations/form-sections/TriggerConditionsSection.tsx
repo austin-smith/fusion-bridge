@@ -21,6 +21,7 @@ interface TriggerConditionsSectionProps {
     allLocations: Location[];
     allAreas: Area[];
     devicesForConditions: Array<{ id: string; name: string; areaId?: string | null; locationId?: string | null; }>;
+    allConnectors: Array<{ id: string; name: string; category: string; }>;
 }
 
 export function TriggerConditionsSection({
@@ -30,6 +31,7 @@ export function TriggerConditionsSection({
     allLocations,
     allAreas,
     devicesForConditions,
+    allConnectors,
 }: TriggerConditionsSectionProps) {
     return (
         <div>
@@ -47,6 +49,7 @@ export function TriggerConditionsSection({
                             allLocations={allLocations}
                             allAreas={allAreas}
                             allDevices={devicesForConditions}
+                            allConnectors={allConnectors}
                         />
                         <FormDescription className={descriptionStyles}>Define conditions based on the triggering event&apos;s state.</FormDescription>
                         <FormMessage />

@@ -55,7 +55,7 @@ export interface AutomationFact {
     valueOptions?: FactValueOption[]; // Options for 'select' or 'multiselect'
     
     // NEW: Simplified property for dynamic select options from entity lists
-    selectableEntityType?: 'Device' | 'Area' | 'Location';
+    selectableEntityType?: 'Device' | 'Area' | 'Location' | 'Connector';
 }
 
 // Helper function to convert enum/map to FactValueOption[]
@@ -162,11 +162,12 @@ export const AVAILABLE_AUTOMATION_FACTS: AutomationFact[] = [
     // --- Connector Facts ---
     {
         id: 'connector.id',
-        label: 'Connector ID',
+        label: 'Connector',
         group: 'Connector',
         dataType: 'string',
-        operators: stringOperators,
-        valueInputType: 'text', // Or maybe a select if we pass connector list?
+        operators: enumOperators,
+        valueInputType: 'select', // Or maybe a select if we pass connector list?
+        selectableEntityType: 'Connector', // Populate dropdown with Connectors
     },
     // Add connector.name/category later if needed
 

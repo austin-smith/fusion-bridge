@@ -33,6 +33,7 @@ interface TemporalConditionItemProps {
     allLocations: Location[];
     allAreas: Area[];
     devicesForConditions: Array<{ id: string; name: string; areaId?: string | null; locationId?: string | null; }>;
+    allConnectors: Array<{ id: string; name: string; category: string; }>;
 }
 
 export function TemporalConditionItem({
@@ -45,6 +46,7 @@ export function TemporalConditionItem({
     allLocations,
     allAreas,
     devicesForConditions,
+    allConnectors,
 }: TemporalConditionItemProps) {
     const conditionType = form.watch(`config.temporalConditions.${index}.type`);
 
@@ -153,6 +155,7 @@ export function TemporalConditionItem({
                           allLocations={allLocations}
                           allAreas={allAreas}
                           allDevices={devicesForConditions}
+                          allConnectors={allConnectors}
                         />
                         <FormDescription className={descriptionStyles}>
                           Define criteria that matching events must meet.

@@ -55,6 +55,7 @@ interface TemporalConditionsSectionProps {
     allLocations: Location[];
     allAreas: Area[];
     devicesForConditions: Array<{ id: string; name: string; areaId?: string | null; locationId?: string | null; }>;
+    allConnectors: Array<{ id: string; name: string; category: string; }>;
 }
 
 export function TemporalConditionsSection({
@@ -65,6 +66,7 @@ export function TemporalConditionsSection({
     allLocations,
     allAreas,
     devicesForConditions,
+    allConnectors,
 }: TemporalConditionsSectionProps) {
     const { fields: temporalConditionsFields, append: appendTemporalCondition, remove: removeTemporalCondition } = useFieldArray({
         control: form.control,
@@ -124,6 +126,7 @@ export function TemporalConditionsSection({
                                         allLocations={allLocations}
                                         allAreas={allAreas}
                                         devicesForConditions={devicesForConditions}
+                                        allConnectors={allConnectors}
                                     />
                                 ))}
                                 <Button 

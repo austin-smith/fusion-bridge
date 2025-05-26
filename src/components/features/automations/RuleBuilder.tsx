@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 // --- Types --- 
 type DeviceForFiltering = { id: string; name: string; areaId?: string | null; locationId?: string | null; };
+type ConnectorForFiltering = { id: string; name: string; category: string; };
 
 // Add _internalId for React key stability
 type RuleNodeWithId = (JsonRuleGroup | JsonRuleCondition) & { _internalId?: string };
@@ -48,6 +49,7 @@ interface RuleBuilderProps {
   allLocations: Location[];
   allAreas: Area[];
   allDevices: DeviceForFiltering[]; 
+  allConnectors: ConnectorForFiltering[];
 }
 
 const MAX_DEPTH = 3; // Limit nesting depth
@@ -68,11 +70,11 @@ const groupedFacts = AVAILABLE_AUTOMATION_FACTS.reduce((acc, fact) => {
 function getFilteredFactOptions(
     fact: AutomationFact,
     scopeId: string | null | undefined,
-    data: { allLocations: Location[], allAreas: Area[], allDevices: DeviceForFiltering[] }
+    data: { allLocations: Location[], allAreas: Area[], allDevices: DeviceForFiltering[], allConnectors: ConnectorForFiltering[] }
 ): { options: FactSelectOption[], description: string } {
     let generatedOptions: FactSelectOption[] = [];
     let description = "options";
-    const { allLocations, allAreas, allDevices } = data;
+    const { allLocations, allAreas, allDevices, allConnectors } = data;
 
     if (fact.selectableEntityType) {
         let sourceArray: Array<{id: string, name: string, locationId?: string | null, areaId?: string | null}> = [];
@@ -113,6 +115,11 @@ function getFilteredFactOptions(
             case 'Location':
                 sourceArray = allLocations;
                 isScopable = false; 
+                effectivelyScoped = false;
+                break;
+            case 'Connector':
+                sourceArray = allConnectors;
+                isScopable = false; // Connectors are not location-scoped
                 effectivelyScoped = false;
                 break;
         }
@@ -240,6 +247,7 @@ export function RuleBuilder({
     allLocations,
     allAreas,
     allDevices,
+    allConnectors,
 }: RuleBuilderProps) {
 
     // Define isGroup helper function at the top
@@ -263,7 +271,7 @@ export function RuleBuilder({
         }
         let initialValue: string | number = '';
         if (defaultFact.valueInputType === 'select') {
-            const { options: defaultFactOptions } = getFilteredFactOptions(defaultFact, locationScopeId, { allLocations, allAreas, allDevices });
+            const { options: defaultFactOptions } = getFilteredFactOptions(defaultFact, locationScopeId, { allLocations, allAreas, allDevices, allConnectors });
             if (defaultFactOptions.length > 0) {
                 initialValue = defaultFactOptions[0].value;
             }
@@ -384,6 +392,7 @@ export function RuleBuilder({
                              allLocations={allLocations}
                              allAreas={allAreas}
                              allDevices={allDevices}
+                             allConnectors={allConnectors}
                          />
                      ))}
                 </div>
@@ -425,7 +434,7 @@ export function RuleBuilder({
                 const { options: initialOptions } = getFilteredFactOptions(
                     newFactDefinition, 
                     locationScopeId, // current scopeId
-                    { allLocations, allAreas, allDevices }
+                    { allLocations, allAreas, allDevices, allConnectors }
                 );
                 if (initialOptions.length > 0) {
                     defaultValue = initialOptions[0].value;
@@ -461,7 +470,7 @@ export function RuleBuilder({
                     // const [openCombobox, setOpenCombobox] = React.useState(false); // REMOVE
 
                     // --- Calculate all necessary variables upfront ---
-                    const { options, description: initialDescription } = getFilteredFactOptions(factDefinitionFromProps, locationScopeId, { allLocations, allAreas, allDevices });
+                    const { options, description: initialDescription } = getFilteredFactOptions(factDefinitionFromProps, locationScopeId, { allLocations, allAreas, allDevices, allConnectors });
                     const currentValue = String(conditionNode.value ?? '');
                     const hasExistingValue = conditionNode.value !== null && conditionNode.value !== undefined && currentValue !== '';
                     const isValuePresentInOptions = options.some(opt => String(opt.value) === currentValue);
@@ -481,6 +490,9 @@ export function RuleBuilder({
                         } else if (factDefinitionFromProps.selectableEntityType === 'Location') {
                             const staleLocation = allLocations.find(l => l.id === conditionNode.value);
                             if (staleLocation) staleLabel = staleLocation.name;
+                        } else if (factDefinitionFromProps.selectableEntityType === 'Connector') {
+                            const staleConnector = allConnectors.find(c => c.id === conditionNode.value);
+                            if (staleConnector) staleLabel = staleConnector.name;
                         }
                         if (!staleLabel && currentValue) {
                             staleLabel = `Invalid selection (ID: ${currentValue.substring(0,6)}...)`;
