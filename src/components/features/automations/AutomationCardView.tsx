@@ -62,6 +62,7 @@ interface AutomationApiResponse {
   updatedAt: string;
   configJson: AutomationConfig | null;
   locationScopeId?: string | null;
+  tags: string[];
 }
 
 // Add types for connectors and devices
@@ -158,10 +159,11 @@ function AutomationCardSkeleton() {
 // Props for AutomationCardView
 interface AutomationCardViewProps {
   selectedLocationId?: string | null;
+  selectedTags?: string[];
 }
 
 // Main AutomationCardView Component
-export function AutomationCardView({ selectedLocationId }: AutomationCardViewProps) {
+export function AutomationCardView({ selectedLocationId, selectedTags = [] }: AutomationCardViewProps) {
   const [automations, setAutomations] = useState<AutomationApiResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -302,10 +304,18 @@ export function AutomationCardView({ selectedLocationId }: AutomationCardViewPro
     );
   }
 
-  // Filter automations based on selected location
-  const filteredAutomations = selectedLocationId 
+  // Filter automations based on selected location and tags
+  let filteredAutomations = selectedLocationId 
     ? automations.filter(automation => automation.locationScopeId === selectedLocationId)
     : automations;
+
+  // Apply tags filtering - automation must have ALL selected tags
+  if (selectedTags && selectedTags.length > 0) {
+    filteredAutomations = filteredAutomations.filter(automation => {
+      const automationTags = automation.tags || [];
+      return selectedTags.every(selectedTag => automationTags.includes(selectedTag));
+    });
+  }
 
   if (filteredAutomations.length === 0) {
     return (
@@ -577,6 +587,19 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
         </CardHeader>
         
         <CardContent className="pt-4 pb-4">
+          {/* Tags Section */}
+          {automation.tags && automation.tags.length > 0 && (
+            <div className="mb-4">
+              <div className="flex flex-wrap gap-1">
+                {automation.tags.map((tag, index) => (
+                  <Badge key={index} variant="secondary" className="text-xs">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Actions Section */}
           <div className="mb-3">
             <h4 className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Actions</h4>

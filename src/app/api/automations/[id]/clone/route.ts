@@ -34,6 +34,7 @@ export async function POST(
       enabled: false, // Cloned automations are disabled by default
       configJson: newConfigJson,
       locationScopeId: originalAutomation.locationScopeId, // Retain location scope
+      tags: originalAutomation.tags || [], // Retain tags
       // id, createdAt, updatedAt will be handled by the database/Drizzle default functions
     };
 

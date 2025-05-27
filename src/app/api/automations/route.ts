@@ -10,6 +10,7 @@ const PostBodySchema = z.object({
     enabled: z.boolean().optional().default(true),
     config: AutomationConfigSchema,
     locationScopeId: z.string().uuid().nullable().optional(),
+    tags: z.array(z.string()).optional().default([]),
 });
 
 /**
@@ -27,6 +28,7 @@ export async function GET(request: Request) {
         updatedAt: automations.updatedAt,
         configJson: automations.configJson,
         locationScopeId: automations.locationScopeId,
+        tags: automations.tags,
       })
       .from(automations);
 
@@ -51,13 +53,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Invalid request body", errors: validationResult.error.flatten().fieldErrors }, { status: 400 });
     }
     
-    const { name, enabled, config, locationScopeId } = validationResult.data;
+    const { name, enabled, config, locationScopeId, tags } = validationResult.data;
 
     const newAutomation = await db.insert(automations).values({
       name: name,
       enabled: enabled,
       configJson: config,
       locationScopeId: locationScopeId,
+      tags: tags,
     }).returning();
 
     if (!newAutomation || newAutomation.length === 0) {

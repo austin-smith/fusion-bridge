@@ -46,6 +46,7 @@ interface AutomationFormData {
     enabled: boolean;
     configJson: AutomationConfig;
     locationScopeId?: string | null;
+    tags?: string[];
     createdAt: Date;
     updatedAt: Date;
 }
@@ -56,6 +57,7 @@ const FormSchema = z.object({
     enabled: z.boolean(),
     config: AutomationConfigSchema,
     locationScopeId: z.string().uuid().nullable().optional(),
+    tags: z.array(z.string()).default([]),
 }).superRefine((data, ctx) => {
     const trigger = data.config.trigger;
 
@@ -273,6 +275,7 @@ export default function AutomationForm({
             name: data.name,
             enabled: data.enabled,
             locationScopeId: data.locationScopeId ?? null,
+            tags: data.tags ?? [],
             config: {
                 trigger: triggerConfigForDefaultValues, 
                 temporalConditions: initialTemporalConditions,
@@ -426,6 +429,7 @@ export default function AutomationForm({
             enabled: data.enabled,
             config: processedConfig, // This now contains the correctly structured trigger
             locationScopeId: data.locationScopeId || null,
+            tags: data.tags || [],
         };
         
         // console.log("FORM SUBMIT - Final API payload:", JSON.stringify(payloadForApi, null, 2));

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from "@/components/ui/badge";
-import { Check, ChevronsUpDown } from 'lucide-react';
+import { Check, ChevronsUpDown, X, Plus } from 'lucide-react';
 import {
   FormControl,
   FormDescription,
@@ -39,8 +39,33 @@ export function GeneralSettingsSection({
   locationScopePopoverOpen,
   setLocationScopePopoverOpen,
 }: GeneralSettingsSectionProps) {
+  const [newTag, setNewTag] = useState('');
+
+  const addTag = (tag: string) => {
+    if (!tag.trim()) return;
+    const currentTags = form.getValues('tags') || [];
+    if (!currentTags.includes(tag.trim())) {
+      form.setValue('tags', [...currentTags, tag.trim()], { shouldDirty: true });
+    }
+    setNewTag('');
+  };
+
+  const removeTag = (tagToRemove: string) => {
+    const currentTags = form.getValues('tags') || [];
+    form.setValue('tags', currentTags.filter(tag => tag !== tagToRemove), { shouldDirty: true });
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addTag(newTag);
+    }
+  };
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="space-y-4">
+      {/* First row: Name, Location, Enabled */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <FormField 
             control={form.control}
             name="name"
@@ -157,6 +182,70 @@ export function GeneralSettingsSection({
                 <FormMessage />
             </FormItem>
         )} />
+      </div>
+
+      {/* Second row: Tags */}
+      <FormField
+        control={form.control}
+        name="tags"
+        render={({ field, fieldState }) => {
+          const currentTags = field.value || [];
+          return (
+            <FormItem className="flex flex-col">
+              <FormLabel className={cn("mb-1.5", fieldState.error && "text-destructive")}>Tags</FormLabel>
+              
+              {/* Display existing tags */}
+              {currentTags.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {currentTags.map((tag, index) => (
+                    <Badge key={index} variant="secondary" className="text-xs">
+                      {tag}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto p-0 ml-1 hover:bg-transparent"
+                        onClick={() => removeTag(tag)}
+                        disabled={isLoading}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              {/* Add new tag input */}
+              <div className="flex gap-2">
+                <FormControl>
+                  <Input
+                    placeholder="Add a tag..."
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    disabled={isLoading}
+                    className={cn(fieldState.error && 'border-destructive')}
+                  />
+                </FormControl>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addTag(newTag)}
+                  disabled={isLoading || !newTag.trim()}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              
+              <FormDescription className={descriptionStyles}>
+                Add tags to categorize and filter your automations.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          );
+        }}
+      />
     </div>
   );
 } 

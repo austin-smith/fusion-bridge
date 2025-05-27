@@ -11,6 +11,7 @@ const PutBodySchema = z.object({
     enabled: z.boolean().optional(),
     config: AutomationConfigSchema.optional(),
     locationScopeId: z.string().uuid().nullable().optional(), // Add optional, nullable locationScopeId
+    tags: z.array(z.string()).optional(),
 }).refine(data => Object.keys(data).length > 0, { 
     message: "At least one field must be provided for update"
 });
@@ -40,6 +41,7 @@ export async function GET(
         createdAt: automations.createdAt,
         updatedAt: automations.updatedAt,
         locationScopeId: automations.locationScopeId,
+        tags: automations.tags,
       })
       .from(automations)
       .where(eq(automations.id, id))
@@ -97,6 +99,7 @@ export async function PUT(
     if ('locationScopeId' in updateData) { 
       updatePayload.locationScopeId = updateData.locationScopeId;
     }
+    if (updateData.tags !== undefined) updatePayload.tags = updateData.tags;
     
     // Add updatedAt timestamp
     updatePayload.updatedAt = new Date();
@@ -117,6 +120,7 @@ export async function PUT(
         updatedAt: automations.updatedAt,
         configJson: automations.configJson,
         locationScopeId: automations.locationScopeId,
+        tags: automations.tags,
       })
       .from(automations)
       .where(eq(automations.id, updatedAutomation.id))

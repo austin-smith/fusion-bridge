@@ -19,6 +19,7 @@ interface AutomationFormData {
     name: string; 
     enabled: boolean; 
     configJson: AutomationConfig; // Correctly use AutomationConfig here
+    tags?: string[];
     createdAt: Date; 
     updatedAt: Date; 
 }
@@ -174,6 +175,7 @@ export default async function NewAutomationPage() {
     id: 'new', // Special ID for new automations
     name: '', // Start with an empty name
     enabled: true, // Default to enabled
+    tags: [], // Default to no tags
     configJson: { 
       trigger: {
         type: AutomationTriggerType.EVENT,

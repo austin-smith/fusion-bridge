@@ -7,6 +7,7 @@ import { PlusCircle, Workflow } from "lucide-react";
 import Link from 'next/link';
 import { PageHeader } from '@/components/layout/page-header';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { MultiSelectComboBox } from '@/components/ui/multi-select-combobox';
 
 // Types
 interface Location {
@@ -17,6 +18,8 @@ interface Location {
 export default function AutomationsPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
 
   useEffect(() => {
     document.title = 'Automations // Fusion';
@@ -36,12 +39,32 @@ export default function AutomationsPage() {
     }
   }, []);
 
+  // Fetch available tags from automations
+  const fetchAvailableTags = useCallback(async () => {
+    try {
+      const response = await fetch('/api/automations');
+      if (response.ok) {
+        const automations = await response.json();
+        const allTags = new Set<string>();
+        automations.forEach((automation: any) => {
+          if (automation.tags && Array.isArray(automation.tags)) {
+            automation.tags.forEach((tag: string) => allTags.add(tag));
+          }
+        });
+        setAvailableTags(Array.from(allTags).sort());
+      }
+    } catch (error) {
+      console.error('Failed to fetch available tags:', error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchLocations();
-  }, [fetchLocations]);
+    fetchAvailableTags();
+  }, [fetchLocations, fetchAvailableTags]);
   
   const pageActions = (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 flex-wrap">
       <Select 
         value={selectedLocationId || "all"} 
         onValueChange={(value) => setSelectedLocationId(value === "all" ? null : value)}
@@ -59,6 +82,16 @@ export default function AutomationsPage() {
         </SelectContent>
       </Select>
 
+      {availableTags.length > 0 && (
+        <MultiSelectComboBox
+          options={availableTags.map(tag => ({ value: tag, label: tag }))}
+          selected={selectedTags}
+          onChange={setSelectedTags}
+          placeholder="Filter by tags..."
+          className="w-full sm:w-[200px]"
+        />
+      )}
+
       <Button asChild size="sm">
         <Link href="/automations/new">
           <PlusCircle className="h-4 w-4" /> Add Automation
@@ -74,7 +107,7 @@ export default function AutomationsPage() {
         icon={<Workflow className="h-6 w-6" />}
         actions={pageActions}
       />
-      <AutomationCardView selectedLocationId={selectedLocationId} />
+      <AutomationCardView selectedLocationId={selectedLocationId} selectedTags={selectedTags} />
     </div>
   );
 } 

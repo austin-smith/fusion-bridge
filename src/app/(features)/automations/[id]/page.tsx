@@ -24,6 +24,7 @@ interface AutomationFormData {
   enabled: boolean;
   configJson: AutomationConfig;
   locationScopeId?: string | null;
+  tags?: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -118,6 +119,7 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
       name: automation.name ?? '', // Ensure name is not null
       enabled: automation.enabled ?? true, // Ensure enabled is not null
       locationScopeId: automation.locationScopeId ?? null,
+      tags: automation.tags ?? [], // Include tags from database
       configJson: processedConfigJson,
       createdAt: automation.createdAt ?? new Date(), // Ensure createdAt is not null
       updatedAt: automation.updatedAt ?? new Date(), // Ensure updatedAt is not null

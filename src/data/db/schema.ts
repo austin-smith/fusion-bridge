@@ -158,10 +158,12 @@ export const automations = sqliteTable("automations", {
   // and secondaryConditions (standardized types, time windows)
   configJson: text("config_json", { mode: "json" }).notNull().$type<AutomationConfig>(), 
   locationScopeId: text("location_scope_id").references(() => locations.id, { onDelete: 'cascade' }),
+  tags: text("tags", { mode: "json" }).$type<string[]>().default(sql`'[]'`).notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
 }, (table) => ({
-  // No indexes needed here currently
+  // Index for filtering by tags - useful for tag-based queries
+  tagsIdx: index("automations_tags_idx").on(table.tags),
 }));
 
 // --- ADDED: Relations for Automations ---
