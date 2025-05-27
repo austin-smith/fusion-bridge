@@ -63,7 +63,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { EventDetailDialogContent } from '@/components/features/events/event-detail-dialog-content';
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 import {
   Dialog,
@@ -85,8 +84,6 @@ import { EventHierarchyViewer } from '@/components/features/events/EventHierarch
 import { getDeviceTypeInfo } from "@/lib/mappings/identification";
 import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Area } from '@/types/index'; 
-import { Separator } from "@/components/ui/separator";
 import { EventViewToggle } from '@/components/features/events/EventViewToggle';
 import { EventsTableView } from '@/components/features/events/EventsTableView';
 import type { EnrichedEvent } from '@/types/events';
@@ -179,6 +176,7 @@ export default function EventsPage() {
   });
   const [tablePageCount, setTablePageCount] = useState<number>(0);
   const [connectorCategoryFilter, setConnectorCategoryFilter] = useState('all');
+  const [locationFilter, setLocationFilter] = useState('all');
   const initialEventCategories = Object.keys(EVENT_CATEGORY_DISPLAY_MAP).filter(
     categoryKey => categoryKey !== EventCategory.DIAGNOSTICS
   );
@@ -194,6 +192,7 @@ export default function EventsPage() {
   // --- ADDED: Refs for previous filter states ---
   const prevEventCategoryFilterRef = useRef(eventCategoryFilter);
   const prevConnectorCategoryFilterRef = useRef(connectorCategoryFilter);
+  const prevLocationFilterRef = useRef(locationFilter);
   // --- END ADDED ---
 
   // Effect to load and set viewMode from localStorage after initial render
@@ -213,6 +212,8 @@ export default function EventsPage() {
   const fetchAreas = useFusionStore(state => state.fetchAreas);
   const allDevices = useFusionStore(state => state.allDevices);
   const fetchAllDevices = useFusionStore(state => state.fetchAllDevices);
+  const locations = useFusionStore(state => state.locations);
+  const fetchLocations = useFusionStore(state => state.fetchLocations);
   
   // Extract unique connector categories from connectors state
   const connectorCategories = useMemo(() => {
@@ -260,6 +261,23 @@ export default function EventsPage() {
     fetchConnectorsIfNeeded();
   }, [connectors.length, setConnectors]); // Rerun if connectors array length changes or setConnectors changes
 
+  // Add useEffect to fetch locations if not present
+  useEffect(() => {
+    const fetchLocationsIfNeeded = async () => {
+      if (locations.length === 0) {
+        console.log('[EventsPage] Locations store is empty, fetching...');
+        try {
+          await fetchLocations();
+          console.log('[EventsPage] Locations loaded into store.');
+        } catch (err) {
+          console.error('[EventsPage] Error fetching initial locations:', err);
+        }
+      }
+    };
+
+    fetchLocationsIfNeeded();
+  }, [locations.length, fetchLocations]); // Rerun if locations array length changes or fetchLocations changes
+
   // Set page title
   useEffect(() => {
     document.title = 'Events // Fusion';
@@ -271,7 +289,8 @@ export default function EventsPage() {
     pageSize: number, 
     isInitialLoad = false,
     currentEventCategories: string[],
-    currentConnectorCategory: string
+    currentConnectorCategory: string,
+    currentLocationFilter: string
   ): Promise<{ pagination: PaginationMetadata | null; actualDataLength: number } | null> => {
     try {
       const params = new URLSearchParams();
@@ -283,6 +302,12 @@ export default function EventsPage() {
       }
       if (currentConnectorCategory && currentConnectorCategory.toLowerCase() !== 'all') {
         params.append('connectorCategory', currentConnectorCategory);
+      }
+      if (currentLocationFilter && currentLocationFilter.toLowerCase() !== 'all') {
+        params.append('locationId', currentLocationFilter);
+      }
+      if (currentLocationFilter && currentLocationFilter.toLowerCase() !== 'all') {
+        params.append('locationId', currentLocationFilter);
       }
 
       const response = await fetch(`/api/events?${params.toString()}`);
@@ -417,7 +442,7 @@ export default function EventsPage() {
 
     setLoading(true);
     console.log('[EventsPage] Initial/Polling useEffect: Fetching initial data.');
-    fetchEvents(pagination.pageIndex + 1, pagination.pageSize, true, eventCategoryFilter, connectorCategoryFilter)
+            fetchEvents(pagination.pageIndex + 1, pagination.pageSize, true, eventCategoryFilter, connectorCategoryFilter, locationFilter)
       .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
         if (fetchResult && fetchResult.pagination) {
           const pMeta = fetchResult.pagination;
@@ -446,7 +471,7 @@ export default function EventsPage() {
     const intervalId = setInterval(() => {
       if (!tableRef.current) return;
       console.log('[EventsPage] Polling useEffect: Polling for data.');
-      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter)
+      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter)
         .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
           if (fetchResult && fetchResult.pagination) {
             const pMeta = fetchResult.pagination;
@@ -467,7 +492,7 @@ export default function EventsPage() {
       clearInterval(intervalId);
       isInitialLoadRef.current = true;
     };
-  }, [fetchEvents, pagination.pageIndex, pagination.pageSize, eventCategoryFilter, connectorCategoryFilter]);
+  }, [fetchEvents, pagination.pageIndex, pagination.pageSize, eventCategoryFilter, connectorCategoryFilter, locationFilter]);
   // --- END REVISED ---
 
   // --- REVISED: useEffect for actual pagination OR filter changes by the user ---
@@ -481,11 +506,13 @@ export default function EventsPage() {
     const pageSizeChanged = pagination.pageSize !== prevPageSizeRef.current;
     const eventCategoriesChanged = JSON.stringify(eventCategoryFilter) !== JSON.stringify(prevEventCategoryFilterRef.current);
     const connectorCategoryChanged = connectorCategoryFilter !== prevConnectorCategoryFilterRef.current;
+    const locationFilterChanged = locationFilter !== prevLocationFilterRef.current;
 
-    if (eventCategoriesChanged || connectorCategoryChanged) {
+    if (eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged) {
       console.log('[EventsPage] Filter change detected.');
       prevEventCategoryFilterRef.current = eventCategoryFilter;
       prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
+      prevLocationFilterRef.current = locationFilter;
       if (pagination.pageIndex !== 0) {
         console.log('[EventsPage] Resetting to page 0 due to filter change.');
         tableRef.current.setPageIndex(0);
@@ -493,12 +520,12 @@ export default function EventsPage() {
       }
     }
 
-    if (pageIndexChanged || pageSizeChanged || ((eventCategoriesChanged || connectorCategoryChanged) && pagination.pageIndex === 0)) {
+    if (pageIndexChanged || pageSizeChanged || ((eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged) && pagination.pageIndex === 0)) {
       setLoading(true); 
       console.log('[EventsPage] Pagination/Filter useEffect: Change requiring fetch. Fetching data.', 
                   { pageIndex: pagination.pageIndex, pageSize: pagination.pageSize, eventCategories: eventCategoryFilter, connectorCategory: connectorCategoryFilter });
       
-      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter)
+      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter)
         .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
           if (fetchResult && fetchResult.pagination) {
             const pMeta = fetchResult.pagination;
@@ -518,12 +545,13 @@ export default function EventsPage() {
           prevPageSizeRef.current = pagination.pageSize;
           prevEventCategoryFilterRef.current = eventCategoryFilter;
           prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
+          prevLocationFilterRef.current = locationFilter;
         })
         .finally(() => {
           setLoading(false); 
         });
     }
-  }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter]);
+  }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter, locationFilter]);
   // --- END REVISED ---
 
   // Effect to save viewMode to localStorage when it changes
@@ -1005,19 +1033,20 @@ export default function EventsPage() {
         value={connectorCategoryFilter}
         onValueChange={(value) => setConnectorCategoryFilter(value)}
       >
-        <SelectTrigger className="w-full sm:w-[180px] h-9 justify-between">
-          <span>
-            Connectors ({connectorCategoryFilter === 'all' 
-              ? 'All' 
-              : formatConnectorCategory(connectorCategoryFilter)})
-          </span>
+        <SelectTrigger className="w-full sm:w-[180px] h-9">
+          <div className="flex items-center gap-2 flex-1">
+            {connectorCategoryFilter !== 'all' && (
+              <ConnectorIcon connectorCategory={connectorCategoryFilter} size={16} />
+            )}
+            <span>
+              {connectorCategoryFilter === 'all' 
+                ? 'All Connectors' 
+                : formatConnectorCategory(connectorCategoryFilter)}
+            </span>
+          </div>
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">
-            <div className="flex items-center gap-2">
-              <span>All Connectors</span>
-            </div>
-          </SelectItem>
+          <SelectItem value="all">All Connectors</SelectItem>
           {connectorCategories.map(category => (
             <SelectItem key={category} value={category}>
               <div className="flex items-center gap-2">
@@ -1026,6 +1055,25 @@ export default function EventsPage() {
               </div>
             </SelectItem>
           ))}
+        </SelectContent>
+      </Select>
+      <Select
+        value={locationFilter}
+        onValueChange={(value) => setLocationFilter(value)}
+      >
+        <SelectTrigger className="w-full sm:w-[180px] h-9">
+          <SelectValue placeholder="Select location..." />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Locations</SelectItem>
+          {locations
+            .slice()
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map(location => (
+              <SelectItem key={location.id} value={location.id}>
+                {location.name}
+              </SelectItem>
+            ))}
         </SelectContent>
       </Select>
       <DropdownMenu>

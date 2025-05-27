@@ -55,6 +55,8 @@ export interface EnrichedEvent {
   displayState?: DisplayState | undefined;
   areaId?: string;
   areaName?: string;
+  locationId?: string;
+  locationName?: string;
   thumbnailUrl?: string; // Keep for placeholder use
   videoUrl?: string; // Keep for placeholder use
   // Uncommenting bestShotUrlComponents as it's used in page.tsx
@@ -73,6 +75,8 @@ export interface EventGroup {
   groupKey: string;
   areaId?: string;
   areaName?: string;
+  locationId?: string;
+  locationName?: string;
   startTime: Date; // Earliest event time in the group
   endTime: Date; // Latest event time in the group
   events: EnrichedEvent[];

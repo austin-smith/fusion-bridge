@@ -1,5 +1,5 @@
 import { db } from '@/data/db';
-import { events, devices, connectors, areaDevices, areas } from '@/data/db/schema';
+import { events, devices, connectors, areaDevices, areas, locations } from '@/data/db/schema';
 import { desc, asc, count, eq, sql, and, gte, lte, or, inArray, type SQL, isNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
 import { EventCategory, EventType, EventSubtype, DeviceType, DeviceSubtype } from '@/lib/mappings/definitions';
@@ -14,6 +14,7 @@ const MAX_EVENTS = 100000;
 interface RecentEventsFilters {
   eventCategories?: string[];
   connectorCategory?: string;
+  locationId?: string;
   // Add other potential global filters here if needed in the future
 }
 // --- END ADDED ---
@@ -243,6 +244,11 @@ export async function getRecentEvents(limit = 100, offset = 0, filters?: RecentE
       // Assuming 'all' or empty string means no filter for connector category
       conditions.push(eq(connectors.category, filters.connectorCategory));
     }
+
+    if (filters?.locationId && filters.locationId.toLowerCase() !== 'all' && filters.locationId !== '') {
+      // Filter by location - events must be from devices in areas that belong to the specified location
+      conditions.push(eq(locations.id, filters.locationId));
+    }
     // --- END ADDED ---
 
     const recentEnrichedEvents = await db
@@ -268,7 +274,10 @@ export async function getRecentEvents(limit = 100, offset = 0, filters?: RecentE
         connectorConfig: connectors.cfg_enc,
         // Joined Area fields (nullable due to LEFT JOINs)
         areaId: areaDevices.areaId,
-        areaName: areas.name 
+        areaName: areas.name,
+        // Joined Location fields (nullable due to LEFT JOINs)
+        locationId: locations.id,
+        locationName: locations.name
       })
       .from(events)
       // Join device info (needed to bridge to areaDevices)
@@ -280,6 +289,7 @@ export async function getRecentEvents(limit = 100, offset = 0, filters?: RecentE
       .leftJoin(connectors, eq(connectors.id, events.connectorId))
       .leftJoin(areaDevices, eq(areaDevices.deviceId, devices.id)) // Use devices.id (internal UUID)
       .leftJoin(areas, eq(areas.id, areaDevices.areaId))
+      .leftJoin(locations, eq(locations.id, areas.locationId))
       // --- MODIFIED: Apply dynamic conditions ---
       .where(conditions.length > 0 ? and(...conditions) : undefined) // Pass undefined if no conditions to avoid empty AND()
       .orderBy(desc(events.timestamp))

@@ -28,6 +28,8 @@ interface RepoEnrichedEvent {
   connectorConfig: string | null;
   areaId: string | null; // <-- RE-ADDED: From areaDevices table via eventsRepository
   areaName: string | null; // <-- RE-ADDED: From areas table via eventsRepository
+  locationId: string | null; // Location ID from locations table via eventsRepository
+  locationName: string | null; // Location name from locations table via eventsRepository
 }
 
 // --- Modified Pagination Metadata Interface ---
@@ -49,6 +51,8 @@ interface ApiEnrichedEvent {
   connectorCategory: string;
   areaId?: string; // <-- RE-ADDED: Optional Area ID
   areaName?: string; // <-- RE-ADDED: Optional Area Name
+  locationId?: string; // Optional Location ID
+  locationName?: string; // Optional Location Name
   timestamp: number; // Epoch ms
   eventCategory: string;
   eventType: string;
@@ -79,6 +83,7 @@ export async function GET(request: NextRequest) {
     // --- ADDED: Read and prepare filters from query parameters ---
     const eventCategoriesRaw = searchParams.get('eventCategories');
     const connectorCategory = searchParams.get('connectorCategory') || undefined; // Use undefined if not present or empty
+    const locationId = searchParams.get('locationId') || undefined; // Use undefined if not present or empty
 
     let eventCategories: string[] | undefined = undefined;
     if (eventCategoriesRaw) {
@@ -90,7 +95,8 @@ export async function GET(request: NextRequest) {
 
     const filters = {
       eventCategories: eventCategories,
-      connectorCategory: connectorCategory
+      connectorCategory: connectorCategory,
+      locationId: locationId
     };
     // --- END ADDED ---
 
@@ -199,6 +205,8 @@ export async function GET(request: NextRequest) {
         bestShotUrlComponents: bestShotUrlComponents,
         areaId: event.areaId ?? undefined, // <-- RE-ADDED: Map from repo event
         areaName: event.areaName ?? undefined, // <-- RE-ADDED: Map from repo event
+        locationId: event.locationId ?? undefined, // Map from repo event
+        locationName: event.locationName ?? undefined, // Map from repo event
       };
 
       return finalEventObject;
