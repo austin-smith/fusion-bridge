@@ -40,6 +40,7 @@ interface AreaDeviceAssignmentDialogProps {
   onOpenChange: (open: boolean) => void;
   area: Area | null; // The area to assign devices to
   allDevices: DeviceWithConnector[]; // List of all available devices
+  allAreas: Area[]; // List of all areas for looking up area names
   // Pass store actions directly for simplicity
   assignDeviceAction: (areaId: string, deviceId: string) => Promise<boolean>;
   removeDeviceAction: (areaId: string, deviceId: string) => Promise<boolean>;
@@ -53,6 +54,7 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
   onOpenChange, 
   area, 
   allDevices,
+  allAreas,
   assignDeviceAction,
   removeDeviceAction,
   bulkAssignDevicesAction,
@@ -68,6 +70,29 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
   const [nameFilter, setNameFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all'); 
   const [connectorFilter, setConnectorFilter] = useState<string>('all');
+  const [assignmentFilter, setAssignmentFilter] = useState<string>('all'); // New filter for assignment status
+
+  // Create a lookup map for area names
+  const areaNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    allAreas.forEach(area => {
+      map.set(area.id, area.name);
+    });
+    return map;
+  }, [allAreas]);
+
+  // Create a map of device assignments to all areas (since devices can be in multiple areas)
+  const deviceAreaAssignments = useMemo(() => {
+    const assignments = new Map<string, string[]>();
+    allDevices.forEach(device => {
+      // Get all area IDs this device is assigned to
+      const assignedAreaIds = allAreas
+        .filter(area => area.deviceIds?.includes(device.id))
+        .map(area => area.id);
+      assignments.set(device.id, assignedAreaIds);
+    });
+    return assignments;
+  }, [allDevices, allAreas]);
 
   // --- Reusable function to fetch current assignments ---
   const refetchAssignments = useCallback(async () => {
@@ -147,12 +172,42 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
       handleCheckboxChange(deviceId, !currentCheckedState); // Toggle the state
   }, [getDisplayedCheckedState, handleCheckboxChange]);
 
+  // NEW: Select All functionality - separate for assigned and available devices
+  const getSelectAllState = useCallback((devices: DeviceWithConnector[]) => {
+    if (devices.length === 0) return false;
+    
+    const checkedCount = devices.filter(device => 
+      getDisplayedCheckedState(device.id)
+    ).length;
+    
+    if (checkedCount === 0) return false;
+    if (checkedCount === devices.length) return true;
+    return 'indeterminate';
+  }, [getDisplayedCheckedState]);
+
+  const createSelectAllHandler = useCallback((devices: DeviceWithConnector[]) => {
+    return (checked: boolean | string) => {
+      const shouldCheck = checked === true;
+      
+      devices.forEach(device => {
+        handleCheckboxChange(device.id, shouldCheck);
+      });
+    };
+  }, [handleCheckboxChange]);
+
   // --- Columns for the Device Assignment Table --- 
-  const columns = useMemo((): ColumnDef<DeviceWithConnector>[] => [
+  const createColumns = useCallback((devices: DeviceWithConnector[]): ColumnDef<DeviceWithConnector>[] => [
     {
       id: 'select',
       header: ({ table }) => (
-         <span className="sr-only">Select</span>
+        <div className="py-0 align-middle flex items-center h-full">
+          <Checkbox
+            checked={getSelectAllState(devices)}
+            onCheckedChange={createSelectAllHandler(devices)}
+            aria-label="Select all visible devices"
+            disabled={isLoadingAssignments || devices.length === 0}
+          />
+        </div>
       ),
       cell: ({ row }) => {
         const deviceId = row.original.id;
@@ -176,7 +231,22 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
     {
       accessorKey: 'name',
       header: 'Device Name',
-      cell: ({ row }) => <div className="font-medium">{row.getValue('name')}</div>,
+      cell: ({ row }) => {
+        const device = row.original;
+        const deviceAssignedAreas = deviceAreaAssignments.get(device.id) || [];
+        const isUnassigned = deviceAssignedAreas.length === 0;
+        
+        return (
+          <div className="flex items-center gap-2">
+            <div className="font-medium">{row.getValue('name')}</div>
+            {isUnassigned && (
+              <Badge variant="outline" className="text-xs px-1.5 py-0 text-muted-foreground">
+                Unassigned
+              </Badge>
+            )}
+          </div>
+        );
+      },
       size: 250, // Give name a fixed, but larger, size
     },
     {
@@ -229,7 +299,7 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
       size: 150, // Reduce size for Connector
     },
     // Add more columns if helpful (e.g., Location - though maybe redundant here)
-  ], [isLoadingAssignments, getDisplayedCheckedState, handleCheckboxChange]); // Dependencies simplified
+  ], [isLoadingAssignments, getDisplayedCheckedState, handleCheckboxChange, deviceAreaAssignments, getSelectAllState, createSelectAllHandler]); // Dependencies simplified
 
   // --- Filtering Logic & Data --- 
 
@@ -275,14 +345,29 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
         const typeMatch = typeFilter === 'all' || device.deviceTypeInfo?.type === typeFilter;
         const connectorDisplayName = device.connectorName ?? formatConnectorCategory(device.connectorCategory);
         const connectorMatch = connectorFilter === 'all' || connectorDisplayName === connectorFilter;
-        return nameMatch && typeMatch && connectorMatch;
+        
+        // New assignment filter logic
+        let assignmentMatch = true;
+        if (assignmentFilter === 'unassigned') {
+          // Show only devices that are not assigned to any area
+          const deviceAssignedAreas = deviceAreaAssignments.get(device.id) || [];
+          assignmentMatch = deviceAssignedAreas.length === 0;
+        } else if (assignmentFilter === 'assigned-elsewhere') {
+          // Show only devices assigned to other areas (not this area and not unassigned)
+          const deviceAssignedAreas = deviceAreaAssignments.get(device.id) || [];
+          const otherAreaIds = deviceAssignedAreas.filter(areaId => areaId !== area?.id);
+          assignmentMatch = otherAreaIds.length > 0;
+        }
+        // 'all' shows everything, so no additional filtering needed
+        
+        return nameMatch && typeMatch && connectorMatch && assignmentMatch;
     };
 
     return [
         currentAssigned.filter(filterDevice),
         currentAvailable.filter(filterDevice)
     ];
-  }, [allDevices, nameFilter, typeFilter, connectorFilter, getDisplayedCheckedState]); // Add getDisplayedCheckedState dependency
+  }, [allDevices, nameFilter, typeFilter, connectorFilter, assignmentFilter, getDisplayedCheckedState, area?.id, deviceAreaAssignments]); // Add new dependencies
 
   // --- Submit Handler ---
   const handleSaveChanges = async () => {
@@ -365,7 +450,7 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
         <DialogHeader>
           <DialogTitle>Assign Devices to Area: {area?.name}</DialogTitle>
           <DialogDescription>
-            Select the devices that should belong to this security area.
+            Select the devices that should belong to this security area. Devices can be assigned to multiple areas. Use the &quot;Assignment&quot; filter to view only unassigned devices or devices assigned to other areas.
           </DialogDescription>
         </DialogHeader>
         
@@ -437,14 +522,42 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
                                 ))}
                             </SelectContent>
                         </Select>
+                        <Select value={assignmentFilter} onValueChange={setAssignmentFilter}>
+                            <SelectTrigger className="w-[180px] h-8 text-xs">
+                                <SelectValue placeholder="Filter by Assignment" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all" className="text-xs">
+                                    <span>All Devices</span>
+                                </SelectItem>
+                                <SelectItem value="unassigned" className="text-xs">
+                                    <span>Unassigned Only</span>
+                                </SelectItem>
+                                <SelectItem value="assigned-elsewhere" className="text-xs">
+                                    <span>Assigned to Other Areas</span>
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                 
                     {/* Assigned Devices Table */}
                     <div className="mb-6">
-                        <h4 className="text-sm font-medium mb-2">Assigned Devices ({filteredAssignedDevices.length})</h4>
+                        <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                          Assigned Devices ({filteredAssignedDevices.length})
+                          {assignmentFilter === 'unassigned' && (
+                            <Badge variant="outline" className="text-xs">
+                              Showing unassigned only
+                            </Badge>
+                          )}
+                          {assignmentFilter === 'assigned-elsewhere' && (
+                            <Badge variant="outline" className="text-xs">
+                              Showing other areas only
+                            </Badge>
+                          )}
+                        </h4>
                         <div className="rounded-md border"> 
                             <DataTable 
-                                columns={columns} 
+                                columns={createColumns(filteredAssignedDevices)} 
                                 data={filteredAssignedDevices} 
                                 onRowClick={handleRowClick} 
                             /> 
@@ -453,10 +566,22 @@ export const AreaDeviceAssignmentDialog: React.FC<AreaDeviceAssignmentDialogProp
 
                     {/* Available Devices Table */}
                     <div>
-                        <h4 className="text-sm font-medium mb-2">Available Devices ({filteredAvailableDevices.length})</h4>
+                        <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                          Available Devices ({filteredAvailableDevices.length})
+                          {assignmentFilter === 'unassigned' && (
+                            <Badge variant="outline" className="text-xs">
+                              Showing unassigned only
+                            </Badge>
+                          )}
+                          {assignmentFilter === 'assigned-elsewhere' && (
+                            <Badge variant="outline" className="text-xs">
+                              Showing other areas only
+                            </Badge>
+                          )}
+                        </h4>
                         <div className="rounded-md border"> 
                             <DataTable 
-                                columns={columns} 
+                                columns={createColumns(filteredAvailableDevices)} 
                                 data={filteredAvailableDevices} 
                                 onRowClick={handleRowClick} 
                             /> 

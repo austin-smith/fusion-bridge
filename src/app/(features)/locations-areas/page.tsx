@@ -1044,6 +1044,7 @@ export default function LocationsAreasPage() {
           onOpenChange={handleAssignDevicesDialogChange}
           area={areaToAssignDevices}
           allDevices={allDevices}
+          allAreas={areas}
           assignDeviceAction={assignDeviceToArea}
           removeDeviceAction={removeDeviceFromArea}
           bulkAssignDevicesAction={bulkAssignDevicesToArea}
