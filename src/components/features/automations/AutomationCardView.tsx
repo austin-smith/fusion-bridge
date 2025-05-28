@@ -10,11 +10,14 @@ import {
   XCircle,
   Copy,
   MapPin,
-  MoreVertical
+  MoreVertical,
+  Activity,
+  Calendar
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { formatDistanceToNow } from 'date-fns';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
 // UI Components
@@ -46,12 +49,17 @@ import {
 // Skeleton
 import { Skeleton } from "@/components/ui/skeleton";
 
+// Execution Details Modal
+import { ExecutionDetailsModal } from '@/components/features/automations/ExecutionDetailsModal';
+
 // Types
 import type { AutomationConfig } from '@/lib/automation-schemas';
 import {
   getActionIconProps,
   formatActionDetail,
+  AutomationTriggerType,
 } from '@/lib/automation-types';
+import type { AutomationExecutionSummary } from '@/services/automation-audit-query-service';
 
 // Interface for API response
 interface AutomationApiResponse {
@@ -173,6 +181,13 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
   const [locations, setLocations] = useState<Location[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   // --- END NEW ---
+  // --- NEW: State for last runs ---
+  const [lastRuns, setLastRuns] = useState<Map<string, AutomationExecutionSummary>>(new Map());
+  // --- END NEW ---
+  // --- NEW: State for execution details modal ---
+  const [selectedExecution, setSelectedExecution] = useState<AutomationExecutionSummary | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  // --- END NEW ---
   const router = useRouter();
 
   // Fetch automations function
@@ -274,11 +289,38 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
     }
   }, []);
 
+  // Fetch last runs for all automations
+  const fetchLastRuns = useCallback(async () => {
+    try {
+      const response = await fetch('/api/automations/executions?lastRunOnly=true');
+      if (!response.ok) {
+        console.warn(`Failed to fetch last runs: ${response.status}`);
+        return;
+      }
+      const lastRunsData = await response.json() as AutomationExecutionSummary[];
+      const lastRunsMap = new Map<string, AutomationExecutionSummary>();
+      lastRunsData.forEach(execution => {
+        lastRunsMap.set(execution.automationId, execution);
+      });
+      setLastRuns(lastRunsMap);
+    } catch (e) {
+      console.error('Failed to fetch last runs:', e);
+    }
+  }, []);
+
   // Fetch on component mount
   useEffect(() => {
     fetchAutomations();
     fetchConnectorsAndDevices();
-  }, [fetchAutomations, fetchConnectorsAndDevices]);
+    fetchLastRuns();
+  }, [fetchAutomations, fetchConnectorsAndDevices, fetchLastRuns]);
+
+  // --- NEW: Function to open execution details modal ---
+  const openExecutionDetails = (execution: AutomationExecutionSummary) => {
+    setSelectedExecution(execution);
+    setModalOpen(true);
+  };
+  // --- END NEW ---
 
   if (loading) {
     return <AutomationCardSkeleton />;
@@ -353,10 +395,18 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
               targetDevices={targetDevices}
               locations={locations}
               areas={areas}
+              lastRun={lastRuns.get(automation.id)}
+              onOpenExecutionDetails={openExecutionDetails}
             />
           ))}
         </div>
       </ScrollArea>
+      
+      <ExecutionDetailsModal
+        execution={selectedExecution}
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+      />
     </TooltipProvider>
   );
 }
@@ -369,13 +419,32 @@ interface AutomationCardProps {
   targetDevices: TargetDevice[];
   locations: Location[];
   areas: Area[];
+  lastRun?: AutomationExecutionSummary;
+  onOpenExecutionDetails: (execution: AutomationExecutionSummary) => void;
 }
 
-function AutomationCard({ automation, refreshData, connectors, targetDevices, locations, areas }: AutomationCardProps) {
+function AutomationCard({ automation, refreshData, connectors, targetDevices, locations, areas, lastRun, onOpenExecutionDetails }: AutomationCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
   const router = useRouter();
+
+  // Get trigger type icon and styling
+  const getTriggerTypeIcon = () => {
+    const triggerType = automation.configJson?.trigger?.type;
+    if (triggerType === AutomationTriggerType.SCHEDULED) {
+      return {
+        icon: Calendar,
+        label: 'Scheduled'
+      };
+    } else if (triggerType === AutomationTriggerType.EVENT) {
+      return {
+        icon: Activity,
+        label: 'Event-based'
+      };
+    }
+    return null;
+  };
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -480,6 +549,24 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
                   {automation.name}
                 </CardTitle>
               </div>
+              
+              {/* Trigger type indicator */}
+              {(() => {
+                const triggerInfo = getTriggerTypeIcon();
+                if (!triggerInfo) return null;
+                const IconComponent = triggerInfo.icon;
+                return (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <IconComponent className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{triggerInfo.label} automation</p>
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })()}
+              
               {currentRuleLocationScope && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -587,19 +674,6 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
         </CardHeader>
         
         <CardContent className="pt-4 pb-4">
-          {/* Tags Section */}
-          {automation.tags && automation.tags.length > 0 && (
-            <div className="mb-4">
-              <div className="flex flex-wrap gap-1">
-                {automation.tags.map((tag, index) => (
-                  <Badge key={index} variant="secondary" className="text-xs">
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Actions Section */}
           <div className="mb-3">
             <h4 className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Actions</h4>
@@ -643,6 +717,63 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
             </div>
           </div>
         </CardContent>
+        
+        {/* Card Footer with Tags and Last Run */}
+        {((automation.tags && automation.tags.length > 0) || lastRun) && (
+          <CardFooter className="pt-3 pb-4 px-4 border-t">
+            <div className="flex items-center justify-between w-full">
+              {/* Tags on the left */}
+              <div className="flex flex-wrap gap-1">
+                {automation.tags && automation.tags.length > 0 && automation.tags.map((tag, index) => (
+                  <Badge key={index} variant="secondary" className="text-xs">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+              
+              {/* Last run on the right */}
+              {lastRun && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto p-1 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => onOpenExecutionDetails(lastRun)}
+                    >
+                      <div className="flex items-center gap-2">
+                        {lastRun.executionStatus === 'success' && (
+                          <CheckCircle2 className="h-3 w-3 text-green-600" />
+                        )}
+                        {lastRun.executionStatus === 'failure' && (
+                          <XCircle className="h-3 w-3 text-red-600" />
+                        )}
+                        {lastRun.executionStatus === 'partial_failure' && (
+                          <AlertTriangle className="h-3 w-3 text-yellow-600" />
+                        )}
+                        <span>Last run {formatDistanceToNow(lastRun.triggerTimestamp, { addSuffix: true })}</span>
+                      </div>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <div className="text-sm">
+                      <div className="font-medium">Last Run: {lastRun.executionStatus}</div>
+                      <div>{formatDistanceToNow(lastRun.triggerTimestamp, { addSuffix: true })}</div>
+                      {lastRun.totalActions > 0 && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {lastRun.successfulActions}/{lastRun.totalActions} actions succeeded
+                        </div>
+                      )}
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Click to view execution details
+                      </div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          </CardFooter>
+        )}
       </Card>
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

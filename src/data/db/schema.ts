@@ -408,3 +408,78 @@ export const serviceConfigurations = sqliteTable("service_configurations", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
+
+// --- NEW: Automation Audit Trail Tables ---
+
+// Table for tracking automation executions
+export const automationExecutions = sqliteTable("automation_executions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  automationId: text("automation_id").notNull().references(() => automations.id, { onDelete: 'cascade' }),
+  
+  // Trigger information
+  triggerTimestamp: integer("trigger_timestamp", { mode: "timestamp_ms" }).notNull(), // when automation was triggered
+  triggerEventId: text("trigger_event_id"), // references events.eventUuid if event-triggered, NULL for scheduled
+  triggerContext: text("trigger_context", { mode: "json" }).notNull().$type<Record<string, any>>(), // full facts object used for token replacement
+  
+  // Condition evaluation results
+  stateConditionsMet: integer("state_conditions_met", { mode: "boolean" }), // result of primary trigger conditions (NULL for scheduled)
+  temporalConditionsMet: integer("temporal_conditions_met", { mode: "boolean" }), // result of temporal conditions (NULL if no temporal conditions)
+  
+  // Execution results
+  executionStatus: text("execution_status").notNull(), // 'success', 'partial_failure', 'failure'
+  executionDurationMs: integer("execution_duration_ms"), // how long the entire execution took (nullable)
+  
+  // Action execution summary
+  totalActions: integer("total_actions").notNull().default(0),
+  successfulActions: integer("successful_actions").notNull().default(0),
+  failedActions: integer("failed_actions").notNull().default(0),
+  
+  // Metadata
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
+}, (table) => ({
+  automationIdx: index("automation_executions_automation_idx").on(table.automationId),
+  timestampIdx: index("automation_executions_timestamp_idx").on(table.triggerTimestamp),
+  triggerEventIdx: index("automation_executions_trigger_event_idx").on(table.triggerEventId),
+  statusIdx: index("automation_executions_status_idx").on(table.executionStatus),
+}));
+
+// Table for tracking individual action executions within an automation
+export const automationActionExecutions = sqliteTable("automation_action_executions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  executionId: text("execution_id").notNull().references(() => automationExecutions.id, { onDelete: 'cascade' }),
+  actionIndex: integer("action_index").notNull(), // order of action in the automation (0-based)
+  actionType: text("action_type").notNull(),
+  actionParams: text("action_params", { mode: "json" }).notNull().$type<Record<string, any>>(),
+  
+  // Execution results
+  status: text("status").notNull(), // 'success', 'failure', 'skipped'
+  errorMessage: text("error_message"), // error details if failed
+  retryCount: integer("retry_count").notNull().default(0),
+  executionDurationMs: integer("execution_duration_ms"),
+  
+  // Action-specific result data (optional, for actions that return meaningful data)
+  resultData: text("result_data", { mode: "json" }).$type<Record<string, any> | null>(), // e.g., HTTP response status, created event ID, etc.
+  
+  startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
+  completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+}, (table) => ({
+  executionIdx: index("automation_action_executions_execution_idx").on(table.executionId),
+  statusIdx: index("automation_action_executions_status_idx").on(table.status),
+  typeIdx: index("automation_action_executions_type_idx").on(table.actionType),
+}));
+
+// Relations for automation audit trail tables
+export const automationExecutionsRelations = relations(automationExecutions, ({ one, many }) => ({
+  automation: one(automations, {
+    fields: [automationExecutions.automationId],
+    references: [automations.id],
+  }),
+  actionExecutions: many(automationActionExecutions),
+}));
+
+export const automationActionExecutionsRelations = relations(automationActionExecutions, ({ one }) => ({
+  execution: one(automationExecutions, {
+    fields: [automationActionExecutions.executionId],
+    references: [automationExecutions.id],
+  }),
+}));

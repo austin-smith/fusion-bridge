@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { db } from '@/data/db';
-import { automations, connectors, devices, cameraAssociations, areas, areaDevices, locations } from '@/data/db/schema';
+import { automations, connectors, devices, cameraAssociations, areas, areaDevices, locations, automationExecutions, automationActionExecutions } from '@/data/db/schema';
 import { eq, and, inArray, or } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
@@ -28,6 +28,8 @@ import { internalSetAreaArmedState } from '@/lib/actions/area-alarm-actions'; //
 import { AutomationActionType, AutomationTriggerType } from '@/lib/automation-types'; // Import AutomationActionType and AutomationTriggerType
 import { CronExpressionParser } from 'cron-parser'; // Using named import as per user example
 import { formatInTimeZone } from 'date-fns-tz'; // For formatting time in specific timezone
+import { automationAuditService, AutomationAuditService } from '@/services/automation-audit-service';
+import { ExecutionStatus, ActionExecutionStatus } from '@/lib/automation-audit-types';
 
 // Helper for exhaustive checks
 function assertNever(value: never, message: string = "Unhandled discriminated union member"): never {
@@ -194,6 +196,7 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
             }
 
             let ruleConfig: AutomationConfig;
+            
             try {
                 // Parse the config using the UPDATED schema
                 const parseResult = AutomationConfigSchema.safeParse(rule.configJson);
@@ -323,9 +326,106 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
                         continue;
                     }
 
+                    // --- ONLY NOW create audit tracking since we're actually executing ---
+                    const executionStartTime = Date.now();
+                    const auditExecution = {
+                        id: crypto.randomUUID(),
+                        automationId: rule.id,
+                        triggerEventId: stdEvent.eventId,
+                        triggerContext: {
+                            timestamp: stdEvent.timestamp.toISOString(),
+                            eventCategory: stdEvent.category,
+                            eventType: stdEvent.type,
+                        },
+                        stateConditionsMet,
+                        temporalConditionsMet: ruleConfig.temporalConditions && ruleConfig.temporalConditions.length > 0 ? temporalConditionsMet : null,
+                        actions: [] as Array<{
+                            actionIndex: number;
+                            actionType: string;
+                            actionParams: any;
+                            status: 'success' | 'failure';
+                            errorMessage?: string;
+                            executionDurationMs: number;
+                        }>,
+                    };
+
                     // --- Use the original fullFacts for token replacement context ---
-                    for (const action of ruleConfig.actions) {
-                        await executeActionWithRetry(rule, action, stdEvent, fullFacts);
+                    for (let actionIndex = 0; actionIndex < ruleConfig.actions.length; actionIndex++) {
+                        const action = ruleConfig.actions[actionIndex];
+                        const actionStartTime = Date.now();
+                        
+                        try {
+                            await executeActionWithRetry(rule, action, stdEvent, fullFacts, null, actionIndex); // Pass null for executionId to skip individual tracking
+                            auditExecution.actions.push({
+                                actionIndex,
+                                actionType: action.type,
+                                actionParams: resolveTokens(action.params, stdEvent, fullFacts) || {},
+                                status: 'success',
+                                executionDurationMs: Date.now() - actionStartTime,
+                            });
+                        } catch (actionError) {
+                            console.error(`[Automation Service] Action ${actionIndex} failed for rule ${rule.id}:`, actionError);
+                            auditExecution.actions.push({
+                                actionIndex,
+                                actionType: action.type,
+                                actionParams: resolveTokens(action.params, stdEvent, fullFacts) || {},
+                                status: 'failure',
+                                errorMessage: actionError instanceof Error ? actionError.message : String(actionError),
+                                executionDurationMs: Date.now() - actionStartTime,
+                            });
+                        }
+                    }
+
+                    // --- Insert Complete Audit Trail ---
+                    try {
+                        const executionDurationMs = Date.now() - executionStartTime;
+                        const successfulActions = auditExecution.actions.filter(a => a.status === 'success').length;
+                        const failedActions = auditExecution.actions.filter(a => a.status === 'failure').length;
+                        const finalStatus = AutomationAuditService.determineExecutionStatus(
+                            auditExecution.actions.length,
+                            successfulActions,
+                            failedActions
+                        );
+                        
+                        await db.transaction(async (tx) => {
+                            // Insert execution record
+                            await tx.insert(automationExecutions).values({
+                                id: auditExecution.id,
+                                automationId: auditExecution.automationId,
+                                triggerTimestamp: new Date(),
+                                triggerEventId: auditExecution.triggerEventId,
+                                triggerContext: auditExecution.triggerContext,
+                                stateConditionsMet: auditExecution.stateConditionsMet,
+                                temporalConditionsMet: auditExecution.temporalConditionsMet,
+                                executionStatus: finalStatus,
+                                executionDurationMs,
+                                totalActions: auditExecution.actions.length,
+                                successfulActions,
+                                failedActions,
+                            });
+                            
+                            // Insert action execution records
+                            if (auditExecution.actions.length > 0) {
+                                const actionInserts = auditExecution.actions.map(action => ({
+                                    id: crypto.randomUUID(),
+                                    executionId: auditExecution.id,
+                                    actionIndex: action.actionIndex,
+                                    actionType: action.actionType,
+                                    actionParams: action.actionParams,
+                                    status: action.status,
+                                    errorMessage: action.errorMessage || null,
+                                    retryCount: 0,
+                                    executionDurationMs: action.executionDurationMs,
+                                    resultData: null,
+                                    startedAt: new Date(executionStartTime + (action.actionIndex * 10)),
+                                    completedAt: new Date(executionStartTime + action.executionDurationMs),
+                                }));
+                                
+                                await tx.insert(automationActionExecutions).values(actionInserts);
+                            }
+                        });
+                    } catch (auditError) {
+                        console.error(`[Automation Service] Failed to insert audit trail for rule ${rule.id}:`, auditError);
                     }
                 } else {
                      // Log why actions weren't executed
@@ -334,11 +434,13 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
                      } else if (!temporalConditionsMet) {
                           console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Did not execute actions for event trigger because not all temporal conditions were met.`);
                      }
+                     // NO AUDIT RECORD - conditions not met, so no execution occurred
                 } 
                 // --- End Action Execution ---
 
             } catch (ruleProcessingError) {
                 console.error(`[Automation Service] Error processing rule ${rule.id} (${rule.name}) for event trigger:`, ruleProcessingError);
+                // Continue processing other rules even if this one failed
                 continue;
             }
         } // End loop through rules
@@ -355,27 +457,37 @@ export async function processScheduledAutomations(currentTime: Date): Promise<vo
     console.log(`[Automation Service] ENTERED processScheduledAutomations at ${currentTime.toISOString()}`);
 
     try {
-        // Fetch all enabled automations and their associated locations (for timezone)
-        // Ensure that the 'location' relation is correctly set up in Drizzle for this to work.
-        // This assumes 'locationScopeId' on 'automations' table links to 'id' on 'locations' table.
+        // Fetch ONLY enabled automations that have SCHEDULED triggers
         const scheduledAutomations = await db.query.automations.findMany({
             where: eq(automations.enabled, true),
             with: {
-                // Eagerly load the location details if a locationScopeId is set
-                // Adjust this based on your exact Drizzle schema and relations for automations to locations
-                location: true, // This assumes a relation named 'location' linked via 'locationScopeId'
+                location: true,
             }
         });
 
-        if (scheduledAutomations.length === 0) {
-            console.log(`[Automation Service] No enabled automations found for scheduled processing.`);
+        // Filter to only scheduled automations
+        const actualScheduledAutomations = scheduledAutomations.filter(automation => {
+            try {
+                const parseResult = AutomationConfigSchema.safeParse(automation.configJson);
+                if (!parseResult.success) {
+                    return false;
+                }
+                return parseResult.data.trigger.type === AutomationTriggerType.SCHEDULED;
+            } catch {
+                return false;
+            }
+        });
+
+        if (actualScheduledAutomations.length === 0) {
+            console.log(`[Automation Service] No enabled scheduled automations found.`);
             return;
         }
 
-        console.log(`[Automation Service] Evaluating ${scheduledAutomations.length} enabled automation(s) for schedule triggers.`);
+        console.log(`[Automation Service] Evaluating ${actualScheduledAutomations.length} scheduled automation(s) for execution.`);
 
-        for (const rule of scheduledAutomations) {
+        for (const rule of actualScheduledAutomations) {
             let ruleConfig: AutomationConfig;
+            
             try {
                 const parseResult = AutomationConfigSchema.safeParse(rule.configJson);
                 if (!parseResult.success) {
@@ -384,14 +496,12 @@ export async function processScheduledAutomations(currentTime: Date): Promise<vo
                 }
                 ruleConfig = parseResult.data;
 
-                if (ruleConfig.trigger.type !== AutomationTriggerType.SCHEDULED) {
-                    // console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Skipping in processScheduledAutomations as it\'s not a scheduled rule (type: ${ruleConfig.trigger.type}).`);
-                    continue;
-                }
+                // We already filtered for scheduled automations, so no need to check again
+                const scheduledTrigger = ruleConfig.trigger as { type: 'scheduled'; cronExpression: string; timeZone?: string };
 
-                const { cronExpression } = ruleConfig.trigger;
+                const { cronExpression } = scheduledTrigger;
                 // Initialize effectiveTimeZone with configuredTimeZone, then override if location-scoped
-                const { timeZone: configuredTimeZoneFromRule } = ruleConfig.trigger; // Use const and new name to avoid conflict
+                const { timeZone: configuredTimeZoneFromRule } = scheduledTrigger; // Use const and new name to avoid conflict
                 let effectiveTimeZone: string | undefined = configuredTimeZoneFromRule;
                 let locationForContext: (typeof locations.$inferSelect) | null = null;
 
@@ -446,11 +556,17 @@ export async function processScheduledAutomations(currentTime: Date): Promise<vo
 
                 if (!isDue) {
                     // console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}) is NOT DUE at ${currentTime.toISOString()} for cron "${cronExpression}" in TZ ${effectiveTimeZone}.`);
-                    continue;
+                    continue; // SKIP - no audit record should be created
                 }
                 
                 console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}) IS DUE at ${currentTime.toISOString()} for cron "${cronExpression}" in TZ ${effectiveTimeZone}.`);
 
+                if (!ruleConfig.actions || ruleConfig.actions.length === 0) {
+                    console.warn(`[Automation Service] Rule ID ${rule.id}: No actions defined for scheduled trigger.`);
+                    continue; // SKIP - no audit record for automations with no actions
+                }
+
+                // ONLY create audit record if we're actually going to execute actions
                 const fullFacts: Record<string, any> = {
                     schedule: {
                         cronExpression: cronExpression,
@@ -470,24 +586,123 @@ export async function processScheduledAutomations(currentTime: Date): Promise<vo
                     connector: null, 
                 };
                 
-                // For scheduled triggers, primary condition is the time being met.
-                // Temporal conditions are not evaluated for scheduled triggers as per revised logic.
-
-                // Directly proceed to actions if the schedule is due.
                 console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Scheduled trigger is due. Proceeding to execute actions.`);
 
-                if (!ruleConfig.actions || ruleConfig.actions.length === 0) {
-                    console.warn(`[Automation Service] Rule ID ${rule.id}: No actions defined for scheduled trigger.`);
-                    continue; 
-                }
+                // --- ONLY NOW create audit tracking since we're actually executing ---
+                const executionStartTime = Date.now();
+                const auditExecution = {
+                    id: crypto.randomUUID(),
+                    automationId: rule.id,
+                    triggerEventId: null, // No event for scheduled triggers
+                    triggerContext: {
+                        timestamp: currentTime.toISOString(),
+                        triggerType: 'scheduled',
+                        cronExpression: cronExpression,
+                        timeZone: effectiveTimeZone,
+                    },
+                    stateConditionsMet: null as boolean | null, // N/A for scheduled
+                    temporalConditionsMet: null as boolean | null, // N/A for scheduled
+                    actions: [] as Array<{
+                        actionIndex: number;
+                        actionType: string;
+                        actionParams: any;
+                        status: 'success' | 'failure';
+                        errorMessage?: string;
+                        executionDurationMs: number;
+                    }>,
+                };
 
-                for (const action of ruleConfig.actions) {
+                for (let actionIndex = 0; actionIndex < ruleConfig.actions.length; actionIndex++) {
+                    const action = ruleConfig.actions[actionIndex];
+                    const actionStartTime = Date.now();
+                    
                     if (action.type !== AutomationActionType.ARM_AREA && action.type !== AutomationActionType.DISARM_AREA) {
                         console.warn(`[Automation Service] Rule ID ${rule.id} (${rule.name}), Action Type \'${action.type}\': This action type is not currently supported for scheduled triggers. Only ARM_AREA and DISARM_AREA are allowed. Skipping this action.`);
+                        auditExecution.actions.push({
+                            actionIndex,
+                            actionType: action.type,
+                            actionParams: resolveTokens(action.params, null, fullFacts) || {},
+                            status: 'failure',
+                            errorMessage: 'Action type not supported for scheduled triggers',
+                            executionDurationMs: Date.now() - actionStartTime,
+                        });
                         continue; 
                     }
+                    
                     console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Executing allowed action type \'${action.type}\' for scheduled trigger.`);
-                    await executeActionWithRetry(rule, action, null, fullFacts);
+                    
+                    try {
+                        await executeActionWithRetry(rule, action, null, fullFacts, null, actionIndex); // Pass null for executionId to skip individual tracking
+                        auditExecution.actions.push({
+                            actionIndex,
+                            actionType: action.type,
+                            actionParams: resolveTokens(action.params, null, fullFacts) || {},
+                            status: 'success',
+                            executionDurationMs: Date.now() - actionStartTime,
+                        });
+                    } catch (actionError) {
+                        console.error(`[Automation Service] Action ${actionIndex} failed for scheduled rule ${rule.id}:`, actionError);
+                        auditExecution.actions.push({
+                            actionIndex,
+                            actionType: action.type,
+                            actionParams: resolveTokens(action.params, null, fullFacts) || {},
+                            status: 'failure',
+                            errorMessage: actionError instanceof Error ? actionError.message : String(actionError),
+                            executionDurationMs: Date.now() - actionStartTime,
+                        });
+                    }
+                }
+
+                // --- Insert Complete Audit Trail ---
+                try {
+                    const executionDurationMs = Date.now() - executionStartTime;
+                    const successfulActions = auditExecution.actions.filter(a => a.status === 'success').length;
+                    const failedActions = auditExecution.actions.filter(a => a.status === 'failure').length;
+                    const finalStatus = AutomationAuditService.determineExecutionStatus(
+                        auditExecution.actions.length,
+                        successfulActions,
+                        failedActions
+                    );
+                    
+                    await db.transaction(async (tx) => {
+                        // Insert execution record
+                        await tx.insert(automationExecutions).values({
+                            id: auditExecution.id,
+                            automationId: auditExecution.automationId,
+                            triggerTimestamp: new Date(),
+                            triggerEventId: auditExecution.triggerEventId,
+                            triggerContext: auditExecution.triggerContext,
+                            stateConditionsMet: auditExecution.stateConditionsMet,
+                            temporalConditionsMet: auditExecution.temporalConditionsMet,
+                            executionStatus: finalStatus,
+                            executionDurationMs,
+                            totalActions: auditExecution.actions.length,
+                            successfulActions,
+                            failedActions,
+                        });
+                        
+                        // Insert action execution records
+                        if (auditExecution.actions.length > 0) {
+                            const actionInserts = auditExecution.actions.map(action => ({
+                                id: crypto.randomUUID(),
+                                executionId: auditExecution.id,
+                                actionIndex: action.actionIndex,
+                                actionType: action.actionType,
+                                actionParams: action.actionParams,
+                                status: action.status,
+                                errorMessage: action.errorMessage || null,
+                                retryCount: 0,
+                                executionDurationMs: action.executionDurationMs,
+                                resultData: null,
+                                startedAt: new Date(executionStartTime + (action.actionIndex * 10)),
+                                completedAt: new Date(executionStartTime + action.executionDurationMs),
+                            }));
+                            
+                            await tx.insert(automationActionExecutions).values(actionInserts);
+                        }
+                    });
+                } catch (auditError) {
+                    console.error(`[Automation Service] Failed to insert audit trail for scheduled rule ${rule.id}:`, auditError);
                 }
                 // ---- End of simplified action execution block -----
 
@@ -527,9 +742,29 @@ async function executeActionWithRetry(
     rule: typeof automations.$inferSelect,
     action: AutomationAction,
     stdEvent: StandardizedEvent | null, // Now optional
-    tokenFactContext: Record<string, any> 
+    tokenFactContext: Record<string, any>,
+    executionId: string | null = null, // For audit tracking
+    actionIndex: number = 0 // For audit tracking
 ) {
     console.log(`[Automation Service] Attempting action type '${action.type}' for rule ${rule.id} (${rule.name})`);
+    
+    let actionExecutionId: string | null = null;
+    const actionStartTime = Date.now();
+    
+    // Start action audit tracking
+    if (executionId) {
+        try {
+            const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext);
+            actionExecutionId = await automationAuditService.startActionExecution({
+                executionId,
+                actionIndex,
+                actionType: action.type,
+                actionParams: resolvedParams || {},
+            });
+        } catch (auditError) {
+            console.error(`[Automation Service] Failed to start action audit tracking for rule ${rule.id}, action ${actionIndex}:`, auditError);
+        }
+    }
     
     const runAction = async () => {
         switch (action.type) {
@@ -811,16 +1046,54 @@ async function executeActionWithRetry(
         }
     };
 
+    let retryCount = 0;
+    const actionResult: any = null;
+    let actionError: Error | null = null;
+
     try {
         await pRetry(runAction, {
             retries: 3, minTimeout: 500, maxTimeout: 5000, factor: 2, 
             onFailedAttempt: (error) => {
+                retryCount = error.attemptNumber - 1; // pRetry counts from 1, we want 0-based
                 console.warn(`[Rule ${rule.id}][Action ${action.type}] Attempt ${error.attemptNumber} failed. Retries left: ${error.retriesLeft}. Error: ${error.message}`);
             },
         });
         console.log(`[Automation Service] Successfully executed action type '${action.type}' for rule ${rule.id}`);
+        
+        // Complete action audit tracking - SUCCESS
+        if (actionExecutionId) {
+            try {
+                await automationAuditService.completeActionExecution(actionExecutionId, {
+                    status: ActionExecutionStatus.SUCCESS,
+                    retryCount,
+                    executionDurationMs: Date.now() - actionStartTime,
+                    resultData: actionResult,
+                });
+            } catch (auditError) {
+                console.error(`[Automation Service] Failed to complete action audit tracking for success:`, auditError);
+            }
+        }
+        
     } catch (finalError) {
-        console.error(`[Rule ${rule.id}][Action ${action.type}] Failed permanently after all retries:`, finalError instanceof Error ? finalError.message : finalError);
+        actionError = finalError instanceof Error ? finalError : new Error(String(finalError));
+        console.error(`[Rule ${rule.id}][Action ${action.type}] Failed permanently after all retries:`, actionError.message);
+        
+        // Complete action audit tracking - FAILURE
+        if (actionExecutionId) {
+            try {
+                await automationAuditService.completeActionExecution(actionExecutionId, {
+                    status: ActionExecutionStatus.FAILURE,
+                    errorMessage: actionError.message,
+                    retryCount,
+                    executionDurationMs: Date.now() - actionStartTime,
+                });
+            } catch (auditError) {
+                console.error(`[Automation Service] Failed to complete action audit tracking for failure:`, auditError);
+            }
+        }
+        
+        // Re-throw the error so the calling code can handle it
+        throw actionError;
     }
 }
 

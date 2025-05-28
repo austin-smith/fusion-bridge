@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/data/db';
-import { connectors, devices } from '@/data/db/schema';
-import { eq, sql, and } from 'drizzle-orm';
+import { connectors, devices, events, areaDevices, areas, locations } from '@/data/db/schema';
+import { eq, sql, and, desc } from 'drizzle-orm';
 import * as eventsRepository from '@/data/repositories/events';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { TypedDeviceInfo, DisplayState, DeviceType, EventCategory, EventSubtype } from '@/lib/mappings/definitions';
@@ -34,9 +34,9 @@ interface RepoEnrichedEvent {
 
 // --- Modified Pagination Metadata Interface ---
 interface ApiPaginationMetadata {
-  currentPage: number;
   itemsPerPage: number;
-  hasNextPage: boolean;
+  currentPage: number;
+  hasNextPage: boolean; // <-- Use boolean flag instead of totalPages
 }
 // --- End Modified Pagination Metadata Interface ---
 
@@ -71,11 +71,172 @@ interface ApiEnrichedEvent {
   };
 }
 
+// Function to get a single event by UUID
+async function getSingleEvent(eventUuid: string): Promise<ApiEnrichedEvent | null> {
+  try {
+    const result = await db
+      .select({
+        // Event fields
+        id: events.id,
+        eventUuid: events.eventUuid,
+        deviceId: events.deviceId,
+        timestamp: events.timestamp,
+        standardizedEventCategory: events.standardizedEventCategory,
+        standardizedEventType: events.standardizedEventType,
+        standardizedEventSubtype: events.standardizedEventSubtype,
+        standardizedPayload: events.standardizedPayload,
+        rawPayload: events.rawPayload,
+        rawEventType: events.rawEventType,
+        connectorId: events.connectorId,
+        // Joined Device fields
+        deviceName: devices.name,
+        rawDeviceType: devices.type, 
+        // Joined Connector fields
+        connectorName: connectors.name,
+        connectorCategory: connectors.category,
+        connectorConfig: connectors.cfg_enc,
+        // Joined Area fields (nullable due to LEFT JOINs)
+        areaId: areaDevices.areaId,
+        areaName: areas.name,
+        // Joined Location fields (nullable due to LEFT JOINs)
+        locationId: locations.id,
+        locationName: locations.name
+      })
+      .from(events)
+      .leftJoin(devices, and(
+          eq(devices.connectorId, events.connectorId),
+          eq(devices.deviceId, events.deviceId)
+      ))
+      .leftJoin(connectors, eq(connectors.id, events.connectorId))
+      .leftJoin(areaDevices, eq(areaDevices.deviceId, devices.id))
+      .leftJoin(areas, eq(areas.id, areaDevices.areaId))
+      .leftJoin(locations, eq(locations.id, areas.locationId))
+      .where(eq(events.eventUuid, eventUuid))
+      .limit(1);
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    const event = result[0];
+    
+    // Parse payloads and create enriched event
+    let payload: Record<string, any> | null = null;
+    let rawPayload: Record<string, any> | null = null;
+    let displayState: DisplayState | undefined = undefined;
+    let bestShotUrlComponents: ApiEnrichedEvent['bestShotUrlComponents'] | undefined = undefined;
+    const connectorCategory = event.connectorCategory ?? 'unknown';
+
+    // Try to parse standardized payload
+    try {
+      if (typeof event.standardizedPayload === 'string' && event.standardizedPayload) {
+           payload = JSON.parse(event.standardizedPayload);
+      } else {
+           payload = event.standardizedPayload as Record<string, any> | null;
+      }
+    } catch (e) {
+      console.warn(`Failed to parse standardized payload for event ${event.eventUuid}:`, e);
+    }
+
+    // Try to parse raw payload
+    try {
+      if (typeof event.rawPayload === 'string' && event.rawPayload) {
+           rawPayload = JSON.parse(event.rawPayload);
+      } else {
+           rawPayload = event.rawPayload as Record<string, any> | null;
+      }
+    } catch (e) {
+      console.warn(`Failed to parse raw payload for event ${event.eventUuid}:`, e);
+    }
+
+    // Derive deviceTypeInfo using the joined rawDeviceType
+    const deviceTypeInfo = getDeviceTypeInfo(connectorCategory, event.rawDeviceType ?? 'Unknown');
+
+    // Derive displayState from parsed payload
+    displayState = payload?.displayState;
+    
+    // Handle Piko bestShotUrlComponents
+    if (
+      connectorCategory === 'piko' &&
+      event.standardizedEventCategory === EventCategory.ANALYTICS &&
+      payload?.objectTrackId && 
+      typeof payload.objectTrackId === 'string' &&
+      event.deviceId
+    ) {
+      if (event.connectorConfig) {
+          try {
+              const config = JSON.parse(event.connectorConfig) as PikoConfig;
+              
+              if (config.type === 'cloud' && config.selectedSystem) {
+                  bestShotUrlComponents = {
+                      type: 'cloud',
+                      pikoSystemId: config.selectedSystem,
+                      objectTrackId: payload.objectTrackId,
+                      cameraId: event.deviceId,
+                      connectorId: event.connectorId
+                  };
+              } else if (config.type === 'local') {
+                  bestShotUrlComponents = {
+                      type: 'local',
+                      objectTrackId: payload.objectTrackId,
+                      cameraId: event.deviceId,
+                      connectorId: event.connectorId
+                  };
+              }
+          } catch (e) {
+              console.warn(`Failed to parse Piko config for connector ${event.connectorId} on event ${event.eventUuid}:`, e);
+          }
+      }
+    }
+
+    return {
+      id: event.id,
+      eventUuid: event.eventUuid,
+      deviceId: event.deviceId,
+      deviceName: event.deviceName ?? undefined,
+      connectorId: event.connectorId,
+      connectorName: event.connectorName ?? undefined,
+      connectorCategory: connectorCategory,
+      timestamp: new Date(event.timestamp).getTime(),
+      eventCategory: event.standardizedEventCategory,
+      eventType: event.standardizedEventType,
+      eventSubtype: event.standardizedEventSubtype as EventSubtype ?? undefined,
+      payload: payload,
+      deviceTypeInfo: deviceTypeInfo,
+      displayState: displayState,
+      rawPayload: rawPayload,
+      rawEventType: event.rawEventType ?? undefined,
+      bestShotUrlComponents: bestShotUrlComponents,
+      areaId: event.areaId ?? undefined,
+      areaName: event.areaName ?? undefined,
+      locationId: event.locationId ?? undefined,
+      locationName: event.locationName ?? undefined,
+    };
+  } catch (error) {
+    console.error('Error fetching single event:', error);
+    return null;
+  }
+}
+
 // GET handler to fetch events
 export async function GET(request: NextRequest) {
   try {
-    // --- Pagination --- 
     const searchParams = request.nextUrl.searchParams;
+    const eventUuid = searchParams.get('eventUuid');
+    
+    // If eventUuid is provided, fetch single event
+    if (eventUuid) {
+      const event = await getSingleEvent(eventUuid);
+      if (!event) {
+        return NextResponse.json(
+          { success: false, error: 'Event not found' },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({ success: true, data: event });
+    }
+
+    // Otherwise, fetch list of events with pagination and filters
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const offset = (page - 1) * limit;

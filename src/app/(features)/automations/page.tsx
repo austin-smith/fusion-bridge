@@ -3,9 +3,8 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { AutomationCardView } from "@/components/features/automations/AutomationCardView";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Workflow } from "lucide-react";
+import { PlusCircle, Workflow, History } from "lucide-react";
 import Link from 'next/link';
-import { PageHeader } from '@/components/layout/page-header';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { MultiSelectComboBox } from '@/components/ui/multi-select-combobox';
 
@@ -63,50 +62,65 @@ export default function AutomationsPage() {
     fetchAvailableTags();
   }, [fetchLocations, fetchAvailableTags]);
   
-  const pageActions = (
-    <div className="flex items-center gap-2 flex-wrap">
-      <Select 
-        value={selectedLocationId || "all"} 
-        onValueChange={(value) => setSelectedLocationId(value === "all" ? null : value)}
-      >
-        <SelectTrigger className="w-full sm:w-[180px]">
-          <SelectValue placeholder="All Locations" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Locations</SelectItem>
-          {locations.sort((a, b) => a.name.localeCompare(b.name)).map((location) => (
-            <SelectItem key={location.id} value={location.id}>
-              {location.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {availableTags.length > 0 && (
-        <MultiSelectComboBox
-          options={availableTags.map(tag => ({ value: tag, label: tag }))}
-          selected={selectedTags}
-          onChange={setSelectedTags}
-          placeholder="Filter by tags..."
-          className="w-full sm:w-[200px]"
-        />
-      )}
-
-      <Button asChild size="sm">
-        <Link href="/automations/new">
-          <PlusCircle className="h-4 w-4" /> Add Automation
-        </Link>
-      </Button>
-    </div>
-  );
-
   return (
     <div className="flex-1 space-y-4 p-4 pt-6 md:p-8">
-      <PageHeader 
-        title="Automations"
-        icon={<Workflow className="h-6 w-6" />}
-        actions={pageActions}
-      />
+      {/* Custom header for automations page */}
+      <div className="flex flex-col mb-6 gap-4 flex-shrink-0">
+        {/* Title and Icon Section */}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="text-muted-foreground flex-shrink-0">
+            <Workflow className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">
+              Automations
+            </h1>
+          </div>
+        </div>
+
+        {/* Actions Section - Always below title */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select 
+            value={selectedLocationId || "all"} 
+            onValueChange={(value) => setSelectedLocationId(value === "all" ? null : value)}
+          >
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="All Locations" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.sort((a, b) => a.name.localeCompare(b.name)).map((location) => (
+                <SelectItem key={location.id} value={location.id}>
+                  {location.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {availableTags.length > 0 && (
+            <MultiSelectComboBox
+              options={availableTags.map(tag => ({ value: tag, label: tag }))}
+              selected={selectedTags}
+              onChange={setSelectedTags}
+              placeholder="Filter by tags..."
+              className="w-full sm:w-[200px]"
+            />
+          )}
+
+          <Button asChild size="sm" variant="outline">
+            <Link href="/automations/executions">
+              <History className="h-4 w-4" /> View Logs
+            </Link>
+          </Button>
+
+          <Button asChild size="sm">
+            <Link href="/automations/new">
+              <PlusCircle className="h-4 w-4" /> Add Automation
+            </Link>
+          </Button>
+        </div>
+      </div>
+      
       <AutomationCardView selectedLocationId={selectedLocationId} selectedTags={selectedTags} />
     </div>
   );
