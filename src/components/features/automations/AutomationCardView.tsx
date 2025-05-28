@@ -5,14 +5,15 @@ import {
   Trash2, 
   Pencil, 
   AlertTriangle, 
-  Layers,
   CheckCircle2,
   XCircle,
   Copy,
   MapPin,
   MoreVertical,
   Activity,
-  Calendar
+  Calendar,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -134,27 +135,10 @@ function AutomationCardSkeleton() {
           
           <div className="p-4">
             <div className="mb-3">
-              <Skeleton className="h-3 w-16 mb-3" />
-              
-              <div className="space-y-3">
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Skeleton className="h-4 w-4 rounded-full" />
-                    <Skeleton className="h-4 w-2/3" />
-                  </div>
-                ))}
-                
-                <div className="flex items-center gap-2">
-                  <Skeleton className="h-4 w-4 rounded-full" />
-                  <Skeleton className="h-4 w-1/2" />
-                </div>
-                
-                <div className="mt-3 pt-2 border-t border-dashed border-muted">
-                  <div className="flex items-center">
-                    <Skeleton className="h-3 w-3 rounded-full mr-1.5" />
-                    <Skeleton className="h-3 w-24" />
-                  </div>
-                </div>
+              {/* Collapsible header skeleton */}
+              <div className="flex items-center gap-1 mb-2">
+                <Skeleton className="h-3 w-3" />
+                <Skeleton className="h-3 w-20" />
               </div>
             </div>
           </div>
@@ -427,6 +411,7 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
+  const [actionsExpanded, setActionsExpanded] = useState(false);
   const router = useRouter();
 
   // Get trigger type icon and styling
@@ -518,11 +503,6 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
   // Get the actions data safely
   const actions = automation.configJson?.actions || [];
   
-  // Limit to first 3 actions for display
-  const visibleActions = actions.slice(0, 3);
-  const hasMoreActions = actions.length > 3;
-  const hiddenActionCount = actions.length - visibleActions.length;
-
   // --- NEW: Derive currentRuleLocationScope ---
   const currentRuleLocationScope = automation.locationScopeId && safeLocations.length > 0
     ? safeLocations.find(loc => loc.id === automation.locationScopeId)
@@ -673,24 +653,31 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
           </div>
         </CardHeader>
         
-        <CardContent className="pt-4 pb-4">
+        <CardContent className="p-4">
           {/* Actions Section */}
-          <div className="mb-3">
-            <h4 className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Actions</h4>
-            
-            <div>
-              {actions.length === 0 ? (
+          <div>
+            {actions.length === 0 ? (
+              <div>
+                <h4 className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Actions</h4>
                 <div className="text-sm text-muted-foreground">No actions configured</div>
-              ) : (
-                <div className="space-y-3">
-                  {visibleActions.map((action, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      {getActionIconComponent(action.type)}
+              </div>
+            ) : (
+              <div>
+                <h4 className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Actions</h4>
+                
+                {!actionsExpanded ? (
+                  /* Collapsed: Show first action with indicator */
+                  <div>
+                    <div 
+                      className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 cursor-pointer transition-colors"
+                      onClick={() => setActionsExpanded(true)}
+                    >
+                      {getActionIconComponent(actions[0].type)}
                       <div className="min-w-0 flex-1">
                         <span className="text-sm text-muted-foreground">
                           {formatActionDetail(
-                            action.type, 
-                            action.params, 
+                            actions[0].type, 
+                            actions[0].params, 
                             { 
                               connectors: sortedPikoConnectors, 
                               devices: sortedTargetDevices,
@@ -700,21 +687,69 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
                           )}
                         </span>
                       </div>
+                      {actions.length > 1 && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                          <span>1 of {actions.length}</span>
+                          <ChevronRight className="h-3 w-3" />
+                        </div>
+                      )}
                     </div>
-                  ))}
-                  
-                  {/* Show indicator for additional actions */}
-                  {hasMoreActions && (
-                    <div className="mt-3 pt-2 border-t border-dashed border-muted">
-                      <span className="flex items-center text-xs text-muted-foreground">
-                        <Layers className="h-3 w-3 mr-1.5" />
-                        {hiddenActionCount} more action{hiddenActionCount !== 1 ? 's' : ''}
-                      </span>
+                  </div>
+                ) : (
+                  /* Expanded: Entire area clickable, but indicator stays on first action */
+                  <div 
+                    className="p-2 rounded-md hover:bg-muted/50 cursor-pointer transition-colors"
+                    onClick={() => setActionsExpanded(false)}
+                  >
+                    <div className="space-y-3">
+                      {/* First action with collapse indicator */}
+                      <div className="flex items-center gap-2">
+                        {getActionIconComponent(actions[0].type)}
+                        <div className="min-w-0 flex-1">
+                          <span className="text-sm text-muted-foreground">
+                            {formatActionDetail(
+                              actions[0].type, 
+                              actions[0].params, 
+                              { 
+                                connectors: sortedPikoConnectors, 
+                                devices: sortedTargetDevices,
+                                areas: safeAreas,
+                                ruleLocationScope: currentRuleLocationScope
+                              }
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                          <span>Showing all {actions.length}</span>
+                          <ChevronDown className="h-3 w-3" />
+                        </div>
+                      </div>
+                      
+                      {/* Remaining actions */}
+                      {actions.slice(1).map((action, index) => (
+                        <div key={index + 1} className="flex items-center gap-2">
+                          {getActionIconComponent(action.type)}
+                          <div className="min-w-0 flex-1">
+                            <span className="text-sm text-muted-foreground">
+                              {formatActionDetail(
+                                action.type, 
+                                action.params, 
+                                { 
+                                  connectors: sortedPikoConnectors, 
+                                  devices: sortedTargetDevices,
+                                  areas: safeAreas,
+                                  ruleLocationScope: currentRuleLocationScope
+                                }
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </CardContent>
         
