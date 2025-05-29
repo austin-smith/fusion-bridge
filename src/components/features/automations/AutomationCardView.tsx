@@ -8,7 +8,7 @@ import {
   CheckCircle2,
   XCircle,
   Copy,
-  MapPin,
+  Building,
   MoreVertical,
   Activity,
   Calendar,
@@ -550,7 +550,7 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
               {currentRuleLocationScope && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <Building className="h-4 w-4 shrink-0 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>Scoped to: {currentRuleLocationScope.name}</p>

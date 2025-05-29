@@ -19,7 +19,9 @@ import {
   Timer,
   Pause,
   RotateCcw,
-  ChevronRight
+  ChevronRight,
+  Building,
+  MapPin
 } from 'lucide-react';
 import { format } from 'date-fns';
 import type { AutomationExecutionSummary } from '@/services/automation-audit-query-service';
@@ -371,13 +373,15 @@ export function ExecutionDetailsModal({
                         </div>
                         <div className="text-right">
                           {triggerEvent.areaName && (
-                            <div className="text-xs text-muted-foreground">
-                              📍 {triggerEvent.areaName}
+                            <div className="text-xs text-muted-foreground flex items-center gap-1">
+                              <MapPin className="h-3 w-3" />
+                              {triggerEvent.areaName}
                             </div>
                           )}
                           {triggerEvent.locationName && (
-                            <div className="text-xs text-muted-foreground">
-                              🏢 {triggerEvent.locationName}
+                            <div className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Building className="h-3 w-3" />
+                              {triggerEvent.locationName}
                             </div>
                           )}
                         </div>
