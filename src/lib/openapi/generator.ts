@@ -12,7 +12,8 @@ import {
   setPinSchema,
   validatePinSchema,
   pinValidationResponseSchema,
-  pinOperationResponseSchema
+  pinOperationResponseSchema,
+  updateUserLocationsSchema
 } from '../schemas/api-schemas';
 
 // Extend Zod with OpenAPI support
@@ -164,6 +165,12 @@ const apiKeyTestResponseSchema = z.object({
   timestamp: z.string().describe('Test timestamp (ISO string)'),
 }).openapi('ApiKeyTestResponse');
 
+// User location management schemas
+const userLocationsResponseSchema = z.object({
+  userId: z.string().uuid().describe('User UUID'),
+  locations: z.array(locationSchema).describe('Array of assigned locations. Empty array means user has access to all locations.'),
+}).openapi('UserLocationsResponse');
+
 export function generateOpenApiSpec() {
   const registry = new OpenAPIRegistry();
 
@@ -192,6 +199,10 @@ export function generateOpenApiSpec() {
   registry.register('PinOperationResponse', pinOperationResponseSchema.openapi('PinOperationResponse'));
   registry.register('UserIdParams', userIdParamsSchema);
 
+  // User location management schemas
+  registry.register('UpdateUserLocationsRequest', updateUserLocationsSchema.openapi('UpdateUserLocationsRequest'));
+  registry.register('UserLocationsResponse', userLocationsResponseSchema);
+
   // Register response schemas
   const areasSuccessResponse = successResponseSchema(z.array(areaSchema));
   const areaSuccessResponse = successResponseSchema(areaSchema);
@@ -208,6 +219,9 @@ export function generateOpenApiSpec() {
   const pinOperationSuccessResponse = successResponseSchema(pinOperationResponseSchema);
   const pinValidationSuccessResponse = successResponseSchema(pinValidationResponseSchema);
 
+  // User location management response schemas
+  const userLocationsSuccessResponse = successResponseSchema(userLocationsResponseSchema);
+
   registry.register('AreasSuccessResponse', areasSuccessResponse);
   registry.register('AreaSuccessResponse', areaSuccessResponse);
   registry.register('EventSuccessResponse', eventSuccessResponse);
@@ -222,6 +236,9 @@ export function generateOpenApiSpec() {
   // PIN management response schemas
   registry.register('PinOperationSuccessResponse', pinOperationSuccessResponse);
   registry.register('PinValidationSuccessResponse', pinValidationSuccessResponse);
+
+  // User location management response schemas
+  registry.register('UserLocationsSuccessResponse', userLocationsSuccessResponse);
 
   // Areas endpoints
   registry.registerPath({
@@ -1162,6 +1179,104 @@ export function generateOpenApiSpec() {
         content: {
           'application/json': {
             schema: { $ref: '#/components/schemas/PinValidationSuccessResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  // User Location Management endpoints
+  registry.registerPath({
+    method: 'get',
+    path: '/api/users/{userId}/locations',
+    summary: 'Get user location assignments',
+    description: 'Retrieves the locations assigned to a specific user. Empty array means user has access to all locations.',
+    tags: ['Users'],
+    request: {
+      params: userIdParamsSchema,
+    },
+    responses: {
+      200: {
+        description: 'User locations retrieved successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/UserLocationsSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid user ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'User not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'put',
+    path: '/api/users/{userId}/locations',
+    summary: 'Update user location assignments',
+    description: 'Updates the locations assigned to a user. Provide an empty array to grant access to all locations, or specific location IDs to restrict access.',
+    tags: ['Users'],
+    request: {
+      params: userIdParamsSchema,
+      body: {
+        content: {
+          'application/json': {
+            schema: updateUserLocationsSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'User locations updated successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/UserLocationsSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid input, user ID format, or location IDs not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'User not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
           },
         },
       },

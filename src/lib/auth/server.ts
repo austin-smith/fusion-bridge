@@ -27,6 +27,12 @@ export const auth = betterAuth.betterAuth({
         required: false,
         input: false, // System managed
       },
+      locationIds: {
+        type: "string", // JSON array stored as string
+        required: false,
+        defaultValue: "[]", // Empty array as JSON string
+        input: false, // Admin-managed field, not user input
+      },
     },
   },
   emailAndPassword: {

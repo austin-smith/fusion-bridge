@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useActionState } from 'react';
 import { useRouter } from 'next/navigation';
 import { type ColumnDef, createColumnHelper } from '@tanstack/react-table';
-import { MoreHorizontal, ArrowUpDown, Trash2, Loader2, Pencil, KeyRound, ShieldCheck, UserCircle2, Plus, Hash } from 'lucide-react';
+import { MoreHorizontal, ArrowUpDown, Trash2, Loader2, Pencil, KeyRound, ShieldCheck, UserCircle2, Plus, Hash, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { DataTable } from '@/components/ui/data-table';
 import type { User } from '@/lib/actions/user-actions';
-import { updateUser } from '@/lib/actions/user-actions';
+import { updateUser, getUserLocations } from '@/lib/actions/user-actions';
 import { authClient } from '@/lib/auth/client';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
@@ -58,6 +58,8 @@ import {
 } from "@/components/ui/select";
 import { useFusionStore } from '@/stores/store';
 import { PinManagementDialog } from './pin-management-dialog';
+import { ManageUserLocationsDialog } from './manage-user-locations-dialog';
+import { Badge } from '@/components/ui/badge';
 
 // --- Column Definitions ---
 
@@ -200,6 +202,18 @@ export const columns: ColumnDef<User>[] = [
     enableSorting: true,
   },
   {
+    accessorKey: "locations",
+    header: ({ column }) => (
+      <div className="flex items-center gap-1">
+        <MapPin className="h-4 w-4" />
+        <span>Locations</span>
+      </div>
+    ),
+    cell: ({ row }) => <LocationsCell user={row.original} />,
+    size: 150,
+    enableSorting: false,
+  },
+  {
     accessorKey: "createdAt",
     header: ({ column }) => <SortableHeader column={column}>Created</SortableHeader>,
     cell: ({ row }) => {
@@ -221,6 +235,107 @@ export const columns: ColumnDef<User>[] = [
   },
 ];
 
+// --- Locations Cell Component ---
+
+interface LocationsCellProps {
+  user: User;
+}
+
+function LocationsCell({ user }: LocationsCellProps) {
+  const [locations, setLocations] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasAllAccess, setHasAllAccess] = useState(false);
+
+  useEffect(() => {
+    const fetchUserLocations = async () => {
+      try {
+        const result = await getUserLocations(user.id);
+        setLocations(result.locations || []);
+        // Check if user has empty locationIds (meaning all access)
+        setHasAllAccess(result.locations.length === 0);
+      } catch (error) {
+        console.error('Error fetching user locations:', error);
+        setLocations([]);
+        setHasAllAccess(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchUserLocations();
+  }, [user.id]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-1">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span className="text-xs text-muted-foreground">Loading...</span>
+      </div>
+    );
+  }
+
+  // Empty array = access to all locations
+  if (hasAllAccess || locations.length === 0) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="default" className="text-xs cursor-help bg-green-100 text-green-800 border-green-200">
+              All locations
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="text-sm">User has access to all locations</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  if (locations.length === 1) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="secondary" className="text-xs cursor-help">
+              {locations[0].name}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="text-sm">{locations[0].addressCity}, {locations[0].addressState}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="secondary" className="text-xs cursor-help">
+            {locations.length} locations
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          <div className="space-y-1">
+            {locations.slice(0, 5).map((location) => (
+              <p key={location.id} className="text-sm">
+                {location.name} ({location.addressCity}, {location.addressState})
+              </p>
+            ))}
+            {locations.length > 5 && (
+              <p className="text-xs text-muted-foreground">
+                +{locations.length - 5} more...
+              </p>
+            )}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 // --- User Actions Cell Component ---
 
 interface UserActionsCellProps {
@@ -233,6 +348,7 @@ function UserActionsCell({ user }: UserActionsCellProps) {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false);
   const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
+  const [isManageLocationsDialogOpen, setIsManageLocationsDialogOpen] = useState(false);
   const router = useRouter();
 
   const handleDelete = async () => {
@@ -280,6 +396,10 @@ function UserActionsCell({ user }: UserActionsCellProps) {
                    <Hash className="mr-2 h-4 w-4" />
                   Manage PIN
               </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setIsManageLocationsDialogOpen(true)}>
+                   <MapPin className="mr-2 h-4 w-4" />
+                  Manage Locations
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <AlertDialogTrigger asChild>
                    <DropdownMenuItem className="text-destructive focus:text-destructive focus:bg-destructive/10">
@@ -324,6 +444,16 @@ function UserActionsCell({ user }: UserActionsCellProps) {
          user={user}
          isOpen={isPinDialogOpen}
          onOpenChange={setIsPinDialogOpen}
+       />
+
+       <ManageUserLocationsDialog
+         user={user}
+         isOpen={isManageLocationsDialogOpen}
+         onOpenChange={setIsManageLocationsDialogOpen}
+         onSuccess={() => {
+           // Refresh the user list to show updated location assignments
+           useFusionStore.getState().triggerUserListRefresh();
+         }}
        />
     </>
   );

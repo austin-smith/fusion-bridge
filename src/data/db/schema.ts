@@ -311,6 +311,8 @@ export const user = sqliteTable("user", {
   // Keypad PIN fields (matching Better Auth additionalFields)
   keypadPin: text('keypadPin'), // Hashed PIN string
   keypadPinSetAt: integer('keypadPinSetAt', { mode: 'timestamp' }),
+  // Location assignment field (matching Better Auth additionalFields)
+  locationIds: text('locationIds', { mode: "json" }).$type<string[]>().default(sql`'[]'`).notNull(),
 });
 
 export const account = sqliteTable("account", {

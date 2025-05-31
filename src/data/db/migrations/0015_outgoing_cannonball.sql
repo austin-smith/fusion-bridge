@@ -1,0 +1,1 @@
+ALTER TABLE `user` ADD `locationIds` text DEFAULT '[]' NOT NULL;

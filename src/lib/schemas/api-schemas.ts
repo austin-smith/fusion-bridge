@@ -58,4 +58,10 @@ export const pinValidationResponseSchema = z.object({
 export const pinOperationResponseSchema = z.object({
   userId: z.string().uuid().describe("User ID"),
   message: z.string().describe("Operation result message"),
+});
+
+// User location management schemas
+export const updateUserLocationsSchema = z.object({
+  locationIds: z.array(z.string().uuid()).min(0, "Location IDs must be valid UUIDs")
+    .describe("Array of location UUIDs to assign to user. Empty array grants access to all locations."),
 }); 

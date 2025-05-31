@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { db } from '@/data/db';
 import { user, account, session } from '@/data/db/schema';
 import { auth } from '@/lib/auth/server';
-import { eq, sql, and, max } from 'drizzle-orm';
+import { eq, sql, and, max, inArray } from 'drizzle-orm';
 import crypto from 'crypto';
 import { revalidatePath } from 'next/cache';
 import { headers as nextHeaders, cookies } from 'next/headers';
@@ -426,4 +426,219 @@ export async function resetUserPassword(
         console.error(`[Server Action] Error updating password during reset for user ${userId}:`, error);
         return { success: false, message: 'Database error during password reset.' };
     }
-} 
+}
+
+// --- User Location Management Server Actions ---
+
+// Schema for location assignment
+const AssignUserLocationsSchema = z.object({
+    userId: z.string().min(1, { message: 'User ID is required.' }),
+    locationIds: z.array(z.string().uuid()).min(0, "Location IDs must be valid UUIDs"),
+});
+
+// Type for user with location IDs (Better Auth additional field)
+type UserWithLocationIds = z.infer<typeof UserSchema> & {
+    locationIds?: string;
+};
+
+/**
+ * Gets all locations assigned to a specific user
+ * Empty locationIds array means user has access to ALL locations
+ */
+export async function getUserLocations(userId: string) {
+    console.log(`[Server Action] Fetching locations for user ${userId}...`);
+    
+    try {
+        // Get user with locationIds
+        const userData = await db.select()
+            .from(user)
+            .where(eq(user.id, userId))
+            .limit(1);
+
+        if (userData.length === 0) {
+            console.warn(`[Server Action] User ${userId} not found`);
+            return { success: false, message: 'User not found.', locations: [] };
+        }
+
+        const userRecord = userData[0];
+        const userLocationIds = (userRecord as any).locationIds; // Direct access to Better Auth additional field
+
+        // Parse the JSON string to get location IDs array
+        let locationIdsArray: string[];
+        try {
+            locationIdsArray = typeof userLocationIds === 'string' 
+                ? JSON.parse(userLocationIds) 
+                : (userLocationIds || []);
+        } catch (error) {
+            console.warn(`[Server Action] Invalid locationIds JSON for user ${userId}:`, userLocationIds);
+            locationIdsArray = [];
+        }
+
+        // Empty array means access to ALL locations
+        if (locationIdsArray.length === 0) {
+            console.log(`[Server Action] User ${userId} has access to ALL locations`);
+            return { success: true, message: 'User has access to all locations.', locations: [] };
+        }
+
+        // Fetch the actual location data for specific assignments
+        const { locations: locationsTable } = await import('@/data/db/schema');
+        const userLocations = await db.select()
+            .from(locationsTable)
+            .where(inArray(locationsTable.id, locationIdsArray))
+            .orderBy(locationsTable.path);
+
+        console.log(`[Server Action] Found ${userLocations.length} specific locations for user ${userId}`);
+        return { success: true, message: 'Locations fetched successfully.', locations: userLocations };
+
+    } catch (error) {
+        console.error(`[Server Action] Error fetching locations for user ${userId}:`, error);
+        return { success: false, message: 'Database error while fetching user locations.', locations: [] };
+    }
+}
+
+/**
+ * Assigns locations to a user (replaces existing assignments)
+ */
+export async function assignUserLocations(
+    prevState: ActionResult,
+    formData: FormData
+): Promise<ActionResult> {
+    console.log("[Server Action] Assigning locations to user...");
+    
+    const rawData = {
+        userId: formData.get('userId'),
+        locationIds: formData.getAll('locationIds'), // Get all selected location IDs
+    };
+
+    const validatedFields = AssignUserLocationsSchema.safeParse(rawData);
+
+    if (!validatedFields.success) {
+        const errorMessages = Object.values(validatedFields.error.flatten().fieldErrors).flat().join(', ');
+        console.warn("[Server Action] Invalid assign locations input:", errorMessages);
+        return { success: false, message: `Invalid input: ${errorMessages}` };
+    }
+
+    const { userId, locationIds } = validatedFields.data;
+
+    try {
+        // Verify user exists
+        const existingUser = await db.select({ id: user.id })
+            .from(user)
+            .where(eq(user.id, userId))
+            .limit(1);
+
+        if (existingUser.length === 0) {
+            console.warn(`[Server Action] Attempted to assign locations to non-existent user ${userId}`);
+            return { success: false, message: 'User not found.' };
+        }
+
+        // Verify all location IDs exist if any are provided
+        if (locationIds.length > 0) {
+            const { locations: locationsTable } = await import('@/data/db/schema');
+            const existingLocations = await db.select({ id: locationsTable.id })
+                .from(locationsTable)
+                .where(inArray(locationsTable.id, locationIds));
+
+            if (existingLocations.length !== locationIds.length) {
+                const foundIds = existingLocations.map(loc => loc.id);
+                const missingIds = locationIds.filter(id => !foundIds.includes(id));
+                console.warn(`[Server Action] Some locations not found: ${missingIds.join(', ')}`);
+                return { success: false, message: `Location(s) not found: ${missingIds.join(', ')}` };
+            }
+        }
+
+        // Update user's locationIds field
+        const locationIdsJson = JSON.stringify(locationIds);
+        await db.update(user)
+            .set({
+                updatedAt: new Date(),
+                // Type assertion for Better Auth additional field
+                locationIds: locationIdsJson
+            } as any)
+            .where(eq(user.id, userId));
+
+        console.log(`[Server Action] Successfully assigned ${locationIds.length} locations to user ${userId}`);
+        revalidatePath('/admin/users'); // Revalidate the user list page
+        return { 
+            success: true, 
+            message: `User locations updated successfully. ${locationIds.length} location(s) assigned.` 
+        };
+
+    } catch (error) {
+        console.error(`[Server Action] Error assigning locations to user ${userId}:`, error);
+        return { success: false, message: 'Database error during location assignment.' };
+    }
+}
+
+/**
+ * Removes a specific location from a user's assignments
+ */
+export async function removeUserLocation(userId: string, locationId: string): Promise<ActionResult> {
+    console.log(`[Server Action] Removing location ${locationId} from user ${userId}...`);
+    
+    try {
+        // Get current user locations
+        const currentLocationsResult = await getUserLocations(userId);
+        if (!currentLocationsResult.success) {
+            return currentLocationsResult;
+        }
+
+        // Filter out the location to remove
+        const currentLocationIds = currentLocationsResult.locations.map(loc => loc.id);
+        const updatedLocationIds = currentLocationIds.filter(id => id !== locationId);
+
+        // Update user's locationIds field
+        const locationIdsJson = JSON.stringify(updatedLocationIds);
+        await db.update(user)
+            .set({
+                updatedAt: new Date(),
+                locationIds: locationIdsJson
+            } as any)
+            .where(eq(user.id, userId));
+
+        console.log(`[Server Action] Successfully removed location ${locationId} from user ${userId}`);
+        revalidatePath('/admin/users');
+        return { 
+            success: true, 
+            message: 'Location removed from user successfully.' 
+        };
+
+    } catch (error) {
+        console.error(`[Server Action] Error removing location from user ${userId}:`, error);
+        return { success: false, message: 'Database error while removing user location.' };
+    }
+}
+
+/**
+ * Utility function to check if a user has access to a specific location
+ * @param userLocationIds - Array of location IDs the user has access to (empty = all access)
+ * @param targetLocationId - The location ID to check access for
+ * @returns true if user has access, false otherwise
+ */
+function userHasLocationAccess(userLocationIds: string[], targetLocationId: string): boolean {
+    // Empty array = access to all locations
+    if (userLocationIds.length === 0) return true;
+    
+    // Otherwise check if specific location is in user's list
+    return userLocationIds.includes(targetLocationId);
+}
+
+/**
+ * Utility function to get user's location IDs from user data
+ * @param userData - User data from database
+ * @returns Array of location IDs (empty = all access)
+ */
+function getUserLocationIds(userData: any): string[] {
+    try {
+        const locationIds = userData.locationIds;
+        if (typeof locationIds === 'string') {
+            return JSON.parse(locationIds);
+        }
+        return locationIds || [];
+    } catch (error) {
+        console.warn('Error parsing user locationIds:', error);
+        return [];
+    }
+}
+
+// --- End User Location Management Server Actions --- 
