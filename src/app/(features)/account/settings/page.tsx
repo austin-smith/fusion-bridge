@@ -44,8 +44,8 @@ function SettingsPage() {
   // Convert session user to UserData format
   const userData = {
     id: session.user.id,
-    name: session.user.name,
-    email: session.user.email,
+    name: session.user.name || 'Unknown User',
+    email: session.user.email || 'Unknown Email',
     image: session.user.image || null,
     twoFactorEnabled: session.user.twoFactorEnabled || false,
     keypadPin: (session.user as any).keypadPin || null,

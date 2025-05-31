@@ -154,6 +154,9 @@ interface FusionState {
   // --- NEW: User List Refresh State ---
   lastUserListUpdateTimestamp: number | null;
   
+  // --- NEW: PIN Management State ---
+  pinStates: Map<string, { hasPin: boolean; setAt: Date | null }>; // Key: userId
+  
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
   addConnector: (connector: ConnectorWithConfig) => void;
@@ -248,6 +251,8 @@ interface FusionState {
   bulkRemoveDevicesFromArea: (areaId: string, deviceIds: string[]) => Promise<boolean>;
 
   // --- NEW: Keypad PIN Management Actions ---
+  setPinStatus: (userId: string, hasPin: boolean, setAt?: Date | null) => void;
+  getPinStatus: (userId: string) => { hasPin: boolean; setAt: Date | null };
   setUserPin: (userId: string, pin: string) => Promise<boolean>;
   removeUserPin: (userId: string) => Promise<boolean>;
   validatePin: (pin: string) => Promise<{ valid: boolean; userId?: string }>;
@@ -331,6 +336,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   
   // --- NEW: User List Refresh Initial State ---
   lastUserListUpdateTimestamp: null,
+  
+  // --- NEW: PIN Management Initial State ---
+  pinStates: new Map<string, { hasPin: boolean; setAt: Date | null }>(),
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -1346,6 +1354,19 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   },
 
   // --- NEW: Keypad PIN Management Actions ---
+  setPinStatus: (userId: string, hasPin: boolean, setAt?: Date | null) => 
+    set(produce((draft: Draft<FusionState>) => {
+      draft.pinStates.set(userId, { 
+        hasPin, 
+        setAt: setAt || (hasPin ? new Date() : null) 
+      });
+    })),
+
+  getPinStatus: (userId: string) => {
+    const state = get().pinStates.get(userId);
+    return state || { hasPin: false, setAt: null };
+  },
+
   setUserPin: async (userId: string, pin: string) => {
     const loadingToastId = toast.loading('Setting user PIN...');
     try {
@@ -1359,6 +1380,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to set PIN');
       }
+      
+      // Update PIN state immediately
+      get().setPinStatus(userId, true);
       
       // Trigger user list refresh to update UI
       get().triggerUserListRefresh();
@@ -1385,6 +1409,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to remove PIN');
       }
+      
+      // Update PIN state immediately
+      get().setPinStatus(userId, false);
       
       // Trigger user list refresh to update UI
       get().triggerUserListRefresh();

@@ -77,6 +77,22 @@ export function SecuritySettings({ user }: SecuritySettingsProps) {
     // PIN management state
     const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
 
+    // Store actions and state
+    const { setUserPin, removeUserPin, getPinStatus, setPinStatus } = useFusionStore();
+    const pinStatus = getPinStatus(user.id);
+
+    // Initialize PIN status in store from user prop
+    useEffect(() => {
+        setPinStatus(user.id, Boolean(user.keypadPin), user.keypadPinSetAt || null);
+    }, [user.id, user.keypadPin, user.keypadPinSetAt, setPinStatus]);
+
+    // Create user object with current PIN status for dialog
+    const userWithPinData = {
+        ...user,
+        keypadPin: pinStatus.hasPin ? 'SET' : null,
+        keypadPinSetAt: pinStatus.setAt,
+    };
+
     const resetTwoFactorState = () => {
         setIs2faLoading(false);
         setTwoFactorStep(TwoFactorStep.Idle);
@@ -281,15 +297,15 @@ export function SecuritySettings({ user }: SecuritySettingsProps) {
                     {/* Keypad PIN Management */}
                     <div className="space-y-2">
                         <Label className="text-base font-semibold">Keypad PIN</Label>
-                        {user.keypadPin ? (
+                        {pinStatus.hasPin ? (
                             <div className="flex items-center justify-between p-3 rounded-md border border-green-200 bg-green-50">
                                 <div className="flex items-center gap-2">
                                     <Hash className="h-5 w-5 text-green-600" />
                                     <div className="flex flex-col">
                                         <p className="text-sm text-green-700 font-medium">Keypad PIN is active.</p>
-                                        {user.keypadPinSetAt && (
+                                        {pinStatus.setAt && (
                                             <p className="text-xs text-green-600">
-                                                Set on {formatPinDate(user.keypadPinSetAt)}
+                                                Set on {formatPinDate(pinStatus.setAt)}
                                             </p>
                                         )}
                                     </div>
@@ -317,7 +333,7 @@ export function SecuritySettings({ user }: SecuritySettingsProps) {
 
             {/* PIN Management Dialog */}
             <PinManagementDialog 
-                user={user as any} // Cast to match existing dialog interface
+                user={userWithPinData as any}
                 isOpen={isPinDialogOpen}
                 onOpenChange={setIsPinDialogOpen}
                 isSelfService={true}

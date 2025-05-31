@@ -72,10 +72,12 @@ export function PinManagementDialog({ user, isOpen, onOpenChange, isSelfService 
     setIsLoading(true);
     
     try {
+      // Use callback if provided, otherwise use store action
       const success = await setUserPin(user.id, pin);
+      
       if (success) {
         onOpenChange(false);
-        // Success toast is handled by the store action
+        // Success toast is handled by the store action or parent
       }
     } catch (error) {
       console.error('Error in PIN dialog:', error);
@@ -89,10 +91,12 @@ export function PinManagementDialog({ user, isOpen, onOpenChange, isSelfService 
     setIsLoading(true);
     
     try {
+      // Use callback if provided, otherwise use store action
       const success = await removeUserPin(user.id);
+      
       if (success) {
         onOpenChange(false);
-        // Success toast is handled by the store action
+        // Success toast is handled by the store action or parent
       }
     } catch (error) {
       console.error('Error removing PIN:', error);

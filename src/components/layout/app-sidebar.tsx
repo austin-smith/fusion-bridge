@@ -90,9 +90,9 @@ export function AppSidebar() {
   // Determine user role from session
   const userRole = (session?.user as any)?.role; // Access role, might be undefined
 
-  // Effect to populate Zustand store from useSession data - KEEP THIS for other components
+  // Effect to populate Zustand store from useSession data on initial load only
   useEffect(() => {
-    if (session?.user && !currentUser) { // Also check if currentUser is not already set to avoid potential loops if session updates frequently
+    if (session?.user && !currentUser) {
         const userProfile: UserProfile = {
             id: session.user.id,
             name: session.user.name ?? null,
@@ -101,23 +101,7 @@ export function AppSidebar() {
             twoFactorEnabled: (session.user as any).twoFactorEnabled ?? false,
         };
         setCurrentUser(userProfile);
-        console.log("[AppSidebar] Initialized currentUser in Zustand store from session.");
-    } else if (session?.user && currentUser) {
-        // If session user exists and store user exists, ensure they are in sync, prioritizing session as source of truth
-        // This handles cases where session might have updated info not yet reflected due to no direct update path
-        const sessionProfile: UserProfile = {
-            id: session.user.id,
-            name: session.user.name ?? null,
-            email: session.user.email ?? null,
-            image: session.user.image ?? null,
-            twoFactorEnabled: (session.user as any).twoFactorEnabled ?? false,
-        };
-        if (JSON.stringify(sessionProfile) !== JSON.stringify(currentUser)) {
-            setCurrentUser(sessionProfile);
-            console.log("[AppSidebar] Synced currentUser in Zustand store with updated session data.");
-        }
     }
-    // No dependency on currentUser here to avoid re-running the effect when setCurrentUser is called from within
   }, [session, setCurrentUser, currentUser]);
 
   // Filter navGroups based on user role
