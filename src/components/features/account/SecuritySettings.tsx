@@ -31,10 +31,11 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
-import { Loader2, ShieldCheck, ShieldOff, Check, Copy, AlertTriangle } from "lucide-react";
+import { Loader2, ShieldCheck, ShieldOff, Check, Copy, AlertTriangle, Hash, Key } from "lucide-react";
 import { toast } from 'sonner';
 import { Separator } from '@/components/ui/separator';
 import { ChangePasswordDialog } from '@/components/features/account/change-password-dialog';
+import { PinManagementDialog } from '@/components/features/account/pin-management-dialog';
 import { useFusionStore } from '@/stores/store';
 import { authClient } from '@/lib/auth/client';
 import QRCode from "react-qr-code";
@@ -45,6 +46,8 @@ interface UserData {
     email: string;
     image: string | null;
     twoFactorEnabled: boolean;
+    keypadPin?: string | null;
+    keypadPinSetAt?: Date | null;
 }
 
 interface SecuritySettingsProps {
@@ -70,6 +73,9 @@ export function SecuritySettings({ user }: SecuritySettingsProps) {
     const [verificationCode, setVerificationCode] = useState('');
     const [verificationError, setVerificationError] = useState<string | null>(null);
     const [intendedAction, setIntendedAction] = useState<'enable' | 'disable' | 'regenerate' | null>(null);
+    
+    // PIN management state
+    const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
 
     const resetTwoFactorState = () => {
         setIs2faLoading(false);
@@ -203,6 +209,19 @@ export function SecuritySettings({ user }: SecuritySettingsProps) {
         });
     };
 
+    // Helper function to format date for PIN display
+    const formatPinDate = (date: Date | string | null) => {
+        if (!date) return '';
+        const dateObj = typeof date === 'string' ? new Date(date) : date;
+        return new Intl.DateTimeFormat('en-US', {
+            year: 'numeric',
+            month: 'short', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        }).format(dateObj);
+    };
+
     return (
         <>
             <Card>
@@ -256,8 +275,53 @@ export function SecuritySettings({ user }: SecuritySettingsProps) {
                             </Button>
                         </div>
                     )}
+
+                    <Separator />
+
+                    {/* Keypad PIN Management */}
+                    <div className="space-y-2">
+                        <Label className="text-base font-semibold">Keypad PIN</Label>
+                        {user.keypadPin ? (
+                            <div className="flex items-center justify-between p-3 rounded-md border border-green-200 bg-green-50">
+                                <div className="flex items-center gap-2">
+                                    <Hash className="h-5 w-5 text-green-600" />
+                                    <div className="flex flex-col">
+                                        <p className="text-sm text-green-700 font-medium">Keypad PIN is active.</p>
+                                        {user.keypadPinSetAt && (
+                                            <p className="text-xs text-green-600">
+                                                Set on {formatPinDate(user.keypadPinSetAt)}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                                <Button variant="outline" size="sm" onClick={() => setIsPinDialogOpen(true)}>
+                                    <Key className="h-4 w-4" />
+                                    Manage PIN
+                                </Button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-between p-3 rounded-md border border-gray-200 bg-gray-50">
+                                <div className="flex items-center gap-2">
+                                    <Hash className="h-5 w-5 text-gray-500" />
+                                    <p className="text-sm text-gray-700 font-medium">Set a PIN to arm/disarm the alarm using the keypad.</p>
+                                </div>
+                                <Button variant="default" size="sm" onClick={() => setIsPinDialogOpen(true)}>
+                                    <Hash className="h-4 w-4" />
+                                    Set PIN
+                                </Button>
+                            </div>
+                        )}
+                    </div>
                 </CardContent>
             </Card>
+
+            {/* PIN Management Dialog */}
+            <PinManagementDialog 
+                user={user as any} // Cast to match existing dialog interface
+                isOpen={isPinDialogOpen}
+                onOpenChange={setIsPinDialogOpen}
+                isSelfService={true}
+            />
 
             {/* 2FA Dialogs */}
             <Dialog open={twoFactorStep === TwoFactorStep.ConfirmPassword} onOpenChange={(open) => !open && resetTwoFactorState()}>

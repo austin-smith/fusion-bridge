@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { authClient } from '@/lib/auth/client';
 import type { User } from "@/lib/actions/user-actions"; // Assuming User type is still relevant
-import { UsersTable, UsersTableSkeleton } from "../components"; // Correct path to components.tsx (relative)
+import { UsersTable, UsersTableSkeleton } from "./users-table"; // Correct path to users-table.tsx
 import { useFusionStore } from '@/stores/store'; // Import useFusionStore
 
 export function UsersTableLoader() {

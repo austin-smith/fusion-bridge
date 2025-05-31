@@ -307,7 +307,10 @@ export const user = sqliteTable("user", {
   role: text('role'), 
   banned: integer('banned', { mode: 'boolean' }), 
   banReason: text('banReason'), 
-  banExpires: integer('banExpires', { mode: 'timestamp' }) 
+  banExpires: integer('banExpires', { mode: 'timestamp' }),
+  // Keypad PIN fields (matching Better Auth additionalFields)
+  keypadPin: text('keypadPin'), // Hashed PIN string
+  keypadPinSetAt: integer('keypadPinSetAt', { mode: 'timestamp' }),
 });
 
 export const account = sqliteTable("account", {

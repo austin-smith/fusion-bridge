@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useActionState } from 'react';
 import { useRouter } from 'next/navigation';
 import { type ColumnDef, createColumnHelper } from '@tanstack/react-table';
-import { MoreHorizontal, ArrowUpDown, Trash2, Loader2, Pencil, KeyRound, ShieldCheck, UserCircle2, Plus } from 'lucide-react';
+import { MoreHorizontal, ArrowUpDown, Trash2, Loader2, Pencil, KeyRound, ShieldCheck, UserCircle2, Plus, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -57,6 +57,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useFusionStore } from '@/stores/store';
+import { PinManagementDialog } from './pin-management-dialog';
 
 // --- Column Definitions ---
 
@@ -180,6 +181,25 @@ export const columns: ColumnDef<User>[] = [
     enableSorting: true,
   },
   {
+    accessorKey: "keypadPin",
+    header: ({ column }) => <SortableHeader column={column}>Keypad PIN</SortableHeader>,
+    cell: ({ row }) => {
+      const user = row.original as any; // Type assertion since Better Auth additionalFields aren't in our type yet
+      const hasPin = user.keypadPin;
+      
+      return (
+        <span className={cn(
+          "px-2.5 py-1 rounded-full text-xs font-medium flex items-center w-fit",
+          hasPin ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
+        )}>
+          {hasPin ? "Enabled" : "Disabled"}
+        </span>
+      );
+    },
+    size: 100, 
+    enableSorting: true,
+  },
+  {
     accessorKey: "createdAt",
     header: ({ column }) => <SortableHeader column={column}>Created</SortableHeader>,
     cell: ({ row }) => {
@@ -212,6 +232,7 @@ function UserActionsCell({ user }: UserActionsCellProps) {
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false);
+  const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
   const router = useRouter();
 
   const handleDelete = async () => {
@@ -255,6 +276,10 @@ function UserActionsCell({ user }: UserActionsCellProps) {
                    <KeyRound className="mr-2 h-4 w-4" />
                   Reset Password
               </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setIsPinDialogOpen(true)}>
+                   <Hash className="mr-2 h-4 w-4" />
+                  Manage PIN
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <AlertDialogTrigger asChild>
                    <DropdownMenuItem className="text-destructive focus:text-destructive focus:bg-destructive/10">
@@ -293,6 +318,12 @@ function UserActionsCell({ user }: UserActionsCellProps) {
          user={user}
          isOpen={isResetPasswordDialogOpen}
          onOpenChange={setIsResetPasswordDialogOpen}
+       />
+       
+      <PinManagementDialog
+         user={user}
+         isOpen={isPinDialogOpen}
+         onOpenChange={setIsPinDialogOpen}
        />
     </>
   );
@@ -545,7 +576,7 @@ function EditUserSubmitButton({ isPending }: { isPending: boolean }) {
 
 // Helper component for skeleton table for Users page
 export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
-  const columnCount = 6; // Select, Avatar, Name, Email, Role, 2FA, Created, Actions - Count updated
+  const columnCount = 6; // Select, Avatar, Name, Email, Role, 2FA, Keypad PIN, Created, Actions - Count updated
   return (
     <div className="border rounded-md">
       <Table>
@@ -563,6 +594,8 @@ export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
             <TableHead className="w-[120px] px-2 py-1"><Skeleton className="h-5 w-12" /></TableHead>
             {/* 2FA */}
             <TableHead className="w-[110px] px-2 py-1"><Skeleton className="h-5 w-10" /></TableHead>
+            {/* Keypad PIN */}
+            <TableHead className="w-[130px] px-2 py-1"><Skeleton className="h-5 w-16" /></TableHead>
             {/* Created */}
             <TableHead className="w-[120px] px-2 py-1"><Skeleton className="h-5 w-24" /></TableHead>
             {/* Last Login */}
@@ -585,6 +618,8 @@ export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
               {/* Role */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
               {/* 2FA */}
+              <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
+              {/* Keypad PIN */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
               {/* Created */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>

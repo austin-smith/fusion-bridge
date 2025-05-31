@@ -15,6 +15,20 @@ export const auth = betterAuth.betterAuth({
   database: drizzleAdapter(db, {
     provider: "sqlite",
   }),
+  user: {
+    additionalFields: {
+      keypadPin: {
+        type: "string",
+        required: false,
+        input: false, // Don't allow user to set PIN during signup
+      },
+      keypadPinSetAt: {
+        type: "date",
+        required: false,
+        input: false, // System managed
+      },
+    },
+  },
   emailAndPassword: {
     enabled: true,
   },

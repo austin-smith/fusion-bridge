@@ -246,6 +246,11 @@ interface FusionState {
   // NEW: Bulk device assignment methods
   bulkAssignDevicesToArea: (areaId: string, deviceIds: string[]) => Promise<boolean>;
   bulkRemoveDevicesFromArea: (areaId: string, deviceIds: string[]) => Promise<boolean>;
+
+  // --- NEW: Keypad PIN Management Actions ---
+  setUserPin: (userId: string, pin: string) => Promise<boolean>;
+  removeUserPin: (userId: string) => Promise<boolean>;
+  validatePin: (pin: string) => Promise<{ valid: boolean; userId?: string }>;
 }
 
 // Initial state for MQTT (default)
@@ -1337,6 +1342,89 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       return false;
     } finally {
       toast.dismiss(loadingToastId);
+    }
+  },
+
+  // --- NEW: Keypad PIN Management Actions ---
+  setUserPin: async (userId: string, pin: string) => {
+    const loadingToastId = toast.loading('Setting user PIN...');
+    try {
+      const response = await fetch(`/api/users/${userId}/keypad-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      
+      const data: ApiResponse<{ userId: string }> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to set PIN');
+      }
+      
+      // Trigger user list refresh to update UI
+      get().triggerUserListRefresh();
+      toast.success('PIN set successfully');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error setting PIN for user ${userId}:`, message);
+      toast.error(`Failed to set PIN: ${message}`);
+      return false;
+    } finally {
+      toast.dismiss(loadingToastId);
+    }
+  },
+
+  removeUserPin: async (userId: string) => {
+    const loadingToastId = toast.loading('Removing user PIN...');
+    try {
+      const response = await fetch(`/api/users/${userId}/keypad-pin`, {
+        method: 'DELETE',
+      });
+      
+      const data: ApiResponse<{ userId: string }> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to remove PIN');
+      }
+      
+      // Trigger user list refresh to update UI
+      get().triggerUserListRefresh();
+      toast.success('PIN removed successfully');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error removing PIN for user ${userId}:`, message);
+      toast.error(`Failed to remove PIN: ${message}`);
+      return false;
+    } finally {
+      toast.dismiss(loadingToastId);
+    }
+  },
+
+  validatePin: async (pin: string) => {
+    try {
+      const response = await fetch('/api/alarm/keypad/validate-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      
+      const data: ApiResponse<{ 
+        valid: boolean; 
+        userId?: string;
+      }> = await response.json();
+      
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to validate PIN');
+      }
+      
+      return {
+        valid: data.data?.valid || false,
+        userId: data.data?.userId,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Error validating PIN:', message);
+      return { valid: false, userId: undefined };
     }
   },
 

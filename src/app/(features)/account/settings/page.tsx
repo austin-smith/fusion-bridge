@@ -48,6 +48,8 @@ function SettingsPage() {
     email: session.user.email,
     image: session.user.image || null,
     twoFactorEnabled: session.user.twoFactorEnabled || false,
+    keypadPin: (session.user as any).keypadPin || null,
+    keypadPinSetAt: (session.user as any).keypadPinSetAt || null,
   };
 
   const renderContent = () => {

@@ -8,7 +8,11 @@ import {
   updateAreaSchema, 
   updateArmedStateSchema, 
   createLocationSchema, 
-  deviceSyncSchema 
+  deviceSyncSchema,
+  setPinSchema,
+  validatePinSchema,
+  pinValidationResponseSchema,
+  pinOperationResponseSchema
 } from '../schemas/api-schemas';
 
 // Extend Zod with OpenAPI support
@@ -60,6 +64,10 @@ const areaIdParamsSchema = z.object({
 const locationIdParamsSchema = z.object({
   id: z.string().uuid().describe('Location UUID'),
 }).openapi('LocationIdParams');
+
+const userIdParamsSchema = z.object({
+  userId: z.string().uuid().describe('User UUID'),
+}).openapi('UserIdParams');
 
 // Define response data schemas (inferred from your existing types)
 const areaSchema = z.object({
@@ -176,6 +184,13 @@ export function generateOpenApiSpec() {
   registry.register('ApiKey', apiKeySchema);
   registry.register('ErrorResponse', errorResponseSchema);
   registry.register('ApiKeyTestResponse', apiKeyTestResponseSchema);
+  
+  // PIN management schemas
+  registry.register('SetPinRequest', setPinSchema.openapi('SetPinRequest'));
+  registry.register('ValidatePinRequest', validatePinSchema.openapi('ValidatePinRequest'));
+  registry.register('PinValidationResponse', pinValidationResponseSchema.openapi('PinValidationResponse'));
+  registry.register('PinOperationResponse', pinOperationResponseSchema.openapi('PinOperationResponse'));
+  registry.register('UserIdParams', userIdParamsSchema);
 
   // Register response schemas
   const areasSuccessResponse = successResponseSchema(z.array(areaSchema));
@@ -188,6 +203,10 @@ export function generateOpenApiSpec() {
   const apiKeysSuccessResponse = successResponseSchema(z.array(apiKeySchema));
   const apiKeySuccessResponse = successResponseSchema(apiKeySchema);
   const deleteSuccessResponse = successResponseSchema(z.object({ id: z.string() }));
+  
+  // PIN management response schemas
+  const pinOperationSuccessResponse = successResponseSchema(pinOperationResponseSchema);
+  const pinValidationSuccessResponse = successResponseSchema(pinValidationResponseSchema);
 
   registry.register('AreasSuccessResponse', areasSuccessResponse);
   registry.register('AreaSuccessResponse', areaSuccessResponse);
@@ -199,6 +218,10 @@ export function generateOpenApiSpec() {
   registry.register('ApiKeysSuccessResponse', apiKeysSuccessResponse);
   registry.register('ApiKeySuccessResponse', apiKeySuccessResponse);
   registry.register('DeleteSuccessResponse', deleteSuccessResponse);
+
+  // PIN management response schemas
+  registry.register('PinOperationSuccessResponse', pinOperationSuccessResponse);
+  registry.register('PinValidationSuccessResponse', pinValidationSuccessResponse);
 
   // Areas endpoints
   registry.registerPath({
@@ -1020,10 +1043,143 @@ export function generateOpenApiSpec() {
     },
   });
 
+  // PIN Management endpoints
+  registry.registerPath({
+    method: 'post',
+    path: '/api/users/{userId}/keypad-pin',
+    summary: 'Set user keypad PIN',
+    description: 'Sets a 6-digit keypad PIN for a specific user for alarm system access',
+    tags: ['Users'],
+    request: {
+      params: userIdParamsSchema,
+      body: {
+        content: {
+          'application/json': {
+            schema: setPinSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'PIN set successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/PinOperationSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid PIN format or user ID',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'User not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/api/users/{userId}/keypad-pin',
+    summary: 'Remove user keypad PIN',
+    description: 'Removes the keypad PIN for a specific user, disabling their keypad access',
+    tags: ['Users'],
+    request: {
+      params: userIdParamsSchema,
+    },
+    responses: {
+      200: {
+        description: 'PIN removed successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/PinOperationSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid user ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'User not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/alarm/keypad/validate-pin',
+    summary: 'Validate keypad PIN',
+    description: 'Validates a 6-digit PIN and returns user information if valid. Used by keypad devices for authentication.',
+    tags: ['Alarm'],
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            schema: validatePinSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'PIN validation result (always returns 200, check valid field)',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/PinValidationSuccessResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
   // Generate the OpenAPI document
   const generator = new OpenApiGeneratorV3(registry.definitions);
   
-  return generator.generateDocument({
+  const document = generator.generateDocument({
     openapi: '3.0.0',
     info: {
       version: '1.0.0',
@@ -1041,4 +1197,34 @@ export function generateOpenApiSpec() {
       },
     ],
   });
+
+  // Sort paths alphabetically
+  if (document.paths) {
+    const sortedPaths: Record<string, any> = {};
+    Object.keys(document.paths)
+      .sort()
+      .forEach(path => {
+        sortedPaths[path] = document.paths![path];
+      });
+    document.paths = sortedPaths;
+  }
+
+  // Extract and sort tags from all endpoints
+  const tagSet = new Set<string>();
+  if (document.paths) {
+    Object.values(document.paths).forEach((pathObj: any) => {
+      Object.values(pathObj).forEach((methodObj: any) => {
+        if (methodObj.tags) {
+          methodObj.tags.forEach((tag: string) => tagSet.add(tag));
+        }
+      });
+    });
+  }
+
+  // Add sorted tags to the document
+  document.tags = Array.from(tagSet)
+    .sort()
+    .map(tag => ({ name: tag }));
+
+  return document;
 } 

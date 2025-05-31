@@ -34,4 +34,28 @@ export const createLocationSchema = z.object({
 // Device schemas
 export const deviceSyncSchema = z.object({
   connectorId: z.string().min(1, "Connector ID is required"),
+});
+
+// PIN management schemas
+export const setPinSchema = z.object({
+  pin: z.string()
+    .regex(/^\d{6}$/, "PIN must be exactly 6 digits")
+    .describe("6-digit numeric PIN for keypad access"),
+});
+
+export const validatePinSchema = z.object({
+  pin: z.string()
+    .regex(/^\d{6}$/, "PIN must be exactly 6 digits")
+    .describe("6-digit numeric PIN to validate"),
+});
+
+export const pinValidationResponseSchema = z.object({
+  valid: z.boolean().describe("Whether the PIN is valid"),
+  userId: z.string().uuid().optional().describe("User ID if PIN is valid"),
+  userName: z.string().nullable().optional().describe("User name if PIN is valid"),
+});
+
+export const pinOperationResponseSchema = z.object({
+  userId: z.string().uuid().describe("User ID"),
+  message: z.string().describe("Operation result message"),
 }); 

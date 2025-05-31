@@ -2,8 +2,8 @@ import { Suspense } from 'react';
 import type { User } from "@/lib/actions/user-actions"; // This might still be needed if PageHeader or other parts use it.
 import { PageHeader } from "@/components/layout/page-header";
 import { Users } from 'lucide-react';
-import { AddUserDialog, UsersTableSkeleton } from "./components"; // UsersTableSkeleton is for Suspense fallback
-import { UsersTableLoader } from "./components/users-table-loader"; // Import the new loader
+import { AddUserDialog, UsersTableSkeleton } from "../../../components/features/account/users-table"; // UsersTableSkeleton is for Suspense fallback
+import { UsersTableLoader } from "@/components/features/account/users-table-loader"; // Import the new loader
 import { auth } from '@/lib/auth/server';
 import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
