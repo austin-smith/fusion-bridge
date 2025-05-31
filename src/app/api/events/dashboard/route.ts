@@ -116,14 +116,6 @@ async function getRecentEventsForDashboard(limit: number = DEFAULT_LIMIT): Promi
     }
 }
 
-/**
- * @swagger
- * /api/events/dashboard:
- *   get:
- *     summary: Get dashboard events
- *     description: Get recent events formatted for dashboard display
- *     tags: [Events]
- */
 export const GET = withApiRouteAuth(async (request, authContext) => {
   try {
     // Optional: Add query parameters later for limit, time range, etc.

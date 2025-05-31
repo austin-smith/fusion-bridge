@@ -4,14 +4,6 @@ import { db } from '@/data/db';
 import { apikey, user } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 
-/**
- * @swagger
- * /api/admin/api-keys:
- *   get:
- *     summary: Get API keys
- *     description: Get all API keys for the authenticated user
- *     tags: [Admin]
- */
 export const GET = withApiRouteAuth(async (req: NextRequest, context) => {
   try {
     // Check if user is admin

@@ -1,14 +1,6 @@
 import { withApiRouteAuth } from '@/lib/auth/withApiRouteAuth';
 import { NextRequest, NextResponse } from 'next/server';
 
-/**
- * @swagger
- * /api/admin/api-keys/test/protected:
- *   get:
- *     summary: Test API key authentication
- *     description: Test endpoint to verify API key authentication is working
- *     tags: [Admin]
- */
 export const GET = withApiRouteAuth(async (req: NextRequest, authContext) => {
   // This endpoint will work with either session cookies OR API keys
   
@@ -41,14 +33,6 @@ export const GET = withApiRouteAuth(async (req: NextRequest, authContext) => {
   return NextResponse.json(response, { status: 200 });
 });
 
-/**
- * @swagger
- * /api/admin/api-keys/test/protected:
- *   post:
- *     summary: Test API key with data
- *     description: Test endpoint that accepts and echoes back JSON data to verify API key authentication
- *     tags: [Admin]
- */
 export const POST = withApiRouteAuth(async (req: NextRequest, authContext) => {
   try {
     const body = await req.json();

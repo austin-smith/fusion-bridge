@@ -13,14 +13,6 @@ import { revalidateTag } from 'next/cache';
 // Define the possible armed states explicitly for validation
 // const armedStateEnum = z.enum(['DISARMED', 'ARMED_AWAY', 'ARMED_STAY', 'TRIGGERED']);
 
-/**
- * @swagger
- * /api/areas/{id}/arm-state:
- *   put:
- *     summary: Update area armed state
- *     description: Updates the armed state of a security area (DISARMED, ARMED_AWAY, ARMED_STAY, TRIGGERED)
- *     tags: [Areas]
- */
 // Update the armed state of an area - Correct Next.js 15 signature
 export const PUT = withApiRouteAuth(async (request: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
   if (!context?.params) {

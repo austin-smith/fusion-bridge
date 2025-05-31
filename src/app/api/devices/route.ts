@@ -247,14 +247,6 @@ export const GET = withApiRouteAuth(async (request, authContext) => {
   }
 });
 
-/**
- * @swagger
- * /api/devices:
- *   post:
- *     summary: Sync devices
- *     description: Syncs devices from all configured connectors and returns the complete device list
- *     tags: [Devices]
- */
 // POST /api/devices – syncs devices from all connectors and returns them with count
 export const POST = withApiRouteAuth(async (request, authContext) => {
   try {

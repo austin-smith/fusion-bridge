@@ -6,14 +6,6 @@ import { eq } from 'drizzle-orm';
 import type { Area } from '@/types/index';
 import { updateAreaSchema } from '@/lib/schemas/api-schemas';
 
-/**
- * @swagger
- * /api/areas/{id}:
- *   get:
- *     summary: Get specific area by ID
- *     description: Retrieves a single area with its details
- *     tags: [Areas]
- */
 // Fetch a specific area by ID
 export const GET = withApiRouteAuth(async (request: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
   if (!context?.params) {
@@ -42,14 +34,6 @@ export const GET = withApiRouteAuth(async (request: NextRequest, authContext: Ap
   }
 });
 
-/**
- * @swagger
- * /api/areas/{id}:
- *   put:
- *     summary: Update area
- *     description: Updates an area's name or location assignment
- *     tags: [Areas]
- */
 // Update an area (name, locationId)
 export const PUT = withApiRouteAuth(async (request: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
   if (!context?.params) {
@@ -115,14 +99,6 @@ export const PUT = withApiRouteAuth(async (request: NextRequest, authContext: Ap
   }
 });
 
-/**
- * @swagger
- * /api/areas/{id}:
- *   delete:
- *     summary: Delete area
- *     description: Deletes an area and its device associations
- *     tags: [Areas]
- */
 // Delete an area (database cascade should handle areaDevices)
 export const DELETE = withApiRouteAuth(async (request: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
   if (!context?.params) {

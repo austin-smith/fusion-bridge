@@ -5,16 +5,7 @@ import { locations } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import type { Location } from '@/types/index';
 import { createLocationSchema } from '@/lib/schemas/api-schemas';
-// import { standardResponse } from '@/lib/api-utils'; // Removed assumption
 
-/**
- * @swagger
- * /api/locations:
- *   get:
- *     summary: Get all locations
- *     description: Retrieves all locations with their metadata
- *     tags: [Locations]
- */
 // Fetch all locations
 export const GET = withApiRouteAuth(async (request, authContext) => {
   try {
@@ -31,14 +22,6 @@ export const GET = withApiRouteAuth(async (request, authContext) => {
   }
 });
 
-/**
- * @swagger
- * /api/locations:
- *   post:
- *     summary: Create a new location
- *     description: Creates a new location with specified name
- *     tags: [Locations]
- */
 // Create a new location
 export const POST = withApiRouteAuth(async (request, authContext) => {
   try {

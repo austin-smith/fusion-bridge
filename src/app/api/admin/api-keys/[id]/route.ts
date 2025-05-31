@@ -4,14 +4,6 @@ import { db } from '@/data/db';
 import { apikey } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 
-/**
- * @swagger
- * /api/admin/api-keys/{id}:
- *   patch:
- *     summary: Update API key
- *     description: Update an API key's properties (name, enabled status, etc.)
- *     tags: [Admin]
- */
 export const PATCH = withApiRouteAuth(async (req: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
   try {
     // Check if user is admin
@@ -59,14 +51,6 @@ export const PATCH = withApiRouteAuth(async (req: NextRequest, authContext: ApiR
   }
 });
 
-/**
- * @swagger
- * /api/admin/api-keys/{id}:
- *   delete:
- *     summary: Delete API key
- *     description: Delete an API key permanently
- *     tags: [Admin]
- */
 export const DELETE = withApiRouteAuth(async (req: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
   try {
     // Check if user is admin
