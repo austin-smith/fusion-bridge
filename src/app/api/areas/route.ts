@@ -1,15 +1,10 @@
 import { NextResponse } from 'next/server';
+import { withApiRouteAuth } from '@/lib/auth/withApiRouteAuth';
 import { db } from '@/data/db';
 import { areas, locations, areaDevices } from '@/data/db/schema';
 import type { Area as ApiAreaResponse } from '@/types/index';
-import { z } from 'zod';
+import { createAreaSchema } from '@/lib/schemas/api-schemas';
 import { eq, inArray, asc } from 'drizzle-orm';
-
-// --- Validation Schema ---
-const createAreaSchema = z.object({
-  name: z.string().min(1, "Name cannot be empty"),
-  locationId: z.string().uuid("Invalid location ID format"),
-});
 
 // Define an extended Area type for the API response to include locationName and new fields
 interface AreaWithDetails extends Omit<ApiAreaResponse, 'createdAt' | 'updatedAt'> {
@@ -23,7 +18,7 @@ interface AreaWithDetails extends Omit<ApiAreaResponse, 'createdAt' | 'updatedAt
 }
 
 // Fetch areas, optionally filtering by locationId
-export async function GET(request: Request) {
+export const GET = withApiRouteAuth(async (request, authContext) => {
   const { searchParams } = new URL(request.url);
   const locationId = searchParams.get('locationId');
 
@@ -95,10 +90,10 @@ export async function GET(request: Request) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ success: false, error: `Failed to fetch areas: ${errorMessage}` }, { status: 500 });
   }
-}
+});
 
 // Create a new area
-export async function POST(request: Request) {
+export const POST = withApiRouteAuth(async (request, authContext) => {
   try {
     const body = await request.json();
     const validation = createAreaSchema.safeParse(body);
@@ -141,4 +136,4 @@ export async function POST(request: Request) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ success: false, error: `Failed to create area: ${errorMessage}` }, { status: 500 });
   }
-} 
+}); 

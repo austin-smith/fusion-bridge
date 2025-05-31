@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { TbBrandPushover } from "react-icons/tb";
 import { Layers2 } from 'lucide-react';
-import { updateServiceEnabledStateAction } from './actions';
+import { updateServiceEnabledStateAction } from '../../../../services/settings-services-actions';
 
 interface ServicesSettingsClientPageContentProps {
   initialPushoverConfig: PushoverConfig | null;

@@ -1,31 +1,26 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
+import { withApiRouteAuth, type ApiRouteAuthContext, type RouteContext } from '@/lib/auth/withApiRouteAuth';
 import { db } from '@/data/db';
 import { areas, locations } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import type { Area } from '@/types/index';
-import { z } from 'zod';
+import { updateAreaSchema } from '@/lib/schemas/api-schemas';
 
-// Remove unused RouteParams interface
-// interface RouteParams {
-//  params: {
-//    id: string; // Area ID
-//  };
-// }
-
-// --- Validation Schema ---
-const updateAreaSchema = z.object({
-  name: z.string().min(1, "Name cannot be empty").optional(),
-  locationId: z.string().uuid("Invalid location ID format").optional(),
-}).refine(data => data.name !== undefined || data.locationId !== undefined, {
-  message: "Either name or locationId must be provided for update",
-});
-
-// Fetch a specific area by ID - Correct Next.js 15 signature
-export async function GET(
-  request: Request, 
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params; // Await params
+/**
+ * @swagger
+ * /api/areas/{id}:
+ *   get:
+ *     summary: Get specific area by ID
+ *     description: Retrieves a single area with its details
+ *     tags: [Areas]
+ */
+// Fetch a specific area by ID
+export const GET = withApiRouteAuth(async (request: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
+  if (!context?.params) {
+    return NextResponse.json({ success: false, error: "Missing route parameters" }, { status: 400 });
+  }
+  
+  const { id } = await context.params;
 
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
     return NextResponse.json({ success: false, error: "Invalid ID format" }, { status: 400 });
@@ -38,8 +33,6 @@ export async function GET(
       return NextResponse.json({ success: false, error: "Area not found" }, { status: 404 });
     }
 
-    // TODO: Optionally populate associated devices or location details
-
     return NextResponse.json({ success: true, data: area as Area });
 
   } catch (error) {
@@ -47,14 +40,23 @@ export async function GET(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ success: false, error: `Failed to fetch area: ${errorMessage}` }, { status: 500 });
   }
-}
+});
 
-// Update an area (name, locationId) - Correct Next.js 15 signature
-export async function PUT(
-  request: Request, 
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params; // Await params
+/**
+ * @swagger
+ * /api/areas/{id}:
+ *   put:
+ *     summary: Update area
+ *     description: Updates an area's name or location assignment
+ *     tags: [Areas]
+ */
+// Update an area (name, locationId)
+export const PUT = withApiRouteAuth(async (request: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
+  if (!context?.params) {
+    return NextResponse.json({ success: false, error: "Missing route parameters" }, { status: 400 });
+  }
+  
+  const { id } = await context.params;
 
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
     return NextResponse.json({ success: false, error: "Invalid ID format" }, { status: 400 });
@@ -111,14 +113,23 @@ export async function PUT(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ success: false, error: `Failed to update area: ${errorMessage}` }, { status: 500 });
   }
-}
+});
 
-// Delete an area (database cascade should handle areaDevices) - Correct Next.js 15 signature
-export async function DELETE(
-  request: Request, 
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params; // Await params
+/**
+ * @swagger
+ * /api/areas/{id}:
+ *   delete:
+ *     summary: Delete area
+ *     description: Deletes an area and its device associations
+ *     tags: [Areas]
+ */
+// Delete an area (database cascade should handle areaDevices)
+export const DELETE = withApiRouteAuth(async (request: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
+  if (!context?.params) {
+    return NextResponse.json({ success: false, error: "Missing route parameters" }, { status: 400 });
+  }
+  
+  const { id } = await context.params;
 
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
     return NextResponse.json({ success: false, error: "Invalid ID format" }, { status: 400 });
@@ -141,4 +152,4 @@ export async function DELETE(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ success: false, error: `Failed to delete area: ${errorMessage}` }, { status: 500 });
   }
-} 
+}); 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -299,7 +299,7 @@ export default function AutomationExecutionsPage() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const fetchExecutions = async (loadMore = false) => {
+  const fetchExecutions = useCallback(async (loadMore = false) => {
     try {
       if (loadMore) {
         setLoadingMore(true);
@@ -332,7 +332,7 @@ export default function AutomationExecutionsPage() {
       setLoading(false);
       setLoadingMore(false);
     }
-  };
+  }, [offset]);
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
@@ -342,7 +342,7 @@ export default function AutomationExecutionsPage() {
 
   useEffect(() => {
     fetchExecutions();
-  }, []);
+  }, [fetchExecutions]);
 
   const openExecutionDetails = (execution: AutomationExecutionSummary) => {
     setSelectedExecution(execution);

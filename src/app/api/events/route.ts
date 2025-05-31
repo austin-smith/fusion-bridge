@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { withApiRouteAuth } from '@/lib/auth/withApiRouteAuth';
 import { db } from '@/data/db';
 import { connectors, devices, events, areaDevices, areas, locations } from '@/data/db/schema';
 import { eq, sql, and, desc } from 'drizzle-orm';
@@ -219,7 +220,7 @@ async function getSingleEvent(eventUuid: string): Promise<ApiEnrichedEvent | nul
 }
 
 // GET handler to fetch events
-export async function GET(request: NextRequest) {
+export const GET = withApiRouteAuth(async (request, authContext) => {
   try {
     const searchParams = request.nextUrl.searchParams;
     const eventUuid = searchParams.get('eventUuid');
@@ -397,24 +398,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// POST handler to initialize the MQTT service
-export async function POST() {
-  try {
-    // MQTT connections are now managed via server-side instrumentation
-    // We no longer need to explicitly initialize connections from this API endpoint
-    // Just return success so the client can proceed with fetching events
-
-    return NextResponse.json({
-      success: true,
-      message: 'Events system ready'
-    });
-  } catch (error) {
-    console.error('Error initializing MQTT service:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to prepare events system' },
-      { status: 500 }
-    );
-  }
-} 
+}); 

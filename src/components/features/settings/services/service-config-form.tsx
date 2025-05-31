@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { savePushoverConfigurationAction, type SavePushoverConfigFormState } from '@/app/(features)/settings/services/actions';
+import { savePushoverConfigurationAction, type SavePushoverConfigFormState } from '@/services/settings-services-actions';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';

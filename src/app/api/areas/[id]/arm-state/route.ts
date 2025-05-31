@@ -1,10 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
+import { withApiRouteAuth, type ApiRouteAuthContext, type RouteContext } from '@/lib/auth/withApiRouteAuth';
 import { db } from '@/data/db';
 import { areas } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import type { Area } from '@/types/index';
 import { ArmedState } from '@/lib/mappings/definitions';
-import { z } from 'zod';
+import { updateArmedStateSchema } from '@/lib/schemas/api-schemas';
 import { internalSetAreaArmedState } from '@/lib/actions/area-alarm-actions';
 import { revalidateTag } from 'next/cache';
 
@@ -12,16 +13,21 @@ import { revalidateTag } from 'next/cache';
 // Define the possible armed states explicitly for validation
 // const armedStateEnum = z.enum(['DISARMED', 'ARMED_AWAY', 'ARMED_STAY', 'TRIGGERED']);
 
-const updateArmedStateSchema = z.object({
-  armedState: z.nativeEnum(ArmedState),
-});
-
+/**
+ * @swagger
+ * /api/areas/{id}/arm-state:
+ *   put:
+ *     summary: Update area armed state
+ *     description: Updates the armed state of a security area (DISARMED, ARMED_AWAY, ARMED_STAY, TRIGGERED)
+ *     tags: [Areas]
+ */
 // Update the armed state of an area - Correct Next.js 15 signature
-export async function PUT( // Restore async
-  request: Request,
-  { params }: { params: Promise<{ id: string }> } // Use Promise<...> for params
-) {
-  const { id } = await params; // Await the params Promise
+export const PUT = withApiRouteAuth(async (request: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
+  if (!context?.params) {
+    return NextResponse.json({ success: false, error: "Missing route parameters" }, { status: 400 });
+  }
+  
+  const { id } = await context.params; // Await params
 
   // Restore original logic
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
@@ -59,4 +65,4 @@ export async function PUT( // Restore async
 
     return NextResponse.json({ success: false, error: `Failed to update armed state: ${errorMessage}` }, { status: statusCode });
   }
-} 
+}); 

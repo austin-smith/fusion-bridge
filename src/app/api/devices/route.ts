@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { withApiRouteAuth } from '@/lib/auth/withApiRouteAuth';
 import { db } from '@/data/db';
 import { devices, connectors, pikoServers, cameraAssociations, areas, areaDevices } from '@/data/db/schema';
 import { eq, count, and, inArray, sql } from 'drizzle-orm';
@@ -11,6 +12,8 @@ import type { DeviceWithConnector, PikoServer, Connector } from '@/types';
 import { useFusionStore } from '@/stores/store';
 import type { TypedDeviceInfo, IntermediateState, DisplayState } from '@/lib/mappings/definitions';
 import { DeviceType, BinaryState, ContactState, ON, OFF, CANONICAL_STATE_MAP, OFFLINE, ONLINE, LockStatus } from '@/lib/mappings/definitions';
+import { z } from 'zod';
+import { deviceSyncSchema } from '@/lib/schemas/api-schemas';
 
 // Helper function to get association count
 async function getAssociationCount(
@@ -51,9 +54,58 @@ function mapIntermediateToDisplay(state: IntermediateState | undefined | null): 
 }
 // --- END Re-add Helper to map IntermediateState to DisplayState ---
 
+interface DeviceWithConnectorInfo {
+  id: string;
+  deviceId: string;
+  connectorId: string;
+  name: string | null;
+  type: string;
+  lastStateUpdate: Date | null;
+  isOnline: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  connectorName: string;
+  connectorCategory: string;
+}
+
+interface DeviceResponse {
+  id: string;
+  deviceId: string;
+  connectorId: string;
+  name: string | null;
+  type: string;
+  lastStateUpdate: string | null;
+  isOnline: boolean;
+  createdAt: string;
+  updatedAt: string;
+  connectorName: string;
+  connectorCategory: string;
+}
+
+interface DevicesSyncRequest {
+  connectorId: string;
+}
+
+// Helper function to format device
+function formatDevice(device: DeviceWithConnectorInfo): DeviceResponse {
+  return {
+    id: device.id,
+    deviceId: device.deviceId,
+    connectorId: device.connectorId,
+    name: device.name,
+    type: device.type,
+    lastStateUpdate: device.lastStateUpdate ? device.lastStateUpdate.toISOString() : null,
+    isOnline: device.isOnline,
+    createdAt: device.createdAt.toISOString(),
+    updatedAt: device.updatedAt.toISOString(),
+    connectorName: device.connectorName,
+    connectorCategory: device.connectorCategory,
+  };
+}
+
 // GET /api/devices – returns devices with connector information and association count
 // Optionally filters by deviceId query parameter
-export async function GET(request: NextRequest) {
+export const GET = withApiRouteAuth(async (request, authContext) => {
   try {
     const { searchParams } = new URL(request.url);
     const requestedDeviceId = searchParams.get('deviceId');
@@ -193,10 +245,18 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
+/**
+ * @swagger
+ * /api/devices:
+ *   post:
+ *     summary: Sync devices
+ *     description: Syncs devices from all configured connectors and returns the complete device list
+ *     tags: [Devices]
+ */
 // POST /api/devices – syncs devices from all connectors and returns them with count
-export async function POST() {
+export const POST = withApiRouteAuth(async (request, authContext) => {
   try {
     const errors = [];
     let syncedCount = 0;
@@ -369,7 +429,7 @@ export async function POST() {
       { status: 500 }
     );
   }
-}
+});
 
 /**
  * Syncs YoLink devices, fetching live state and updating the DB status.

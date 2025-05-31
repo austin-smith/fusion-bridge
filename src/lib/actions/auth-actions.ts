@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 import { db } from '@/data/db';
 import { user, account } from '@/data/db/schema';
 import { auth } from '@/lib/auth/server';
@@ -15,9 +16,32 @@ const SetupSchema = z.object({
   password: z.string().min(8, { message: 'Password must be at least 8 characters.' }), 
 });
 
+// API Key creation schema
+const CreateApiKeySchema = z.object({
+  name: z.string().optional(),
+  expiresIn: z.number().optional(), // seconds
+}).transform((data) => {
+  // Filter out undefined values
+  const filtered: Record<string, any> = {};
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined) {
+      filtered[key] = value;
+    }
+  });
+  return filtered;
+});
+
 interface ActionResult {
     success: boolean;
     error?: string;
+}
+
+interface ApiKeyResult extends ActionResult {
+    apiKey?: any;
+}
+
+interface ApiKeysListResult extends ActionResult {
+    apiKeys?: any[];
 }
 
 export async function createFirstAdminUser(formData: z.infer<typeof SetupSchema>): Promise<ActionResult> {
@@ -98,5 +122,108 @@ export async function createFirstAdminUser(formData: z.infer<typeof SetupSchema>
              return { success: false, error: 'An account with this email might already exist unexpectedly.' };
         }
         return { success: false, error: 'Database error during user creation.' };
+    }
+} 
+
+export async function createApiKey(formData: z.infer<typeof CreateApiKeySchema>): Promise<ApiKeyResult> {
+    console.log("[Server Action] Creating API key with data:", formData);
+
+    try {
+        // Get the current session to get the user ID
+        const headersList = await headers();
+        const session = await auth.api.getSession({ headers: headersList });
+        
+        if (!session) {
+            console.log("[Server Action] No session found");
+            return { success: false, error: 'You must be logged in to create an API key.' };
+        }
+
+        console.log("[Server Action] Session found for user:", session.user.id);
+
+        // Validate input and filter undefined values
+        const validatedFields = CreateApiKeySchema.safeParse(formData);
+        if (!validatedFields.success) {
+            const errorMessages = Object.values(validatedFields.error.flatten().fieldErrors).flat().join(', ');
+            console.log("[Server Action] Validation failed:", errorMessages);
+            return { success: false, error: `Invalid input: ${errorMessages}` };
+        }
+
+        const body = validatedFields.data; // Already filtered by Zod transform
+        console.log("[Server Action] API call body:", body);
+
+        // Create API key using server auth instance
+        const apiKey = await auth.api.createApiKey({
+            body,
+            headers: headersList
+        });
+
+        console.log("[Server Action] API key created successfully:", apiKey);
+        return { success: true, apiKey };
+
+    } catch (error) {
+        console.error("[Server Action] Detailed error creating API key:", error);
+        
+        // Try to extract more specific error information
+        let errorMessage = 'Failed to create API key. Please try again.';
+        if (error instanceof Error) {
+            console.error("[Server Action] Error message:", error.message);
+            console.error("[Server Action] Error stack:", error.stack);
+            errorMessage = error.message;
+        }
+        
+        return { success: false, error: errorMessage };
+    }
+}
+
+export async function listApiKeys(): Promise<ApiKeysListResult> {
+    try {
+        // Get the current session to get the user ID
+        const headersList = await headers();
+        const session = await auth.api.getSession({ headers: headersList });
+        if (!session) {
+            return { success: false, error: 'You must be logged in to list API keys.' };
+        }
+
+        // List API keys for the current user
+        const apiKeys = await auth.api.listApiKeys({
+            headers: headersList
+        });
+
+        return { success: true, apiKeys };
+
+    } catch (error) {
+        console.error("[Server Action] Error listing API keys:", error);
+        let errorMessage = 'Failed to list API keys.';
+        if (error instanceof Error) {
+            errorMessage = error.message;
+        }
+        return { success: false, error: errorMessage };
+    }
+}
+
+export async function deleteApiKey(keyId: string): Promise<ActionResult> {
+    try {
+        // Get the current session to verify ownership
+        const headersList = await headers();
+        const session = await auth.api.getSession({ headers: headersList });
+        if (!session) {
+            return { success: false, error: 'You must be logged in to delete an API key.' };
+        }
+
+        // Delete the API key (better-auth will verify ownership)
+        await auth.api.deleteApiKey({
+            body: { keyId },
+            headers: headersList
+        });
+
+        return { success: true };
+
+    } catch (error) {
+        console.error("[Server Action] Error deleting API key:", error);
+        let errorMessage = 'Failed to delete API key.';
+        if (error instanceof Error) {
+            errorMessage = error.message;
+        }
+        return { success: false, error: errorMessage };
     }
 } 

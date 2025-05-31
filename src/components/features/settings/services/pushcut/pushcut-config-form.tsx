@@ -11,7 +11,7 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import type { PushcutConfig } from '@/types/pushcut-types';
 
 // This action will be fully defined later in /app/(app)/settings/services/actions.ts
-import { savePushcutConfigurationAction } from '@/app/(features)/settings/services/actions'; 
+import { savePushcutConfigurationAction } from '@/services/settings-services-actions'; 
 
 export interface SavePushcutConfigFormState {
   success: boolean;

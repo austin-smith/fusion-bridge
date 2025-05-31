@@ -1,9 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useLayoutEffect, useActionState, useState } from 'react';
-import { useFormStatus } from 'react-dom';
-import { updateCurrentUser } from '@/lib/actions/user-actions';
-import type { UpdateUserResult } from '@/lib/actions/user-actions'; // Import result type
+import React, { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +8,6 @@ import {
     Card,
     CardContent,
     CardDescription,
-    CardFooter,
     CardHeader,
     CardTitle
 } from "@/components/ui/card";
@@ -22,7 +18,6 @@ import {
     DialogFooter,
     DialogHeader,
     DialogTitle,
-    DialogTrigger,
     DialogClose
 } from "@/components/ui/dialog";
 import {
@@ -34,29 +29,16 @@ import {
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
-    AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"; // Using shadcn InputOTP
-import { Loader2, Trash2, Pencil, ShieldCheck, ShieldOff, Check, Copy, AlertTriangle } from "lucide-react"; // Added more icons
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { Loader2, ShieldCheck, ShieldOff, Check, Copy, AlertTriangle } from "lucide-react";
 import { toast } from 'sonner';
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
-import { ChangePasswordDialog } from './change-password-dialog';
-import { useFusionStore } from '@/stores/store'; // Import Zustand store
-import { authClient } from '@/lib/auth/client'; // Import authClient
-import QRCode from "react-qr-code"; // Import QR Code component
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select"; // Added Select for theme
-import { PREFERRED_THEME_FAMILY_KEY } from "@/components/common/theme-provider"; // Import the key
+import { ChangePasswordDialog } from '@/components/features/account/change-password-dialog';
+import { useFusionStore } from '@/stores/store';
+import { authClient } from '@/lib/auth/client';
+import QRCode from "react-qr-code";
 
-// Define the expected user prop structure
 interface UserData {
     id: string;
     name: string;
@@ -65,28 +47,10 @@ interface UserData {
     twoFactorEnabled: boolean;
 }
 
-interface ThemeOption {
-    value: string;
-    label: string;
-}
-
-interface ExtendedThemeOption extends ThemeOption {
-    dotColor: string;
-}
-
-interface AccountSettingsFormProps {
+interface SecuritySettingsProps {
     user: UserData;
 }
 
-// Define initial state for the PROFILE update action
-// Ensure this matches the expected prevState type for useActionState
-const initialProfileState: UpdateUserResult = { 
-    success: false,
-    message: undefined,
-    updatedUser: null,
-};
-
-// Enum for 2FA dialog steps
 enum TwoFactorStep {
     Idle,
     ConfirmPassword,
@@ -95,17 +59,7 @@ enum TwoFactorStep {
     ShowNewBackupCodes,
 }
 
-export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
-    // Profile Form State - use extended result type
-    const [profileState, profileFormAction] = useActionState<UpdateUserResult, FormData>(updateCurrentUser, initialProfileState);
-    const profileFormRef = useRef<HTMLFormElement>(null);
-    
-    // State for Image URL management via Popover
-    const [imageUrlToSubmit, setImageUrlToSubmit] = useState<string>(user.image ?? '');
-    const [popoverOpen, setPopoverOpen] = useState(false);
-    const [popoverImageUrl, setPopoverImageUrl] = useState<string>(user.image ?? '');
-
-    // --- NEW: 2FA State --- 
+export function SecuritySettings({ user }: SecuritySettingsProps) {
     const [twoFactorEnabled, setTwoFactorEnabled] = useState(user.twoFactorEnabled);
     const [is2faLoading, setIs2faLoading] = useState(false);
     const [twoFactorStep, setTwoFactorStep] = useState<TwoFactorStep>(TwoFactorStep.Idle);
@@ -117,47 +71,6 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
     const [verificationError, setVerificationError] = useState<string | null>(null);
     const [intendedAction, setIntendedAction] = useState<'enable' | 'disable' | 'regenerate' | null>(null);
 
-    // --- Theme Family State ---
-    // Initialize with value from localStorage or 'default'
-    const [selectedThemeFamily, setSelectedThemeFamily] = useState<string>('default');
-
-    React.useEffect(() => {
-        const currentThemeFamily = localStorage.getItem(PREFERRED_THEME_FAMILY_KEY) || 'default';
-        setSelectedThemeFamily(currentThemeFamily);
-    }, []);
-
-    // Setup dynamic theme options using computed CSS variables
-    const baseThemeOptions: ThemeOption[] = React.useMemo(() => [
-      { value: 'default', label: 'System Default' },
-      { value: 'cosmic-night', label: 'Cosmic Night' },
-      { value: 'remoteview', label: 'RemoteView' },
-      { value: 't3-chat', label: 'T3 Chat' },
-    ], []);
-    const [themeOptions, setThemeOptions] = useState<ExtendedThemeOption[]>([]);
-    useLayoutEffect(() => {
-      const root = document.documentElement;
-      const originalClasses = Array.from(root.classList);
-      const themeValues = baseThemeOptions.map(opt => opt.value);
-      const computedOptions = baseThemeOptions.map(opt => {
-        // restore original classes
-        root.className = '';
-        originalClasses.forEach(cls => root.classList.add(cls));
-        // remove theme classes
-        themeValues.forEach(tv => root.classList.remove(tv));
-        // apply this theme for preview (skip default)
-        if (opt.value !== 'default') root.classList.add(opt.value);
-        const cssValue = getComputedStyle(root).getPropertyValue('--primary').trim();
-        return { ...opt, dotColor: `hsl(${cssValue})` };
-      });
-      // restore original classes
-      root.className = '';
-      originalClasses.forEach(cls => root.classList.add(cls));
-      setThemeOptions(computedOptions);
-    }, [baseThemeOptions]);
-
-    const userInitial = user.name ? user.name.charAt(0).toUpperCase() : (user.email ? user.email.charAt(0).toUpperCase() : '?');
-
-    // --- Helper to Reset 2FA State --- 
     const resetTwoFactorState = () => {
         setIs2faLoading(false);
         setTwoFactorStep(TwoFactorStep.Idle);
@@ -170,58 +83,10 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
         setIntendedAction(null);
     }
 
-    // Effect for Profile Form feedback - update store on success
-    useEffect(() => {
-        if (profileState.success) {
-            toast.success(profileState.message || 'Profile updated successfully!');
-            if (profileState.updatedUser) {
-                setImageUrlToSubmit(profileState.updatedUser.image ?? ''); 
-                setPopoverImageUrl(profileState.updatedUser.image ?? ''); 
-                useFusionStore.getState().setCurrentUser({
-                    ...profileState.updatedUser,
-                    twoFactorEnabled: profileState.updatedUser.twoFactorEnabled ?? false, 
-                });
-                console.log("[AccountSettingsForm] Updated currentUser in Zustand store.");
-                // Trigger user list refresh
-                useFusionStore.getState().triggerUserListRefresh();
-                console.log("[AccountSettingsForm] Triggered user list refresh.");
-            } else {
-                 setPopoverImageUrl(imageUrlToSubmit);
-            }
-        }
-        if (!profileState.success && profileState.message) {
-            toast.error(profileState.message);
-        }
-        // Only depend on profileState and imageUrlToSubmit now
-    }, [profileState, imageUrlToSubmit]); 
-
-    // Sync local 2FA state if prop changes (e.g., after successful enable/disable)
     useEffect(() => {
         setTwoFactorEnabled(user.twoFactorEnabled);
     }, [user.twoFactorEnabled]);
 
-    // Handle saving URL from popover
-    const handlePopoverSave = () => {
-        setImageUrlToSubmit(popoverImageUrl);
-        setPopoverOpen(false);
-    };
-
-    // Handle removing photo from popover
-    const handlePopoverRemove = () => {
-        setImageUrlToSubmit('');
-        setPopoverImageUrl('');
-        setPopoverOpen(false);
-    };
-
-    // Handle opening popover - sync input field with current saved URL
-    const handlePopoverOpenChange = (open: boolean) => {
-        if (open) {
-            setPopoverImageUrl(imageUrlToSubmit); // Sync input on open
-        }
-        setPopoverOpen(open);
-    }
-
-    // --- Password Confirmation Handler ---
     const handlePasswordConfirm = async (event?: React.FormEvent<HTMLFormElement>) => {
         event?.preventDefault();
         if (!intendedAction) return;
@@ -237,9 +102,7 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
         try {
             switch (intendedAction) {
                 case 'enable':
-                    console.log("Attempting to enable 2FA...");
                     const enableResult = await authClient.twoFactor.enable({ password: currentPassword });
-                    console.log("Enable result:", enableResult);
                     if (enableResult.error) {
                         throw new Error(enableResult.error.message || 'Failed to initiate 2FA setup.');
                     }
@@ -252,14 +115,10 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                     setIs2faLoading(false);
                     break;
                 case 'disable':
-                     console.log("Password confirmed for disabling 2FA, proceeding to confirmation...");
-                    // Password confirmed, move to the final alert dialog confirmation
                     setTwoFactorStep(TwoFactorStep.ConfirmDisable);
                     break;
                 case 'regenerate':
-                    console.log("Attempting to regenerate backup codes...");
                     const regenResult = await authClient.twoFactor.generateBackupCodes({ password: currentPassword });
-                    console.log("Regen result:", regenResult);
                     if (regenResult.error) {
                         throw new Error(regenResult.error.message || 'Failed to regenerate backup codes.');
                     }
@@ -271,17 +130,12 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                     setIs2faLoading(false);
                     break;
             }
-            // Keep loading state until next step or if error below
-            // setIs2faLoading(false); // This comment is now obsolete
-
         } catch (err: any) {
-            console.error(`Error during password confirmation for ${intendedAction}:`, err);
             setPasswordError(err?.message || "Incorrect password or server error.");
-            setIs2faLoading(false); // Stop loading on error
+            setIs2faLoading(false);
         }
     };
 
-    // --- QR/Verification Handler ---
     const handleVerifyAndCompleteEnable = async () => {
         if (verificationCode.length !== 6) {
             setVerificationError("Please enter a 6-digit code.");
@@ -291,50 +145,37 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
         setVerificationError(null);
 
         try {
-            console.log("Verifying TOTP code...");
             await authClient.twoFactor.verifyTotp({ code: verificationCode });
-            console.log("TOTP verification successful!");
             toast.success("Two-Factor Authentication enabled successfully!");
-            setTwoFactorEnabled(true); // Update local state visually
-            // Update user in Zustand store - Fetch updated user data if needed or manually update
+            setTwoFactorEnabled(true);
             const currentUser = useFusionStore.getState().currentUser;
             if (currentUser) {
                 useFusionStore.getState().setCurrentUser({ ...currentUser, twoFactorEnabled: true });
             }
             resetTwoFactorState();
         } catch (err: any) {
-            console.error("Error verifying TOTP code:", err);
             setVerificationError(err?.message || "Invalid code. Please try again.");
             setIs2faLoading(false);
         }
     };
 
-    // --- Disable Confirmation Handler ---
     const handleConfirmDisable = async () => {
-        setIs2faLoading(true); // Set loading for the alert dialog action
+        setIs2faLoading(true);
         try {
-            console.log("Disabling 2FA...");
-            // Password was already confirmed, proceed to disable
-            await authClient.twoFactor.disable({ password: currentPassword }); // Still need password here per docs
-            console.log("2FA disabled successfully.");
+            await authClient.twoFactor.disable({ password: currentPassword });
             toast.success("Two-Factor Authentication disabled.");
             setTwoFactorEnabled(false);
-             // Update user in Zustand store
              const currentUser = useFusionStore.getState().currentUser;
             if (currentUser) {
                 useFusionStore.getState().setCurrentUser({ ...currentUser, twoFactorEnabled: false });
             }
-            resetTwoFactorState(); // Close dialogs and reset state
+            resetTwoFactorState();
         } catch (err: any) {
-            // Error during disable (should be rare if password check passed, but handle anyway)
-            console.error("Error disabling 2FA:", err);
             toast.error(err?.message || "Failed to disable 2FA. Please try again.");
-            // Reset state but maybe leave password dialog open? Or just reset fully.
             resetTwoFactorState(); 
         }
     };
 
-    // --- Trigger Handlers --- 
     const handleEnable2FA = () => {
         resetTwoFactorState();
         setIntendedAction('enable');
@@ -353,28 +194,6 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
         setTwoFactorStep(TwoFactorStep.ConfirmPassword);
     }
     
-    // --- Theme Family Change Handler ---
-    const handleThemeFamilyChange = (newThemeFamilyValue: string) => {
-        setSelectedThemeFamily(newThemeFamilyValue); // Update local state for the select component
-        localStorage.setItem(PREFERRED_THEME_FAMILY_KEY, newThemeFamilyValue);
-        
-        // Manually add/remove the class for immediate effect
-        if (newThemeFamilyValue === 'cosmic-night') {
-            document.documentElement.classList.add('cosmic-night');
-        } else {
-            document.documentElement.classList.remove('cosmic-night');
-        }
-        // Also dispatch a storage event so ThemeProvider in other tabs can pick it up if necessary,
-        // though ThemeProvider already listens to 'storage' events directly.
-        window.dispatchEvent(new StorageEvent('storage', {
-            key: PREFERRED_THEME_FAMILY_KEY,
-            newValue: newThemeFamilyValue,
-            oldValue: localStorage.getItem(PREFERRED_THEME_FAMILY_KEY), // This might be slightly off if setItem is async but good enough
-            storageArea: localStorage,
-        }));
-    };
-    
-     // --- Backup Code Copy Helper ---
     const copyToClipboard = (text: string) => {
         navigator.clipboard.writeText(text).then(() => {
             toast.success("Copied to clipboard!");
@@ -385,104 +204,7 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
     };
 
     return (
-        <div className="space-y-6"> 
-            {/* --- Profile Card --- */}
-            <Card>
-                <CardHeader className="items-center text-center">
-                    {/* --- Container for Avatar and Edit Button - Wrapped by Popover --- */}
-                    <Popover open={popoverOpen} onOpenChange={handlePopoverOpenChange}>
-                        <PopoverTrigger asChild>
-                           {/* This div is the trigger area */}
-                           <div 
-                             className="relative mb-4 inline-block group cursor-pointer rounded-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2" 
-                             tabIndex={0}
-                             role="button"
-                             aria-label="Edit profile picture"
-                           > 
-                                <Avatar className="h-20 w-20"> 
-                                    <AvatarImage src={imageUrlToSubmit || undefined} alt={user.name} className="object-cover" />
-                                    <AvatarFallback className="text-2xl">{userInitial}</AvatarFallback>
-                                </Avatar>
-
-                                {/* Visual cue - non-interactive */}
-                                <div 
-                                    className="absolute -bottom-1 -right-1 h-7 w-7 rounded-full border-2 bg-background flex items-center justify-center pointer-events-none"
-                                >
-                                    <Pencil className="h-4 w-4 text-foreground" />
-                                </div>
-                            </div>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-80 p-4 space-y-3">
-                           <div className="space-y-1">
-                                <Label htmlFor="popover-image-url">Image URL</Label>
-                                <Input 
-                                    id="popover-image-url"
-                                    value={popoverImageUrl}
-                                    onChange={(e) => setPopoverImageUrl(e.target.value)}
-                                    placeholder="https://example.com/avatar.png"
-                                />
-                            </div>
-                            <div className="flex justify-between items-center pt-2">
-                                <Button variant="ghost" size="sm" onClick={handlePopoverRemove} className="text-red-600 hover:text-red-700 hover:bg-red-50">
-                                    <Trash2 className="h-4 w-4 mr-1" />
-                                    Remove
-                                </Button>
-                                <Button size="sm" onClick={handlePopoverSave}>
-                                    Save
-                                </Button>
-                            </div>
-                        </PopoverContent>
-                    </Popover>
-                    {/* --- End Popover --- */}
-                    
-                    <CardTitle>Profile Details</CardTitle>
-                    <CardDescription>Update your name and profile picture.</CardDescription>
-                </CardHeader>
-                <form action={profileFormAction} ref={profileFormRef}>
-                    <input type="hidden" name="image" value={imageUrlToSubmit} />
-                    <CardContent className="space-y-4 pt-4">
-                        <div className="space-y-1">
-                            <Label htmlFor="settings-name">Name</Label>
-                            <Input id="settings-name" name="name" required defaultValue={user.name} />
-                        </div>
-                        <div className="space-y-1">
-                            <Label htmlFor="settings-email">Email</Label>
-                            <Input id="settings-email" name="email" type="email" disabled value={user.email} />
-                        </div>
-                    </CardContent>
-                    <CardFooter className="border-t px-6 py-4">
-                        <SubmitButton />
-                    </CardFooter>
-                </form>
-            </Card>
-
-            {/* --- NEW: Appearance Card --- */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Appearance</CardTitle>
-                    <CardDescription>Customize the look and feel of the application.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="space-y-1">
-                        <Label htmlFor="theme-family-select">Theme</Label>
-                        <Select value={selectedThemeFamily} onValueChange={handleThemeFamilyChange}>
-                            <SelectTrigger id="theme-family-select" className="w-[180px]">
-                                <SelectValue placeholder="Select theme family" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {themeOptions.map((opt) => (
-                                    <SelectItem key={opt.value} value={opt.value}>
-                                        <span className="inline-block h-3 w-3 rounded-full mr-2" style={{ backgroundColor: opt.dotColor }} />
-                                        {opt.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* --- Security Section --- */}
+        <>
             <Card>
                 <CardHeader>
                     <CardTitle>Security</CardTitle>
@@ -525,7 +247,7 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                              </div>
                         )}
                     </div>
-                    {/* Regenerate Backup Codes Button (only if 2FA enabled) */}
+                    {/* Regenerate Backup Codes Button */}
                     {twoFactorEnabled && (
                         <div className="pt-2">
                             <Button variant="outline" size="sm" onClick={handleRegenerateBackupCodes} disabled={is2faLoading}>
@@ -537,9 +259,7 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                 </CardContent>
             </Card>
 
-            {/* --- 2FA Dialogs --- */}
-
-            {/* 1. Password Confirmation Dialog */}
+            {/* 2FA Dialogs */}
             <Dialog open={twoFactorStep === TwoFactorStep.ConfirmPassword} onOpenChange={(open) => !open && resetTwoFactorState()}>
                 <DialogContent>
                     <DialogHeader>
@@ -551,7 +271,6 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                             {intendedAction === 'regenerate' && ' regenerating backup codes.'}
                         </DialogDescription>
                     </DialogHeader>
-                    {/* Wrap content in a form */}
                     <form onSubmit={handlePasswordConfirm}>
                         <div className="py-4 space-y-2">
                             <Label htmlFor="confirm-password">Current Password</Label>
@@ -572,7 +291,6 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                             <DialogClose asChild>
                                 <Button variant="outline" onClick={resetTwoFactorState}>Cancel</Button>
                             </DialogClose>
-                            {/* Change type to submit and remove onClick */}
                             <Button type="submit" disabled={is2faLoading || !currentPassword}>
                                 {is2faLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                                 Confirm Password
@@ -582,17 +300,15 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                 </DialogContent>
             </Dialog>
 
-            {/* 2. Enable 2FA - Show QR & Verify Dialog */}
             <Dialog open={twoFactorStep === TwoFactorStep.ShowQrAndVerify} onOpenChange={(open) => !open && resetTwoFactorState()}>
                  <DialogContent className="sm:max-w-[550px]">
                     <DialogHeader>
                         <DialogTitle>Enable Two-Factor Authentication</DialogTitle>
                         <DialogDescription>
-                            Scan the QR code with your authenticator app (e.g., Google Authenticator, Authy), then enter the code below.
+                            Scan the QR code with your authenticator app, then enter the code below.
                         </DialogDescription>
                     </DialogHeader>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
-                        {/* QR Code Section */}
                         <div className="flex flex-col items-center justify-center space-y-3 p-4 bg-muted rounded-md">
                              {totpUri ? (
                                 <div className="bg-white p-3 rounded-lg shadow">
@@ -602,11 +318,8 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                                 <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
                             )}
                              <p className="text-xs text-muted-foreground text-center">Scan with your authenticator app</p>
-                             {/* Optional: Show secret manually */} 
-                            {/* <details className="text-xs"> <summary>Show Secret</summary> <code className="block break-all p-1 bg-background rounded">{totpUri?.split('secret=')[1]?.split('&')[0]}</code> </details> */} 
                          </div>
 
-                        {/* Verification and Backup Codes Section */}
                         <div className="space-y-4">
                             <div>
                                 <Label htmlFor="verification-code">Verification Code</Label>
@@ -617,7 +330,7 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                                     onChange={(value: string) => setVerificationCode(value)} 
                                     disabled={is2faLoading}
                                     autoComplete="one-time-code"
-                                    containerClassName="justify-start mt-1" // Align left
+                                    containerClassName="justify-start mt-1"
                                 >
                                     <InputOTPGroup>
                                         <InputOTPSlot index={0} />
@@ -635,7 +348,7 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
 
                             <div>
                                 <Label className="font-medium">Save Your Backup Codes</Label>
-                                <p className="text-xs text-muted-foreground mb-2">If you lose access to your authenticator app, you can use these codes to sign in. Store them securely!</p>
+                                <p className="text-xs text-muted-foreground mb-2">Store these codes securely for emergency access.</p>
                                 {backupCodes.length > 0 ? (
                                     <div className="space-y-1 font-mono text-sm p-3 bg-secondary rounded-md max-h-32 overflow-y-auto">
                                         {backupCodes.map((code) => (
@@ -674,7 +387,6 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                 </DialogContent>
             </Dialog>
 
-            {/* 3. Disable 2FA Confirmation (AlertDialog) */}
             <AlertDialog open={twoFactorStep === TwoFactorStep.ConfirmDisable} onOpenChange={(open) => !open && resetTwoFactorState()}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
@@ -698,14 +410,12 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                 </AlertDialogContent>
             </AlertDialog>
 
-             {/* 4. Show Newly Regenerated Backup Codes Dialog */}
             <Dialog open={twoFactorStep === TwoFactorStep.ShowNewBackupCodes} onOpenChange={(open) => !open && resetTwoFactorState()}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>New Backup Codes Generated</DialogTitle>
                          <DialogDescription>
                             Your old backup codes have been invalidated. Store these new codes securely. 
-                            You will need them if you lose access to your authenticator app.
                         </DialogDescription>
                     </DialogHeader>
                      <div className="py-4">
@@ -721,7 +431,7 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                                 ))}
                             </div>
                         ) : (
-                            <Loader2 className="h-6 w-6 animate-spin mx-auto" /> // Centered loader
+                            <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                         )}
                         <Button 
                             variant="secondary" 
@@ -740,20 +450,6 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-
-        </div>
-    );
-}
-
-// Simplified Submit Button - Only handles Profile form now
-function SubmitButton() {
-    const { pending } = useFormStatus();
-
-    return (
-        <Button type="submit" disabled={pending} className="ml-auto" size="sm">
-            {/* Only show loader when pending, otherwise just text */}
-            {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Save
-        </Button>
+        </>
     );
 } 

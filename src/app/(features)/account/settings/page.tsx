@@ -1,94 +1,116 @@
-// import { auth } from "@/lib/auth/server"; // Use server auth
-import { redirect } from 'next/navigation';
-import { cookies } from 'next/headers'; // Import cookies
-import { PageHeader } from "@/components/layout/page-header";
-import { Settings } from 'lucide-react';
-import { AccountSettingsForm } from "@/components/features/account/account-settings-form";
+'use client';
 
-// Define the expected shape of the user data from the API
-// This now directly matches the /api/auth/profile response structure
-interface UserProfileData {
-  id: string;
-  name: string | null;
-  email: string | null;
-  image: string | null;
-  twoFactorEnabled: boolean; // Now boolean, non-optional from profile endpoint
-}
+import React, { useState } from 'react';
+import { withPageAuth } from '@/lib/auth/withPageAuth';
+import { cn } from '@/lib/utils';
+import { User, Shield, Key, Palette } from 'lucide-react';
+import { ProfileSettings } from '@/components/features/account/ProfileSettings';
+import { SecuritySettings } from '@/components/features/account/SecuritySettings';
+import { ApiKeysSettings } from '@/components/api-keys/ApiKeysSettings';
+import { AppearanceSettings } from '@/components/features/account/AppearanceSettings';
+import { useSession } from '@/lib/auth/client';
 
-// Define the component as async
-export default async function AccountSettingsPage() {
-  let user: UserProfileData | null = null;
-  let profileApiUrl: URL | null = null;
-  let fetchError: string | null = null;
+const settingsTabs = [
+  {
+    id: 'profile',
+    label: 'Profile',
+    icon: User,
+  },
+  {
+    id: 'security',
+    label: 'Security',
+    icon: Shield,
+  },
+  {
+    id: 'api-keys',
+    label: 'API Keys',
+    icon: Key,
+  },
+  {
+    id: 'appearance',
+    label: 'Appearance',
+    icon: Palette,
+  },
+];
 
-  try {
-    const cookieStore = await cookies();
-    
-    const port = process.env.PORT;
-    if (port) {
-      try {
-          // Update URL to point to the new profile endpoint
-          profileApiUrl = new URL(`http://localhost:${port}/api/auth/profile`); 
-      } catch (e) {
-          console.error("[AccountSettingsPage] Failed to construct URL with localhost:PORT", e);
-          fetchError = 'Internal Server Configuration Error (URL Port)';
-      }
-    } else {
-        console.error("[AccountSettingsPage] PORT environment variable not found. Cannot fetch session.");
-        fetchError = 'Internal Server Configuration Error (Missing PORT)';
-    }
+function SettingsPage() {
+  const { data: session } = useSession();
+  const [activeTab, setActiveTab] = useState('profile');
 
-    if (profileApiUrl && !fetchError) { 
-        const allCookies = cookieStore.getAll(); 
-        const cookieHeader = allCookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
-        console.log(`[AccountSettingsPage] Fetching user profile from ${profileApiUrl.toString()}`);
-
-        const response = await fetch(profileApiUrl.toString(), {
-          headers: { 'Cookie': cookieHeader },
-          cache: 'no-store',
-        });
-
-        if (response.ok) {
-          // Directly parse the user profile data
-          user = await response.json(); 
-        } else if (response.status === 401) {
-            // Handle unauthorized specifically - user needs to log in
-            console.log("[AccountSettingsPage] Profile API returned 401 Unauthorized. Redirecting to login.");
-            fetchError = 'Unauthorized'; // Set error to trigger redirect below
-        } else {
-          console.error(`[AccountSettingsPage] Profile API fetch failed with status: ${response.status}`);
-          fetchError = `API fetch failed: ${response.status}`;
-        }
-    }
-  } catch (error) {
-    console.error("[AccountSettingsPage] Error during page load fetch:", error);
-    fetchError = (error instanceof Error) ? error.message : "Fetch error";
+  if (!session?.user) {
+    return <div>Loading...</div>;
   }
 
-  // If there was any fetch error OR user data is null, redirect to login
-  if (fetchError || !user) {
-    console.error(`[AccountSettingsPage] Fetch error ('${fetchError}') or user data missing, redirecting to login.`);
-    redirect('/login');
-  }
-
-  // Prepare user data for the form, ensuring correct types
+  // Convert session user to UserData format
   const userData = {
-    id: user.id, // id is guaranteed by successful fetch
-    name: user.name ?? '', // Ensure name is string
-    email: user.email ?? '', // Ensure email is string (though it should always exist)
-    image: user.image ?? null,
-    twoFactorEnabled: user.twoFactorEnabled, // Already boolean
+    id: session.user.id,
+    name: session.user.name,
+    email: session.user.email,
+    image: session.user.image || null,
+    twoFactorEnabled: session.user.twoFactorEnabled || false,
+  };
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'profile':
+        return <ProfileSettings user={userData} />;
+      case 'security':
+        return <SecuritySettings user={userData} />;
+      case 'api-keys':
+        return <ApiKeysSettings user={userData} />;
+      case 'appearance':
+        return <AppearanceSettings />;
+      default:
+        return <ProfileSettings user={userData} />;
+    }
   };
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4 md:p-6 lg:gap-6">
-        <PageHeader
-          title="Account Settings"
-          description="Manage your personal profile information."
-          icon={<Settings className="h-6 w-6" />} />
-         <div className="max-w-2xl">
-            <AccountSettingsForm user={userData} />
+    <div className="container mx-auto py-6">
+      {/* Page Header */}
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+        <p className="text-muted-foreground">
+          Manage your account settings and preferences.
+        </p>
+      </div>
+
+      {/* Settings Layout */}
+      <div className="flex flex-col space-y-8 lg:flex-row lg:space-x-12 lg:space-y-0">
+        {/* Sidebar Navigation */}
+        <aside className="lg:w-1/5">
+          <nav className="flex space-x-2 lg:flex-col lg:space-x-0 lg:space-y-1">
+            {settingsTabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                    'hover:bg-accent hover:text-accent-foreground',
+                    activeTab === tab.id
+                      ? 'bg-accent text-accent-foreground'
+                      : 'transparent'
+                  )}
+                >
+                  <Icon className="mr-2 h-4 w-4" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+
+        {/* Main Content */}
+        <div className="flex-1 lg:max-w-2xl">
+          <div className="space-y-6">
+            {renderContent()}
+          </div>
         </div>
-    </main>
+      </div>
+    </div>
   );
-} 
+}
+
+export default withPageAuth(SettingsPage); 

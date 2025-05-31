@@ -361,6 +361,7 @@ export const userRelations = relations(user, ({ many, one }) => ({
   accounts: many(account), // Reference updated table 'account'
   sessions: many(session), // Reference updated table 'session'
   twoFactor: one(twoFactor),
+  apiKeys: many(apikey),
 }));
 
 export const accountRelations = relations(account, ({ one }) => ({
@@ -481,5 +482,43 @@ export const automationActionExecutionsRelations = relations(automationActionExe
   execution: one(automationExecutions, {
     fields: [automationActionExecutions.executionId],
     references: [automationExecutions.id],
+  }),
+}));
+
+export const apikey = sqliteTable("apikey", {
+  id: text('id').primaryKey(),
+  name: text('name'),
+  start: text('start'),
+  prefix: text('prefix'),
+  key: text('key').notNull(),
+  userId: text('user_id').notNull().references(()=> user.id, { onDelete: 'cascade' }),
+  refillInterval: integer('refill_interval'),
+  refillAmount: integer('refill_amount'),
+  lastRefillAt: integer('last_refill_at', { mode: 'timestamp' }),
+  enabled: integer('enabled', { mode: 'boolean' }),
+  rateLimitEnabled: integer('rate_limit_enabled', { mode: 'boolean' }),
+  rateLimitTimeWindow: integer('rate_limit_time_window'),
+  rateLimitMax: integer('rate_limit_max'),
+  requestCount: integer('request_count'),
+  remaining: integer('remaining'),
+  lastRequest: integer('last_request', { mode: 'timestamp' }),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  permissions: text('permissions'),
+  metadata: text('metadata')
+}, (table) => ({
+  userIdx: index("apikey_user_idx").on(table.userId),
+  enabledIdx: index("apikey_enabled_idx").on(table.enabled),
+  expiresAtIdx: index("apikey_expires_at_idx").on(table.expiresAt),
+  createdAtIdx: index("apikey_created_at_idx").on(table.createdAt),
+  updatedAtIdx: index("apikey_updated_at_idx").on(table.updatedAt),
+}));
+
+// --- Relations for API Key Schema ---
+export const apikeyRelations = relations(apikey, ({ one }) => ({
+  user: one(user, {
+    fields: [apikey.userId],
+    references: [user.id],
   }),
 }));

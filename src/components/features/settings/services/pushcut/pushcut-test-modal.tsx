@@ -72,7 +72,7 @@ export function PushcutTestModal({ isOpen, onOpenChange, pushcutConfig }: Pushcu
       defaultValues: {
         notificationName: '',
         title: 'Test Pushcut Notification',
-        text: 'This is a test message from Fusion Bridge! 🤗',
+        text: 'This is a test message from Fusion! 🤗',
         sound: PUSHHCUT_SOUND_OPTIONS[0]?.value || 'system',
         devices: ALL_DEVICES_VALUE,
         input: '',

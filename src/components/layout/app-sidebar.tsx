@@ -70,7 +70,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: '/users', label: 'Users', icon: Users },
       { href: '/system-logs', label: 'Console', icon: Terminal },
-      { href: '/settings/services', label: 'Settings', icon: Settings },
+      { href: '/settings', label: 'Settings', icon: Settings },
     ]
   }
 ];

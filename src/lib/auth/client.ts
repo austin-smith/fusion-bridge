@@ -1,6 +1,7 @@
 import { createAuthClient } from "better-auth/react";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { adminClient } from "better-auth/client/plugins";
+import { apiKeyClient } from "better-auth/client/plugins";
 
 // Create the client instance. 
 // No baseURL needed if client and server are on the same domain/port.
@@ -22,7 +23,8 @@ export const authClient = createAuthClient({
                 window.location.href = verifyUrl.toString();
             }
         }),
-        adminClient()
+        adminClient(),
+        apiKeyClient()
     ]
 });
 
@@ -32,6 +34,8 @@ export const {
     signOut, 
     signUp, 
     useSession, 
+    // API Key management functions
+    apiKey,
     // Add other exports if needed, e.g.:
     // sendPasswordResetEmail,
     // resetPassword,

@@ -5,6 +5,7 @@ import { desc, eq, and, isNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { EventCategory, EventType, EventSubtype } from '@/lib/mappings/definitions';
+import { withApiRouteAuth } from '@/lib/auth/withApiRouteAuth';
 
 const DEFAULT_LIMIT = 100; // Default number of events to fetch
 
@@ -115,8 +116,15 @@ async function getRecentEventsForDashboard(limit: number = DEFAULT_LIMIT): Promi
     }
 }
 
-
-export async function GET(request: Request) {
+/**
+ * @swagger
+ * /api/events/dashboard:
+ *   get:
+ *     summary: Get dashboard events
+ *     description: Get recent events formatted for dashboard display
+ *     tags: [Events]
+ */
+export const GET = withApiRouteAuth(async (request, authContext) => {
   try {
     // Optional: Add query parameters later for limit, time range, etc.
     // const { searchParams } = new URL(request.url);
@@ -131,4 +139,4 @@ export async function GET(request: Request) {
     // Return a generic server error response
     return NextResponse.json({ success: false, error: "Failed to fetch dashboard events." }, { status: 500 });
   }
-} 
+}); 
