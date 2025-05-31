@@ -1027,8 +1027,8 @@ export function generateOpenApiSpec() {
     openapi: '3.0.0',
     info: {
       version: '1.0.0',
-      title: 'Fusion Bridge API',
-      description: 'IoT automation platform API for managing devices, events, areas, and locations',
+      title: 'Fusion API',
+      description: 'Unify. Automate. Protect.',
     },
     servers: [
       {
