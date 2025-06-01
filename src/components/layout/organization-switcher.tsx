@@ -176,7 +176,7 @@ export function OrganizationSwitcher() {
               <DropdownMenuSeparator />
               <DropdownMenuItem 
                 className="gap-2 p-2"
-                onClick={() => router.push('/admin/organizations')}
+                onClick={() => router.push('/organizations')}
               >
                 <div className="bg-background flex size-6 items-center justify-center rounded-md border">
                   <Plus className="size-4" />
@@ -185,7 +185,7 @@ export function OrganizationSwitcher() {
               </DropdownMenuItem>
               <DropdownMenuItem 
                 className="gap-2 p-2"
-                onClick={() => router.push('/admin/organizations')}
+                onClick={() => router.push('/organizations')}
               >
                 <div className="bg-background flex size-6 items-center justify-center rounded-md border">
                   <Building2 className="size-4" />
