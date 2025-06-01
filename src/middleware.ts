@@ -24,7 +24,8 @@ export function middleware(request: NextRequest) {
     
     // Allow routes that already have their own authentication wrappers
     // These routes use withApiRouteAuth and handle both session + API key auth
-    if (pathname.startsWith('/api/admin/') || 
+    if (pathname.startsWith('/api/admin/') ||
+        pathname.startsWith('/api/alarm') ||
         pathname.startsWith('/api/areas') ||
         pathname.startsWith('/api/devices') ||
         pathname.startsWith('/api/events') ||
