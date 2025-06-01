@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { db } from '@/data/db';
-import { user, account } from '@/data/db/schema';
+import { user, account, organization, member } from '@/data/db/schema';
 import { auth } from '@/lib/auth/server';
 import { sql } from 'drizzle-orm';
 import crypto from 'crypto';
@@ -86,18 +86,23 @@ export async function createFirstAdminUser(formData: z.infer<typeof SetupSchema>
         return { success: false, error: 'Failed to process password.' };
     }
 
-    // 4. Insert user and account in transaction (using renamed tables)
+    // 4. Insert user, account, organization, and membership in transaction
     try {
         await db.transaction(async (tx) => {
             const newUserId = crypto.randomUUID();
+            const orgId = crypto.randomUUID();
+            
+            // Create admin user with admin role
             console.log(`[Server Action] Inserting user ${email} with ID ${newUserId}`);
             await tx.insert(user).values({
                 id: newUserId,
                 email: email,
                 name: name,
                 emailVerified: true, // Assume verified for initial admin
+                role: 'admin',
             });
 
+            // Create credentials account
             console.log(`[Server Action] Inserting credentials account for user ${newUserId}`);
             await tx.insert(account).values({
                 id: crypto.randomUUID(),
@@ -106,17 +111,34 @@ export async function createFirstAdminUser(formData: z.infer<typeof SetupSchema>
                 accountId: newUserId, 
                 password: hashedPassword,
             });
-        });
-        console.log("[Server Action] Admin user and account created successfully.");
 
-        // IMPORTANT: Do NOT redirect from here, as it can cause issues
-        // with React state updates in the calling component.
-        // Return success and let the client handle UI changes/redirect.
-        // redirect('/login'); // <-- DO NOT DO THIS HERE
+            // Create default organization
+            console.log(`[Server Action] Creating default organization with ID ${orgId}`);
+            await tx.insert(organization).values({
+                id: orgId,
+                name: 'Default Organization',
+                slug: 'default',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            });
+
+            // Make admin user the owner of the default organization
+            console.log(`[Server Action] Making user ${newUserId} owner of default organization`);
+            await tx.insert(member).values({
+                id: crypto.randomUUID(),
+                userId: newUserId,
+                organizationId: orgId,
+                role: 'owner',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            });
+        });
+        
+        console.log("[Server Action] Admin user, default organization, and membership created successfully.");
         return { success: true };
 
     } catch (error) {
-        console.error("[Server Action] Error inserting user/account:", error);
+        console.error("[Server Action] Error inserting user/account/organization:", error);
         // Check for unique constraint errors (e.g., email already exists - shouldn't happen if count check works)
         if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
              return { success: false, error: 'An account with this email might already exist unexpectedly.' };

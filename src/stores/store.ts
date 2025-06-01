@@ -11,6 +11,7 @@ import { YoLinkConfig } from '@/services/drivers/yolink';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import type { DashboardEvent } from '@/app/api/events/dashboard/route';
 import type { User } from '@/lib/actions/user-actions'; // Import User type
+import { authClient } from '@/lib/auth/client'; // Import authClient
 
 // Enable Immer plugin for Map/Set support
 enableMapSet();
@@ -157,6 +158,21 @@ interface FusionState {
   // --- NEW: PIN Management State ---
   pinStates: Map<string, { hasPin: boolean; setAt: Date | null }>; // Key: userId
   
+  // --- NEW: Organization State ---
+  organizations: Organization[];
+  isLoadingOrganizations: boolean;
+  errorOrganizations: string | null;
+  
+  // --- NEW: Organization Members State ---
+  organizationMembers: OrganizationMember[];
+  isLoadingMembers: boolean;
+  errorMembers: string | null;
+  
+  // --- NEW: Organization Invitations State ---
+  organizationInvitations: OrganizationInvitation[];
+  isLoadingInvitations: boolean;
+  errorInvitations: string | null;
+  
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
   addConnector: (connector: ConnectorWithConfig) => void;
@@ -256,6 +272,24 @@ interface FusionState {
   setUserPin: (userId: string, pin: string) => Promise<boolean>;
   removeUserPin: (userId: string) => Promise<boolean>;
   validatePin: (pin: string) => Promise<{ valid: boolean; userId?: string }>;
+  
+  // --- NEW: Organization Actions ---
+  fetchOrganizations: () => Promise<void>;
+  createOrganization: (data: NewOrganizationData) => Promise<Organization | null>;
+  updateOrganization: (id: string, data: Partial<NewOrganizationData>) => Promise<Organization | null>;
+  deleteOrganization: (id: string) => Promise<boolean>;
+  
+  // --- NEW: Organization Member Actions ---
+  fetchOrganizationMembers: (organizationId?: string) => Promise<void>;
+  inviteMember: (email: string, role: string, organizationId?: string) => Promise<OrganizationInvitation | null>;
+  updateMemberRole: (memberId: string, role: string) => Promise<boolean>;
+  removeMember: (memberIdOrEmail: string, organizationId?: string) => Promise<boolean>;
+  
+  // --- NEW: Organization Invitation Actions ---
+  fetchOrganizationInvitations: (organizationId?: string) => Promise<void>;
+  acceptInvitation: (invitationId: string) => Promise<boolean>;
+  cancelInvitation: (invitationId: string) => Promise<boolean>;
+  rejectInvitation: (invitationId: string) => Promise<boolean>;
 }
 
 // Initial state for MQTT (default)
@@ -339,6 +373,21 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   
   // --- NEW: PIN Management Initial State ---
   pinStates: new Map<string, { hasPin: boolean; setAt: Date | null }>(),
+  
+  // --- NEW: Organization State ---
+  organizations: [],
+  isLoadingOrganizations: false,
+  errorOrganizations: null,
+  
+  // --- NEW: Organization Members State ---
+  organizationMembers: [],
+  isLoadingMembers: false,
+  errorMembers: null,
+  
+  // --- NEW: Organization Invitations State ---
+  organizationInvitations: [],
+  isLoadingInvitations: false,
+  errorInvitations: null,
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -1455,4 +1504,361 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
+  // --- NEW: Organization Actions ---
+  fetchOrganizations: async () => {
+    set({ isLoadingOrganizations: true, errorOrganizations: null });
+    try {
+      const response = await authClient.organization.list();
+      if (response.error) {
+        throw new Error(response.error.message || 'Failed to fetch organizations');
+      }
+      // Better Auth returns organizations in response.data
+      const organizations = response.data || [];
+      set({ organizations, isLoadingOrganizations: false });
+      console.log('[FusionStore] Organizations loaded via Better Auth:', organizations.length);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error("Error fetching organizations:", message);
+      set({ isLoadingOrganizations: false, errorOrganizations: message, organizations: [] });
+    }
+  },
+
+  createOrganization: async (data: NewOrganizationData) => {
+    try {
+      const response = await authClient.organization.create({
+        name: data.name,
+        slug: data.slug,
+        logo: data.logo || undefined,
+      });
+      
+      if (response.error) {
+        throw new Error(response.error.message || 'Failed to create organization');
+      }
+      
+      const newOrg = response.data;
+      if (newOrg) {
+        set((state) => ({
+          organizations: [...state.organizations, newOrg].sort((a, b) => a.name.localeCompare(b.name)),
+        }));
+        toast.success('Organization created successfully');
+        return newOrg;
+      }
+      return null;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Error creating organization:', message);
+      toast.error(`Failed to create organization: ${message}`);
+      return null;
+    }
+  },
+
+  updateOrganization: async (id: string, updateData: Partial<NewOrganizationData>) => {
+    try {
+      const response = await authClient.organization.update({
+        organizationId: id,
+        data: updateData,
+      });
+      
+      if (response.error) {
+        throw new Error(response.error.message || 'Failed to update organization');
+      }
+      
+      const updatedOrg = response.data;
+      if (updatedOrg) {
+        set((state) => ({
+          organizations: state.organizations.map(org => 
+            org.id === id ? { ...org, ...updatedOrg } : org
+          ).sort((a, b) => a.name.localeCompare(b.name)),
+        }));
+        toast.success('Organization updated successfully');
+        return updatedOrg;
+      }
+      return null;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error updating organization ${id}:`, message);
+      toast.error(`Failed to update organization: ${message}`);
+      return null;
+    }
+  },
+
+  deleteOrganization: async (id: string) => {
+    const loadingToastId = toast.loading('Deleting organization...');
+    try {
+      const response = await authClient.organization.delete({
+        organizationId: id,
+      });
+      
+      if (response.error) {
+        throw new Error(response.error.message || 'Failed to delete organization');
+      }
+      
+      set((state) => ({
+        organizations: state.organizations.filter(org => org.id !== id),
+      }));
+      toast.success('Organization deleted successfully');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error deleting organization ${id}:`, message);
+      toast.error(`Failed to delete organization: ${message}`);
+      return false;
+    } finally {
+      toast.dismiss(loadingToastId);
+    }
+  },
+
+  // --- NEW: Organization Member Actions ---
+  fetchOrganizationMembers: async (organizationId?: string) => {
+    set({ isLoadingMembers: true, errorMembers: null });
+    try {
+      const response = await fetch('/api/organizations/members', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: organizationId ? JSON.stringify({ organizationId }) : undefined,
+      });
+      const data: ApiResponse<OrganizationMember[]> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch organization members');
+      }
+      set({ organizationMembers: data.data || [], isLoadingMembers: false });
+      console.log('[FusionStore] Organization members loaded into state:', data.data?.length);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error("Error fetching organization members:", message);
+      set({ isLoadingMembers: false, errorMembers: message, organizationMembers: [] });
+    }
+  },
+
+  inviteMember: async (email: string, role: string, organizationId?: string) => {
+    try {
+      const response = await fetch('/api/organizations/members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, role, organizationId }),
+      });
+      const data: ApiResponse<OrganizationInvitation> = await response.json();
+      if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || 'Failed to invite member');
+      }
+      set((state) => ({
+        organizationInvitations: [...state.organizationInvitations, data.data!].sort((a, b) => a.email.localeCompare(b.email)),
+      }));
+      toast.success('Member invited successfully');
+      return data.data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Error inviting member:', message);
+      toast.error(`Failed to invite member: ${message}`);
+      return null;
+    }
+  },
+
+  updateMemberRole: async (memberId: string, role: string) => {
+    try {
+      const response = await fetch(`/api/organizations/members/${memberId}/role`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      });
+      const result: ApiResponse<OrganizationMember> = await response.json();
+      if (!response.ok || !result.success || !result.data) {
+        throw new Error(result.error || 'Failed to update member role');
+      }
+      set((state) => ({
+        organizationMembers: state.organizationMembers.map(member => 
+          member.id === memberId ? result.data! : member
+        ).sort((a, b) => (a.user?.email || '').localeCompare(b.user?.email || '')),
+      }));
+      toast.success('Member role updated successfully');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error updating member role: ${message}`);
+      toast.error(`Failed to update member role: ${message}`);
+      return false;
+    }
+  },
+
+  removeMember: async (memberIdOrEmail: string, organizationId?: string) => {
+    try {
+      const response = await fetch('/api/organizations/members', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberIdOrEmail, organizationId }),
+      });
+      const result: ApiResponse<{ removed: boolean }> = await response.json();
+      if (!response.ok || !result.success || !result.data?.removed) {
+        throw new Error(result.error || 'Failed to remove member');
+      }
+      set((state) => ({
+        organizationMembers: state.organizationMembers.filter(member => 
+          member.id !== memberIdOrEmail && member.user?.email !== memberIdOrEmail
+        ).sort((a, b) => (a.user?.email || '').localeCompare(b.user?.email || '')),
+      }));
+      toast.success('Member removed successfully');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error removing member: ${message}`);
+      toast.error(`Failed to remove member: ${message}`);
+      return false;
+    }
+  },
+
+  // --- NEW: Organization Invitation Actions ---
+  fetchOrganizationInvitations: async (organizationId?: string) => {
+    set({ isLoadingInvitations: true, errorInvitations: null });
+    try {
+      const response = await fetch('/api/organizations/invitations', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: organizationId ? JSON.stringify({ organizationId }) : undefined,
+      });
+      const data: ApiResponse<OrganizationInvitation[]> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch organization invitations');
+      }
+      set({ organizationInvitations: data.data || [], isLoadingInvitations: false });
+      console.log('[FusionStore] Organization invitations loaded into state:', data.data?.length);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error("Error fetching organization invitations:", message);
+      set({ isLoadingInvitations: false, errorInvitations: message, organizationInvitations: [] });
+    }
+  },
+
+  acceptInvitation: async (invitationId: string) => {
+    try {
+      const response = await fetch('/api/organizations/invitations/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invitationId }),
+      });
+      const result: ApiResponse<{ accepted: boolean }> = await response.json();
+      if (!response.ok || !result.success || !result.data?.accepted) {
+        throw new Error(result.error || 'Failed to accept invitation');
+      }
+      set((state) => ({
+        organizationInvitations: state.organizationInvitations.filter(inv => inv.id !== invitationId),
+      }));
+      toast.success('Invitation accepted successfully');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error accepting invitation: ${message}`);
+      toast.error(`Failed to accept invitation: ${message}`);
+      return false;
+    }
+  },
+
+  cancelInvitation: async (invitationId: string) => {
+    try {
+      const response = await fetch('/api/organizations/invitations/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invitationId }),
+      });
+      const result: ApiResponse<{ canceled: boolean }> = await response.json();
+      if (!response.ok || !result.success || !result.data?.canceled) {
+        throw new Error(result.error || 'Failed to cancel invitation');
+      }
+      set((state) => ({
+        organizationInvitations: state.organizationInvitations.filter(inv => inv.id !== invitationId),
+      }));
+      toast.success('Invitation canceled successfully');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error canceling invitation: ${message}`);
+      toast.error(`Failed to cancel invitation: ${message}`);
+      return false;
+    }
+  },
+
+  rejectInvitation: async (invitationId: string) => {
+    try {
+      const response = await fetch('/api/organizations/invitations/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invitationId }),
+      });
+      const result: ApiResponse<{ rejected: boolean }> = await response.json();
+      if (!response.ok || !result.success || !result.data?.rejected) {
+        throw new Error(result.error || 'Failed to reject invitation');
+      }
+      set((state) => ({
+        organizationInvitations: state.organizationInvitations.filter(inv => inv.id !== invitationId),
+      }));
+      toast.success('Invitation rejected successfully');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error rejecting invitation: ${message}`);
+      toast.error(`Failed to reject invitation: ${message}`);
+      return false;
+    }
+  },
+
 })); 
+
+// --- NEW: Organization Types ---
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  logo?: string | null;
+  metadata?: Record<string, any> | null;
+  createdAt: Date;
+  // Better Auth may not have updatedAt, so making it optional
+  updatedAt?: Date;
+  // Better Auth includes members array
+  members?: Array<{
+    id: string;
+    userId: string;
+    organizationId: string;
+    role: string;
+    createdAt: Date;
+    teamId?: string;
+  }>;
+}
+
+export interface OrganizationMember {
+  id: string;
+  userId: string;
+  organizationId: string;
+  role: string; // owner, admin, member
+  createdAt: Date;
+  updatedAt: Date;
+  user?: {
+    id: string;
+    name: string | null;
+    email: string;
+    image: string | null;
+  };
+}
+
+export interface OrganizationInvitation {
+  id: string;
+  email: string;
+  inviterId: string;
+  organizationId: string;
+  role: string;
+  status: string; // pending, accepted, rejected, expired
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  inviter?: {
+    name: string | null;
+    email: string;
+  };
+  organization?: {
+    name: string;
+  };
+}
+
+export interface NewOrganizationData {
+  name: string;
+  slug: string;
+  logo?: string;
+} 

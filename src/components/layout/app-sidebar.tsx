@@ -34,6 +34,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { useFusionStore, UserProfile } from '@/stores/store';
 import { AuthContext } from '@/components/layout/client-providers';
+import { OrganizationSwitcher } from '@/components/layout/organization-switcher';
 
 // --- Define Navigation Groups ---
 type NavItem = {
@@ -149,16 +150,19 @@ export function AppSidebar() {
   // --- Render sidebar frame immediately --- 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="flex h-[60px] items-center justify-center border-b">
-        <Link href="/" className="inline-block">
-          <div className={cn(
-              "flex items-start gap-2 font-bold text-xl py-1",
-              "group-data-[collapsible=icon]:justify-center"
-          )}>
-             <FusionIcon className="h-6 w-6 text-primary" />
-             <span className="font-csg group-data-[collapsible=icon]:hidden">FUSION</span>
-          </div>
-        </Link>
+      <SidebarHeader className="space-y-2">
+        <div className="flex h-[60px] items-center justify-center border-b">
+          <Link href="/" className="inline-block">
+            <div className={cn(
+                "flex items-start gap-2 font-bold text-xl py-1",
+                "group-data-[collapsible=icon]:justify-center"
+            )}>
+               <FusionIcon className="h-6 w-6 text-primary" />
+               <span className="font-csg group-data-[collapsible=icon]:hidden">FUSION</span>
+            </div>
+          </Link>
+        </div>
+        <OrganizationSwitcher />
       </SidebarHeader>
       
       <SidebarContent className="flex-grow">
