@@ -6,7 +6,7 @@ import { headers } from 'next/headers';
 import { db } from '@/data/db';
 import { user, account, organization, member } from '@/data/db/schema';
 import { auth } from '@/lib/auth/server';
-import { sql } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
 import crypto from 'crypto';
 
 // Define schema for input validation
@@ -225,7 +225,41 @@ export async function listApiKeys(): Promise<ApiKeysListResult> {
             headers: headersList
         });
 
-        return { success: true, apiKeys };
+        // Enrich API keys with organization information
+        const enrichedApiKeys = await Promise.all(
+            apiKeys.map(async (apiKey: any) => {
+                let organizationId = null;
+                let organizationName = null;
+
+                // Extract organization ID from metadata
+                if (apiKey.metadata && apiKey.metadata.organizationId) {
+                    organizationId = apiKey.metadata.organizationId;
+
+                    // Fetch organization name from database
+                    try {
+                        const orgResult = await db
+                            .select({ name: organization.name })
+                            .from(organization)
+                            .where(eq(organization.id, organizationId))
+                            .limit(1);
+                        
+                        if (orgResult.length > 0) {
+                            organizationName = orgResult[0].name;
+                        }
+                    } catch (error) {
+                        console.error("[Server Action] Error fetching organization name:", error);
+                    }
+                }
+
+                return {
+                    ...apiKey,
+                    organizationId,
+                    organizationName
+                };
+            })
+        );
+
+        return { success: true, apiKeys: enrichedApiKeys };
 
     } catch (error) {
         console.error("[Server Action] Error listing API keys:", error);

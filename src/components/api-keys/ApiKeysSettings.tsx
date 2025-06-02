@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Key, MoreHorizontal, Copy, Trash2, Calendar, Activity } from 'lucide-react';
+import { Plus, Key, MoreHorizontal, Copy, Trash2, Calendar, Activity, Building2 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -204,6 +204,12 @@ export function ApiKeysSettings({ user }: ApiKeysSettingsProps) {
                         >
                           {apiKey.enabled ? 'Active' : 'Disabled'}
                         </Badge>
+                        {apiKey.organizationId && (
+                          <Badge variant="outline" className="text-xs">
+                            <Building2 className="h-3 w-3 mr-1" />
+                            {apiKey.organizationName || 'Organization'}
+                          </Badge>
+                        )}
                         {apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date() && (
                           <Badge variant="destructive" className="text-xs">Expired</Badge>
                         )}
@@ -219,11 +225,6 @@ export function ApiKeysSettings({ user }: ApiKeysSettingsProps) {
                         </div>
                         
                         <div className="flex items-center gap-3">
-                          {apiKey.organizationId && (
-                            <span className="text-blue-600 text-xs">
-                              Organization scoped
-                            </span>
-                          )}
                           {apiKey.lastRequest && (
                             <span className="flex items-center gap-1">
                               <Activity className="h-3 w-3" />

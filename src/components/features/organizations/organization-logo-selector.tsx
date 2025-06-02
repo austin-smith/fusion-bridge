@@ -19,11 +19,11 @@ export function OrganizationLogoSelector({ value, onChange }: OrganizationLogoSe
   const [urlValue, setUrlValue] = useState('');
   const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
 
-  // Only set initial values once based on the incoming prop
+  // Initialize state from prop value only once on mount or when value changes
   useEffect(() => {
     if (!value) {
-      // Default to url tab with no value
       setActiveTab('url');
+      // Don't clear existing values when prop becomes null
       return;
     }
 
@@ -31,36 +31,44 @@ export function OrganizationLogoSelector({ value, onChange }: OrganizationLogoSe
     if (value.startsWith('http')) {
       setActiveTab('url');
       setUrlValue(value);
-      // Don't set emoji value
+      // Don't clear emoji value - let user keep it
     }
     // Otherwise it's an emoji
     else {
       setActiveTab('emoji');
       setSelectedEmoji(value);
-      // Don't set URL value
+      // Don't clear URL value - let user keep it
     }
-  }, [value]); // Include value dependency
+  }, [value]);
 
-  // Update the parent when values change
-  useEffect(() => {
-    let newValue: string | null = null;
+  // Handle URL input changes
+  const handleUrlChange = (newUrl: string) => {
+    setUrlValue(newUrl);
+    onChange(newUrl || null);
+  };
 
-    switch (activeTab) {
-      case 'url':
-        newValue = urlValue || null;
-        break;
-      case 'emoji':
-        newValue = selectedEmoji;
-        break;
+  // Handle emoji selection
+  const handleEmojiSelect = (emoji: string) => {
+    setSelectedEmoji(emoji);
+    onChange(emoji);
+  };
+
+  // Handle tab changes - preserve values and send current tab's value
+  const handleTabChange = (newTab: 'url' | 'emoji') => {
+    setActiveTab(newTab);
+    
+    // Send the current value of the newly selected tab
+    if (newTab === 'url') {
+      onChange(urlValue || null);
+    } else {
+      onChange(selectedEmoji);
     }
-
-    onChange(newValue);
-  }, [activeTab, urlValue, selectedEmoji, onChange]);
+  };
 
   return (
     <div className="space-y-2">
       <Label>Logo</Label>
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+      <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as any)}>
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="url">Image URL</TabsTrigger>
           <TabsTrigger value="emoji">Emoji</TabsTrigger>
@@ -71,7 +79,7 @@ export function OrganizationLogoSelector({ value, onChange }: OrganizationLogoSe
             placeholder="https://example.com/logo.png"
             type="url"
             value={urlValue}
-            onChange={(e) => setUrlValue(e.target.value)}
+            onChange={(e) => handleUrlChange(e.target.value)}
           />
           <p className="text-sm text-muted-foreground">
             Enter a URL for your organization&apos;s logo image
@@ -88,7 +96,7 @@ export function OrganizationLogoSelector({ value, onChange }: OrganizationLogoSe
             )}
             <EmojiPicker.Root 
               className="isolate flex h-[368px] w-full flex-col rounded-md border bg-background"
-              onEmojiSelect={(selected) => setSelectedEmoji(selected.emoji)}
+              onEmojiSelect={(selected) => handleEmojiSelect(selected.emoji)}
             >
               <EmojiPicker.Search className="z-10 mx-2 mt-2 appearance-none rounded-md bg-muted px-2.5 py-2 text-sm" />
               <EmojiPicker.Viewport className="relative flex-1 outline-hidden">
