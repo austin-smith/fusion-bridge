@@ -1602,8 +1602,10 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       }
       // Better Auth returns organizations in response.data
       const organizations = response.data || [];
-      set({ organizations, isLoadingOrganizations: false });
-      console.log('[FusionStore] Organizations loaded via Better Auth:', organizations.length);
+      // Sort organizations alphabetically by name
+      const sortedOrganizations = organizations.sort((a, b) => a.name.localeCompare(b.name));
+      set({ organizations: sortedOrganizations, isLoadingOrganizations: false });
+      console.log('[FusionStore] Organizations loaded via Better Auth:', sortedOrganizations.length);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error("Error fetching organizations:", message);
