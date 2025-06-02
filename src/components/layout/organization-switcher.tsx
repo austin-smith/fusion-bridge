@@ -22,6 +22,7 @@ import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth/client';
 import { toast } from 'sonner';
 import { OrganizationLogoDisplay } from '@/components/features/organizations/organization-logo-selector';
+import { Badge } from '@/components/ui/badge';
 
 export function OrganizationSwitcher() {
   const { isMobile } = useSidebar();
@@ -231,21 +232,13 @@ export function OrganizationSwitcher() {
                     <span className="text-xs text-muted-foreground">/{org.slug}</span>
                   </div>
                   {org.id === currentOrg.id && (
-                    <span className="ml-auto text-xs text-muted-foreground">current</span>
+                    <Badge variant="default" className="ml-auto text-[10px] px-1.5 py-0">
+                      Current
+                    </Badge>
                   )}
-                  <DropdownMenuShortcut>⌘{index + 1}</DropdownMenuShortcut>
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
-              <DropdownMenuItem 
-                className="gap-2 p-2"
-                onClick={() => router.push('/organizations')}
-              >
-                <div className="bg-background flex size-6 items-center justify-center rounded-md border">
-                  <Plus className="size-4" />
-                </div>
-                <div className="text-muted-foreground font-medium">Create organization</div>
-              </DropdownMenuItem>
               <DropdownMenuItem 
                 className="gap-2 p-2"
                 onClick={() => router.push('/organizations')}
