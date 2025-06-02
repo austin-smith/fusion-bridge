@@ -27,6 +27,7 @@ import { Loader2, Hash, Building2, Info, Trash2, Edit } from "lucide-react";
 import { toast } from 'sonner';
 import { useActiveOrganization } from '@/hooks/use-organization';
 import { ApiKeysSettings } from '@/components/api-keys/ApiKeysSettings';
+import { OrganizationLogoDisplay } from '@/components/features/organizations/organization-logo-selector';
 
 interface UserData {
     id: string;
@@ -194,6 +195,25 @@ export function OrganizationSettings({ user }: OrganizationSettingsProps) {
 
     return (
         <div className="space-y-6">
+            {/* Organization Context Display */}
+            <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
+                <OrganizationLogoDisplay 
+                    logo={organization.logo} 
+                    className="h-8 w-8" 
+                    size="default"
+                />
+                <div>
+                    <div className="font-medium">{organization.name}</div>
+                    <div className="text-xs text-muted-foreground">/{organization.slug}</div>
+                    <div className="text-xs text-muted-foreground">
+                        Settings below are organization-specific
+                    </div>
+                </div>
+                <Badge variant="secondary" className="ml-auto text-xs">
+                    Current
+                </Badge>
+            </div>
+
             {/* Keypad PIN Management */}
             <Card>
                 <CardHeader>
