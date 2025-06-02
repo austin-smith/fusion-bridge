@@ -6,6 +6,15 @@ import { desc } from 'drizzle-orm';
 
 async function handler(request: NextRequest, authContext: any) {
   try {
+    // Verify that the requesting user is an admin
+    const userRole = (authContext.user as any)?.role;
+    if (userRole !== 'admin') {
+      return NextResponse.json(
+        { success: false, error: 'Insufficient permissions' },
+        { status: 403 }
+      );
+    }
+
     // Fetch all users with basic info
     const users = await db
       .select({

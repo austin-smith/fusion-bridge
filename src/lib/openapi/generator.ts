@@ -147,7 +147,7 @@ const createApiKeySchema = z.object({
 }).openapi('CreateApiKeyRequest');
 
 const updateApiKeySchema = z.object({
-  name: z.string().min(1, 'Name cannot be empty').describe('Updated API key name'),
+  enabled: z.boolean().describe('Whether the API key is enabled or disabled'),
 }).openapi('UpdateApiKeyRequest');
 
 const apiKeySchema = z.object({
@@ -925,8 +925,8 @@ export function generateOpenApiSpec() {
   registry.registerPath({
     method: 'patch',
     path: '/api/admin/api-keys/{id}',
-    summary: 'Update an API key',
-    description: 'Updates the name of an existing API key',
+    summary: 'Update API key status',
+    description: 'Updates the enabled/disabled status of an existing API key',
     tags: ['Admin'],
     request: {
       params: z.object({
@@ -942,10 +942,12 @@ export function generateOpenApiSpec() {
     },
     responses: {
       200: {
-        description: 'API key updated successfully',
+        description: 'API key status updated successfully',
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/ApiKeySuccessResponse' },
+            schema: successResponseSchema(z.object({
+              message: z.string(),
+            })),
           },
         },
       },
@@ -1018,17 +1020,45 @@ export function generateOpenApiSpec() {
   });
 
   registry.registerPath({
-    method: 'post',
+    method: 'get',
     path: '/api/admin/api-keys/test',
-    summary: 'Test API key authentication',
-    description: 'Tests the provided API key and returns authentication status',
+    summary: 'Get API key detail',
+    description: 'Validates the provided API key and returns detailed information about the key, associated user, and organization scope',
     tags: ['Admin'],
     responses: {
       200: {
         description: 'API key test successful',
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/ApiKeyTestResponse' },
+            schema: successResponseSchema(z.object({
+              message: z.string().describe('Test result message'),
+              timestamp: z.string().describe('Test timestamp (ISO string)'),
+              authMethod: z.string().describe('Authentication method used'),
+              userId: z.string().describe('User ID associated with the auth'),
+              organizationInfo: z.object({
+                id: z.string().uuid(),
+                name: z.string(),
+                slug: z.string(),
+                logo: z.string().nullable(),
+                metadata: z.record(z.any()).nullable(),
+                createdAt: z.string(),
+                updatedAt: z.string(),
+              }).nullable().describe('Organization information if API key is scoped to an organization or user has active organization'),
+              sessionInfo: z.object({
+                user: z.object({
+                  id: z.string(),
+                  email: z.string(),
+                  name: z.string(),
+                }),
+                hasSession: z.boolean(),
+              }).optional().describe('Session info if authenticated via session'),
+              apiKeyInfo: z.object({
+                keyId: z.string(),
+                keyName: z.string(),
+                rateLimitEnabled: z.boolean(),
+                remaining: z.number().optional(),
+              }).optional().describe('API key info if authenticated via API key'),
+            })),
           },
         },
       },
