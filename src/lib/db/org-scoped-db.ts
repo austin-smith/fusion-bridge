@@ -1,6 +1,6 @@
 import { db } from '@/data/db';
 import { locations, areas, devices, areaDevices, connectors, events, pikoServers, cameraAssociations, automations, keypadPins, user } from '@/data/db/schema';
-import { eq, and, exists, getTableColumns, desc, count, inArray, ne } from 'drizzle-orm';
+import { eq, and, exists, getTableColumns, desc, count, inArray, ne, type SQL } from 'drizzle-orm';
 
 /**
  * Organization-scoped database client using proper JOIN-based filtering
@@ -369,8 +369,25 @@ export class OrgScopedDb {
   
   // Event methods (organization-scoped through connectors)
   readonly events = {
-    findRecent: (limit: number = 100, offset: number = 0, filters?: any) =>
-      db.select({
+    findRecent: (limit: number = 100, offset: number = 0, filters?: any) => {
+      // Build dynamic WHERE conditions based on filters
+      const conditions: SQL[] = [
+        eq(connectors.organizationId, this.orgId)
+      ];
+
+      if (filters?.eventCategories && filters.eventCategories.length > 0) {
+        conditions.push(inArray(events.standardizedEventCategory, filters.eventCategories));
+      }
+
+      if (filters?.connectorCategory && filters.connectorCategory.toLowerCase() !== 'all' && filters.connectorCategory !== '') {
+        conditions.push(eq(connectors.category, filters.connectorCategory));
+      }
+
+      if (filters?.locationId && filters.locationId.toLowerCase() !== 'all' && filters.locationId !== '') {
+        conditions.push(eq(locations.id, filters.locationId));
+      }
+
+      return db.select({
         // Event fields
         id: events.id,
         eventUuid: events.eventUuid,
@@ -399,11 +416,8 @@ export class OrgScopedDb {
         locationPath: locations.path,
       })
       .from(events)
-      // Event -> Connector (organization filter applied here)
-      .innerJoin(connectors, and(
-        eq(connectors.id, events.connectorId),
-        eq(connectors.organizationId, this.orgId)
-      ))
+      // Event -> Connector (organization filter applied in WHERE clause)
+      .innerJoin(connectors, eq(connectors.id, events.connectorId))
       // Event -> Device (using external ID and connector ID) - LEFT JOIN
       .leftJoin(devices, and(
         eq(devices.connectorId, events.connectorId),
@@ -415,9 +429,11 @@ export class OrgScopedDb {
       .leftJoin(areas, eq(areas.id, areaDevices.areaId))
       // Area -> Location (optional)
       .leftJoin(locations, eq(locations.id, areas.locationId))
+      .where(and(...conditions))
       .orderBy(desc(events.timestamp))
       .limit(limit + 1) // Fetch one extra to determine hasNextPage
-      .offset(offset),
+      .offset(offset);
+    },
       
     findById: (eventUuid: string) =>
       db.select({
