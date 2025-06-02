@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useActionState } from 'react';
 import { useRouter } from 'next/navigation';
 import { type ColumnDef, createColumnHelper } from '@tanstack/react-table';
-import { MoreHorizontal, ArrowUpDown, Trash2, Loader2, Pencil, KeyRound, ShieldCheck, UserCircle2, Plus, Hash } from 'lucide-react';
+import { MoreHorizontal, ArrowUpDown, Trash2, Loader2, Pencil, KeyRound, ShieldCheck, UserCircle2, Plus, Hash, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/select";
 import { useFusionStore } from '@/stores/store';
 import { PinManagementDialog } from './pin-management-dialog';
+import { UserOrganizationsDialog } from './user-organizations-dialog';
 
 // --- Column Definitions ---
 
@@ -101,43 +102,28 @@ export const columns: ColumnDef<User>[] = [
     size: 40, // Fixed size for checkbox column
   },
   {
-    id: "avatar",
-    header: "",
+    id: "user",
+    header: ({ column }) => <SortableHeader column={column}>User</SortableHeader>,
+    accessorFn: (row) => row.name || row.email,
     cell: ({ row }) => {
-        const user = row.original;
-        const name = user.name || user.email || 'U';
-        const fallback = name.charAt(0).toUpperCase();
-        return (
-            <Avatar className="h-7 w-7 text-xs">
-                <AvatarImage src={user.image ?? undefined} alt={name} />
-                <AvatarFallback>{fallback}</AvatarFallback>
-            </Avatar>
-        );
+      const user = row.original;
+      const name = user.name || user.email;
+      const fallback = name.charAt(0).toUpperCase();
+      
+      return (
+        <div className="flex items-center gap-3">
+          <Avatar className="h-8 w-8">
+            <AvatarImage src={user.image ?? undefined} alt={name} />
+            <AvatarFallback>{fallback}</AvatarFallback>
+          </Avatar>
+          <div className="flex flex-col min-w-0">
+            <span className="font-medium truncate">{user.name || 'Unnamed'}</span>
+            <span className="text-sm text-muted-foreground truncate">{user.email}</span>
+          </div>
+        </div>
+      );
     },
-    enableSorting: false,
-    size: 50,
-  },
-  {
-    accessorKey: "name",
-    header: ({ column }) => <SortableHeader column={column}>Name</SortableHeader>,
-    cell: ({ row }) => (
-        // Add max-width and ellipsis like in devices page
-        <div className="max-w-[200px] truncate font-medium">
-            {row.getValue("name") || '-'}
-        </div>
-    ),
-    size: 125,
-  },
-  {
-    accessorKey: "email",
-    header: ({ column }) => <SortableHeader column={column}>Email</SortableHeader>,
-    cell: ({ row }) => (
-        // Add max-width and ellipsis
-        <div className="max-width-[250px] truncate">
-            {row.getValue("email")}
-        </div>
-    ),
-    size: 200,
+    minSize: 250,
   },
   {
     accessorKey: "role",
@@ -147,7 +133,7 @@ export const columns: ColumnDef<User>[] = [
       const displayRole = role ? role.charAt(0).toUpperCase() + role.slice(1) : 'User';
       let RoleIcon = UserCircle2;
 
-      if (role === 'admin') { // Icon can still change
+      if (role === 'admin') {
         RoleIcon = ShieldCheck;
       }
 
@@ -233,6 +219,7 @@ function UserActionsCell({ user }: UserActionsCellProps) {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false);
   const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
+  const [isOrganizationsDialogOpen, setIsOrganizationsDialogOpen] = useState(false);
   const router = useRouter();
 
   const handleDelete = async () => {
@@ -280,6 +267,10 @@ function UserActionsCell({ user }: UserActionsCellProps) {
                    <Hash className="mr-2 h-4 w-4" />
                   Manage PIN
               </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setIsOrganizationsDialogOpen(true)}>
+                   <Building2 className="mr-2 h-4 w-4" />
+                  View Organizations
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <AlertDialogTrigger asChild>
                    <DropdownMenuItem className="text-destructive focus:text-destructive focus:bg-destructive/10">
@@ -324,6 +315,12 @@ function UserActionsCell({ user }: UserActionsCellProps) {
          user={user}
          isOpen={isPinDialogOpen}
          onOpenChange={setIsPinDialogOpen}
+       />
+       
+      <UserOrganizationsDialog
+         user={user}
+         isOpen={isOrganizationsDialogOpen}
+         onOpenChange={setIsOrganizationsDialogOpen}
        />
     </>
   );
@@ -576,7 +573,6 @@ function EditUserSubmitButton({ isPending }: { isPending: boolean }) {
 
 // Helper component for skeleton table for Users page
 export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
-  const columnCount = 6; // Select, Avatar, Name, Email, Role, 2FA, Keypad PIN, Created, Actions - Count updated
   return (
     <div className="border rounded-md">
       <Table>
@@ -584,11 +580,7 @@ export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
           <TableRow>
             {/* Select Checkbox */}
             <TableHead className="w-[40px] px-2 py-1"><Skeleton className="h-5 w-5" /></TableHead>
-            {/* Avatar */}
-            <TableHead className="w-[50px] px-2 py-1"><Skeleton className="h-7 w-7 rounded-full" /></TableHead>
-            {/* Name */}
-            <TableHead className="w-[200px] px-2 py-1"><Skeleton className="h-5 w-20" /></TableHead>
-            {/* Email */}
+            {/* User (combined avatar, name, email) */}
             <TableHead className="px-2 py-1"><Skeleton className="h-5 w-20" /></TableHead>
             {/* Role */}
             <TableHead className="w-[120px] px-2 py-1"><Skeleton className="h-5 w-12" /></TableHead>
@@ -598,8 +590,6 @@ export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
             <TableHead className="w-[130px] px-2 py-1"><Skeleton className="h-5 w-16" /></TableHead>
             {/* Created */}
             <TableHead className="w-[120px] px-2 py-1"><Skeleton className="h-5 w-24" /></TableHead>
-            {/* Last Login */}
-            <TableHead className="w-[150px] px-2 py-1"><Skeleton className="h-5 w-24" /></TableHead>
             {/* Actions */}
             <TableHead className="w-[80px] px-2 py-1"><Skeleton className="h-5 w-16" /></TableHead>
           </TableRow>
@@ -609,12 +599,16 @@ export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
             <TableRow key={rowIndex}>
               {/* Select Checkbox */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-5" /></TableCell>
-              {/* Avatar */}
-              <TableCell className="px-2 py-2"><Skeleton className="h-7 w-7 rounded-full" /></TableCell>
-              {/* Name */}
-              <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
-              {/* Email */}
-              <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
+              {/* User (combined avatar, name, email) */}
+              <TableCell className="px-2 py-2">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-8 w-8 rounded-full" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-48" />
+                  </div>
+                </div>
+              </TableCell>
               {/* Role */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
               {/* 2FA */}
@@ -622,8 +616,6 @@ export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
               {/* Keypad PIN */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
               {/* Created */}
-              <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
-              {/* Last Login */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
               {/* Actions */}
               <TableCell className="px-2 py-2"><Skeleton className="h-8 w-8" /></TableCell>

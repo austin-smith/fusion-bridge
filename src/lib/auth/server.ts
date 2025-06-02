@@ -8,6 +8,8 @@ import { nextCookies } from "better-auth/next-js";
 import { admin as adminPlugin } from "better-auth/plugins";
 import { organization } from "better-auth/plugins";
 import { apiKey } from "better-auth/plugins";
+import { eq, and, desc, isNotNull } from "drizzle-orm";
+import { member, session } from "@/data/db/schema";
 
 export const auth = betterAuth.betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
@@ -22,6 +24,72 @@ export const auth = betterAuth.betterAuth({
   database: drizzleAdapter(db, {
     provider: "sqlite",
   }),
+  
+  databaseHooks: {
+    session: {
+      create: {
+        before: async (sessionData) => {
+          try {
+            // Step 1: Get user's most recent session with active organization
+            const lastActiveSession = await db
+              .select({ activeOrganizationId: session.activeOrganizationId })
+              .from(session)
+              .where(and(
+                eq(session.userId, sessionData.userId),
+                isNotNull(session.activeOrganizationId)
+              ))
+              .orderBy(desc(session.updatedAt))
+              .limit(1);
+
+            // Step 2: Validate last active organization (if exists)
+            if (lastActiveSession.length > 0 && lastActiveSession[0].activeOrganizationId) {
+              const stillMember = await db
+                .select({ organizationId: member.organizationId })
+                .from(member)
+                .where(and(
+                  eq(member.userId, sessionData.userId),
+                  eq(member.organizationId, lastActiveSession[0].activeOrganizationId)
+                ))
+                .limit(1);
+
+              // If user is still member of last active org, use it
+              if (stillMember.length > 0) {
+                return {
+                  data: {
+                    ...sessionData,
+                    activeOrganizationId: lastActiveSession[0].activeOrganizationId
+                  }
+                };
+              }
+            }
+
+            // Step 3: Fallback to first available organization
+            const userOrganizations = await db
+              .select({ organizationId: member.organizationId })
+              .from(member)
+              .where(eq(member.userId, sessionData.userId))
+              .limit(1);
+
+            if (userOrganizations.length > 0) {
+              return {
+                data: {
+                  ...sessionData,
+                  activeOrganizationId: userOrganizations[0].organizationId
+                }
+              };
+            }
+
+            // Step 4: No organizations available
+            return { data: sessionData };
+          } catch (error) {
+            console.error('Error setting active organization on session create:', error);
+            // Fallback to original session data if something goes wrong
+            return { data: sessionData };
+          }
+        }
+      }
+    }
+  },
   
   user: {
     additionalFields: {

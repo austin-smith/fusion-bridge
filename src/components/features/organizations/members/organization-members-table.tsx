@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { type ColumnDef, createColumnHelper } from '@tanstack/react-table';
-import { MoreHorizontal, Shield, User, UserCircle2, ArrowUpDown, Trash2, Edit } from 'lucide-react';
+import { MoreHorizontal, ShieldCheck, UserCircle2, ArrowUpDown, Trash2, Edit, Crown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -75,10 +75,10 @@ const SortableHeader = ({ column, children }: { column: any; children: React.Rea
 // Role badge component
 const RoleBadge = ({ role }: { role: string }) => {
   const roleConfig = {
-    owner: { icon: Shield, variant: 'default' as const, className: 'bg-purple-500 hover:bg-purple-600' },
-    admin: { icon: UserCircle2, variant: 'secondary' as const },
-    member: { icon: User, variant: 'outline' as const },
-  }[role] || { icon: User, variant: 'outline' as const };
+    owner: { icon: Crown, variant: 'default' as const, className: 'bg-yellow-500 hover:bg-yellow-600 text-white' },
+    admin: { icon: ShieldCheck, variant: 'secondary' as const, className: 'bg-purple-500 hover:bg-purple-600 text-white' },
+    member: { icon: UserCircle2, variant: 'outline' as const },
+  }[role] || { icon: UserCircle2, variant: 'outline' as const };
 
   const Icon = roleConfig.icon;
 
@@ -152,8 +152,34 @@ export const columns: ColumnDef<OrganizationMemberWithUser>[] = [
     accessorKey: 'createdAt',
     header: ({ column }) => <SortableHeader column={column}>Joined</SortableHeader>,
     cell: ({ row }) => {
-      const date = row.getValue('createdAt') as Date | string;
-      const parsedDate = typeof date === 'string' ? new Date(date) : date;
+      const date = row.getValue('createdAt') as Date | string | number | null;
+      
+      // Handle null/undefined cases
+      if (!date) {
+        return <div className="text-sm text-muted-foreground">Unknown</div>;
+      }
+      
+      let parsedDate: Date;
+      
+      // Handle different date formats
+      if (date instanceof Date) {
+        parsedDate = date;
+      } else if (typeof date === 'string') {
+        parsedDate = new Date(date);
+      } else if (typeof date === 'number') {
+        // Handle timestamp (could be seconds or milliseconds)
+        // If timestamp is less than year 2000 in milliseconds, it's probably in seconds
+        parsedDate = new Date(date < 946684800000 ? date * 1000 : date);
+      } else {
+        // Fallback for unknown format
+        parsedDate = new Date();
+      }
+      
+      // Check if the parsed date is valid
+      if (isNaN(parsedDate.getTime()) || parsedDate.getTime() <= 0) {
+        return <div className="text-sm text-muted-foreground">Unknown</div>;
+      }
+      
       return (
         <div className="text-sm text-muted-foreground">
           {format(parsedDate, 'MMM d, yyyy')}

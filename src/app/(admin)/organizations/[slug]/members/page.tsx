@@ -14,6 +14,9 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Building2 } from 'lucide-react';
 import Link from 'next/link';
 import { OrganizationLogoDisplay } from '@/components/features/organizations/organization-logo-selector';
+import { db } from '@/data/db';
+import { organization, member, user } from '@/data/db/schema';
+import { eq } from 'drizzle-orm';
 
 interface PageProps {
   params: Promise<{
@@ -32,18 +35,40 @@ async function getOrganizationWithMembers(slug: string) {
       return null;
     }
 
-    // Fetch organization with members using Better Auth
-    const response = await fetch(`${process.env.BETTER_AUTH_URL || 'http://localhost:3000'}/api/organizations/${slug}/members`, {
-      headers: headersList,
-      cache: 'no-store',
-    });
+    // Query database directly instead of making HTTP request
+    const [org] = await db
+      .select()
+      .from(organization)
+      .where(eq(organization.slug, slug))
+      .limit(1);
 
-    if (!response.ok) {
+    if (!org) {
       return null;
     }
 
-    const data = await response.json();
-    return data.success ? data.data : null;
+    // Get all members with user details
+    const members = await db
+      .select({
+        id: member.id,
+        userId: member.userId,
+        organizationId: member.organizationId,
+        role: member.role,
+        createdAt: member.createdAt,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          image: user.image,
+        },
+      })
+      .from(member)
+      .innerJoin(user, eq(member.userId, user.id))
+      .where(eq(member.organizationId, org.id));
+
+    return {
+      organization: org,
+      members,
+    };
   } catch (error) {
     console.error('Error fetching organization:', error);
     return null;

@@ -28,6 +28,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { 
   Search, 
   MoreHorizontal, 
@@ -71,6 +81,9 @@ export function AdminApiKeysContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [userFilter, setUserFilter] = useState<string>('all');
+  const [keyToDelete, setKeyToDelete] = useState<ApiKeyWithUser | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   // Load API keys from the server
   useEffect(() => {
@@ -136,13 +149,12 @@ export function AdminApiKeysContent() {
     }
   };
 
-  const handleDeleteKey = async (keyId: string) => {
-    if (!confirm('Are you sure you want to delete this API key? This action cannot be undone.')) {
-      return;
-    }
+  const handleDeleteKey = async () => {
+    if (!keyToDelete) return;
 
+    setIsDeleting(true);
     try {
-      const response = await fetch(`/api/admin/api-keys/${keyId}`, {
+      const response = await fetch(`/api/admin/api-keys/${keyToDelete.id}`, {
         method: 'DELETE',
       });
 
@@ -153,12 +165,21 @@ export function AdminApiKeysContent() {
       const result = await response.json();
       
       // Remove from local state
-      setApiKeys(prev => prev.filter(key => key.id !== keyId));
+      setApiKeys(prev => prev.filter(key => key.id !== keyToDelete.id));
       toast.success(result.message || 'API key deleted successfully');
     } catch (error) {
       console.error('Error deleting API key:', error);
       toast.error('Failed to delete API key');
+    } finally {
+      setIsDeleting(false);
+      setKeyToDelete(null);
+      setIsDeleteDialogOpen(false);
     }
+  };
+
+  const handleOpenDeleteDialog = (apiKey: ApiKeyWithUser) => {
+    setKeyToDelete(apiKey);
+    setIsDeleteDialogOpen(true);
   };
 
   const formatDate = (date: Date | string | null) => {
@@ -467,7 +488,7 @@ export function AdminApiKeysContent() {
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem 
-                            onClick={() => handleDeleteKey(apiKey.id)}
+                            onClick={() => handleOpenDeleteDialog(apiKey)}
                             className="text-destructive"
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
@@ -495,6 +516,30 @@ export function AdminApiKeysContent() {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the API key
+              <span className="font-semibold"> {keyToDelete?.name || 'Unnamed API Key'} </span>
+              for user <span className="font-semibold">{keyToDelete?.userName}</span>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting} onClick={() => setKeyToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteKey} 
+              disabled={isDeleting} 
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 } 

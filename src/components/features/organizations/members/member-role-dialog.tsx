@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Shield, UserCircle2, User } from 'lucide-react';
+import { Shield, UserCircle2, User, Crown, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { authClient } from '@/lib/auth/client';
 import { useRouter } from 'next/navigation';
@@ -65,8 +65,8 @@ export function MemberRoleDialog({ member, open, onOpenChange }: MemberRoleDialo
   };
 
   const roleOptions = [
-    { value: 'member', label: 'Member', icon: User, description: 'Basic access to organization resources' },
-    { value: 'admin', label: 'Admin', icon: UserCircle2, description: 'Can manage organization settings and members' },
+    { value: 'member', label: 'Member', icon: UserCircle2, description: 'Basic access to organization resources' },
+    { value: 'admin', label: 'Admin', icon: ShieldCheck, description: 'Can manage organization settings and members' },
   ];
 
   // Don't show owner role as an option (owners cannot be changed)
@@ -74,7 +74,7 @@ export function MemberRoleDialog({ member, open, onOpenChange }: MemberRoleDialo
     roleOptions.push({ 
       value: 'owner', 
       label: 'Owner', 
-      icon: Shield, 
+      icon: Crown, 
       description: 'Full control over the organization (cannot be changed)' 
     });
   }

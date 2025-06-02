@@ -13,6 +13,16 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { ScheduleFormDialog } from '@/components/features/alarm/ScheduleFormDialog';
 import { PageHeader } from '@/components/layout/page-header';
@@ -47,6 +57,9 @@ const ArmingSchedulesPage: React.FC = () => {
   // State for managing the Create/Edit Dialog
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<ArmingSchedule | null>(null);
+  const [scheduleToDelete, setScheduleToDelete] = useState<ArmingSchedule | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchArmingSchedules();
@@ -62,18 +75,26 @@ const ArmingSchedulesPage: React.FC = () => {
     setIsScheduleDialogOpen(true);
   };
 
-  const handleDeleteSchedule = async (scheduleId: string, scheduleName: string) => {
-    const confirmed = confirm(`Are you sure you want to delete the schedule "${scheduleName}"?`);
-    if (confirmed) {
-      const success = await deleteArmingSchedule(scheduleId);
-      if (success) {
-        toast.success(`Schedule "${scheduleName}" deleted successfully.`);
-      } else {
-        // Error toast is handled within the store action
-      }
+  const handleDeleteSchedule = async () => {
+    if (!scheduleToDelete) return;
+
+    setIsDeleting(true);
+    const success = await deleteArmingSchedule(scheduleToDelete.id);
+    if (success) {
+      toast.success(`Schedule "${scheduleToDelete.name}" deleted successfully.`);
+    } else {
+      // Error toast is handled within the store action
     }
+    setIsDeleting(false);
+    setScheduleToDelete(null);
+    setIsDeleteDialogOpen(false);
   };
-  
+
+  const handleOpenDeleteDialog = (schedule: ArmingSchedule) => {
+    setScheduleToDelete(schedule);
+    setIsDeleteDialogOpen(true);
+  };
+
   const handleDialogSuccess = () => {
     fetchArmingSchedules(); // Refetch schedules on successful save
   };
@@ -194,7 +215,7 @@ const ArmingSchedulesPage: React.FC = () => {
                             variant="ghost"
                             size="icon"
                             className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => handleDeleteSchedule(schedule.id, schedule.name)}
+                            onClick={() => handleOpenDeleteDialog(schedule)}
                           >
                             <Trash2 className="h-4 w-4" />
                             <span className="sr-only">Delete schedule</span>
@@ -239,6 +260,29 @@ const ArmingSchedulesPage: React.FC = () => {
             ))}
           </div>
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the schedule
+                <span className="font-semibold"> {scheduleToDelete?.name}</span>.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting} onClick={() => setScheduleToDelete(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleDeleteSchedule} 
+                disabled={isDeleting} 
+                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </TooltipProvider>
   );

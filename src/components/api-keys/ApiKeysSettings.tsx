@@ -12,6 +12,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { CreateApiKeyDialog } from '@/components/api-keys/CreateApiKeyDialog';
 import { CopyKeyDialog } from '@/components/api-keys/CopyKeyDialog';
 import { listApiKeys, deleteApiKey } from '@/lib/actions/auth-actions';
@@ -55,6 +65,9 @@ export function ApiKeysSettings({ user }: ApiKeysSettingsProps) {
   const [loading, setLoading] = useState(true);
   const [newApiKey, setNewApiKey] = useState<any>(null);
   const [showCopyDialog, setShowCopyDialog] = useState(false);
+  const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   useEffect(() => {
     loadApiKeys();
@@ -86,23 +99,31 @@ export function ApiKeysSettings({ user }: ApiKeysSettingsProps) {
     loadApiKeys();
   };
 
-  const handleDeleteApiKey = async (keyId: string) => {
-    if (!confirm('Are you sure you want to delete this API key? This action cannot be undone.')) {
-      return;
-    }
+  const handleDeleteApiKey = async () => {
+    if (!keyToDelete) return;
 
+    setIsDeleting(true);
     try {
-      const result = await deleteApiKey(keyId);
+      const result = await deleteApiKey(keyToDelete.id);
       
       if (!result.success) {
         console.error('Error deleting API key:', result.error);
         return;
       }
 
-      setApiKeys(prev => prev.filter(key => key.id !== keyId));
+      setApiKeys(prev => prev.filter(key => key.id !== keyToDelete.id));
     } catch (error) {
       console.error('Error deleting API key:', error);
+    } finally {
+      setIsDeleting(false);
+      setKeyToDelete(null);
+      setIsDeleteDialogOpen(false);
     }
+  };
+
+  const handleOpenDeleteDialog = (apiKey: ApiKey) => {
+    setKeyToDelete(apiKey);
+    setIsDeleteDialogOpen(true);
   };
 
   const formatDate = (dateString: string | null) => {
@@ -234,7 +255,7 @@ export function ApiKeysSettings({ user }: ApiKeysSettingsProps) {
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem 
-                          onClick={() => handleDeleteApiKey(apiKey.id)}
+                          onClick={() => handleOpenDeleteDialog(apiKey)}
                           className="text-destructive"
                         >
                           <Trash2 className="h-4 w-4 mr-2" />
@@ -295,6 +316,29 @@ export function ApiKeysSettings({ user }: ApiKeysSettingsProps) {
         open={showCopyDialog}
         onOpenChange={setShowCopyDialog}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the API key
+              <span className="font-semibold"> {keyToDelete?.name || 'Unnamed API Key'}</span>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting} onClick={() => setKeyToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteApiKey} 
+              disabled={isDeleting} 
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 } 
