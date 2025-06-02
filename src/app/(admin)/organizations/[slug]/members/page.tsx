@@ -33,7 +33,7 @@ async function getOrganizationWithMembers(slug: string) {
     }
 
     // Fetch organization with members using Better Auth
-    const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/organizations/${slug}/members`, {
+    const response = await fetch(`${process.env.BETTER_AUTH_URL || 'http://localhost:3000'}/api/organizations/${slug}/members`, {
       headers: headersList,
       cache: 'no-store',
     });

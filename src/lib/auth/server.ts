@@ -12,7 +12,7 @@ import { apiKey } from "better-auth/plugins";
 export const auth = betterAuth.betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   appName: "Fusion",
-  baseURL: process.env.BETTER_AUTH_URL || process.env.NEXTAUTH_URL || "http://localhost:3000",
+  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
   trustedOrigins: [
     "http://localhost:3000",
     "https://fusion-bridge-dev.up.railway.app",
