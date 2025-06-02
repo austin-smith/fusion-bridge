@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { db } from '@/data/db';
-import { areaDevices, areas, devices } from '@/data/db/schema';
+import { areaDevices, devices } from '@/data/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 import type { DeviceWithConnector } from '@/types/index';
+import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
 
 // Remove unused RouteParams interface
 // interface RouteParams {
@@ -17,32 +20,32 @@ const assignDeviceSchema = z.object({
   deviceId: z.string().uuid("Invalid Device ID format"),
 });
 
-// Fetch device IDs assigned to an area - Correct Next.js 15 signature
-export async function GET(
+// Fetch device IDs assigned to an area within the active organization
+export const GET = withOrganizationAuth(async (
   request: Request, 
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const areaId = (await params).id; // Await params promise
+  authContext: OrganizationAuthContext,
+  context: RouteContext<{ id: string }>
+) => {
+  const { id: areaId } = await context.params;
 
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(areaId)) {
     return NextResponse.json({ success: false, error: "Invalid Area ID format" }, { status: 400 });
   }
 
   try {
-     // Optional: Check if area exists
-     const [areaExists] = await db.select({ id: areas.id }).from(areas).where(eq(areas.id, areaId)).limit(1);
-     if (!areaExists) {
-         return NextResponse.json({ success: false, error: "Area not found" }, { status: 404 });
-     }
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    
+    // Check if area exists and belongs to organization
+    if (!(await orgDb.areas.exists(areaId))) {
+      return NextResponse.json({ success: false, error: "Area not found" }, { status: 404 });
+    }
 
     // Fetch associated device IDs
     const assignedDevices = await db.select({ deviceId: areaDevices.deviceId })
-                                     .from(areaDevices)
-                                     .where(eq(areaDevices.areaId, areaId));
+                                   .from(areaDevices)
+                                   .where(eq(areaDevices.areaId, areaId));
     
     const deviceIds = assignedDevices.map(d => d.deviceId);
-
-    // TODO: Optionally fetch full device details if needed by client
 
     return NextResponse.json({ success: true, data: deviceIds });
 
@@ -51,14 +54,15 @@ export async function GET(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ success: false, error: `Failed to fetch area devices: ${errorMessage}` }, { status: 500 });
   }
-}
+});
 
-// Assign a device to an area - Correct Next.js 15 signature
-export async function POST(
+// Assign a device to an area within the active organization
+export const POST = withOrganizationAuth(async (
   request: Request, 
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id: areaId } = await params; // Await params promise
+  authContext: OrganizationAuthContext,
+  context: RouteContext<{ id: string }>
+) => {
+  const { id: areaId } = await context.params;
 
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(areaId)) {
     return NextResponse.json({ success: false, error: "Invalid Area ID format" }, { status: 400 });
@@ -73,13 +77,13 @@ export async function POST(
     }
 
     const { deviceId } = validation.data;
+    const orgDb = createOrgScopedDb(authContext.organizationId);
 
     // Use transaction to check existence and insert
     const result = await db.transaction(async (tx) => {
-      // 1. Check if Area exists
-      const [areaExists] = await tx.select({ id: areas.id }).from(areas).where(eq(areas.id, areaId)).limit(1);
-      if (!areaExists) {
-        return { success: false, error: "Area not found", status: 404 };
+      // 1. Check if Area exists and belongs to organization
+      if (!(await orgDb.areas.exists(areaId))) {
+        return { success: false, error: "Area not found or not accessible", status: 404 };
       }
 
       // 2. Check if Device exists (using our internal devices.id)
@@ -119,4 +123,4 @@ export async function POST(
     }
     return NextResponse.json({ success: false, error: `Failed to assign device: ${errorMessage}` }, { status: 500 });
   }
-} 
+}); 

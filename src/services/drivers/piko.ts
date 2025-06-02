@@ -95,6 +95,7 @@ export interface PikoDeviceRaw {
     transcodingRequired?: boolean;
     transports?: string;
   }[];
+  [key: string]: unknown;
 }
 
 interface PikoSystemRaw {

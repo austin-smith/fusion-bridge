@@ -9,13 +9,20 @@ export const connectors = sqliteTable("connectors", {
   category: text("category").notNull(),
   name: text("name").notNull(),
   cfg_enc: text("cfg_enc").notNull(), // Stores config as JSON string
+  organizationId: text("organization_id").references(() => organization.id, { onDelete: 'cascade' }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   eventsEnabled: integer("events_enabled", { mode: "boolean" }).notNull().default(false),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  organizationIdx: index("connectors_organization_idx").on(table.organizationId),
+}));
 
 // Remove relation to automations as sourceConnectorId is removed from automations
-export const connectorsRelations = relations(connectors, ({ many }) => ({
+export const connectorsRelations = relations(connectors, ({ one, many }) => ({
+  organization: one(organization, {
+    fields: [connectors.organizationId],
+    references: [organization.id],
+  }),
 	devices: many(devices),
   pikoServers: many(pikoServers),
   events: many(events),
@@ -157,6 +164,7 @@ export const automations = sqliteTable("automations", {
   // Stores the AutomationConfig object with primaryTrigger (standardized types) 
   // and secondaryConditions (standardized types, time windows)
   configJson: text("config_json", { mode: "json" }).notNull().$type<AutomationConfig>(), 
+  organizationId: text("organization_id").references(() => organization.id, { onDelete: 'cascade' }),
   locationScopeId: text("location_scope_id").references(() => locations.id, { onDelete: 'cascade' }),
   tags: text("tags", { mode: "json" }).$type<string[]>().default(sql`'[]'`).notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
@@ -164,6 +172,7 @@ export const automations = sqliteTable("automations", {
 }, (table) => ({
   // Index for filtering by tags - useful for tag-based queries
   tagsIdx: index("automations_tags_idx").on(table.tags),
+  organizationIdx: index("automations_organization_idx").on(table.organizationId),
 }));
 
 // --- ADDED: Relations for Automations ---
@@ -171,6 +180,10 @@ export const automationsRelations = relations(automations, ({ one }) => ({
   location: one(locations, {
     fields: [automations.locationScopeId],
     references: [locations.id],
+  }),
+  organization: one(organization, {
+    fields: [automations.organizationId],
+    references: [organization.id],
   }),
 }));
 // --- END ADDED ---
@@ -590,6 +603,8 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   members: many(member),
   invitations: many(invitation),
   locations: many(locations), // Organization has many locations
+  connectors: many(connectors), // Organization has many connectors
+  automations: many(automations), // NEW: Organization has many automations
   sessions: many(session), // For activeOrganizationId reference
 }));
 

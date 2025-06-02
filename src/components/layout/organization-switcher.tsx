@@ -21,6 +21,7 @@ import { useFusionStore, type Organization } from '@/stores/store';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth/client';
 import { toast } from 'sonner';
+import { OrganizationLogoDisplay } from '@/components/features/organizations/organization-logo-selector';
 
 export function OrganizationSwitcher() {
   const { isMobile } = useSidebar();
@@ -28,11 +29,13 @@ export function OrganizationSwitcher() {
   const { 
     organizations, 
     fetchOrganizations,
-    isLoadingOrganizations 
+    isLoadingOrganizations,
+    setActiveOrganizationId
   } = useFusionStore();
 
   const [isSwitching, setIsSwitching] = React.useState(false);
   const [hasMounted, setHasMounted] = React.useState(false);
+  const [hasInitialized, setHasInitialized] = React.useState(false);
 
   // Use Better Auth's useActiveOrganization hook
   const { data: activeOrganization, isPending: isLoadingActiveOrg } = authClient.useActiveOrganization();
@@ -44,12 +47,21 @@ export function OrganizationSwitcher() {
 
   // Load organizations on mount
   React.useEffect(() => {
-    if (organizations.length === 0 && !isLoadingOrganizations) {
+    if (hasMounted && organizations.length === 0 && !isLoadingOrganizations) {
       fetchOrganizations();
     }
-  }, [organizations.length, isLoadingOrganizations, fetchOrganizations]);
+  }, [hasMounted, organizations.length, isLoadingOrganizations, fetchOrganizations]);
 
-  const handleOrganizationSwitch = async (organization: Organization) => {
+  // Sync Better Auth active organization with Zustand store
+  React.useEffect(() => {
+    if (!isLoadingActiveOrg && activeOrganization) {
+      setActiveOrganizationId(activeOrganization.id);
+    } else if (!isLoadingActiveOrg && !activeOrganization) {
+      setActiveOrganizationId(null);
+    }
+  }, [activeOrganization, isLoadingActiveOrg, setActiveOrganizationId]);
+
+  const handleOrganizationSwitch = React.useCallback(async (organization: Organization) => {
     if (organization.id === activeOrganization?.id) return;
     
     setIsSwitching(true);
@@ -63,10 +75,11 @@ export function OrganizationSwitcher() {
         throw new Error(result.error.message || 'Failed to switch organization');
       }
       
-      toast.success(`Switched to ${organization.name}`);
+      // Immediately update the store with the new organization ID
+      // This ensures data fetches happen right away rather than waiting for the hook to detect changes
+      setActiveOrganizationId(organization.id);
       
-      // Refresh the page to reload organization-scoped data
-      router.refresh();
+      toast.success(`Switched to ${organization.name}`);
       
     } catch (error) {
       console.error('Error switching organization:', error);
@@ -75,10 +88,45 @@ export function OrganizationSwitcher() {
     } finally {
       setIsSwitching(false);
     }
-  };
+  }, [activeOrganization?.id, setActiveOrganizationId]);
 
-  // Show loading state until mounted and data is loaded
-  if (!hasMounted || isLoadingOrganizations || isLoadingActiveOrg || organizations.length === 0) {
+  // Auto-select first organization if none active - but only run once after initial load
+  React.useEffect(() => {
+    if (
+      hasMounted && 
+      !isLoadingActiveOrg && 
+      !activeOrganization && 
+      organizations.length > 0 && 
+      !isSwitching &&
+      !hasInitialized
+    ) {
+      console.log('Auto-selecting first organization:', organizations[0].name);
+      setHasInitialized(true);
+      handleOrganizationSwitch(organizations[0]);
+    } else if (
+      hasMounted && 
+      !isLoadingActiveOrg && 
+      (activeOrganization || organizations.length === 0) &&
+      !hasInitialized
+    ) {
+      // Mark as initialized even if we don't auto-select
+      setHasInitialized(true);
+    }
+  }, [hasMounted, isLoadingActiveOrg, activeOrganization, organizations, isSwitching, hasInitialized, handleOrganizationSwitch]);
+
+  // Consolidate loading state logic
+  const isLoading = React.useMemo(() => {
+    // Don't show loading if we're just switching organizations
+    if (isSwitching && organizations.length > 0) {
+      return false;
+    }
+    
+    // Show loading during initial mount, auth check, or organization fetch
+    return !hasMounted || isLoadingActiveOrg || (isLoadingOrganizations && organizations.length === 0);
+  }, [hasMounted, isLoadingActiveOrg, isLoadingOrganizations, organizations.length, isSwitching]);
+
+  // Show loading state
+  if (isLoading) {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
@@ -88,10 +136,33 @@ export function OrganizationSwitcher() {
             </div>
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-semibold text-muted-foreground">
-                {!hasMounted || isLoadingOrganizations || isLoadingActiveOrg ? 'Loading...' : 'No Organizations'}
+                Loading...
               </span>
               <span className="truncate text-xs text-muted-foreground">
-                {!hasMounted || isLoadingOrganizations || isLoadingActiveOrg ? 'Please wait' : 'Create one to get started'}
+                Please wait
+              </span>
+            </div>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    );
+  }
+
+  // Show "no organizations" state
+  if (organizations.length === 0) {
+    return (
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton size="lg" disabled>
+            <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted">
+              <Building2 className="size-4 text-muted-foreground" />
+            </div>
+            <div className="grid flex-1 text-left text-sm leading-tight">
+              <span className="truncate font-semibold text-muted-foreground">
+                No Organizations
+              </span>
+              <span className="truncate text-xs text-muted-foreground">
+                Create one to get started
               </span>
             </div>
           </SidebarMenuButton>
@@ -115,15 +186,11 @@ export function OrganizationSwitcher() {
                 disabled={isSwitching}
               >
                 <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                  {currentOrg.logo ? (
-                    <img 
-                      src={currentOrg.logo} 
-                      alt={`${currentOrg.name} logo`}
-                      className="size-6 rounded object-cover"
-                    />
-                  ) : (
-                    <Building2 className="size-4" />
-                  )}
+                  <OrganizationLogoDisplay 
+                    logo={currentOrg.logo} 
+                    className="size-6 rounded" 
+                    size="default"
+                  />
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold">
@@ -153,15 +220,11 @@ export function OrganizationSwitcher() {
                   disabled={isSwitching}
                 >
                   <div className="flex size-6 items-center justify-center rounded-sm border">
-                    {org.logo ? (
-                      <img 
-                        src={org.logo} 
-                        alt={`${org.name} logo`}
-                        className="size-4 rounded object-cover"
-                      />
-                    ) : (
-                      <Building2 className="size-4 shrink-0" />
-                    )}
+                    <OrganizationLogoDisplay 
+                      logo={org.logo} 
+                      className="size-4 rounded" 
+                      size="sm"
+                    />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-sm font-medium">{org.name}</span>

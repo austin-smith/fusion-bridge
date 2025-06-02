@@ -207,14 +207,16 @@ export default function EventsPage() {
   const cardViewContainerRef = useRef<HTMLDivElement>(null);
 
   const connectors = useFusionStore(state => state.connectors);
-  const setConnectors = useFusionStore(state => state.setConnectors);
   const areas = useFusionStore(state => state.areas);
-  const fetchAreas = useFusionStore(state => state.fetchAreas);
   const allDevices = useFusionStore(state => state.allDevices);
-  const fetchAllDevices = useFusionStore(state => state.fetchAllDevices);
   const locations = useFusionStore(state => state.locations);
-  const fetchLocations = useFusionStore(state => state.fetchLocations);
   
+  // Use store loading states instead of manual loading
+  const isLoadingConnectors = useFusionStore(state => state.isLoading);
+  const isLoadingAreas = useFusionStore(state => state.isLoadingAreas);
+  const isLoadingDevices = useFusionStore(state => state.isLoadingAllDevices);
+  const isLoadingLocations = useFusionStore(state => state.isLoadingLocations);
+
   // Extract unique connector categories from connectors state
   const connectorCategories = useMemo(() => {
     const categorySet = new Set<string>();
@@ -234,54 +236,21 @@ export default function EventsPage() {
   // State for hierarchy dialog
   const [isHierarchyDialogOpen, setIsHierarchyDialogOpen] = useState(false);
 
-  // Add useEffect to fetch connectors if not present
-  useEffect(() => {
-    const fetchConnectorsIfNeeded = async () => {
-      if (connectors.length === 0) {
-        console.log('[EventsPage] Connectors store is empty, fetching...');
-        try {
-          const response = await fetch('/api/connectors');
-          const data = await response.json();
-          if (!response.ok || !data.success) {
-            console.error('[EventsPage] Failed to fetch initial connectors:', data.error || 'Unknown error');
-            setConnectors([]); // Ensure store is set to empty array on failure
-          } else if (data.data && Array.isArray(data.data)) {
-            setConnectors(data.data as ConnectorWithConfig<any>[]); // Use setConnectors from store
-            console.log('[EventsPage] Initial connectors loaded into store.');
-          } else {
-            setConnectors([]); // Set empty if data is missing or not an array
-          }
-        } catch (err) {
-          console.error('[EventsPage] Error fetching initial connectors:', err);
-          setConnectors([]); // Ensure store is reset on fetch error
-        }
-      }
-    };
-
-    fetchConnectorsIfNeeded();
-  }, [connectors.length, setConnectors]); // Rerun if connectors array length changes or setConnectors changes
-
-  // Add useEffect to fetch locations if not present
-  useEffect(() => {
-    const fetchLocationsIfNeeded = async () => {
-      if (locations.length === 0) {
-        console.log('[EventsPage] Locations store is empty, fetching...');
-        try {
-          await fetchLocations();
-          console.log('[EventsPage] Locations loaded into store.');
-        } catch (err) {
-          console.error('[EventsPage] Error fetching initial locations:', err);
-        }
-      }
-    };
-
-    fetchLocationsIfNeeded();
-  }, [locations.length, fetchLocations]); // Rerun if locations array length changes or fetchLocations changes
-
   // Set page title
   useEffect(() => {
     document.title = 'Events // Fusion';
   }, []);
+
+  // Initial events fetch if needed (for first-time page loads)
+  useEffect(() => {
+    // Only trigger if we have organization data but no events yet and we're not loading
+    if (connectors.length > 0 && events.length === 0 && !loading && !isLoadingConnectors && !isLoadingAreas && !isLoadingDevices && !isLoadingLocations) {
+      console.log('[EventsPage] Triggering initial events fetch');
+      // This will trigger the main useEffect above to fetch events
+      setLoading(true);
+      setTimeout(() => setLoading(false), 100); // Reset loading state to trigger the main effect
+    }
+  }, [connectors.length, events.length, loading, isLoadingConnectors, isLoadingAreas, isLoadingDevices, isLoadingLocations]);
 
   // MODIFIED: fetchEvents signature and URL construction
   const fetchEvents = useCallback(async (
@@ -400,45 +369,10 @@ export default function EventsPage() {
     }
   }, []);
 
-  // <-- ADDED: useEffect to fetch areas if needed -->
-  useEffect(() => {
-    console.log("[EventsPage] Running useEffect for areas. Current areas.length:", areas.length); // Log hook run and length
-    const fetchAreasIfNeeded = async () => {
-      if (areas.length === 0) { 
-        console.log('[EventsPage] Areas store is empty, fetching...');
-        try {
-          await fetchAreas(); // Use the action from the store
-          console.log('[EventsPage] Areas loaded into store.');
-        } catch (err) {
-          console.error('[EventsPage] Error fetching initial areas:', err);
-        }
-      }
-    };
-    fetchAreasIfNeeded();
-  }, [areas.length, fetchAreas]); // Depend on length and action
-  // <-- END ADDED -->
-
-  // <-- ADDED: useEffect to fetch all devices if needed -->
-  useEffect(() => {
-    console.log("[EventsPage] Running useEffect for allDevices. Current allDevices.length:", allDevices.length); // Log hook run and length
-    const fetchAllDevicesIfNeeded = async () => {
-      if (allDevices.length === 0) { 
-        console.log('[EventsPage] All Devices store is empty, fetching...');
-        try {
-          await fetchAllDevices(); // Use the action from the store
-          console.log('[EventsPage] All Devices loaded into store.');
-        } catch (err) {
-          console.error('[EventsPage] Error fetching initial all devices:', err);
-        }
-      }
-    };
-    fetchAllDevicesIfNeeded();
-  }, [allDevices.length, fetchAllDevices]); // Depend on length and action
-  // <-- END ADDED -->
-
   // --- REVISED: Initial Load and Polling useEffect ---
   useEffect(() => {
-    if (!tableRef.current) return; 
+    // Don't fetch events while store is still loading organization data or if no connectors loaded yet
+    if (!tableRef.current || isLoadingConnectors || isLoadingAreas || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
 
     setLoading(true);
     console.log('[EventsPage] Initial/Polling useEffect: Fetching initial data.');
@@ -469,7 +403,7 @@ export default function EventsPage() {
       });
 
     const intervalId = setInterval(() => {
-      if (!tableRef.current) return;
+      if (!tableRef.current || isLoadingConnectors || isLoadingAreas || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
       console.log('[EventsPage] Polling useEffect: Polling for data.');
       fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter)
         .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
@@ -492,12 +426,13 @@ export default function EventsPage() {
       clearInterval(intervalId);
       isInitialLoadRef.current = true;
     };
-  }, [fetchEvents, pagination.pageIndex, pagination.pageSize, eventCategoryFilter, connectorCategoryFilter, locationFilter]);
+  }, [fetchEvents, pagination.pageIndex, pagination.pageSize, eventCategoryFilter, connectorCategoryFilter, locationFilter, isLoadingConnectors, isLoadingAreas, isLoadingDevices, isLoadingLocations, connectors.length]);
   // --- END REVISED ---
 
   // --- REVISED: useEffect for actual pagination OR filter changes by the user ---
   useEffect(() => {
-    if (!tableRef.current) return; 
+    // Don't execute while store is loading or if no connectors loaded yet
+    if (!tableRef.current || isLoadingConnectors || isLoadingAreas || isLoadingDevices || isLoadingLocations || connectors.length === 0) return; 
     if (isInitialLoadRef.current) {
       return; 
     }
@@ -551,7 +486,7 @@ export default function EventsPage() {
           setLoading(false); 
         });
     }
-  }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter, locationFilter]);
+  }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter, locationFilter, isLoadingConnectors, isLoadingAreas, isLoadingDevices, isLoadingLocations, connectors.length]);
   // --- END REVISED ---
 
   // Effect to save viewMode to localStorage when it changes
@@ -1194,28 +1129,26 @@ export default function EventsPage() {
         </Dialog>
 
         <div className="flex-shrink-0">
-           {(loading || (displayedEvents.length > 0 && (areas.length === 0 || allDevices.length === 0))) && displayedEvents.length === 0 ? (
+           {loading ? (
             viewMode === 'card' 
               ? <EventCardViewSkeleton segmentCount={2} cardsPerSegment={4} />
               : <EventsTableSkeleton rowCount={15} columnCount={columns.length} />
-          ) : !loading && displayedEvents.length === 0 ? (
-            <p className="text-muted-foreground">
-              No events match your current filters or no events have been received yet.
-            </p>
           ) : null}
         </div>
 
-        {!loading && displayedEvents.length > 0 && areas.length > 0 && allDevices.length > 0 ? (
+        {!loading && displayedEvents.length === 0 ? (
+          <p className="text-muted-foreground">
+            No events match your current filters or no events have been received yet.
+          </p>
+        ) : null}
+
+        {!loading && displayedEvents.length > 0 ? (
           <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
             {viewMode === 'table' ? (
               <EventsTableView table={table} columns={columns} />
             ) : viewMode === 'card' ? (
               <EventCardView events={displayedEvents} areas={areas} allDevices={allDevices} /> 
             ) : null}
-          </div>
-        ) : !loading && displayedEvents.length > 0 ? (
-          <div className="flex items-center justify-center flex-grow">
-              <Loader2 className="mr-2 h-6 w-6 animate-spin" /> Loading supporting data...
           </div>
         ) : null}
       </TooltipProvider>

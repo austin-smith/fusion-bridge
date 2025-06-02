@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/data/db/';
-import { connectors } from '@/data/db/schema';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { ConnectorWithConfig } from '@/types';
 import crypto from 'crypto'; // Import crypto
 import { NextRequest } from 'next/server';
+import { withOrganizationAuth } from '@/lib/auth/withOrganizationAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 
 // Define specific config schemas
 const YoLinkConfigSchema = z.object({
@@ -160,9 +160,10 @@ const updateConnectorSchema = z.object({
 });
 
 // GET /api/connectors - Fetches all connectors
-export async function GET(req: NextRequest) {
+export const GET = withOrganizationAuth(async (req, authContext) => {
   try {
-    const allConnectorsRaw = await db.select().from(connectors);
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    const allConnectorsRaw = await orgDb.connectors.findAll();
 
     const allConnectors: ConnectorWithConfig[] = allConnectorsRaw.map(connector => {
       let config = {};
@@ -182,6 +183,7 @@ export async function GET(req: NextRequest) {
         id: connector.id,
         category: connector.category,
         name: connector.name,
+        organizationId: connector.organizationId,
         createdAt: connector.createdAt, 
         eventsEnabled: connector.eventsEnabled,
         config: config, // Parsed config or empty object
@@ -198,11 +200,12 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 // POST /api/connectors - Creates a new connector
-export async function POST(req: NextRequest) {
+export const POST = withOrganizationAuth(async (req, authContext) => {
   try {
+    const orgDb = createOrgScopedDb(authContext.organizationId);
     const body = await req.json();
     const validation = createConnectorSchema.safeParse(body);
 
@@ -230,15 +233,15 @@ export async function POST(req: NextRequest) {
     // Stringify the final config for storage
     const configString = JSON.stringify(finalConfig);
 
-    // Create connector in DB using Drizzle
-    const newConnectorResult = await db.insert(connectors).values({
+    // Create connector in DB using organization-scoped database
+    const newConnectorResult = await orgDb.connectors.create({
         id: connectorId, // Use generated UUID
         name: connectorName,
         category,
         cfg_enc: configString, // Store the stringified config (which includes webhookId for relevant types)
         eventsEnabled: false, // Default ALL new connectors to disabled
         createdAt: new Date(), // Set creation timestamp
-      }).returning(); // Return the inserted row
+      });
 
     if (!newConnectorResult || newConnectorResult.length === 0) {
       throw new Error("Failed to create connector in database or return result.");
@@ -250,6 +253,7 @@ export async function POST(req: NextRequest) {
       id: newConnectorDb.id,
       category: newConnectorDb.category,
       name: newConnectorDb.name,
+      organizationId: newConnectorDb.organizationId,
       createdAt: newConnectorDb.createdAt,
       eventsEnabled: newConnectorDb.eventsEnabled,
       config: finalConfig, // Return the parsed config object used for creation
@@ -272,7 +276,7 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });
   }
-}
+});
 
 // Helper function (consider moving to utils)
 // This function might need adjustment based on how GET uses it and Drizzle's output
@@ -288,6 +292,7 @@ function formatConnectorData(connector: any): ConnectorWithConfig {
     id: connector.id,
     category: connector.category,
     name: connector.name,
+    organizationId: connector.organizationId,
     createdAt: connector.createdAt,
     eventsEnabled: connector.eventsEnabled,
     config: config, // Use the parsed config

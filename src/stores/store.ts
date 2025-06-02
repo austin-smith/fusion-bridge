@@ -16,6 +16,27 @@ import { authClient } from '@/lib/auth/client'; // Import authClient
 // Enable Immer plugin for Map/Set support
 enableMapSet();
 
+// --- NEW: Automation Types ---
+export interface Automation {
+  id: string;
+  name: string;
+  enabled: boolean;
+  configJson: any; // AutomationConfig type - keeping as any for now to avoid complex imports
+  organizationId: string;
+  locationScopeId: string | null;
+  tags: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface NewAutomationData {
+  name: string;
+  enabled?: boolean;
+  config: any; // AutomationConfig type
+  locationScopeId?: string | null;
+  tags?: string[];
+}
+
 // Type definitions for arming schedules
 export interface NewArmingScheduleData {
   name: string;
@@ -173,6 +194,14 @@ interface FusionState {
   isLoadingInvitations: boolean;
   errorInvitations: string | null;
   
+  // --- NEW: Active Organization Tracking ---
+  activeOrganizationId: string | null;
+  
+  // --- NEW: Automations State ---
+  automations: Automation[];
+  isLoadingAutomations: boolean;
+  errorAutomations: string | null;
+  
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
   addConnector: (connector: ConnectorWithConfig) => void;
@@ -290,6 +319,16 @@ interface FusionState {
   acceptInvitation: (invitationId: string) => Promise<boolean>;
   cancelInvitation: (invitationId: string) => Promise<boolean>;
   rejectInvitation: (invitationId: string) => Promise<boolean>;
+  
+  // --- NEW: Active Organization Actions ---
+  setActiveOrganizationId: (organizationId: string | null) => void;
+  
+  // --- NEW: Automations Actions ---
+  fetchAutomations: () => Promise<void>;
+  createAutomation: (data: NewAutomationData) => Promise<Automation | null>;
+  updateAutomation: (id: string, data: Partial<NewAutomationData>) => Promise<Automation | null>;
+  deleteAutomation: (id: string) => Promise<boolean>;
+  cloneAutomation: (id: string) => Promise<Automation | null>;
 }
 
 // Initial state for MQTT (default)
@@ -388,6 +427,14 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   organizationInvitations: [],
   isLoadingInvitations: false,
   errorInvitations: null,
+  
+  // --- NEW: Active Organization Tracking ---
+  activeOrganizationId: null,
+  
+  // --- NEW: Automations State ---
+  automations: [],
+  isLoadingAutomations: false,
+  errorAutomations: null,
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -578,12 +625,14 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   fetchLocations: async () => {
     set({ isLoadingLocations: true, errorLocations: null });
     try {
+      // API uses clean JOIN-based organization filtering - explicit WHERE clauses
       const response = await fetch('/api/locations');
       const data: ApiResponse<Location[]> = await response.json();
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to fetch locations');
       }
       set({ locations: data.data || [], isLoadingLocations: false });
+      console.log(`[FusionStore] Locations loaded via clean organization filtering: ${data.data?.length || 0} locations`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error("Error fetching locations:", message);
@@ -671,6 +720,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         throw new Error(data.error || 'Failed to fetch areas');
       }
       set({ areas: data.data || [], isLoadingAreas: false });
+      console.log(`[FusionStore] Areas loaded via clean organization filtering: ${data.data?.length || 0} areas`);
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
        console.error("Error fetching areas:", message);
@@ -1027,8 +1077,46 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to fetch devices');
       }
-      set({ allDevices: data.data || [], isLoadingAllDevices: false });
-      console.log('[FusionStore] All devices loaded into state:', data.data?.length);
+      
+      const fetchedDevices = data.data || [];
+      
+      // Update allDevices first
+      set({ allDevices: fetchedDevices, isLoadingAllDevices: false });
+      console.log('[FusionStore] All devices loaded into state:', fetchedDevices.length);
+      
+      // Now populate deviceStates from the fetched devices
+      console.log(`[Store] Populating deviceStates from ${fetchedDevices.length} fetched devices`);
+      
+      // Create device state entries for all fetched devices
+      const newDeviceStates = new Map<string, DeviceStateInfo>();
+      
+      fetchedDevices.forEach(device => {
+        const key = `${device.connectorId}:${device.deviceId}`;
+        const deviceTypeInfo = getDeviceTypeInfo(device.connectorCategory || 'unknown', device.type);
+        
+        const deviceState: DeviceStateInfo = {
+          connectorId: device.connectorId,
+          deviceId: device.deviceId,
+          deviceInfo: deviceTypeInfo,
+          displayState: device.displayState,
+          lastSeen: new Date(), // Set to now since we just fetched
+          name: device.name ?? undefined,
+          model: device.model ?? undefined,
+          vendor: device.vendor ?? undefined,
+          url: device.url ?? undefined,
+          rawType: device.type,
+          serverId: device.serverId ?? undefined,
+          serverName: device.serverName ?? undefined,
+          pikoServerDetails: device.pikoServerDetails,
+        };
+        
+        newDeviceStates.set(key, deviceState);
+      });
+      
+      // Update deviceStates with the populated map
+      set({ deviceStates: newDeviceStates });
+      console.log(`[Store] Populated deviceStates with ${newDeviceStates.size} devices`);
+      
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error("Error fetching all devices:", message);
@@ -1797,6 +1885,190 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       console.error(`Error rejecting invitation: ${message}`);
       toast.error(`Failed to reject invitation: ${message}`);
       return false;
+    }
+  },
+
+  // --- NEW: Active Organization Actions ---
+  setActiveOrganizationId: (organizationId: string | null) => {
+    const currentOrgId = get().activeOrganizationId;
+    
+    // Only clear data if organization actually changed
+    if (currentOrgId !== organizationId) {
+      console.log(`[Store] Organization changed from ${currentOrgId} to ${organizationId} - clearing scoped data`);
+      
+      set({
+        activeOrganizationId: organizationId,
+        // Clear organization-scoped data
+        connectors: [],
+        locations: [],
+        areas: [],
+        allDevices: [],
+        deviceStates: new Map(), // Clear device states map
+        armingSchedules: [],
+        dashboardEvents: [],
+        organizationMembers: [],
+        organizationInvitations: [],
+        automations: [], // NEW: Clear automations
+        // Reset loading states
+        isLoading: false,
+        isLoadingLocations: false,
+        isLoadingAreas: false,
+        isLoadingAllDevices: false,
+        isLoadingArmingSchedules: false,
+        isLoadingDashboardEvents: false,
+        isLoadingMembers: false,
+        isLoadingInvitations: false,
+        isLoadingAutomations: false, // NEW: Reset automations loading
+        // Clear errors
+        error: null,
+        errorLocations: null,
+        errorAreas: null,
+        errorAllDevices: null,
+        errorArmingSchedules: null,
+        errorDashboardEvents: null,
+        errorMembers: null,
+        errorInvitations: null,
+        errorAutomations: null, // NEW: Clear automations error
+      });
+      
+      // Auto-refetch data for new organization if we have one
+      if (organizationId) {
+        console.log(`[Store] Auto-refetching data for organization ${organizationId}`);
+        // Trigger refetch of all organization-scoped data
+        get().fetchConnectors();
+        get().fetchLocations();
+        get().fetchAreas();
+        get().fetchAllDevices(); // This now also populates deviceStates
+        get().fetchArmingSchedules();
+        get().fetchDashboardEvents();
+        get().fetchAutomations(); // NEW: Fetch automations
+      }
+    } else {
+      // Same organization, just update the ID (shouldn't happen but safe)
+      set({ activeOrganizationId: organizationId });
+    }
+  },
+
+  // --- NEW: Automations Actions ---
+  fetchAutomations: async () => {
+    set({ isLoadingAutomations: true, errorAutomations: null });
+    try {
+      const response = await fetch('/api/automations');
+      const data: ApiResponse<Automation[]> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch automations');
+      }
+      set({ automations: data.data || [], isLoadingAutomations: false });
+      console.log('[FusionStore] Automations loaded:', data.data?.length);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error("Error fetching automations:", message);
+      set({ isLoadingAutomations: false, errorAutomations: message, automations: [] });
+    }
+  },
+
+  createAutomation: async (data: NewAutomationData) => {
+    try {
+      const response = await fetch('/api/automations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const result: ApiResponse<Automation> = await response.json();
+      if (!response.ok || !result.success || !result.data) {
+        throw new Error(result.error || 'Failed to create automation');
+      }
+      const newAutomation = result.data;
+      set((state) => ({ 
+        automations: [...state.automations, newAutomation].sort((a, b) => a.name.localeCompare(b.name)),
+      }));
+      toast.success('Automation created successfully');
+      return newAutomation;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Error creating automation:', message);
+      toast.error(`Failed to create automation: ${message}`);
+      set({ errorAutomations: message });
+      return null;
+    }
+  },
+
+  updateAutomation: async (id: string, data: Partial<NewAutomationData>) => {
+    try {
+      const response = await fetch(`/api/automations/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const result: ApiResponse<Automation> = await response.json();
+      if (!response.ok || !result.success || !result.data) {
+        throw new Error(result.error || 'Failed to update automation');
+      }
+      const updatedAutomation = result.data;
+      set((state) => ({ 
+        automations: state.automations.map(automation => 
+          automation.id === id ? updatedAutomation : automation
+        ).sort((a, b) => a.name.localeCompare(b.name)),
+      }));
+      toast.success('Automation updated successfully');
+      return updatedAutomation;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error updating automation ${id}:`, message);
+      toast.error(`Failed to update automation: ${message}`);
+      set({ errorAutomations: message });
+      return null;
+    }
+  },
+
+  deleteAutomation: async (id: string) => {
+    const loadingToastId = toast.loading('Deleting automation...');
+    try {
+      const response = await fetch(`/api/automations/${id}`, { method: 'DELETE' });
+      const result: ApiResponse<{ id: string }> = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to delete automation');
+      }
+      set((state) => ({ 
+        automations: state.automations.filter(automation => automation.id !== id),
+      }));
+      toast.success('Automation deleted successfully');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error deleting automation ${id}:`, message);
+      toast.error(`Failed to delete automation: ${message}`);
+      set({ errorAutomations: message });
+      return false;
+    } finally {
+      toast.dismiss(loadingToastId);
+    }
+  },
+
+  cloneAutomation: async (id: string) => {
+    const loadingToastId = toast.loading('Cloning automation...');
+    try {
+      const response = await fetch(`/api/automations/${id}/clone`, { 
+        method: 'POST' 
+      });
+      const result: ApiResponse<Automation> = await response.json();
+      if (!response.ok || !result.success || !result.data) {
+        throw new Error(result.error || 'Failed to clone automation');
+      }
+      const clonedAutomation = result.data;
+      set((state) => ({ 
+        automations: [...state.automations, clonedAutomation].sort((a, b) => a.name.localeCompare(b.name)),
+      }));
+      toast.success('Automation cloned successfully');
+      return clonedAutomation;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error cloning automation ${id}:`, message);
+      toast.error(`Failed to clone automation: ${message}`);
+      set({ errorAutomations: message });
+      return null;
+    } finally {
+      toast.dismiss(loadingToastId);
     }
   },
 

@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withApiRouteAuth } from '@/lib/auth/withApiRouteAuth';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { db } from '@/data/db';
 import { connectors, devices, events, areaDevices, areas, locations } from '@/data/db/schema';
 import { eq, sql, and, desc } from 'drizzle-orm';
-import * as eventsRepository from '@/data/repositories/events';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { TypedDeviceInfo, DisplayState, DeviceType, EventCategory, EventSubtype } from '@/lib/mappings/definitions';
 import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
 import { PikoConfig } from '@/services/drivers/piko';
+import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
 
-// Define the enriched event structure returned by getRecentEvents
-interface RepoEnrichedEvent {
+// Define the enriched event structure returned by organization-scoped queries
+interface OrgEnrichedEvent {
   id: number;
   eventUuid: string;
   deviceId: string;
@@ -18,28 +19,27 @@ interface RepoEnrichedEvent {
   standardizedEventCategory: string;
   standardizedEventType: string;
   standardizedEventSubtype: string | null;
-  standardizedPayload: unknown; // Keep as unknown for parsing
+  standardizedPayload: unknown;
   rawPayload: unknown;
-  rawEventType: string | null; // Added from repo
+  rawEventType: string | null;
   connectorId: string;
-  deviceName: string | null; // Field from JOIN
-  rawDeviceType: string | null; // Field from JOIN
-  connectorName: string | null; // Field from JOIN
-  connectorCategory: string | null; // Field from JOIN
+  deviceName: string | null;
+  rawDeviceType: string | null;
+  connectorName: string | null;
+  connectorCategory: string | null;
   connectorConfig: string | null;
-  areaId: string | null; // <-- RE-ADDED: From areaDevices table via eventsRepository
-  areaName: string | null; // <-- RE-ADDED: From areas table via eventsRepository
-  locationId: string | null; // Location ID from locations table via eventsRepository
-  locationName: string | null; // Location name from locations table via eventsRepository
+  areaId: string | null;
+  areaName: string | null;
+  locationId: string | null;
+  locationName: string | null;
 }
 
-// --- Modified Pagination Metadata Interface ---
+// Modified Pagination Metadata Interface
 interface ApiPaginationMetadata {
   itemsPerPage: number;
   currentPage: number;
-  hasNextPage: boolean; // <-- Use boolean flag instead of totalPages
+  hasNextPage: boolean;
 }
-// --- End Modified Pagination Metadata Interface ---
 
 // Interface for the final enriched event data returned by the API
 interface ApiEnrichedEvent {
@@ -50,10 +50,10 @@ interface ApiEnrichedEvent {
   connectorId: string;
   connectorName?: string;
   connectorCategory: string;
-  areaId?: string; // <-- RE-ADDED: Optional Area ID
-  areaName?: string; // <-- RE-ADDED: Optional Area Name
-  locationId?: string; // Optional Location ID
-  locationName?: string; // Optional Location Name
+  areaId?: string;
+  areaName?: string;
+  locationId?: string;
+  locationName?: string;
   timestamp: number; // Epoch ms
   eventCategory: string;
   eventType: string;
@@ -62,58 +62,20 @@ interface ApiEnrichedEvent {
   rawPayload: Record<string, any> | null;
   deviceTypeInfo: TypedDeviceInfo;
   displayState?: DisplayState;
-  rawEventType?: string; // Add optional rawEventType
+  rawEventType?: string;
   bestShotUrlComponents?: {
     type: 'cloud' | 'local';
-    pikoSystemId?: string; // Optional: Only present for cloud
+    pikoSystemId?: string;
     connectorId: string;
     objectTrackId: string;
     cameraId: string;
   };
 }
 
-// Function to get a single event by UUID
-async function getSingleEvent(eventUuid: string): Promise<ApiEnrichedEvent | null> {
+// Function to get a single event by UUID (organization-scoped)
+async function getSingleEvent(eventUuid: string, orgDb: any): Promise<ApiEnrichedEvent | null> {
   try {
-    const result = await db
-      .select({
-        // Event fields
-        id: events.id,
-        eventUuid: events.eventUuid,
-        deviceId: events.deviceId,
-        timestamp: events.timestamp,
-        standardizedEventCategory: events.standardizedEventCategory,
-        standardizedEventType: events.standardizedEventType,
-        standardizedEventSubtype: events.standardizedEventSubtype,
-        standardizedPayload: events.standardizedPayload,
-        rawPayload: events.rawPayload,
-        rawEventType: events.rawEventType,
-        connectorId: events.connectorId,
-        // Joined Device fields
-        deviceName: devices.name,
-        rawDeviceType: devices.type, 
-        // Joined Connector fields
-        connectorName: connectors.name,
-        connectorCategory: connectors.category,
-        connectorConfig: connectors.cfg_enc,
-        // Joined Area fields (nullable due to LEFT JOINs)
-        areaId: areaDevices.areaId,
-        areaName: areas.name,
-        // Joined Location fields (nullable due to LEFT JOINs)
-        locationId: locations.id,
-        locationName: locations.name
-      })
-      .from(events)
-      .leftJoin(devices, and(
-          eq(devices.connectorId, events.connectorId),
-          eq(devices.deviceId, events.deviceId)
-      ))
-      .leftJoin(connectors, eq(connectors.id, events.connectorId))
-      .leftJoin(areaDevices, eq(areaDevices.deviceId, devices.id))
-      .leftJoin(areas, eq(areas.id, areaDevices.areaId))
-      .leftJoin(locations, eq(locations.id, areas.locationId))
-      .where(eq(events.eventUuid, eventUuid))
-      .limit(1);
+    const result = await orgDb.events.findById(eventUuid);
 
     if (result.length === 0) {
       return null;
@@ -219,15 +181,16 @@ async function getSingleEvent(eventUuid: string): Promise<ApiEnrichedEvent | nul
   }
 }
 
-// GET handler to fetch events
-export const GET = withApiRouteAuth(async (request, authContext) => {
+// GET handler to fetch events (organization-scoped)
+export const GET = withOrganizationAuth(async (request, authContext: OrganizationAuthContext) => {
   try {
+    const orgDb = createOrgScopedDb(authContext.organizationId);
     const searchParams = request.nextUrl.searchParams;
     const eventUuid = searchParams.get('eventUuid');
     
     // If eventUuid is provided, fetch single event
     if (eventUuid) {
-      const event = await getSingleEvent(eventUuid);
+      const event = await getSingleEvent(eventUuid, orgDb);
       if (!event) {
         return NextResponse.json(
           { success: false, error: 'Event not found' },
@@ -242,16 +205,16 @@ export const GET = withApiRouteAuth(async (request, authContext) => {
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const offset = (page - 1) * limit;
 
-    // --- ADDED: Read and prepare filters from query parameters ---
+    // Read and prepare filters from query parameters
     const eventCategoriesRaw = searchParams.get('eventCategories');
-    const connectorCategory = searchParams.get('connectorCategory') || undefined; // Use undefined if not present or empty
-    const locationId = searchParams.get('locationId') || undefined; // Use undefined if not present or empty
+    const connectorCategory = searchParams.get('connectorCategory') || undefined;
+    const locationId = searchParams.get('locationId') || undefined;
 
     let eventCategories: string[] | undefined = undefined;
     if (eventCategoriesRaw) {
       eventCategories = eventCategoriesRaw.split(',').map(cat => cat.trim()).filter(cat => cat.length > 0);
       if (eventCategories.length === 0) {
-        eventCategories = undefined; // Treat empty array after split/filter as no filter
+        eventCategories = undefined;
       }
     }
 
@@ -260,10 +223,9 @@ export const GET = withApiRouteAuth(async (request, authContext) => {
       connectorCategory: connectorCategory,
       locationId: locationId
     };
-    // --- END ADDED ---
 
-    // MODIFIED: Pass filters to the repository function
-    const recentEnrichedEvents: RepoEnrichedEvent[] = await eventsRepository.getRecentEvents(limit, offset, filters);
+    // Use organization-scoped event query
+    const recentEnrichedEvents: OrgEnrichedEvent[] = await orgDb.events.findRecent(limit, offset, filters);
 
     // Determine if there is a next page
     const hasNextPage = recentEnrichedEvents.length > limit;
@@ -271,13 +233,13 @@ export const GET = withApiRouteAuth(async (request, authContext) => {
     // Slice the array to return only the requested number of items
     const eventsForCurrentPage = recentEnrichedEvents.slice(0, limit);
 
-    // Map the repository results for the current page to the API response structure
-    const apiEvents = eventsForCurrentPage.map((event: RepoEnrichedEvent): ApiEnrichedEvent => {
+    // Map the organization-scoped results to the API response structure
+    const apiEvents = eventsForCurrentPage.map((event: OrgEnrichedEvent): ApiEnrichedEvent => {
       let payload: Record<string, any> | null = null;
       let rawPayload: Record<string, any> | null = null;
       let displayState: DisplayState | undefined = undefined;
       let bestShotUrlComponents: ApiEnrichedEvent['bestShotUrlComponents'] | undefined = undefined;
-      const connectorCategory = event.connectorCategory ?? 'unknown'; // Default if null from JOIN
+      const connectorCategory = event.connectorCategory ?? 'unknown';
 
       // Try to parse standardized payload
       try {
@@ -307,13 +269,13 @@ export const GET = withApiRouteAuth(async (request, authContext) => {
       // Derive displayState from parsed payload
       displayState = payload?.displayState;
       
-      // MODIFIED: Handle both Cloud and Local Piko for bestShotUrlComponents
+      // Handle both Cloud and Local Piko for bestShotUrlComponents
       if (
         connectorCategory === 'piko' &&
-        event.standardizedEventCategory === EventCategory.ANALYTICS && // Check category
+        event.standardizedEventCategory === EventCategory.ANALYTICS &&
         payload?.objectTrackId && 
         typeof payload.objectTrackId === 'string' &&
-        event.deviceId // Ensure we have the camera/device ID
+        event.deviceId
       ) {
         if (event.connectorConfig) {
             try {
@@ -322,15 +284,14 @@ export const GET = withApiRouteAuth(async (request, authContext) => {
                 if (config.type === 'cloud' && config.selectedSystem) {
                     bestShotUrlComponents = {
                         type: 'cloud',
-                        pikoSystemId: config.selectedSystem, // Include for cloud
+                        pikoSystemId: config.selectedSystem,
                         objectTrackId: payload.objectTrackId,
-                        cameraId: event.deviceId, // The event's deviceId is the camera GUID
-                        connectorId: event.connectorId // Pass our internal connector ID
+                        cameraId: event.deviceId,
+                        connectorId: event.connectorId
                     };
                 } else if (config.type === 'local') {
                     bestShotUrlComponents = {
                         type: 'local',
-                        // pikoSystemId is omitted for local
                         objectTrackId: payload.objectTrackId,
                         cameraId: event.deviceId,
                         connectorId: event.connectorId
@@ -365,30 +326,28 @@ export const GET = withApiRouteAuth(async (request, authContext) => {
         rawPayload: rawPayload,
         rawEventType: event.rawEventType ?? undefined,
         bestShotUrlComponents: bestShotUrlComponents,
-        areaId: event.areaId ?? undefined, // <-- RE-ADDED: Map from repo event
-        areaName: event.areaName ?? undefined, // <-- RE-ADDED: Map from repo event
-        locationId: event.locationId ?? undefined, // Map from repo event
-        locationName: event.locationName ?? undefined, // Map from repo event
+        areaId: event.areaId ?? undefined,
+        areaName: event.areaName ?? undefined,
+        locationId: event.locationId ?? undefined,
+        locationName: event.locationName ?? undefined,
       };
 
       return finalEventObject;
     });
 
-    // --- Modified Pagination Metadata --- 
+    // Modified Pagination Metadata
     const paginationMetadata: ApiPaginationMetadata = {
       itemsPerPage: limit,
       currentPage: page,
-      hasNextPage: hasNextPage, // <-- Use the calculated flag
+      hasNextPage: hasNextPage,
     };
-    // --- End Modified Pagination Metadata ---
 
-    // ADDED: Log to check returned data length
     console.log(`[API] page: ${page}, limit: ${limit}, eventsForCurrentPage.length: ${eventsForCurrentPage.length}, hasNextPage: ${hasNextPage}`);
 
     return NextResponse.json({ 
       success: true, 
-      data: apiEvents, // CORRECTED: Should be apiEvents (mapped data)
-      pagination: paginationMetadata // <-- Include modified pagination metadata
+      data: apiEvents,
+      pagination: paginationMetadata
     });
 
   } catch (error) {

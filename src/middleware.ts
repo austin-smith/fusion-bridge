@@ -2,10 +2,27 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getSessionCookie } from 'better-auth/cookies';
 
+// Helper function to add CORS headers to a response
+function addCorsHeaders(response: NextResponse): NextResponse {
+  response.headers.set('Access-Control-Allow-Origin', '*');
+  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, x-yolink-action');
+  response.headers.set('Access-Control-Max-Age', '86400'); // 24 hours
+
+  return response;
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   console.log(`[Middleware] Processing path: ${pathname}`);
+
+  // Handle preflight OPTIONS requests for CORS
+  if (request.method === 'OPTIONS' && pathname.startsWith('/api/')) {
+    console.log(`[Middleware] Handling CORS preflight for: ${pathname}`);
+    const response = new NextResponse(null, { status: 200 });
+    return addCorsHeaders(response);
+  }
 
   const loginUrl = new URL('/login', request.url);
   const homeUrl = new URL('/', request.url);
@@ -19,7 +36,8 @@ export function middleware(request: NextRequest) {
         pathname.startsWith('/api/webhooks/') || 
         pathname.startsWith('/api/startup')) {
       console.log(`[Middleware] Allowing public API route: ${pathname}`);
-      return NextResponse.next();
+      const response = NextResponse.next();
+      return addCorsHeaders(response);
     }
     
     // Allow routes that already have their own authentication wrappers
@@ -31,18 +49,21 @@ export function middleware(request: NextRequest) {
         pathname.startsWith('/api/locations') ||
         pathname.startsWith('/api/piko/webrtc')) {
       console.log(`[Middleware] Allowing route with own auth wrapper: ${pathname}`);
-      return NextResponse.next();
+      const response = NextResponse.next();
+      return addCorsHeaders(response);
     }
     
     // All other API routes require session authentication
     const sessionCookie = getSessionCookie(request);
     if (!sessionCookie) {
       console.log(`[Middleware] Blocking unauthenticated API request to: ${pathname}`);
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+      const response = NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+      return addCorsHeaders(response);
     }
     
     console.log(`[Middleware] Allowing authenticated API request to: ${pathname}`);
-    return NextResponse.next();
+    const response = NextResponse.next();
+    return addCorsHeaders(response);
   }
 
   // Handle page routes (existing logic)

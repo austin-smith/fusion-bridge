@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/data/db';
-import { connectors } from '@/data/db/schema';
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
 import { Connector, ConnectorWithConfig } from '@/types';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import type { YoLinkConfig } from '@/services/drivers/yolink';
+import { withOrganizationAuth, OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 
 // Schema for connector update
 const updateConnectorSchema = z.object({
@@ -15,13 +14,15 @@ const updateConnectorSchema = z.object({
 });
 
 // GET /api/connectors/[id] - Get a single connector
-export async function GET(
+export const GET = withOrganizationAuth(async (
   request: Request,
+  authContext: OrganizationAuthContext,
   context: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await context.params;
-    const connectorResult = await db.select().from(connectors).where(eq(connectors.id, id));
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    const connectorResult = await orgDb.connectors.findById(id);
     
     if (!connectorResult.length) {
       return NextResponse.json(
@@ -42,6 +43,7 @@ export async function GET(
       id: connector.id,
       category: connector.category,
       name: connector.name,
+      organizationId: connector.organizationId,
       createdAt: connector.createdAt,
       eventsEnabled: connector.eventsEnabled,
       config: config,
@@ -55,15 +57,17 @@ export async function GET(
       { status: 500 }
     );
   }
-}
+});
 
 // PUT /api/connectors/[id] - Update a connector
-export async function PUT(
+export const PUT = withOrganizationAuth(async (
   request: Request,
+  authContext: OrganizationAuthContext,
   context: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await context.params;
+    const orgDb = createOrgScopedDb(authContext.organizationId);
     const body = await request.json();
     
     // Validate input
@@ -76,7 +80,7 @@ export async function PUT(
     }
     
     // Check if connector exists
-    const existingConnectorResult = await db.select().from(connectors).where(eq(connectors.id, id));
+    const existingConnectorResult = await orgDb.connectors.findById(id);
     if (!existingConnectorResult.length) {
       return NextResponse.json(
         { success: false, error: 'Connector not found' },
@@ -165,11 +169,7 @@ export async function PUT(
     updateData.cfg_enc = JSON.stringify(updatedConfig);
     
     // Update the connector in the database
-    const updatedConnectorResult = await db
-      .update(connectors)
-      .set(updateData)
-      .where(eq(connectors.id, id))
-      .returning();
+    const updatedConnectorResult = await orgDb.connectors.update(id, updateData);
     
     const updatedDbConnector = updatedConnectorResult[0];
 
@@ -178,6 +178,7 @@ export async function PUT(
       id: updatedDbConnector.id,
       category: updatedDbConnector.category,
       name: updatedDbConnector.name,
+      organizationId: updatedDbConnector.organizationId,
       createdAt: updatedDbConnector.createdAt,
       eventsEnabled: updatedDbConnector.eventsEnabled,
       config: updatedConfig,
@@ -192,18 +193,20 @@ export async function PUT(
       { status: 500 }
     );
   }
-}
+});
 
 // DELETE /api/connectors/[id] - Delete a connector
-export async function DELETE(
+export const DELETE = withOrganizationAuth(async (
   request: Request,
+  authContext: OrganizationAuthContext,
   context: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await context.params;
+    const orgDb = createOrgScopedDb(authContext.organizationId);
     
     // Check if connector exists
-    const existingConnector = await db.select().from(connectors).where(eq(connectors.id, id));
+    const existingConnector = await orgDb.connectors.findById(id);
     if (!existingConnector.length) {
       return NextResponse.json(
         { success: false, error: 'Connector not found' },
@@ -212,7 +215,7 @@ export async function DELETE(
     }
     
     // Delete the connector
-    await db.delete(connectors).where(eq(connectors.id, id));
+    await orgDb.connectors.delete(id);
     
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -223,4 +226,4 @@ export async function DELETE(
       { status: 500 }
     );
   }
-} 
+}); 

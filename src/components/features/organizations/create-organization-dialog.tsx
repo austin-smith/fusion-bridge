@@ -26,6 +26,7 @@ import { Plus } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { OrganizationLogoSelector } from './organization-logo-selector';
 
 const organizationSchema = z.object({
   name: z.string().min(1, 'Organization name is required').max(100, 'Name too long'),
@@ -34,7 +35,7 @@ const organizationSchema = z.object({
     .min(1, 'Slug is required')
     .max(50, 'Slug too long')
     .regex(/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens'),
-  logo: z.string().url('Must be a valid URL').optional().or(z.literal('')),
+  logo: z.string().optional().nullable(),
 });
 
 export function CreateOrganizationDialog() {
@@ -47,7 +48,7 @@ export function CreateOrganizationDialog() {
     defaultValues: {
       name: '',
       slug: '',
-      logo: '',
+      logo: undefined, // No default, URL tab is now default
     },
   });
 
@@ -56,7 +57,7 @@ export function CreateOrganizationDialog() {
     try {
       const organization = await createOrganization({
         ...data,
-        logo: data.logo || undefined, // Convert empty string to undefined
+        logo: data.logo || undefined,
       });
       
       if (organization) {
@@ -90,7 +91,7 @@ export function CreateOrganizationDialog() {
           Create Organization
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[525px]">
         <DialogHeader>
           <DialogTitle>Create Organization</DialogTitle>
           <DialogDescription>
@@ -146,13 +147,12 @@ export function CreateOrganizationDialog() {
               name="logo"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Logo URL (Optional)</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="https://example.com/logo.png" type="url" />
+                    <OrganizationLogoSelector 
+                      value={field.value} 
+                      onChange={field.onChange}
+                    />
                   </FormControl>
-                  <FormDescription>
-                    Optional logo image URL for your organization.
-                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

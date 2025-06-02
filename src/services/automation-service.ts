@@ -2,7 +2,7 @@ import 'server-only';
 
 import { db } from '@/data/db';
 import { automations, connectors, devices, cameraAssociations, areas, areaDevices, locations, automationExecutions, automationActionExecutions } from '@/data/db/schema';
-import { eq, and, inArray, or } from 'drizzle-orm';
+import { eq, and, inArray, or, isNotNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
 import * as piko from '@/services/drivers/piko'; // Assuming Piko driver functions are here
@@ -30,6 +30,8 @@ import { CronExpressionParser } from 'cron-parser'; // Using named import as per
 import { formatInTimeZone } from 'date-fns-tz'; // For formatting time in specific timezone
 import { automationAuditService, AutomationAuditService } from '@/services/automation-audit-service';
 import { ExecutionStatus, ActionExecutionStatus } from '@/lib/automation-audit-types';
+import { OrganizationAutomationContext } from '@/services/automation-execution-context';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db'; // Import the factory function
 
 // Helper for exhaustive checks
 function assertNever(value: never, message: string = "Unhandled discriminated union member"): never {
@@ -112,7 +114,8 @@ function resolvePath(obj: any, path: string): any {
 // --- End NEW ---
 
 /**
- * Processes a standardized event against connector-agnostic automation rules.
+ * NEW: Organization-scoped event processing
+ * Processes a standardized event using the organization-scoped automation context.
  * @param stdEvent The incoming StandardizedEvent object.
  */
 export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
@@ -120,617 +123,73 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
     console.log(`[Automation Service] Processing event: ${stdEvent.type} (${stdEvent.category}) for device ${stdEvent.deviceId} from connector ${stdEvent.connectorId}`);
 
     try {
-        // Fetch all enabled automations
-        const allEnabledAutomations = await db.query.automations.findMany({
-            where: eq(automations.enabled, true),
+        // Get the organization ID from the event's connector
+        const connectorRecord = await db.query.connectors.findFirst({
+            where: eq(connectors.id, stdEvent.connectorId),
+            columns: { organizationId: true }
         });
 
-        if (allEnabledAutomations.length === 0) {
-            console.log(`[Automation Service] No enabled automations found.`);
+        if (!connectorRecord || !connectorRecord.organizationId) {
+            console.warn(`[Automation Service] Cannot process event ${stdEvent.eventId}: connector ${stdEvent.connectorId} not found or has no organization`);
             return;
         }
 
-        console.log(`[Automation Service] Evaluating ${allEnabledAutomations.length} enabled automation(s) against event ${stdEvent.eventId}`);
+        const organizationId = connectorRecord.organizationId;
+        console.log(`[Automation Service] Processing event ${stdEvent.eventId} within organization ${organizationId}`);
 
-        // --- Fetch Source Device details (including area and location) ---
-        let sourceDeviceContext: SourceDeviceContext | null = null; // Define outside try block
+        // Use organization-scoped automation context
+        const orgDb = createOrgScopedDb(organizationId);
+        const automationContext = new OrganizationAutomationContext(organizationId, orgDb);
+        await automationContext.processEvent(stdEvent);
 
-        if (stdEvent.deviceId && stdEvent.connectorId) {
-            try {
-                const deviceRecord = await db.query.devices.findFirst({
-                    where: and(
-                        eq(devices.connectorId, stdEvent.connectorId),
-                        eq(devices.deviceId, stdEvent.deviceId)
-                    ),
-                    columns: { id: true, name: true, standardizedDeviceType: true, standardizedDeviceSubtype: true },
-                    // --- Eager load area and its location --- 
-                    with: {
-                        areaDevices: {
-                            with: {
-                                area: {
-                                    with: {
-                                        location: true, // Include location data
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-                
-                if (deviceRecord && deviceRecord.areaDevices.length > 0) {
-                     // Assuming one area per device based on previous decision
-                    const areaInfo = deviceRecord.areaDevices[0].area;
-                    sourceDeviceContext = {
-                        id: deviceRecord.id,
-                        name: deviceRecord.name,
-                        standardizedDeviceType: deviceRecord.standardizedDeviceType,
-                        standardizedDeviceSubtype: deviceRecord.standardizedDeviceSubtype,
-                        area: areaInfo, // Includes location nested inside
-                    };
-                } else if (deviceRecord) {
-                     // Device found, but no area assigned
-                     sourceDeviceContext = { 
-                        id: deviceRecord.id, 
-                        name: deviceRecord.name, 
-                        standardizedDeviceType: deviceRecord.standardizedDeviceType,
-                        standardizedDeviceSubtype: deviceRecord.standardizedDeviceSubtype,
-                        area: null 
-                    }; 
-                } else {
-                    console.warn(`[Automation Service] Could not find internal device record for external device ${stdEvent.deviceId}`);
-                }
-            } catch (deviceFetchError) {
-                 console.error(`[Automation Service] Error fetching device details for ${stdEvent.deviceId}:`, deviceFetchError);
-            }
-        }
-        // --- End Fetch Source Device ---
-
-        for (const rule of allEnabledAutomations) {
-            if (rule.locationScopeId) {
-                const eventLocationId = sourceDeviceContext?.area?.location?.id;
-                if (rule.locationScopeId !== eventLocationId) {
-                    console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Event from location '${eventLocationId || 'unknown'}' is outside rule's scope '${rule.locationScopeId}'. Skipping.`);
-                    continue; 
-                }
-                console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Event location '${eventLocationId}' matches rule scope '${rule.locationScopeId}'. Proceeding.`);
-            }
-
-            let ruleConfig: AutomationConfig;
-            
-            try {
-                // Parse the config using the UPDATED schema
-                const parseResult = AutomationConfigSchema.safeParse(rule.configJson);
-                if (!parseResult.success) {
-                    console.error(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Failed to parse configJson - ${parseResult.error.message}. Skipping.`);
-                    continue;
-                }
-                ruleConfig = parseResult.data;
-
-                // THIS FUNCTION ONLY HANDLES EVENT TRIGGERS
-                if (ruleConfig.trigger.type !== AutomationTriggerType.EVENT) {
-                    // console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Skipping in processEvent as it\'s not an event-triggered rule (type: ${ruleConfig.trigger.type}).`);
-                    continue;
-                }
-
-                // --- Construct Facts for State Conditions ---
-                const payload = stdEvent.payload as any; // Cast once for easier access
-                const fullFacts: Record<string, any> = { // Keep the fully populated object for logging/tokens
-                    event: {
-                        category: stdEvent.category ?? null,
-                        type: stdEvent.type ?? null,
-                        subtype: stdEvent.subtype ?? null,
-                        displayState: payload?.displayState ?? null,
-                        statusType: payload?.statusType ?? null,
-                        rawStateValue: payload?.rawStateValue ?? null,
-                        originalEventType: payload?.originalEventType ?? null,
-                        timestamp: stdEvent.timestamp.toISOString(),
-                        timestampMs: stdEvent.timestamp.getTime(),
-                        id: stdEvent.eventId, // eventId specifically for event triggers
-                    },
-                    device: {
-                        id: sourceDeviceContext?.id ?? null,
-                        externalId: stdEvent.deviceId ?? null,
-                        name: sourceDeviceContext?.name ?? null,
-                        type: sourceDeviceContext?.standardizedDeviceType ?? null,
-                        subtype: sourceDeviceContext?.standardizedDeviceSubtype ?? null,
-                    },
-                    connector: {
-                        id: stdEvent.connectorId ?? null
-                    },
-                    area: sourceDeviceContext?.area ? {
-                        id: sourceDeviceContext.area.id ?? null,
-                        name: sourceDeviceContext.area.name ?? null,
-                        armedState: sourceDeviceContext.area.armedState ?? null,
-                    } : null,
-                    location: sourceDeviceContext?.area?.location ? {
-                        id: sourceDeviceContext.area.location.id ?? null, name: sourceDeviceContext.area.location.name ?? null,
-                        timeZone: sourceDeviceContext.area.location.timeZone ?? null, // Corrected: timeZone
-                    } : null,
-                };
-                
-                // --- Filter facts ONLY for the engine.run call ---
-                const factsForEngine: Record<string, any> = {
-                    event: fullFacts.event,
-                    device: fullFacts.device,
-                    connector: fullFacts.connector,
-                };
-                 if (fullFacts.area !== null) {
-                     factsForEngine.area = fullFacts.area;
-                 }
-                 if (fullFacts.location !== null) {
-                     factsForEngine.location = fullFacts.location;
-                 }
-
-                 // --- NEW: Flatten facts for engine --- 
-                 const requiredPaths = extractReferencedFactPaths(ruleConfig.trigger.conditions);
-                 const minimalFactsForEngine: Record<string, any> = {};
-                 requiredPaths.forEach(path => {
-                     const value = resolvePath(fullFacts, path);
-                     // Always add the path, setting value to null if lookup failed
-                     minimalFactsForEngine[path] = (value === undefined ? null : value);
-                 });
-                 // --- End NEW --- 
-
-                // --- Evaluate State Conditions (json-rules-engine) ---
-                const engine = new Engine();
-                
-                engine.addRule({
-                    conditions: ruleConfig.trigger.conditions as any, 
-                    event: { type: 'ruleMatched' }
-                });
-
-                let stateConditionsMet = false;
-                try {
-                     // --- Pass the MINIMAL facts object ---
-                     const { events: engineEvents } = await engine.run(minimalFactsForEngine);
-                     if (engineEvents.length > 0) {
-                         stateConditionsMet = true;
-                         console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): State conditions MET.`);
-                     } else {
-                         console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): State conditions NOT MET.`);
-                     }
-                } catch (engineError) {
-                     console.error(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Error running json-rules-engine for event trigger:`, engineError);
-                     continue; // Skip rule on engine error
-                }
-
-                // --- Evaluate Temporal Conditions (Only if State Conditions Passed) ---
-                let temporalConditionsMet = true; // Default to true if no temporal conditions exist
-                if (stateConditionsMet && ruleConfig.temporalConditions && ruleConfig.temporalConditions.length > 0) {
-                    console.log(`[Rule ${rule.id}] Evaluating ${ruleConfig.temporalConditions.length} temporal condition(s) for event trigger...`);
-                    temporalConditionsMet = false; // Assume false until proven true by ALL conditions passing
-                    
-                    let allTemporalPassed = true; // Flag to track if all temporal checks pass
-                    for (const condition of ruleConfig.temporalConditions) {
-                        // Pass stdEvent and sourceDeviceContext for event-triggered temporal checks
-                        const conditionMet = await evaluateTemporalCondition(stdEvent, condition, sourceDeviceContext, stdEvent.timestamp);
-                        if (!conditionMet) {
-                            console.log(`[Rule ${rule.id}] Temporal condition ID ${condition.id} (Type: ${condition.type}) NOT MET.`);
-                            allTemporalPassed = false;
-                            break; // Stop checking temporal conditions for this rule
-                        } else {
-                            console.log(`[Rule ${rule.id}] Temporal condition ID ${condition.id} (Type: ${condition.type}) MET.`);
-                        }
-                    } 
-                    temporalConditionsMet = allTemporalPassed; // Final result of temporal checks
-                } else if (stateConditionsMet) {
-                    console.log(`[Rule ${rule.id}] No temporal conditions to evaluate for event trigger.`);
-                }
-
-                // --- Action Execution (Only if BOTH State and Temporal Conditions Passed) ---
-                if (stateConditionsMet && temporalConditionsMet) {
-                    console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): ALL conditions passed for event trigger. Proceeding to execute ${ruleConfig.actions.length} action(s).`);
-
-                    if (!ruleConfig.actions || ruleConfig.actions.length === 0) {
-                        console.warn(`[Automation Service] Rule ID ${rule.id}: Skipping action execution - No actions defined despite passing conditions.`);
-                        continue;
-                    }
-
-                    // --- ONLY NOW create audit tracking since we're actually executing ---
-                    const executionStartTime = Date.now();
-                    const auditExecution = {
-                        id: crypto.randomUUID(),
-                        automationId: rule.id,
-                        triggerEventId: stdEvent.eventId,
-                        triggerContext: {
-                            timestamp: stdEvent.timestamp.toISOString(),
-                            eventCategory: stdEvent.category,
-                            eventType: stdEvent.type,
-                        },
-                        stateConditionsMet,
-                        temporalConditionsMet: ruleConfig.temporalConditions && ruleConfig.temporalConditions.length > 0 ? temporalConditionsMet : null,
-                        actions: [] as Array<{
-                            actionIndex: number;
-                            actionType: string;
-                            actionParams: any;
-                            status: 'success' | 'failure';
-                            errorMessage?: string;
-                            executionDurationMs: number;
-                        }>,
-                    };
-
-                    // --- Use the original fullFacts for token replacement context ---
-                    for (let actionIndex = 0; actionIndex < ruleConfig.actions.length; actionIndex++) {
-                        const action = ruleConfig.actions[actionIndex];
-                        const actionStartTime = Date.now();
-                        
-                        try {
-                            await executeActionWithRetry(rule, action, stdEvent, fullFacts, null, actionIndex); // Pass null for executionId to skip individual tracking
-                            auditExecution.actions.push({
-                                actionIndex,
-                                actionType: action.type,
-                                actionParams: resolveTokens(action.params, stdEvent, fullFacts) || {},
-                                status: 'success',
-                                executionDurationMs: Date.now() - actionStartTime,
-                            });
-                        } catch (actionError) {
-                            console.error(`[Automation Service] Action ${actionIndex} failed for rule ${rule.id}:`, actionError);
-                            auditExecution.actions.push({
-                                actionIndex,
-                                actionType: action.type,
-                                actionParams: resolveTokens(action.params, stdEvent, fullFacts) || {},
-                                status: 'failure',
-                                errorMessage: actionError instanceof Error ? actionError.message : String(actionError),
-                                executionDurationMs: Date.now() - actionStartTime,
-                            });
-                        }
-                    }
-
-                    // --- Insert Complete Audit Trail ---
-                    try {
-                        const executionDurationMs = Date.now() - executionStartTime;
-                        const successfulActions = auditExecution.actions.filter(a => a.status === 'success').length;
-                        const failedActions = auditExecution.actions.filter(a => a.status === 'failure').length;
-                        const finalStatus = AutomationAuditService.determineExecutionStatus(
-                            auditExecution.actions.length,
-                            successfulActions,
-                            failedActions
-                        );
-                        
-                        await db.transaction(async (tx) => {
-                            // Insert execution record
-                            await tx.insert(automationExecutions).values({
-                                id: auditExecution.id,
-                                automationId: auditExecution.automationId,
-                                triggerTimestamp: new Date(),
-                                triggerEventId: auditExecution.triggerEventId,
-                                triggerContext: auditExecution.triggerContext,
-                                stateConditionsMet: auditExecution.stateConditionsMet,
-                                temporalConditionsMet: auditExecution.temporalConditionsMet,
-                                executionStatus: finalStatus,
-                                executionDurationMs,
-                                totalActions: auditExecution.actions.length,
-                                successfulActions,
-                                failedActions,
-                            });
-                            
-                            // Insert action execution records
-                            if (auditExecution.actions.length > 0) {
-                                const actionInserts = auditExecution.actions.map(action => ({
-                                    id: crypto.randomUUID(),
-                                    executionId: auditExecution.id,
-                                    actionIndex: action.actionIndex,
-                                    actionType: action.actionType,
-                                    actionParams: action.actionParams,
-                                    status: action.status,
-                                    errorMessage: action.errorMessage || null,
-                                    retryCount: 0,
-                                    executionDurationMs: action.executionDurationMs,
-                                    resultData: null,
-                                    startedAt: new Date(executionStartTime + (action.actionIndex * 10)),
-                                    completedAt: new Date(executionStartTime + action.executionDurationMs),
-                                }));
-                                
-                                await tx.insert(automationActionExecutions).values(actionInserts);
-                            }
-                        });
-                    } catch (auditError) {
-                        console.error(`[Automation Service] Failed to insert audit trail for rule ${rule.id}:`, auditError);
-                    }
-                } else {
-                     // Log why actions weren't executed
-                     if (!stateConditionsMet) {
-                         // Already logged above
-                     } else if (!temporalConditionsMet) {
-                          console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Did not execute actions for event trigger because not all temporal conditions were met.`);
-                     }
-                     // NO AUDIT RECORD - conditions not met, so no execution occurred
-                } 
-                // --- End Action Execution ---
-
-            } catch (ruleProcessingError) {
-                console.error(`[Automation Service] Error processing rule ${rule.id} (${rule.name}) for event trigger:`, ruleProcessingError);
-                // Continue processing other rules even if this one failed
-                continue;
-            }
-        } // End loop through rules
     } catch (error) {
         console.error('[Automation Service] Top-level error processing event:', error);
     }
 }
 
 /**
- * Processes automations triggered by a schedule.
+ * NEW: Organization-scoped scheduled automation processing
+ * Processes scheduled automations for all organizations.
  * @param currentTime The current time to check schedules against.
  */
 export async function processScheduledAutomations(currentTime: Date): Promise<void> {
     console.log(`[Automation Service] ENTERED processScheduledAutomations at ${currentTime.toISOString()}`);
 
     try {
-        // Fetch ONLY enabled automations that have SCHEDULED triggers
-        const scheduledAutomations = await db.query.automations.findMany({
-            where: eq(automations.enabled, true),
-            with: {
-                location: true,
-            }
-        });
+        // Get all organizations that have automations
+        const organizationsWithAutomations = await db
+            .selectDistinct({ organizationId: automations.organizationId })
+            .from(automations)
+            .where(and(
+                eq(automations.enabled, true),
+                isNotNull(automations.organizationId)
+            ));
 
-        // Filter to only scheduled automations
-        const actualScheduledAutomations = scheduledAutomations.filter(automation => {
-            try {
-                const parseResult = AutomationConfigSchema.safeParse(automation.configJson);
-                if (!parseResult.success) {
-                    return false;
-                }
-                return parseResult.data.trigger.type === AutomationTriggerType.SCHEDULED;
-            } catch {
-                return false;
-            }
-        });
-
-        if (actualScheduledAutomations.length === 0) {
-            console.log(`[Automation Service] No enabled scheduled automations found.`);
+        if (organizationsWithAutomations.length === 0) {
+            console.log(`[Automation Service] No organizations with enabled automations found.`);
             return;
         }
 
-        console.log(`[Automation Service] Evaluating ${actualScheduledAutomations.length} scheduled automation(s) for execution.`);
+        console.log(`[Automation Service] Processing scheduled automations for ${organizationsWithAutomations.length} organization(s)`);
 
-        for (const rule of actualScheduledAutomations) {
-            let ruleConfig: AutomationConfig;
-            
-            try {
-                const parseResult = AutomationConfigSchema.safeParse(rule.configJson);
-                if (!parseResult.success) {
-                    console.error(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Failed to parse configJson for scheduled processing - ${parseResult.error.message}. Skipping.`);
-                    continue;
-                }
-                ruleConfig = parseResult.data;
-
-                // We already filtered for scheduled automations, so no need to check again
-                const scheduledTrigger = ruleConfig.trigger as { type: 'scheduled'; cronExpression: string; timeZone?: string };
-
-                const { cronExpression } = scheduledTrigger;
-                // Initialize effectiveTimeZone with configuredTimeZone, then override if location-scoped
-                const { timeZone: configuredTimeZoneFromRule } = scheduledTrigger; // Use const and new name to avoid conflict
-                let effectiveTimeZone: string | undefined = configuredTimeZoneFromRule;
-                let locationForContext: (typeof locations.$inferSelect) | null = null;
-
-                if (rule.locationScopeId) {
-                    const scopedLocation = rule.location as (typeof locations.$inferSelect & { timeZone?: string | null }) | undefined;
-                    if (scopedLocation?.timeZone) {
-                        effectiveTimeZone = scopedLocation.timeZone;
-                        locationForContext = scopedLocation;
-                        if (configuredTimeZoneFromRule && configuredTimeZoneFromRule !== effectiveTimeZone) {
-                            console.warn(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Configured timezone \'${configuredTimeZoneFromRule}\' overridden by location scope\'s timezone \'${effectiveTimeZone}\'.`);
-                        }
-                    } else if (scopedLocation) {
-                         console.warn(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Scoped to location ${rule.locationScopeId}, but location has no timeZone. Using rule\'s configured timezone: \'${configuredTimeZoneFromRule}\'.`);
-                         // effectiveTimeZone is already configuredTimeZoneFromRule, so no change needed here
-                    } else {
-                        console.warn(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Scoped to location ${rule.locationScopeId}, but location data could not be loaded. Using rule\'s configured timezone: \'${configuredTimeZoneFromRule}\'.`);
-                        // effectiveTimeZone is already configuredTimeZoneFromRule
-                    }
-                } 
-                // If not location scoped, effectiveTimeZone remains configuredTimeZoneFromRule or undefined if not set
-
-                if (!effectiveTimeZone) {
-                    console.error(`[Automation Service] Rule ID ${rule.id} (${rule.name}): No effective timezone could be determined (not location-scoped and no timezone in rule config). Skipping schedule check.`);
-                    continue;
-                }
+        // Process scheduled automations for each organization in parallel
+        await Promise.allSettled(
+            organizationsWithAutomations.map(async ({ organizationId }) => {
+                if (!organizationId) return;
                 
-                if (!cronExpression) { // Should be caught by schema validation, but good to check
-                    console.error(`[Automation Service] Rule ID ${rule.id} (${rule.name}): CRON expression is missing. Skipping.`);
-                    continue;
-                }
-
-                let isDue = false;
                 try {
-                    // Using CronExpressionParser.parse as per user example text
-                    const interval = CronExpressionParser.parse(cronExpression, { 
-                        currentDate: currentTime,
-                        tz: effectiveTimeZone,
-                    });
-                    const lastDueTime = interval.prev().toDate(); // Corrected to use prev()
-
-                    // Check if this `lastDueTime` falls within the same minute as `currentTime`.
-                    isDue = lastDueTime.getFullYear() === currentTime.getFullYear() &&
-                            lastDueTime.getMonth() === currentTime.getMonth() &&
-                            lastDueTime.getDate() === currentTime.getDate() &&
-                            lastDueTime.getHours() === currentTime.getHours() &&
-                            lastDueTime.getMinutes() === currentTime.getMinutes();
-                    
-                } catch (err) {
-                    console.error(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Failed to parse CRON expression "${cronExpression}" or determine schedule with timezone "${effectiveTimeZone}":`, err);
-                    continue; 
+                    console.log(`[Automation Service] Processing scheduled automations for organization ${organizationId}`);
+                    const orgDb = createOrgScopedDb(organizationId);
+                    const automationContext = new OrganizationAutomationContext(organizationId, orgDb);
+                    await automationContext.processScheduledAutomations(currentTime);
+                } catch (orgError) {
+                    console.error(`[Automation Service] Error processing scheduled automations for organization ${organizationId}:`, orgError);
                 }
+            })
+        );
 
-                if (!isDue) {
-                    // console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}) is NOT DUE at ${currentTime.toISOString()} for cron "${cronExpression}" in TZ ${effectiveTimeZone}.`);
-                    continue; // SKIP - no audit record should be created
-                }
-                
-                console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}) IS DUE at ${currentTime.toISOString()} for cron "${cronExpression}" in TZ ${effectiveTimeZone}.`);
-
-                if (!ruleConfig.actions || ruleConfig.actions.length === 0) {
-                    console.warn(`[Automation Service] Rule ID ${rule.id}: No actions defined for scheduled trigger.`);
-                    continue; // SKIP - no audit record for automations with no actions
-                }
-
-                // ONLY create audit record if we're actually going to execute actions
-                const fullFacts: Record<string, any> = {
-                    schedule: {
-                        cronExpression: cronExpression,
-                        timeZone: effectiveTimeZone,
-                        triggeredAtUTC: currentTime.toISOString(),
-                        triggeredAtLocal: formatInTimeZone(currentTime, effectiveTimeZone, 'yyyy-MM-dd HH:mm:ssXXX'),
-                        triggeredAtMs: currentTime.getTime(),
-                    },
-                    location: locationForContext ? {
-                        id: locationForContext.id,
-                        name: locationForContext.name,
-                        timeZone: locationForContext.timeZone,
-                    } : (rule.locationScopeId ? { id: rule.locationScopeId, name: "Unknown (not loaded)", timeZone: effectiveTimeZone } : null),
-                    area: null, 
-                    device: null, 
-                    event: null, 
-                    connector: null, 
-                };
-                
-                console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Scheduled trigger is due. Proceeding to execute actions.`);
-
-                // --- ONLY NOW create audit tracking since we're actually executing ---
-                const executionStartTime = Date.now();
-                const auditExecution = {
-                    id: crypto.randomUUID(),
-                    automationId: rule.id,
-                    triggerEventId: null, // No event for scheduled triggers
-                    triggerContext: {
-                        timestamp: currentTime.toISOString(),
-                        triggerType: 'scheduled',
-                        cronExpression: cronExpression,
-                        timeZone: effectiveTimeZone,
-                    },
-                    stateConditionsMet: null as boolean | null, // N/A for scheduled
-                    temporalConditionsMet: null as boolean | null, // N/A for scheduled
-                    actions: [] as Array<{
-                        actionIndex: number;
-                        actionType: string;
-                        actionParams: any;
-                        status: 'success' | 'failure';
-                        errorMessage?: string;
-                        executionDurationMs: number;
-                    }>,
-                };
-
-                for (let actionIndex = 0; actionIndex < ruleConfig.actions.length; actionIndex++) {
-                    const action = ruleConfig.actions[actionIndex];
-                    const actionStartTime = Date.now();
-                    
-                    if (action.type !== AutomationActionType.ARM_AREA && action.type !== AutomationActionType.DISARM_AREA) {
-                        console.warn(`[Automation Service] Rule ID ${rule.id} (${rule.name}), Action Type \'${action.type}\': This action type is not currently supported for scheduled triggers. Only ARM_AREA and DISARM_AREA are allowed. Skipping this action.`);
-                        auditExecution.actions.push({
-                            actionIndex,
-                            actionType: action.type,
-                            actionParams: resolveTokens(action.params, null, fullFacts) || {},
-                            status: 'failure',
-                            errorMessage: 'Action type not supported for scheduled triggers',
-                            executionDurationMs: Date.now() - actionStartTime,
-                        });
-                        continue; 
-                    }
-                    
-                    console.log(`[Automation Service] Rule ID ${rule.id} (${rule.name}): Executing allowed action type \'${action.type}\' for scheduled trigger.`);
-                    
-                    try {
-                        await executeActionWithRetry(rule, action, null, fullFacts, null, actionIndex); // Pass null for executionId to skip individual tracking
-                        auditExecution.actions.push({
-                            actionIndex,
-                            actionType: action.type,
-                            actionParams: resolveTokens(action.params, null, fullFacts) || {},
-                            status: 'success',
-                            executionDurationMs: Date.now() - actionStartTime,
-                        });
-                    } catch (actionError) {
-                        console.error(`[Automation Service] Action ${actionIndex} failed for scheduled rule ${rule.id}:`, actionError);
-                        auditExecution.actions.push({
-                            actionIndex,
-                            actionType: action.type,
-                            actionParams: resolveTokens(action.params, null, fullFacts) || {},
-                            status: 'failure',
-                            errorMessage: actionError instanceof Error ? actionError.message : String(actionError),
-                            executionDurationMs: Date.now() - actionStartTime,
-                        });
-                    }
-                }
-
-                // --- Insert Complete Audit Trail ---
-                try {
-                    const executionDurationMs = Date.now() - executionStartTime;
-                    const successfulActions = auditExecution.actions.filter(a => a.status === 'success').length;
-                    const failedActions = auditExecution.actions.filter(a => a.status === 'failure').length;
-                    const finalStatus = AutomationAuditService.determineExecutionStatus(
-                        auditExecution.actions.length,
-                        successfulActions,
-                        failedActions
-                    );
-                    
-                    await db.transaction(async (tx) => {
-                        // Insert execution record
-                        await tx.insert(automationExecutions).values({
-                            id: auditExecution.id,
-                            automationId: auditExecution.automationId,
-                            triggerTimestamp: new Date(),
-                            triggerEventId: auditExecution.triggerEventId,
-                            triggerContext: auditExecution.triggerContext,
-                            stateConditionsMet: auditExecution.stateConditionsMet,
-                            temporalConditionsMet: auditExecution.temporalConditionsMet,
-                            executionStatus: finalStatus,
-                            executionDurationMs,
-                            totalActions: auditExecution.actions.length,
-                            successfulActions,
-                            failedActions,
-                        });
-                        
-                        // Insert action execution records
-                        if (auditExecution.actions.length > 0) {
-                            const actionInserts = auditExecution.actions.map(action => ({
-                                id: crypto.randomUUID(),
-                                executionId: auditExecution.id,
-                                actionIndex: action.actionIndex,
-                                actionType: action.actionType,
-                                actionParams: action.actionParams,
-                                status: action.status,
-                                errorMessage: action.errorMessage || null,
-                                retryCount: 0,
-                                executionDurationMs: action.executionDurationMs,
-                                resultData: null,
-                                startedAt: new Date(executionStartTime + (action.actionIndex * 10)),
-                                completedAt: new Date(executionStartTime + action.executionDurationMs),
-                            }));
-                            
-                            await tx.insert(automationActionExecutions).values(actionInserts);
-                        }
-                    });
-                } catch (auditError) {
-                    console.error(`[Automation Service] Failed to insert audit trail for scheduled rule ${rule.id}:`, auditError);
-                }
-                // ---- End of simplified action execution block -----
-
-            } catch (ruleProcessingError) {
-                console.error(`[Automation Service] Error processing rule ${rule.id} (${rule.name}) for scheduled trigger:`, ruleProcessingError);
-            }
-        } // End loop
     } catch (error) {
-        console.error(`[Automation Service] Top-level error processing scheduled automations. Error type: ${typeof error}`);
-        if (error instanceof Error) {
-            console.error(`[Automation Service] Error message: ${error.message}`);
-            console.error(`[Automation Service] Error stack: ${error.stack}`);
-            // Log the full error object as well, as it might contain additional properties
-            console.error(`[Automation Service] Full error object (if Error instance):`, error);
-        } else {
-            // Attempt to stringify for plain objects, with a fallback for circular structures or other issues
-            try {
-                console.error('[Automation Service] Raw error object (JSON.stringify):', JSON.stringify(error, null, 2));
-            } catch (stringifyError) {
-                console.error('[Automation Service] Could not stringify raw error object. Error during stringify:', stringifyError);
-                // Log the raw error directly if stringification fails
-                console.error('[Automation Service] Raw error object (direct log):', error);
-            }
-        }
-        // Fallback for primitive types or null, though less likely to result in "{}"
-        if (typeof error !== 'object' || error === null) {
-             console.error('[Automation Service] Primitive error value:', error);
-        }
+        console.error(`[Automation Service] Top-level error processing scheduled automations:`, error);
     }
 }
 

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useFusionStore, type Organization } from '@/stores/store';
 import { type ColumnDef, createColumnHelper } from '@tanstack/react-table';
-import { MoreHorizontal, Building2, Users, Edit, Trash2, ArrowUpDown } from 'lucide-react';
+import { MoreHorizontal, Building2, Users, Edit, Trash2, ArrowUpDown, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -30,6 +30,9 @@ import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateOrganizationDialog } from '@/components/features/organizations/create-organization-dialog';
 import { EditOrganizationDialog } from '@/components/features/organizations/edit-organization-dialog';
+import { OrganizationLocationsDialog } from '@/components/features/organizations/organization-locations-dialog';
+import { OrganizationLogoDisplay } from '@/components/features/organizations/organization-logo-selector';
+import { useRouter } from 'next/navigation';
 
 // --- Column Helper ---
 const columnHelper = createColumnHelper<Organization>();
@@ -53,16 +56,8 @@ export const columns: ColumnDef<Organization>[] = [
     cell: ({ row }) => {
       const org = row.original;
       return (
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted shrink-0">
-          {org.logo ? (
-            <img 
-              src={org.logo} 
-              alt={`${org.name} logo`}
-              className="h-8 w-8 rounded-md object-cover"
-            />
-          ) : (
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          )}
+        <div className="flex items-center justify-center w-10 h-10">
+          <OrganizationLogoDisplay logo={org.logo} className="h-8 w-8" size="default" />
         </div>
       );
     },
@@ -107,21 +102,6 @@ export const columns: ColumnDef<Organization>[] = [
     size: 120,
   },
   {
-    id: "members",
-    header: "Members",
-    cell: () => {
-      // TODO: Add member count when available
-      return (
-        <div className="flex items-center gap-1 text-sm text-muted-foreground">
-          <Users className="h-4 w-4" />
-          <span>-</span>
-        </div>
-      );
-    },
-    enableSorting: false,
-    size: 100,
-  },
-  {
     id: "actions",
     cell: ({ row }) => <OrganizationActionsCell organization={row.original} />,
     enableSorting: false,
@@ -140,6 +120,8 @@ function OrganizationActionsCell({ organization }: OrganizationActionsCellProps)
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isLocationsDialogOpen, setIsLocationsDialogOpen] = useState(false);
+  const router = useRouter();
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -171,6 +153,14 @@ function OrganizationActionsCell({ organization }: OrganizationActionsCellProps)
             <DropdownMenuItem onSelect={() => setIsEditDialogOpen(true)}>
               <Edit className="mr-2 h-4 w-4" />
               Edit Organization
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => router.push(`/organizations/${organization.slug}/members`)}>
+              <Users className="mr-2 h-4 w-4" />
+              Manage Members
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setIsLocationsDialogOpen(true)}>
+              <MapPin className="mr-2 h-4 w-4" />
+              View Locations
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <AlertDialogTrigger asChild>
@@ -209,6 +199,12 @@ function OrganizationActionsCell({ organization }: OrganizationActionsCellProps)
         open={isEditDialogOpen}
         onOpenChange={setIsEditDialogOpen}
       />
+
+      <OrganizationLocationsDialog
+        organization={organization}
+        open={isLocationsDialogOpen}
+        onOpenChange={setIsLocationsDialogOpen}
+      />
     </>
   );
 }
@@ -228,22 +224,45 @@ export function OrganizationsTable({ data }: OrganizationsTableProps) {
 export function OrganizationsTableSkeleton({ rowCount = 5 }: { rowCount?: number }) {
   return (
     <div className="rounded-md border">
-      <div className="h-12 border-b bg-muted/50 px-4 flex items-center">
-        <Skeleton className="h-4 w-[150px]" />
-      </div>
-      <div className="divide-y">
-        {[...Array(rowCount)].map((_, i) => (
-          <div key={i} className="flex items-center space-x-4 p-4">
-            <Skeleton className="h-8 w-8 rounded" />
-            <div className="space-y-2 flex-1">
-              <Skeleton className="h-4 w-[200px]" />
-              <Skeleton className="h-3 w-[120px]" />
+      {/* Table content using DataTable-like structure */}
+      <div className="w-full">
+        <div className="border-b">
+          {/* Header */}
+          <div className="flex items-center px-4 py-3">
+            <div className="w-[50px]" /> {/* Logo column */}
+            <div className="flex-1 px-4">
+              <Skeleton className="h-4 w-16" /> {/* Name header */}
             </div>
-            <Skeleton className="h-4 w-[80px]" />
-            <Skeleton className="h-4 w-[60px]" />
-            <Skeleton className="h-8 w-8 rounded" />
+            <div className="w-[120px] px-4">
+              <Skeleton className="h-4 w-20" /> {/* Created header */}
+            </div>
+            <div className="w-[50px]" /> {/* Actions column */}
           </div>
-        ))}
+        </div>
+        {/* Rows */}
+        <div className="divide-y">
+          {[...Array(rowCount)].map((_, i) => (
+            <div key={i} className="flex items-center px-4 py-3">
+              {/* Logo */}
+              <div className="w-[50px]">
+                <Skeleton className="h-8 w-8 rounded" />
+              </div>
+              {/* Name and slug */}
+              <div className="flex-1 px-4 space-y-1.5">
+                <Skeleton className="h-4 w-[180px]" />
+                <Skeleton className="h-3 w-[120px]" />
+              </div>
+              {/* Created date */}
+              <div className="w-[120px] px-4">
+                <Skeleton className="h-3 w-[80px]" />
+              </div>
+              {/* Actions */}
+              <div className="w-[50px] flex justify-center">
+                <Skeleton className="h-8 w-8 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

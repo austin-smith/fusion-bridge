@@ -16,7 +16,8 @@ export function OrganizationsTableLoader() {
     fetchOrganizations();
   }, [fetchOrganizations]);
 
-  if (isLoadingOrganizations) {
+  // Show skeleton while loading OR if we haven't loaded data yet (empty array and not explicitly loading)
+  if (isLoadingOrganizations || (organizations.length === 0 && !errorOrganizations)) {
     return <OrganizationsTableSkeleton />;
   }
 

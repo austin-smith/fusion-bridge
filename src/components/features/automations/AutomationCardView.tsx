@@ -53,6 +53,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 // Execution Details Modal
 import { ExecutionDetailsModal } from '@/components/features/automations/ExecutionDetailsModal';
 
+// Store
+import { useFusionStore } from '@/stores/store';
+
 // Types
 import type { AutomationConfig } from '@/lib/automation-schemas';
 import {
@@ -62,14 +65,15 @@ import {
 } from '@/lib/automation-types';
 import type { AutomationExecutionSummary } from '@/services/automation-audit-query-service';
 
-// Interface for API response
+// Interface for API response - Updated to match store types
 interface AutomationApiResponse {
   id: string;
   name: string;
   enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date; // Changed from string to Date to match store
+  updatedAt: Date; // Changed from string to Date to match store
   configJson: AutomationConfig | null;
+  organizationId: string; // Added to match store
   locationScopeId?: string | null;
   tags: string[];
 }
@@ -156,15 +160,28 @@ interface AutomationCardViewProps {
 
 // Main AutomationCardView Component
 export function AutomationCardView({ selectedLocationId, selectedTags = [] }: AutomationCardViewProps) {
-  const [automations, setAutomations] = useState<AutomationApiResponse[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [connectors, setConnectors] = useState<Connector[]>([]);
-  const [targetDevices, setTargetDevices] = useState<TargetDevice[]>([]);
-  // --- NEW: State for locations and areas ---
-  const [locations, setLocations] = useState<Location[]>([]);
-  const [areas, setAreas] = useState<Area[]>([]);
-  // --- END NEW ---
+  // Use store instead of local state
+  const {
+    automations,
+    isLoadingAutomations: loading,
+    errorAutomations: error,
+    fetchAutomations,
+    connectors,
+    allDevices,
+    locations,
+    areas,
+  } = useFusionStore();
+
+  // Transform allDevices to match TargetDevice interface
+  const targetDevices = React.useMemo(() => {
+    return allDevices.map(device => ({
+      id: device.id,
+      name: device.name || 'Unknown Device',
+      displayType: device.type || 'unknown',
+      iconName: 'device', // Default icon name
+    }));
+  }, [allDevices]);
+
   // --- NEW: State for last runs ---
   const [lastRuns, setLastRuns] = useState<Map<string, AutomationExecutionSummary>>(new Map());
   // --- END NEW ---
@@ -174,105 +191,6 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
   // --- END NEW ---
   const router = useRouter();
 
-  // Fetch automations function
-  const fetchAutomations = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch('/api/automations');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json() as AutomationApiResponse[];
-      // Sort automations by name alphabetically
-      const sortedData = data.sort((a, b) => a.name.localeCompare(b.name));
-      setAutomations(sortedData);
-    } catch (e) {
-      console.error('Failed to fetch automations:', e);
-      setError('Failed to load automations.');
-      toast.error('Failed to load automations.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // Fetch connectors and devices
-  const fetchConnectorsAndDevices = useCallback(async () => {
-    try {
-      // Fetch connectors
-      const connectorsResponse = await fetch('/api/connectors');
-      if (!connectorsResponse.ok) {
-        console.warn(`Failed to fetch connectors: ${connectorsResponse.status}`);
-        setConnectors([]);
-      } else {
-        const connectorsData = await connectorsResponse.json();
-        // Handle potential API response formats
-        const connectorsArray = Array.isArray(connectorsData) 
-          ? connectorsData 
-          : connectorsData.data && Array.isArray(connectorsData.data) 
-            ? connectorsData.data 
-            : [];
-        setConnectors(connectorsArray);
-      }
-
-      // Fetch devices
-      const devicesResponse = await fetch('/api/devices');
-      if (!devicesResponse.ok) {
-        console.warn(`Failed to fetch devices: ${devicesResponse.status}`);
-        setTargetDevices([]);
-      } else {
-        const devicesData = await devicesResponse.json();
-        const devicesArray = Array.isArray(devicesData)
-          ? devicesData
-          : devicesData.data && Array.isArray(devicesData.data)
-            ? devicesData.data
-            : [];
-        setTargetDevices(devicesArray);
-      }
-
-      // --- NEW: Fetch locations ---
-      const locationsResponse = await fetch('/api/locations');
-      if (!locationsResponse.ok) {
-        console.warn(`Failed to fetch locations: ${locationsResponse.status}`);
-        setLocations([]);
-      } else {
-        const locationsData = await locationsResponse.json();
-        const locationsArray = Array.isArray(locationsData)
-          ? locationsData
-          : locationsData.data && Array.isArray(locationsData.data)
-            ? locationsData.data
-            : [];
-        setLocations(locationsArray);
-      }
-      // --- END NEW ---
-
-      // --- NEW: Fetch areas ---
-      const areasResponse = await fetch('/api/areas');
-      if (!areasResponse.ok) {
-        console.warn(`Failed to fetch areas: ${areasResponse.status}`);
-        setAreas([]);
-      } else {
-        const areasData = await areasResponse.json();
-        const areasArray = Array.isArray(areasData)
-          ? areasData
-          : areasData.data && Array.isArray(areasData.data)
-            ? areasData.data
-            : [];
-        setAreas(areasArray);
-      }
-      // --- END NEW ---
-
-    } catch (e) {
-      console.error('Failed to fetch connectors, devices, locations, or areas:', e);
-      setConnectors([]);
-      setTargetDevices([]);
-      // --- NEW: Set empty arrays on error ---
-      setLocations([]);
-      setAreas([]);
-      // --- END NEW ---
-    }
-  }, []);
-
   // Fetch last runs for all automations
   const fetchLastRuns = useCallback(async () => {
     try {
@@ -281,7 +199,12 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
         console.warn(`Failed to fetch last runs: ${response.status}`);
         return;
       }
-      const lastRunsData = await response.json() as AutomationExecutionSummary[];
+      const result = await response.json();
+      if (!result.success) {
+        console.warn(`Failed to fetch last runs: ${result.error}`);
+        return;
+      }
+      const lastRunsData = result.data as AutomationExecutionSummary[];
       const lastRunsMap = new Map<string, AutomationExecutionSummary>();
       lastRunsData.forEach(execution => {
         lastRunsMap.set(execution.automationId, execution);
@@ -295,9 +218,8 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
   // Fetch on component mount
   useEffect(() => {
     fetchAutomations();
-    fetchConnectorsAndDevices();
     fetchLastRuns();
-  }, [fetchAutomations, fetchConnectorsAndDevices, fetchLastRuns]);
+  }, [fetchAutomations, fetchLastRuns]);
 
   // --- NEW: Function to open execution details modal ---
   const openExecutionDetails = (execution: AutomationExecutionSummary) => {
@@ -412,6 +334,9 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
   const [actionsExpanded, setActionsExpanded] = useState(false);
+  
+  // Use store methods for delete and clone
+  const { deleteAutomation, cloneAutomation } = useFusionStore();
   const router = useRouter();
 
   // Get trigger type icon and styling
@@ -434,23 +359,14 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      const response = await fetch(`/api/automations/${automation.id}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        let errorDetails = `API Error: ${response.status}`;
-        try { 
-          const errorJson = await response.json(); 
-          errorDetails = errorJson.message || errorDetails; 
-        } catch {} 
-        throw new Error(errorDetails);
+      const success = await deleteAutomation(automation.id);
+      if (success) {
+        setShowDeleteDialog(false);
+        refreshData();
       }
-      toast.success(`Automation "${automation.name}" deleted.`);
-      setShowDeleteDialog(false);
-      refreshData();
     } catch (error) {
+      // Store method handles error toasts, just log for debugging
       console.error('Delete failed:', error);
-      toast.error(`Failed to delete automation. ${error instanceof Error ? error.message : ''}`);
     } finally {
       setIsDeleting(false);
     }
@@ -459,24 +375,14 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
   const handleClone = async () => {
     setIsCloning(true);
     try {
-      const response = await fetch(`/api/automations/${automation.id}/clone`, {
-        method: 'POST',
-      });
-      if (!response.ok) {
-        let errorDetails = `API Error: ${response.status}`;
-        try {
-          const errorJson = await response.json();
-          errorDetails = errorJson.message || errorDetails;
-        } catch {}
-        throw new Error(errorDetails);
+      const clonedAutomation = await cloneAutomation(automation.id);
+      if (clonedAutomation) {
+        // Navigate to the edit page of the new automation
+        router.push(`/automations/${clonedAutomation.id}`);
       }
-      // Get the newly created automation from the response
-      const newAutomation = await response.json(); 
-      toast.success(`Automation "${automation.name}" cloned successfully as "${newAutomation.name}".`);
-      router.push(`/automations/${newAutomation.id}`); // Navigate to the edit page of the new automation
     } catch (error) {
+      // Store method handles error toasts, just log for debugging
       console.error('Clone failed:', error);
-      toast.error(`Failed to clone automation. ${error instanceof Error ? error.message : ''}`);
     } finally {
       setIsCloning(false);
     }

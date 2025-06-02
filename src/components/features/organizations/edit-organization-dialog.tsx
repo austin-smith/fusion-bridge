@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useFusionStore, type Organization, type NewOrganizationData } from '@/stores/store';
+import { useFusionStore, type Organization } from '@/stores/store';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -24,16 +24,19 @@ import { Input } from '@/components/ui/input';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { OrganizationLogoSelector } from './organization-logo-selector';
 
-const organizationSchema = z.object({
+const editOrganizationSchema = z.object({
   name: z.string().min(1, 'Organization name is required').max(100, 'Name too long'),
   slug: z
     .string()
     .min(1, 'Slug is required')
     .max(50, 'Slug too long')
     .regex(/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens'),
-  logo: z.string().url('Must be a valid URL').optional().or(z.literal('')),
+  logo: z.string().optional().nullable(),
 });
+
+type EditOrganizationData = z.infer<typeof editOrganizationSchema>;
 
 interface EditOrganizationDialogProps {
   organization: Organization;
@@ -49,12 +52,12 @@ export function EditOrganizationDialog({
   const { updateOrganization } = useFusionStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const form = useForm<NewOrganizationData>({
-    resolver: zodResolver(organizationSchema),
+  const form = useForm<EditOrganizationData>({
+    resolver: zodResolver(editOrganizationSchema),
     defaultValues: {
       name: organization.name,
       slug: organization.slug,
-      logo: organization.logo || '',
+      logo: organization.logo || null,
     },
   });
 
@@ -63,16 +66,16 @@ export function EditOrganizationDialog({
     form.reset({
       name: organization.name,
       slug: organization.slug,
-      logo: organization.logo || '',
+      logo: organization.logo || null,
     });
   }, [organization, form]);
 
-  const onSubmit = async (data: NewOrganizationData) => {
+  const onSubmit = async (data: EditOrganizationData) => {
     setIsSubmitting(true);
     try {
       const updatedOrg = await updateOrganization(organization.id, {
         ...data,
-        logo: data.logo || undefined, // Convert empty string to undefined
+        logo: data.logo || undefined,
       });
       
       if (updatedOrg) {
@@ -85,7 +88,7 @@ export function EditOrganizationDialog({
     }
   };
 
-  // Auto-generate slug from name (only if user is typing in name field)
+  // Auto-generate slug from name
   const handleNameChange = (value: string) => {
     const slug = value
       .toLowerCase()
@@ -94,28 +97,16 @@ export function EditOrganizationDialog({
       .replace(/-+/g, '-') // Replace multiple hyphens with single
       .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
     
-    // Only auto-update slug if it matches the current pattern
-    const currentSlug = form.getValues('slug');
-    const expectedSlugFromName = organization.name
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
-    
-    // Auto-update slug only if it hasn't been manually changed
-    if (currentSlug === expectedSlugFromName || currentSlug === organization.slug) {
-      form.setValue('slug', slug);
-    }
+    form.setValue('slug', slug);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[525px]">
         <DialogHeader>
           <DialogTitle>Edit Organization</DialogTitle>
           <DialogDescription>
-            Update the organization details.
+            Update your organization&apos;s details.
           </DialogDescription>
         </DialogHeader>
         
@@ -155,7 +146,7 @@ export function EditOrganizationDialog({
                     <Input {...field} placeholder="my-organization" />
                   </FormControl>
                   <FormDescription>
-                    URL-friendly identifier. Be careful changing this.
+                    URL-friendly identifier. Auto-generated from name.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -167,13 +158,12 @@ export function EditOrganizationDialog({
               name="logo"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Logo URL (Optional)</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="https://example.com/logo.png" type="url" />
+                    <OrganizationLogoSelector 
+                      value={field.value} 
+                      onChange={field.onChange}
+                    />
                   </FormControl>
-                  <FormDescription>
-                    Optional logo image URL for your organization.
-                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -189,7 +179,7 @@ export function EditOrganizationDialog({
                 Cancel
               </Button>
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Updating...' : 'Update Organization'}
+                {isSubmitting ? 'Saving...' : 'Save Changes'}
               </Button>
             </DialogFooter>
           </form>

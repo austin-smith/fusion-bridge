@@ -56,6 +56,13 @@ interface ApiKeyWithUser {
   userName: string;
   userEmail: string;
   requestCount: number;
+  // Organization information
+  organizationId: string | null;
+  organizationInfo: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
 }
 
 export function AdminApiKeysContent() {
@@ -348,6 +355,7 @@ export function AdminApiKeysContent() {
                 <TableRow>
                   <TableHead>API Key</TableHead>
                   <TableHead>User</TableHead>
+                  <TableHead>Organization</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Usage</TableHead>
                   <TableHead>Last Used</TableHead>
@@ -373,6 +381,21 @@ export function AdminApiKeysContent() {
                       <div>
                         <div className="font-medium">{apiKey.userName}</div>
                         <div className="text-sm text-muted-foreground">{apiKey.userEmail}</div>
+                      </div>
+                    </TableCell>
+                    
+                    <TableCell>
+                      <div>
+                        {apiKey.organizationInfo ? (
+                          <>
+                            <div className="font-medium">{apiKey.organizationInfo.name}</div>
+                            <div className="text-sm text-muted-foreground">/{apiKey.organizationInfo.slug}</div>
+                          </>
+                        ) : (
+                          <div className="text-sm text-muted-foreground">
+                            <Badge variant="outline">Legacy Key</Badge>
+                          </div>
+                        )}
                       </div>
                     </TableCell>
                     

@@ -56,7 +56,7 @@ export const auth = betterAuth.betterAuth({
         },
       }),
       apiKey({
-        enableMetadata: false,
+        enableMetadata: true,
         keyExpiration: {
           defaultExpiresIn: null,
         },

@@ -12,6 +12,10 @@ import type { Metadata } from 'next';
 import { getDeviceTypeIconName } from '@/lib/mappings/presentation'; // Use getDeviceTypeIconName instead of getDeviceTypeIcon directly
 import type { Location, Area } from '@/types';
 import { AutomationTriggerType } from '@/lib/automation-types';
+import { auth } from "@/lib/auth/server";
+import { createOrgScopedDb } from "@/lib/db/org-scoped-db";
+import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 // Define AutomationFormData to match the structure expected by the form
 interface AutomationFormData {
@@ -30,15 +34,16 @@ export const metadata: Metadata = {
 };
 
 // --- BEGIN: Data fetching functions ---
-async function getAvailableConnectors() {
-    return db.select({ 
-        id: connectors.id,
-        name: connectors.name,
-        category: connectors.category,
-      }).from(connectors).orderBy(asc(connectors.name));
+async function getAvailableConnectors(orgDb: ReturnType<typeof createOrgScopedDb>) {
+    const connectorsData = await orgDb.connectors.findAll();
+    return connectorsData.map(c => ({
+        id: c.id,
+        name: c.name,
+        category: c.category,
+    }));
 }
 
-async function getAvailableTargetDevices() {
+async function getAvailableTargetDevices(orgDb: ReturnType<typeof createOrgScopedDb>) {
     const allSupportedRawTypesByAnyHandler = new Set<string>();
     actionHandlers.forEach((handler: IDeviceActionHandler) => {
         if (typeof handler.getControllableRawTypes === 'function') {
@@ -53,93 +58,69 @@ async function getAvailableTargetDevices() {
         console.warn("[AutomationForm Data] No controllable raw types found. No devices will be targetable.");
         return [];
     }
-    const actionableDbDevices = await db.query.devices.findMany({
-        columns: {
-            id: true,
-            name: true,
-            standardizedDeviceType: true,
-            type: true
-        },
-        with: {
-            areaDevices: {
-                columns: {
-                    areaId: true
-                }
-            }
-        },
-        where: inArray(devices.type, rawTypesArray),
-        orderBy: [asc(devices.name)]
-    });
     
-    const mappedDevices = actionableDbDevices.map((d: any) => {
-        const stdType = d.standardizedDeviceType as DeviceType;
-        return {
-            id: d.id,
-            name: d.name,
-            displayType: d.standardizedDeviceType || d.type || 'Unknown Type',
-            iconName: d.standardizedDeviceType
-                ? getDeviceTypeIconName(stdType)
-                : getDeviceTypeIconName(DeviceType.Unmapped),
-            areaId: d.areaDevices && d.areaDevices.length > 0 ? d.areaDevices[0].areaId : null,
-            locationId: null // We'll need to join with areas to get this later if needed
-        };
-    });
+    // Get all devices with area information
+    const actionableDbDevices = await orgDb.devices.findAll();
+    
+    // Filter by supported raw types and map to the expected format
+    const mappedDevices = actionableDbDevices
+        .filter((d: any) => rawTypesArray.includes(d.type))
+        .map((d: any) => {
+            const stdType = d.standardizedDeviceType as DeviceType;
+            return {
+                id: d.id,
+                name: d.name,
+                displayType: d.standardizedDeviceType || d.type || 'Unknown Type',
+                iconName: d.standardizedDeviceType
+                    ? getDeviceTypeIconName(stdType)
+                    : getDeviceTypeIconName(DeviceType.Unmapped),
+                areaId: d.areaId,
+                locationId: d.locationId
+            };
+        });
     return mappedDevices;
 }
 
-async function getDevicesForConditions() {
-    const conditionDevices = await db.query.devices.findMany({
-        columns: {
-            id: true,
-            name: true
-        },
-        with: {
-            areaDevices: {
-                columns: {
-                    areaId: true
-                }
-            }
-        },
-        orderBy: [asc(devices.name)]
-    });
+async function getDevicesForConditions(orgDb: ReturnType<typeof createOrgScopedDb>) {
+    const conditionDevices = await orgDb.devices.findAll();
     
     return conditionDevices.map((d: any) => ({
         id: d.id,
         name: d.name,
-        areaId: d.areaDevices && d.areaDevices.length > 0 ? d.areaDevices[0].areaId : null,
-        locationId: null // We'll need to join with areas to get this later if needed
+        areaId: d.areaId,
+        locationId: d.locationId
     }));
 }
 
-async function getAllLocations(): Promise<Location[]> {
-    const dbLocations = await db.select({
-        id: locations.id,
-        parentId: locations.parentId,
-        name: locations.name,
-        path: locations.path,
-        timeZone: locations.timeZone,
-        addressStreet: locations.addressStreet,
-        addressCity: locations.addressCity,
-        addressState: locations.addressState, 
-        addressPostalCode: locations.addressPostalCode,
-        createdAt: locations.createdAt,
-        updatedAt: locations.updatedAt
-    }).from(locations).orderBy(asc(locations.name));
+async function getAllLocations(orgDb: ReturnType<typeof createOrgScopedDb>): Promise<Location[]> {
+    const dbLocations = await orgDb.locations.findAll();
     
-    return dbLocations;
+    return dbLocations.map(location => ({
+        id: location.id,
+        parentId: location.parentId,
+        name: location.name,
+        path: location.path,
+        timeZone: location.timeZone,
+        addressStreet: location.addressStreet,
+        addressCity: location.addressCity,
+        addressState: location.addressState,
+        addressPostalCode: location.addressPostalCode,
+        createdAt: location.createdAt,
+        updatedAt: location.updatedAt
+    }));
 }
 
-async function getAllAreas(): Promise<Area[]> {
-    const dbAreas = await db.select({
-        id: areas.id,
-        name: areas.name,
-        locationId: areas.locationId,
-        armedState: areas.armedState,
-        createdAt: areas.createdAt,
-        updatedAt: areas.updatedAt
-    }).from(areas).orderBy(asc(areas.name));
+async function getAllAreas(orgDb: ReturnType<typeof createOrgScopedDb>): Promise<Area[]> {
+    const dbAreas = await orgDb.areas.findAll();
     
-    return dbAreas;
+    return dbAreas.map(area => ({
+        id: area.id,
+        name: area.name,
+        locationId: area.location.id,
+        armedState: area.armedState,
+        createdAt: area.createdAt,
+        updatedAt: area.updatedAt
+    }));
 }
 
 function getSourceDeviceTypeOptions(): MultiSelectOption[] {
@@ -154,6 +135,29 @@ function getSourceDeviceTypeOptions(): MultiSelectOption[] {
 // --- END: Data fetching functions ---
 
 export default async function NewAutomationPage() {
+  // Get the session to check authentication and active organization
+  const headersList = await headers();
+  const plainHeaders: Record<string, string> = {};
+  for (const [key, value] of headersList.entries()) {
+    plainHeaders[key] = value;
+  }
+  
+  const session = await auth.api.getSession({ headers: plainHeaders as any });
+  
+  if (!session?.user) {
+    redirect('/login');
+    return null;
+  }
+  
+  const activeOrganizationId = session?.session?.activeOrganizationId;
+  
+  if (!activeOrganizationId) {
+    throw new Error('No active organization found. Please select an organization first.');
+  }
+  
+  // Create organization-scoped database client
+  const orgDb = createOrgScopedDb(activeOrganizationId);
+  
   // Fetch data concurrently
   const [
     availableConnectorsData, 
@@ -163,12 +167,12 @@ export default async function NewAutomationPage() {
     allLocationsData,
     allAreasData
   ] = await Promise.all([
-    getAvailableConnectors(),
-    getAvailableTargetDevices(),
+    getAvailableConnectors(orgDb),
+    getAvailableTargetDevices(orgDb),
     Promise.resolve(getSourceDeviceTypeOptions()), // Wrap sync function for Promise.all
-    getDevicesForConditions(),
-    getAllLocations(),
-    getAllAreas()
+    getDevicesForConditions(orgDb),
+    getAllLocations(orgDb),
+    getAllAreas(orgDb)
   ]);
 
   const initialData: AutomationFormData = {

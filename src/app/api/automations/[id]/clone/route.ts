@@ -1,29 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/data/db';
-import { automations } from '@/data/db/schema';
-import { eq } from 'drizzle-orm';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import type { AutomationConfig } from '@/lib/automation-schemas';
 
-export async function POST(
+export const POST = withOrganizationAuth(async (
   req: NextRequest,
+  authContext: OrganizationAuthContext,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const resolvedParams = await params;
   const originalId = resolvedParams.id;
 
   if (!originalId) {
-    return NextResponse.json({ message: 'Automation ID is required' }, { status: 400 });
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Automation ID is required' 
+    }, { status: 400 });
   }
 
   try {
-    // 1. Fetch the original automation
-    const originalAutomation = await db.query.automations.findFirst({
-      where: eq(automations.id, originalId),
-    });
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    
+    // 1. Fetch the original automation within organization scope
+    const originalAutomationResult = await orgDb.automations.findById(originalId);
 
-    if (!originalAutomation) {
-      return NextResponse.json({ message: 'Automation not found' }, { status: 404 });
+    if (originalAutomationResult.length === 0) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Automation not found' 
+      }, { status: 404 });
     }
+    
+    const originalAutomation = originalAutomationResult[0];
 
     // 2. Prepare the new automation data
     // Ensure a deep copy of configJson
@@ -35,23 +43,21 @@ export async function POST(
       configJson: newConfigJson,
       locationScopeId: originalAutomation.locationScopeId, // Retain location scope
       tags: originalAutomation.tags || [], // Retain tags
-      // id, createdAt, updatedAt will be handled by the database/Drizzle default functions
     };
 
-    // 3. Insert the new automation
-    // Drizzle's insert().values().returning() is convenient if your driver supports it.
-    // For SQLite with Drizzle Kit, it might be simpler to insert and then query if needed,
-    // or rely on the fact that a new UUID will be generated.
-    // The `returning()` method will give us the inserted record, including the new ID.
-    const inserted = await db.insert(automations).values(newAutomationData).returning();
+    // 3. Insert the new automation using org-scoped method
+    const inserted = await orgDb.automations.create(newAutomationData);
     
     if (!inserted || inserted.length === 0) {
-        throw new Error("Failed to insert the cloned automation.");
+        return NextResponse.json({ 
+          success: false, 
+          error: "Failed to insert the cloned automation" 
+        }, { status: 500 });
     }
 
     const newAutomation = inserted[0];
 
-    return NextResponse.json(newAutomation, { status: 201 });
+    return NextResponse.json({ success: true, data: newAutomation }, { status: 201 });
 
   } catch (error) {
     console.error('Failed to clone automation:', error);
@@ -59,6 +65,10 @@ export async function POST(
     if (error instanceof Error) {
         errorMessage = error.message;
     }
-    return NextResponse.json({ message: 'Failed to clone automation', error: errorMessage }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to clone automation', 
+      details: errorMessage 
+    }, { status: 500 });
   }
-} 
+}); 

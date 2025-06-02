@@ -151,7 +151,7 @@ export async function createApiKey(formData: z.infer<typeof CreateApiKeySchema>)
     console.log("[Server Action] Creating API key with data:", formData);
 
     try {
-        // Get the current session to get the user ID
+        // Get the current session to get the user ID and active organization
         const headersList = await headers();
         const session = await auth.api.getSession({ headers: headersList });
         
@@ -162,6 +162,15 @@ export async function createApiKey(formData: z.infer<typeof CreateApiKeySchema>)
 
         console.log("[Server Action] Session found for user:", session.user.id);
 
+        // Check if user has an active organization
+        const activeOrganizationId = session.session?.activeOrganizationId;
+        if (!activeOrganizationId) {
+            console.log("[Server Action] No active organization found");
+            return { success: false, error: 'You must select an organization before creating an API key.' };
+        }
+
+        console.log("[Server Action] Active organization ID:", activeOrganizationId);
+
         // Validate input and filter undefined values
         const validatedFields = CreateApiKeySchema.safeParse(formData);
         if (!validatedFields.success) {
@@ -170,10 +179,15 @@ export async function createApiKey(formData: z.infer<typeof CreateApiKeySchema>)
             return { success: false, error: `Invalid input: ${errorMessages}` };
         }
 
-        const body = validatedFields.data; // Already filtered by Zod transform
+        const body = {
+            ...validatedFields.data,
+            metadata: {
+                organizationId: activeOrganizationId
+            }
+        };
         console.log("[Server Action] API call body:", body);
 
-        // Create API key using server auth instance
+        // Create API key using server auth instance with organization metadata
         const apiKey = await auth.api.createApiKey({
             body,
             headers: headersList

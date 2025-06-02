@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ConnectorWithConfig } from '@/types';
 import { ConnectorMqttState, ConnectorPikoState, ConnectorWebhookState } from '@/stores/store'; // Assuming types exported from store
 import { Badge } from "@/components/ui/badge";
 import { Button } from '@/components/ui/button';
-import { Loader2, Pencil, Trash2, Check, Copy } from "lucide-react";
+import { Loader2, Pencil, Trash2, Check, Copy, ArrowRightLeft } from "lucide-react";
 import { SiMqtt } from "react-icons/si";
 import { LuArrowRightLeft } from "react-icons/lu";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
@@ -15,9 +15,17 @@ import { formatConnectorCategory } from "@/lib/utils";
 import { formatDistanceToNow } from 'date-fns';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { MoveConnectorDialog } from './move-connector-dialog';
 
 // <<< Add ConnectionStatus type back >>>
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown' | 'reconnecting' | 'error'; 
+
+// Organization type for admin functionality
+interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+}
 
 // Props definition
 interface ConnectorRowProps {
@@ -32,6 +40,11 @@ interface ConnectorRowProps {
   onEdit: (connector: ConnectorWithConfig) => void;
   onDelete: (connectorId: string) => void;
   onCopy: (text: string, id: string) => void;
+  // Admin-only props
+  isAdmin?: boolean;
+  currentOrganizationName?: string;
+  organizations?: Organization[];
+  onMoveToOrganization?: (connectorId: string, targetOrgId: string, targetOrgName: string) => Promise<void>;
 }
 
 export const ConnectorRow: React.FC<ConnectorRowProps> = ({
@@ -46,7 +59,21 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
   onEdit,
   onDelete,
   onCopy,
+  isAdmin,
+  currentOrganizationName,
+  organizations,
+  onMoveToOrganization,
 }) => {
+
+  // State for move dialog
+  const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false);
+
+  // Handle move connector
+  const handleMoveConnector = async (connectorId: string, targetOrgId: string, targetOrgName: string) => {
+    if (onMoveToOrganization) {
+      await onMoveToOrganization(connectorId, targetOrgId, targetOrgName);
+    }
+  };
 
   // --- Helper functions (will be moved/adapted here) ---
 
@@ -140,170 +167,200 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
 
   // --- Render ---
   return (
-    <TableRow key={connector.id}>{
-      /* TableCells start immediately */
-    }<TableCell className="font-medium">{connector.name}</TableCell>{ /* No space */
-    }<TableCell>
-        <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-          <ConnectorIcon connectorCategory={connector.category} size={12} />
-          <span className="text-xs">{formatConnectorCategory(connector.category)}</span>
-        </Badge>
-      </TableCell>{ /* No space */
-    }<TableCell>
-        {(connector.category === 'yolink' || connector.category === 'piko') ? (
-          <div className="flex items-center">
-            <Switch
-              checked={eventsEnabled}
-              onCheckedChange={() => {
-                  if (connector.category === 'yolink') {
-                    onMqttToggle(connector, eventsEnabled);
-                  } else if (connector.category === 'piko') {
-                    onWebSocketToggle(connector, eventsEnabled);
-                  }
-              }}
-              disabled={isToggling}
-            />
-          </div>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        )}
-      </TableCell>{ /* No space */
-    }<TableCell>
-        {isToggling ? (
-          // Common Loader for both types while toggling
-          <div className="flex items-center justify-start px-2.5 py-1">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          </div>
-        ) : connector.category === 'yolink' ? (
-          // YoLink MQTT Status
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(mqttState, eventsEnabled)}`}>
-                <SiMqtt className="h-3.5 w-3.5" />
-                <span>{getStatusText(mqttState.status, eventsEnabled)}</span>
-                {mqttState.status === 'reconnecting' && (
-                  <Loader2 className="h-3 w-3 animate-spin ml-1" />
-                )}
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              {mqttState.status === 'error' ?
-                `Error: ${mqttState.error || 'Unknown error'}` :
-                getStatusText(mqttState.status, eventsEnabled)
-              }
-            </TooltipContent>
-          </Tooltip>
-        ) : connector.category === 'piko' ? (
-          // Piko WebSocket Status
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getPikoStatusColorClass(pikoState, eventsEnabled)}`}>
-                <LuArrowRightLeft className="h-3.5 w-3.5" /> {/* WebSocket Icon */}
-                <span>{getStatusText(pikoState?.status, eventsEnabled)}</span>
-                {pikoState?.status === 'reconnecting' && (
-                  <Loader2 className="h-3 w-3 animate-spin ml-1" />
-                )}
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              {pikoState?.status === 'error' ?
-                `Error: ${pikoState?.error || 'Unknown error'}` :
-                 getStatusText(pikoState?.status, eventsEnabled)
-              }
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          // Default for other types (or if state not ready)
-          <span className="text-muted-foreground">-</span>
-        )}
-      </TableCell>{ /* No space */
-    }<TableCell className="text-xs text-muted-foreground">
-        {/* Display lastActivityTime consistently */} 
-        {lastActivityTime ? (
-          <Popover>
-            <PopoverTrigger asChild>
-              <span className="cursor-pointer hover:text-foreground underline decoration-dashed underline-offset-2 decoration-muted-foreground/50 hover:decoration-foreground/50">
-                  {formatDistanceToNow(new Date(lastActivityTime), { addSuffix: true })}
-              </span>
-            </PopoverTrigger>
-            {/* Keep Popover only if there might be payload data */}
-            {(connector.category === 'yolink' || connector.category === 'piko') && lastPayload && (
-              <PopoverContent className={`${popoverWidthClass} max-h-[600px] overflow-y-auto p-0`}>
-                <div className="text-sm font-semibold mb-2 pt-3 px-3">Last Event Payload</div> {/* Standardized Heading */}
-                <div className="relative">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="absolute top-1 right-1 h-7 w-7 z-50 bg-slate-800/70 hover:bg-slate-700/80"
-                    onClick={() => onCopy(JSON.stringify(lastPayload, null, 2), `${connector.id}-${copyIdSuffix}`)}
-                    disabled={copiedPayloadId === `${connector.id}-${copyIdSuffix}`}
-                  >
-                    {copiedPayloadId === `${connector.id}-${copyIdSuffix}` ?
-                      <Check className="h-4 w-4 text-green-400" /> :
-                      <Copy className="h-4 w-4 text-neutral-400" />
+    <>
+      <TableRow key={connector.id}>{
+        /* TableCells start immediately */
+      }<TableCell className="font-medium">{connector.name}</TableCell>{ /* No space */
+      }<TableCell>
+          <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+            <ConnectorIcon connectorCategory={connector.category} size={12} />
+            <span className="text-xs">{formatConnectorCategory(connector.category)}</span>
+          </Badge>
+        </TableCell>{ /* No space */
+      }<TableCell>
+          {(connector.category === 'yolink' || connector.category === 'piko') ? (
+            <div className="flex items-center">
+              <Switch
+                checked={eventsEnabled}
+                onCheckedChange={() => {
+                    if (connector.category === 'yolink') {
+                      onMqttToggle(connector, eventsEnabled);
+                    } else if (connector.category === 'piko') {
+                      onWebSocketToggle(connector, eventsEnabled);
                     }
-                    <span className="sr-only">{copiedPayloadId === `${connector.id}-${copyIdSuffix}` ? 'Copied' : 'Copy JSON'}</span>
-                  </Button>
-                  <SyntaxHighlighter
-                    language="json"
-                    style={atomDark}
-                    customStyle={{
-                      maxHeight: '50rem',
-                      overflowY: 'auto',
-                      borderRadius: '0px',
-                      fontSize: '13px',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-all',
-                      margin: '0',
-                      padding: '12px'
-                    }}
-                  >
-                    {JSON.stringify(lastPayload, null, 2)}
-                  </SyntaxHighlighter>
+                }}
+                disabled={isToggling}
+              />
+            </div>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          )}
+        </TableCell>{ /* No space */
+      }<TableCell>
+          {isToggling ? (
+            // Common Loader for both types while toggling
+            <div className="flex items-center justify-start px-2.5 py-1">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : connector.category === 'yolink' ? (
+            // YoLink MQTT Status
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColorClass(mqttState, eventsEnabled)}`}>
+                  <SiMqtt className="h-3.5 w-3.5" />
+                  <span>{getStatusText(mqttState.status, eventsEnabled)}</span>
+                  {mqttState.status === 'reconnecting' && (
+                    <Loader2 className="h-3 w-3 animate-spin ml-1" />
+                  )}
                 </div>
-              </PopoverContent>
+              </TooltipTrigger>
+              <TooltipContent>
+                {mqttState.status === 'error' ?
+                  `Error: ${mqttState.error || 'Unknown error'}` :
+                  getStatusText(mqttState.status, eventsEnabled)
+                }
+              </TooltipContent>
+            </Tooltip>
+          ) : connector.category === 'piko' ? (
+            // Piko WebSocket Status
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${getPikoStatusColorClass(pikoState, eventsEnabled)}`}>
+                  <LuArrowRightLeft className="h-3.5 w-3.5" /> {/* WebSocket Icon */}
+                  <span>{getStatusText(pikoState?.status, eventsEnabled)}</span>
+                  {pikoState?.status === 'reconnecting' && (
+                    <Loader2 className="h-3 w-3 animate-spin ml-1" />
+                  )}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                {pikoState?.status === 'error' ?
+                  `Error: ${pikoState?.error || 'Unknown error'}` :
+                   getStatusText(pikoState?.status, eventsEnabled)
+                }
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            // Default for other types (or if state not ready)
+            <span className="text-muted-foreground">-</span>
+          )}
+        </TableCell>{ /* No space */
+      }<TableCell className="text-xs text-muted-foreground">
+          {/* Display lastActivityTime consistently */} 
+          {lastActivityTime ? (
+            <Popover>
+              <PopoverTrigger asChild>
+                <span className="cursor-pointer hover:text-foreground underline decoration-dashed underline-offset-2 decoration-muted-foreground/50 hover:decoration-foreground/50">
+                    {formatDistanceToNow(new Date(lastActivityTime), { addSuffix: true })}
+                </span>
+              </PopoverTrigger>
+              {/* Keep Popover only if there might be payload data */}
+              {(connector.category === 'yolink' || connector.category === 'piko') && lastPayload && (
+                <PopoverContent className={`${popoverWidthClass} max-h-[600px] overflow-y-auto p-0`}>
+                  <div className="text-sm font-semibold mb-2 pt-3 px-3">Last Event Payload</div> {/* Standardized Heading */}
+                  <div className="relative">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="absolute top-1 right-1 h-7 w-7 z-50 bg-slate-800/70 hover:bg-slate-700/80"
+                      onClick={() => onCopy(JSON.stringify(lastPayload, null, 2), `${connector.id}-${copyIdSuffix}`)}
+                      disabled={copiedPayloadId === `${connector.id}-${copyIdSuffix}`}
+                    >
+                      {copiedPayloadId === `${connector.id}-${copyIdSuffix}` ?
+                        <Check className="h-4 w-4 text-green-400" /> :
+                        <Copy className="h-4 w-4 text-neutral-400" />
+                      }
+                      <span className="sr-only">{copiedPayloadId === `${connector.id}-${copyIdSuffix}` ? 'Copied' : 'Copy JSON'}</span>
+                    </Button>
+                    <SyntaxHighlighter
+                      language="json"
+                      style={atomDark}
+                      customStyle={{
+                        maxHeight: '50rem',
+                        overflowY: 'auto',
+                        borderRadius: '0px',
+                        fontSize: '13px',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-all',
+                        margin: '0',
+                        padding: '12px'
+                      }}
+                    >
+                      {JSON.stringify(lastPayload, null, 2)}
+                    </SyntaxHighlighter>
+                  </div>
+                </PopoverContent>
+              )}
+              {/* Add simple tooltip for webhook timestamps */ 
+              }{(connector.category === 'netbox' || connector.category === 'genea') && (
+                  <Tooltip>
+                    <TooltipTrigger asChild><span></span></TooltipTrigger> {/* Dummy trigger */} 
+                    <TooltipContent>
+                      Last Webhook: {new Date(lastActivityTime).toLocaleString()}
+                    </TooltipContent>
+                  </Tooltip>
+              )}
+            </Popover>
+          ) : (
+            '-' // Display dash if no activity time
+          )}
+        </TableCell>{ /* No space */
+      }<TableCell className="text-right">
+          <div className="flex justify-end space-x-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                 <Button variant="ghost" size="icon" onClick={() => onEdit(connector)}>
+                   <Pencil className="h-4 w-4" />
+                   <span className="sr-only">Edit connector</span>
+                 </Button>
+              </TooltipTrigger>
+              <TooltipContent>Edit connector</TooltipContent>
+            </Tooltip>
+            {isAdmin && organizations && currentOrganizationName && onMoveToOrganization && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => setIsMoveDialogOpen(true)}
+                    className="text-blue-600 hover:text-blue-600 hover:bg-blue-50"
+                  >
+                    <ArrowRightLeft className="h-4 w-4" />
+                    <span className="sr-only">Move connector to another organization</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Move to organization</TooltipContent>
+              </Tooltip>
             )}
-            {/* Add simple tooltip for webhook timestamps */ 
-            }{(connector.category === 'netbox' || connector.category === 'genea') && (
-                <Tooltip>
-                  <TooltipTrigger asChild><span></span></TooltipTrigger> {/* Dummy trigger */} 
-                  <TooltipContent>
-                    Last Webhook: {new Date(lastActivityTime).toLocaleString()}
-                  </TooltipContent>
-                </Tooltip>
-            )}
-          </Popover>
-        ) : (
-          '-' // Display dash if no activity time
-        )}
-      </TableCell>{ /* No space */
-    }<TableCell className="text-right">
-        <div className="flex justify-end space-x-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-               <Button variant="ghost" size="icon" onClick={() => onEdit(connector)}>
-                 <Pencil className="h-4 w-4" />
-                 <span className="sr-only">Edit connector</span>
-               </Button>
-            </TooltipTrigger>
-            <TooltipContent>Edit connector</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={() => onDelete(connector.id)}
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-              >
-                <Trash2 className="h-4 w-4" />
-                <span className="sr-only">Delete connector</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Delete connector</TooltipContent>
-          </Tooltip>
-        </div>
-      </TableCell>{ /* No space */
-    }</TableRow>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => onDelete(connector.id)}
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="sr-only">Delete connector</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Delete connector</TooltipContent>
+            </Tooltip>
+          </div>
+        </TableCell>{ /* No space */
+      }</TableRow>
+
+      {/* Move Connector Dialog */}
+      {isAdmin && organizations && currentOrganizationName && onMoveToOrganization && (
+        <MoveConnectorDialog
+          open={isMoveDialogOpen}
+          onOpenChange={setIsMoveDialogOpen}
+          connector={connector}
+          currentOrganizationName={currentOrganizationName}
+          organizations={organizations}
+          onConfirm={handleMoveConnector}
+        />
+      )}
+    </>
   );
 }; 

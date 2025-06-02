@@ -34,6 +34,8 @@ interface ApiKey {
   updatedAt: Date;
   permissions: { [key: string]: string[] } | null;
   metadata: Record<string, any> | null;
+  organizationId?: string;
+  organizationName?: string;
 }
 
 interface UserData {
@@ -196,6 +198,11 @@ export function ApiKeysSettings({ user }: ApiKeysSettingsProps) {
                         </div>
                         
                         <div className="flex items-center gap-3">
+                          {apiKey.organizationId && (
+                            <span className="text-blue-600 text-xs">
+                              Organization scoped
+                            </span>
+                          )}
                           {apiKey.lastRequest && (
                             <span className="flex items-center gap-1">
                               <Activity className="h-3 w-3" />
@@ -260,9 +267,23 @@ export function ApiKeysSettings({ user }: ApiKeysSettingsProps) {
           </div>
           
           <div>
+            <h4 className="text-sm font-semibold mb-1">Organization Scoping</h4>
+            <p className="text-sm text-muted-foreground mb-2">
+              API keys are scoped to the organization you were active in when creating them. 
+              They will only have access to data within that organization.
+            </p>
+            <div className="text-xs text-muted-foreground p-2 bg-blue-50 rounded border-l-2 border-blue-200">
+              <strong>Note:</strong> To create API keys for different organizations, 
+              switch to that organization first, then create the key.
+            </div>
+          </div>
+          
+          <div>
             <h4 className="text-sm font-semibold mb-1">Security</h4>
             <p className="text-sm text-muted-foreground">
-              Keep your API keys secure and never expose them in client-side code. Rotate keys regularly for enhanced security.
+              Keep your API keys secure and never expose them in client-side code. 
+              Rotate keys regularly for enhanced security. Each key can only access 
+              data from its assigned organization.
             </p>
           </div>
         </CardContent>

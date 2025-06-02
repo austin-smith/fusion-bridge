@@ -1,16 +1,15 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { db } from '@/data/db';
-import { automations } from '@/data/db/schema';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { AutomationConfigSchema } from '@/lib/automation-schemas';
 import { z } from 'zod';
-import { eq, sql } from 'drizzle-orm';
 
 // Schema for validating the PUT request body
 const PutBodySchema = z.object({
     name: z.string().min(1, { message: "Name is required" }).optional(),
     enabled: z.boolean().optional(),
     config: AutomationConfigSchema.optional(),
-    locationScopeId: z.string().uuid().nullable().optional(), // Add optional, nullable locationScopeId
+    locationScopeId: z.string().uuid().nullable().optional(),
     tags: z.array(z.string()).optional(),
 }).refine(data => Object.keys(data).length > 0, { 
     message: "At least one field must be provided for update"
@@ -18,80 +17,101 @@ const PutBodySchema = z.object({
 
 /**
  * GET /api/automations/{id}
- * Fetches a specific automation configuration by ID.
+ * Fetches a specific automation configuration by ID within the active organization.
  */
-export async function GET(
+export const GET = withOrganizationAuth(async (
   request: NextRequest,
+  authContext: OrganizationAuthContext,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse> {
+): Promise<NextResponse> => {
   try {
     const { id } = await params;
 
     if (!id) {
-      return NextResponse.json({ message: "Automation ID is required" }, { status: 400 });
+      return NextResponse.json({ 
+        success: false, 
+        error: "Automation ID is required" 
+      }, { status: 400 });
     }
 
-    // Select core automation fields
-    const result = await db
-      .select({
-        id: automations.id,
-        name: automations.name,
-        enabled: automations.enabled,
-        configJson: automations.configJson,
-        createdAt: automations.createdAt,
-        updatedAt: automations.updatedAt,
-        locationScopeId: automations.locationScopeId,
-        tags: automations.tags,
-      })
-      .from(automations)
-      .where(eq(automations.id, id))
-      .limit(1);
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    const result = await orgDb.automations.findById(id);
 
     if (result.length === 0) {
-      return NextResponse.json({ message: "Automation not found" }, { status: 404 });
+      return NextResponse.json({ 
+        success: false, 
+        error: "Automation not found" 
+      }, { status: 404 });
     }
     
-    return NextResponse.json(result[0]);
+    return NextResponse.json({ success: true, data: result[0] });
 
   } catch (error) {
     console.error(`Failed to fetch automation:`, error);
-    return NextResponse.json({ message: "Failed to fetch automation" }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      error: "Failed to fetch automation" 
+    }, { status: 500 });
   }
-}
+});
 
 /**
  * PUT /api/automations/{id}
- * Updates a specific connector-agnostic automation configuration.
+ * Updates a specific automation configuration within the active organization.
  */
-export async function PUT(
+export const PUT = withOrganizationAuth(async (
   request: NextRequest,
+  authContext: OrganizationAuthContext,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse> {
+): Promise<NextResponse> => {
   try {
     const { id } = await params;
 
     if (!id) {
-      return NextResponse.json({ message: "Automation ID is required" }, { status: 400 });
+      return NextResponse.json({ 
+        success: false, 
+        error: "Automation ID is required" 
+      }, { status: 400 });
     }
 
     const body = await request.json();
     const validationResult = PutBodySchema.safeParse(body);
 
     if (!validationResult.success) {
-      return NextResponse.json({ message: "Invalid request body", errors: validationResult.error.flatten().fieldErrors }, { status: 400 });
+      return NextResponse.json({ 
+        success: false,
+        error: "Invalid request body", 
+        details: validationResult.error.flatten().fieldErrors 
+      }, { status: 400 });
     }
     
-    // Check if automation exists
-    const [existing] = await db.select({ id: automations.id }).from(automations).where(eq(automations.id, id)).limit(1);
-    if (!existing) {
-      return NextResponse.json({ message: "Automation not found" }, { status: 404 });
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    
+    // Check if automation exists in this organization
+    const existingAutomation = await orgDb.automations.findById(id);
+    if (existingAutomation.length === 0) {
+      return NextResponse.json({ 
+        success: false, 
+        error: "Automation not found" 
+      }, { status: 404 });
     }
 
     // Extract validated data
     const updateData = validationResult.data;
     
-    // Construct the update object, explicitly including nullable locationScopeId
-    const updatePayload: Partial<typeof automations.$inferInsert> = {};
+    // Validate locationScopeId belongs to organization if provided
+    if (updateData.locationScopeId) {
+      const locationExists = await orgDb.locations.exists(updateData.locationScopeId);
+      if (!locationExists) {
+        return NextResponse.json({
+          success: false,
+          error: "Location not found or not accessible"
+        }, { status: 400 });
+      }
+    }
+    
+    // Construct the update object
+    const updatePayload: any = {};
     if (updateData.name !== undefined) updatePayload.name = updateData.name;
     if (updateData.enabled !== undefined) updatePayload.enabled = updateData.enabled;
     if (updateData.config !== undefined) updatePayload.configJson = updateData.config;
@@ -104,66 +124,75 @@ export async function PUT(
     // Add updatedAt timestamp
     updatePayload.updatedAt = new Date();
 
-    const [updatedAutomation] = await db
-      .update(automations)
-      .set(updatePayload)
-      .where(eq(automations.id, id))
-      .returning();
+    const updatedAutomation = await orgDb.automations.update(id, updatePayload);
       
-    // Fetch and return the full updated record including locationScopeId
-    const result = await db
-      .select({
-        id: automations.id,
-        name: automations.name,
-        enabled: automations.enabled,
-        createdAt: automations.createdAt,
-        updatedAt: automations.updatedAt,
-        configJson: automations.configJson,
-        locationScopeId: automations.locationScopeId,
-        tags: automations.tags,
-      })
-      .from(automations)
-      .where(eq(automations.id, updatedAutomation.id))
-      .limit(1);
+    if (!updatedAutomation || updatedAutomation.length === 0) {
+      return NextResponse.json({ 
+        success: false, 
+        error: "Failed to update automation" 
+      }, { status: 500 });
+    }
 
-    return NextResponse.json(result[0]);
+    return NextResponse.json({ success: true, data: updatedAutomation[0] });
 
   } catch (error) {
     console.error(`Failed to update automation:`, error);
     if (error instanceof z.ZodError) {
-       return NextResponse.json({ message: "Invalid configuration data", errors: error.flatten().fieldErrors }, { status: 400 });
+       return NextResponse.json({ 
+         success: false, 
+         error: "Invalid configuration data", 
+         details: error.flatten().fieldErrors 
+       }, { status: 400 });
     }
-    return NextResponse.json({ message: "Failed to update automation" }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      error: "Failed to update automation" 
+    }, { status: 500 });
   }
-}
+});
 
 /**
  * DELETE /api/automations/{id}
- * Deletes a specific automation configuration.
+ * Deletes a specific automation configuration within the active organization.
  */
-export async function DELETE(
+export const DELETE = withOrganizationAuth(async (
   request: NextRequest,
+  authContext: OrganizationAuthContext,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse> {
+): Promise<NextResponse> => {
   try {
     const { id } = await params;
 
     if (!id) {
-      return NextResponse.json({ message: "Automation ID is required" }, { status: 400 });
+      return NextResponse.json({ 
+        success: false, 
+        error: "Automation ID is required" 
+      }, { status: 400 });
     }
 
-    // Check if automation exists before deleting
-    const [existing] = await db.select({ id: automations.id }).from(automations).where(eq(automations.id, id)).limit(1);
-    if (!existing) {
-      return NextResponse.json({ message: "Automation not found" }, { status: 404 });
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    
+    // Check if automation exists in this organization before deleting
+    const existingAutomation = await orgDb.automations.findById(id);
+    if (existingAutomation.length === 0) {
+      return NextResponse.json({ 
+        success: false, 
+        error: "Automation not found" 
+      }, { status: 404 });
     }
 
-    await db.delete(automations).where(eq(automations.id, id));
+    await orgDb.automations.delete(id);
 
-    return NextResponse.json({ message: "Automation deleted successfully" }, { status: 200 });
+    return NextResponse.json({ 
+      success: true, 
+      data: { message: "Automation deleted successfully" } 
+    }, { status: 200 });
 
   } catch (error) {
     console.error(`Failed to delete automation:`, error);
-    return NextResponse.json({ message: "Failed to delete automation" }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      error: "Failed to delete automation" 
+    }, { status: 500 });
   }
-} 
+}); 
