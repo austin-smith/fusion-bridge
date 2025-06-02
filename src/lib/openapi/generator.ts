@@ -9,10 +9,8 @@ import {
   updateArmedStateSchema, 
   createLocationSchema, 
   deviceSyncSchema,
-  setPinSchema,
   validatePinSchema,
-  pinValidationResponseSchema,
-  pinOperationResponseSchema
+  pinValidationResponseSchema
 } from '../schemas/api-schemas';
 
 // Extend Zod with OpenAPI support
@@ -186,10 +184,8 @@ export function generateOpenApiSpec() {
   registry.register('ApiKeyTestResponse', apiKeyTestResponseSchema);
   
   // PIN management schemas
-  registry.register('SetPinRequest', setPinSchema.openapi('SetPinRequest'));
   registry.register('ValidatePinRequest', validatePinSchema.openapi('ValidatePinRequest'));
   registry.register('PinValidationResponse', pinValidationResponseSchema.openapi('PinValidationResponse'));
-  registry.register('PinOperationResponse', pinOperationResponseSchema.openapi('PinOperationResponse'));
   registry.register('UserIdParams', userIdParamsSchema);
 
   // Register response schemas
@@ -205,7 +201,6 @@ export function generateOpenApiSpec() {
   const deleteSuccessResponse = successResponseSchema(z.object({ id: z.string() }));
   
   // PIN management response schemas
-  const pinOperationSuccessResponse = successResponseSchema(pinOperationResponseSchema);
   const pinValidationSuccessResponse = successResponseSchema(pinValidationResponseSchema);
 
   registry.register('AreasSuccessResponse', areasSuccessResponse);
@@ -220,7 +215,6 @@ export function generateOpenApiSpec() {
   registry.register('DeleteSuccessResponse', deleteSuccessResponse);
 
   // PIN management response schemas
-  registry.register('PinOperationSuccessResponse', pinOperationSuccessResponse);
   registry.register('PinValidationSuccessResponse', pinValidationSuccessResponse);
 
   // Areas endpoints
@@ -1074,103 +1068,6 @@ export function generateOpenApiSpec() {
   });
 
   // PIN Management endpoints
-  registry.registerPath({
-    method: 'post',
-    path: '/api/users/{userId}/keypad-pin',
-    summary: 'Set user keypad PIN',
-    description: 'Sets a 6-digit keypad PIN for a specific user for alarm system access',
-    tags: ['Users'],
-    request: {
-      params: userIdParamsSchema,
-      body: {
-        content: {
-          'application/json': {
-            schema: setPinSchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'PIN set successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/PinOperationSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid PIN format or user ID',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'User not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'delete',
-    path: '/api/users/{userId}/keypad-pin',
-    summary: 'Remove user keypad PIN',
-    description: 'Removes the keypad PIN for a specific user, disabling their keypad access',
-    tags: ['Users'],
-    request: {
-      params: userIdParamsSchema,
-    },
-    responses: {
-      200: {
-        description: 'PIN removed successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/PinOperationSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid user ID format',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'User not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
   registry.registerPath({
     method: 'post',
     path: '/api/alarm/keypad/validate-pin',

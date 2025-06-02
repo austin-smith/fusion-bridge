@@ -47,6 +47,7 @@ export function middleware(request: NextRequest) {
         pathname.startsWith('/api/devices') ||
         pathname.startsWith('/api/events') ||
         pathname.startsWith('/api/locations') ||
+        pathname.startsWith('/api/alarm/') ||
         pathname.startsWith('/api/piko/webrtc')) {
       console.log(`[Middleware] Allowing route with own auth wrapper: ${pathname}`);
       const response = NextResponse.next();
