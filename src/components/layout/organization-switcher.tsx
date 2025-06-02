@@ -232,7 +232,7 @@ export function OrganizationSwitcher() {
                     <span className="text-xs text-muted-foreground">/{org.slug}</span>
                   </div>
                   {org.id === currentOrg.id && (
-                    <Badge variant="default" className="ml-auto text-[10px] px-1.5 py-0">
+                    <Badge variant="secondary" className="ml-auto text-[10px] px-1.5 py-0">
                       Current
                     </Badge>
                   )}
