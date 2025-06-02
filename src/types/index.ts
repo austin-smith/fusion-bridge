@@ -13,6 +13,7 @@ export interface Connector {
   category: string;
   name: string;
   cfg_enc: string;
+  organizationId: string | null;
   createdAt: Date;
   eventsEnabled: boolean;
 }

@@ -34,6 +34,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { useFusionStore, UserProfile } from '@/stores/store';
 import { AuthContext } from '@/components/layout/client-providers';
+import { OrganizationSwitcher } from '@/components/layout/organization-switcher';
 
 // --- Define Navigation Groups ---
 type NavItem = {
@@ -162,6 +163,11 @@ export function AppSidebar() {
       </SidebarHeader>
       
       <SidebarContent className="flex-grow">
+        {/* Organization Switcher */}
+        <div className="p-2 border-b">
+          <OrganizationSwitcher />
+        </div>
+        
          {/* Render nav groups immediately - assuming navGroups is static */}
           {displayedNavGroups.map((group, groupIndex) => (
             <React.Fragment key={`group-fragment-${groupIndex}`}>

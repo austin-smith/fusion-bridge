@@ -109,6 +109,7 @@ export default function LocationsAreasPage() {
     setAreaOverrideSchedule,
     bulkAssignDevicesToArea,
     bulkRemoveDevicesFromArea,
+    activeOrganizationId,
   } = useFusionStore((state) => ({
     locations: state.locations,
     isLoadingLocations: state.isLoadingLocations,
@@ -140,6 +141,7 @@ export default function LocationsAreasPage() {
     setAreaOverrideSchedule: state.setAreaOverrideSchedule,
     bulkAssignDevicesToArea: state.bulkAssignDevicesToArea,
     bulkRemoveDevicesFromArea: state.bulkRemoveDevicesFromArea,
+    activeOrganizationId: state.activeOrganizationId,
   }));
 
   const [isLocationDialogOpen, setIsLocationDialogOpen] = useState(false);
@@ -414,7 +416,9 @@ export default function LocationsAreasPage() {
   
   // --- UPDATED: Check if filtered results are empty --- 
   // Empty if filtered locations list is empty AND (search is active OR no unassigned areas exist initially)
-  const isFilteredEmptyState = filteredSortedLocations.length === 0 && 
+  // BUT not empty if we're currently loading data (to keep Add Location button visible during org switches)
+  const isFilteredEmptyState = !isLoadingLocations && !isLoadingAreas && 
+                               filteredSortedLocations.length === 0 && 
                                (searchTerm !== '' || !areasByLocation['unassigned'] || areasByLocation['unassigned'].length === 0);
   const hasOriginalData = locations.length > 0 || areas.length > 0;
 

@@ -206,9 +206,10 @@ export default function DevicesPage() {
   const connectors = useFusionStore(state => state.connectors as ConnectorWithConfig<any>[]); 
   // Fetch allDevices from the store
   const allDevices = useFusionStore(state => state.allDevices);
+  // Use store loading state
+  const isLoadingAllDevices = useFusionStore(state => state.isLoadingAllDevices);
   
   // const [devices, setDevices] = useState<DeviceWithConnector[]>([]); // Remove local state
-  const [isLoadingInitial, setIsLoadingInitial] = useState(true); // <-- Add loading state for initial fetch
   const [error, setError] = useState<string | null>(null); // Keep local error for sync/fetch errors
   const [sorting, setSorting] = useState<SortingState>([ /* Default sort */ ]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -230,57 +231,25 @@ export default function DevicesPage() {
   // Set page title
   useEffect(() => { document.title = 'Devices // Fusion'; }, []);
 
-  // --- Initial Data Fetch --- 
+  // Initial data fetch if needed (for first-time page loads)
   useEffect(() => {
-    const fetchInitialData = async () => {
-      setIsLoadingInitial(true);
-      setError(null);
-      try {
-        const [connectorsResponse, devicesResponse] = await Promise.all([
-          fetch('/api/connectors'), 
-          fetch('/api/devices')
-        ]);
+    // Only fetch if we have no devices and we're not currently loading
+    if (allDevices.length === 0 && !isLoadingAllDevices) {
+      // Let the store handle fetching through organization context
+      useFusionStore.getState().fetchAllDevices();
+    }
+  }, [allDevices.length, isLoadingAllDevices]);
 
-        // Process Connectors Response
-        const connectorsData = await connectorsResponse.json();
-        if (!connectorsResponse.ok || !connectorsData.success) {
-          console.error('[DevicesPage] Failed to fetch initial connectors:', connectorsData.error || 'Unknown error');
-          useFusionStore.getState().setConnectors([]); 
-        } else if (connectorsData.data && Array.isArray(connectorsData.data)) {
-          useFusionStore.getState().setConnectors(connectorsData.data as ConnectorWithConfig[]); 
-        } else {
-          useFusionStore.getState().setConnectors([]); 
-        }
-        
-        // Process Devices Response
-        const devicesData = await devicesResponse.json();
-        if (!devicesResponse.ok || !devicesData.success) {
-          throw new Error(devicesData.error || 'Failed to fetch initial devices');
-        }
-
-        if (devicesData.data && Array.isArray(devicesData.data)) {
-          setDeviceStatesFromSync(devicesData.data as DeviceWithConnector[]); 
-        } else {
-          console.warn('[DevicesPage] Initial fetch returned no device data.');
-          setDeviceStatesFromSync([]); 
-        }
-      } catch (err) {
-        console.error('[DevicesPage] Error fetching initial data:', err);
-        setError(err instanceof Error ? err.message : 'Unknown error fetching data');
-        useFusionStore.getState().setConnectors([]); 
-        setDeviceStatesFromSync([]); 
-      } finally {
-        setIsLoadingInitial(false);
-      }
-    };
-    fetchInitialData();
-  }, [setDeviceStatesFromSync]);
+  // The store handles initial data fetching via organization switching
+  // No need for manual API calls here
 
   // Combine store data into the format the table expects
   const tableData = useMemo((): DisplayedDevice[] => {
     const connectorsMap = new Map(connectors.map(c => [c.id, c])); 
     const allDevicesMap = new Map(allDevices.map(d => [d.deviceId, d])); 
 
+    // Use deviceStates as the primary source (for real-time updates)
+    // but supplement with allDevices for full device information
     const mappedData = Array.from(deviceStates.values()).reduce((acc: DisplayedDevice[], state) => {
         const connector = connectorsMap.get(state.connectorId);
         const fullDevice = allDevicesMap.get(state.deviceId); 
@@ -307,8 +276,8 @@ export default function DevicesPage() {
                 connectorName: connector?.name ?? 'Unknown', 
                 connectorCategory: connector?.category ?? 'unknown',
                 deviceTypeInfo: state.deviceInfo, 
-                displayState: state.displayState, 
-                lastSeen: state.lastSeen,
+                displayState: state.displayState, // Use from deviceStates for real-time updates
+                lastSeen: state.lastSeen, // Use from deviceStates
                 associationCount: fullDevice.associationCount ?? 0, 
                 type: rawDeviceType, 
                 url: url,
@@ -330,7 +299,7 @@ export default function DevicesPage() {
     }, []); 
 
     return mappedData;
-  }, [deviceStates, connectors, allDevices]);
+  }, [deviceStates, connectors, allDevices]); // Restore deviceStates dependency
 
   // Filter devices based on the category toggle
   const filteredTableData = useMemo<DisplayedDevice[]>(() => {
@@ -774,7 +743,7 @@ export default function DevicesPage() {
         </div>
 
         {/* Show Skeleton Loader OR Content */}
-        {isLoadingInitial && !error ? ( // Only show skeleton if loading AND no error
+        {isLoadingAllDevices ? ( // Only show skeleton if loading AND no error
           <DevicesTableSkeleton rowCount={15} columnCount={columns.length} />
         ) : (
           <> 

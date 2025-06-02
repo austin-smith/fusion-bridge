@@ -49,11 +49,16 @@ export const validatePinSchema = z.object({
     .describe("6-digit numeric PIN to validate"),
 });
 
-export const pinValidationResponseSchema = z.object({
-  valid: z.boolean().describe("Whether the PIN is valid"),
-  userId: z.string().uuid().optional().describe("User ID if PIN is valid"),
-  userName: z.string().nullable().optional().describe("User name if PIN is valid"),
-});
+export const pinValidationResponseSchema = z.discriminatedUnion("valid", [
+  z.object({
+    valid: z.literal(false).describe("PIN is not valid"),
+  }),
+  z.object({
+    valid: z.literal(true).describe("PIN is valid"),
+    userId: z.string().uuid().describe("User ID associated with the valid PIN"),
+    userName: z.string().describe("User name associated with the valid PIN"),
+  }),
+]);
 
 export const pinOperationResponseSchema = z.object({
   userId: z.string().uuid().describe("User ID"),

@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-import { withApiRouteAuth } from '@/lib/auth/withApiRouteAuth';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { db } from '@/data/db';
-import { areas, locations, areaDevices } from '@/data/db/schema';
+import { areaDevices } from '@/data/db/schema';
 import type { Area as ApiAreaResponse } from '@/types/index';
 import { createAreaSchema } from '@/lib/schemas/api-schemas';
-import { eq, inArray, asc } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 
 // Define an extended Area type for the API response to include locationName and new fields
 interface AreaWithDetails extends Omit<ApiAreaResponse, 'createdAt' | 'updatedAt'> {
@@ -17,49 +18,43 @@ interface AreaWithDetails extends Omit<ApiAreaResponse, 'createdAt' | 'updatedAt
   updatedAt: string;
 }
 
-// Fetch areas, optionally filtering by locationId
-export const GET = withApiRouteAuth(async (request, authContext) => {
+// Fetch areas for the active organization, optionally filtering by locationId
+export const GET = withOrganizationAuth(async (request, authContext: OrganizationAuthContext) => {
   const { searchParams } = new URL(request.url);
   const locationId = searchParams.get('locationId');
 
   try {
-    let queryBuilder = db
-      .select({
-        id: areas.id,
-        name: areas.name,
-        locationId: areas.locationId,
-        armedState: areas.armedState,
-        nextScheduledArmTime: areas.nextScheduledArmTime,
-        nextScheduledDisarmTime: areas.nextScheduledDisarmTime,
-        lastArmedStateChangeReason: areas.lastArmedStateChangeReason,
-        isArmingSkippedUntil: areas.isArmingSkippedUntil,
-        createdAt: areas.createdAt,
-        updatedAt: areas.updatedAt,
-        locationName: locations.name, 
-      })
-      .from(areas)
-      .innerJoin(locations, eq(areas.locationId, locations.id));
-
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    
+    let areasResult;
     if (locationId) {
-      if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(locationId)) {
-        queryBuilder = queryBuilder.where(eq(areas.locationId, locationId)) as any; 
-      } else {
-         return NextResponse.json({ success: false, error: "Invalid locationId format" }, { status: 400 });
+      if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(locationId)) {
+        return NextResponse.json({ success: false, error: "Invalid locationId format" }, { status: 400 });
       }
-    } 
+      areasResult = await orgDb.areas.findByLocation(locationId);
+    } else {
+      areasResult = await orgDb.areas.findAll();
+    }
 
-    const allAreasResult = await queryBuilder.orderBy(asc(areas.name));
+    const areasWithDetails: AreaWithDetails[] = areasResult.map(areaRow => {
+      // OrgScopedDb spreads area columns directly, location is nested
+      return {
+        id: areaRow.id,
+        name: areaRow.name,
+        locationId: areaRow.locationId,
+        armedState: areaRow.armedState,
+        locationName: areaRow.location?.name || 'Unknown',
+        nextScheduledArmTime: areaRow.nextScheduledArmTime ? new Date(areaRow.nextScheduledArmTime).toISOString() : null,
+        nextScheduledDisarmTime: areaRow.nextScheduledDisarmTime ? new Date(areaRow.nextScheduledDisarmTime).toISOString() : null,
+        lastArmedStateChangeReason: areaRow.lastArmedStateChangeReason || null,
+        isArmingSkippedUntil: areaRow.isArmingSkippedUntil ? new Date(areaRow.isArmingSkippedUntil).toISOString() : null,
+        createdAt: new Date(areaRow.createdAt).toISOString(),
+        updatedAt: new Date(areaRow.updatedAt).toISOString(),
+        deviceIds: []
+      };
+    });
 
-    const areasWithDetails: AreaWithDetails[] = allAreasResult.map(area => ({
-        ...area,
-        nextScheduledArmTime: area.nextScheduledArmTime ? new Date(area.nextScheduledArmTime).toISOString() : null,
-        nextScheduledDisarmTime: area.nextScheduledDisarmTime ? new Date(area.nextScheduledDisarmTime).toISOString() : null,
-        isArmingSkippedUntil: area.isArmingSkippedUntil ? new Date(area.isArmingSkippedUntil).toISOString() : null,
-        createdAt: new Date(area.createdAt).toISOString(),
-        updatedAt: new Date(area.updatedAt).toISOString(),
-        deviceIds: [] 
-    }));
-
+    // Fetch device assignments for all areas
     if (areasWithDetails.length > 0) {
       const areaIds = areasWithDetails.map(a => a.id);
       const deviceAssignments = await db
@@ -92,8 +87,8 @@ export const GET = withApiRouteAuth(async (request, authContext) => {
   }
 });
 
-// Create a new area
-export const POST = withApiRouteAuth(async (request, authContext) => {
+// Create a new area in the active organization
+export const POST = withOrganizationAuth(async (request, authContext: OrganizationAuthContext) => {
   try {
     const body = await request.json();
     const validation = createAreaSchema.safeParse(body);
@@ -103,30 +98,33 @@ export const POST = withApiRouteAuth(async (request, authContext) => {
     }
 
     const { name, locationId } = validation.data;
+    const orgDb = createOrgScopedDb(authContext.organizationId);
 
-    const parentLocation = await db.query.locations.findFirst({where: eq(locations.id, locationId), columns: {id: true, name: true}});
-    if (!parentLocation) {
-        return NextResponse.json({ success: false, error: "Specified location not found" }, { status: 404 });
+    // Verify location belongs to organization and get its name
+    const locationResult = await orgDb.locations.findById(locationId);
+    if (locationResult.length === 0) {
+      return NextResponse.json({ success: false, error: "Specified location not found or not accessible" }, { status: 404 });
     }
+    const parentLocation = locationResult[0];
     
-    const [newAreaFromDb] = await db.insert(areas).values({
+    const [newAreaFromDb] = await orgDb.areas.create({
       name,
       locationId,
-    }).returning(); 
+    });
     
     const responseArea: AreaWithDetails = {
-        id: newAreaFromDb.id,
-        name: newAreaFromDb.name,
-        locationId: newAreaFromDb.locationId,
-        armedState: newAreaFromDb.armedState,
-        locationName: parentLocation.name,
-        deviceIds: [], 
-        nextScheduledArmTime: newAreaFromDb.nextScheduledArmTime ? new Date(newAreaFromDb.nextScheduledArmTime).toISOString() : null,
-        nextScheduledDisarmTime: newAreaFromDb.nextScheduledDisarmTime ? new Date(newAreaFromDb.nextScheduledDisarmTime).toISOString() : null,
-        lastArmedStateChangeReason: newAreaFromDb.lastArmedStateChangeReason || null,
-        isArmingSkippedUntil: newAreaFromDb.isArmingSkippedUntil ? new Date(newAreaFromDb.isArmingSkippedUntil).toISOString() : null,
-        createdAt: new Date(newAreaFromDb.createdAt).toISOString(),
-        updatedAt: new Date(newAreaFromDb.updatedAt).toISOString(),
+      id: newAreaFromDb.id,
+      name: newAreaFromDb.name,
+      locationId: newAreaFromDb.locationId,
+      armedState: newAreaFromDb.armedState,
+      locationName: parentLocation.name,
+      deviceIds: [], 
+      nextScheduledArmTime: newAreaFromDb.nextScheduledArmTime ? new Date(newAreaFromDb.nextScheduledArmTime).toISOString() : null,
+      nextScheduledDisarmTime: newAreaFromDb.nextScheduledDisarmTime ? new Date(newAreaFromDb.nextScheduledDisarmTime).toISOString() : null,
+      lastArmedStateChangeReason: newAreaFromDb.lastArmedStateChangeReason || null,
+      isArmingSkippedUntil: newAreaFromDb.isArmingSkippedUntil ? new Date(newAreaFromDb.isArmingSkippedUntil).toISOString() : null,
+      createdAt: new Date(newAreaFromDb.createdAt).toISOString(),
+      updatedAt: new Date(newAreaFromDb.updatedAt).toISOString(),
     };
 
     return NextResponse.json({ success: true, data: responseArea });

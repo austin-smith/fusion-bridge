@@ -9,10 +9,8 @@ import {
   updateArmedStateSchema, 
   createLocationSchema, 
   deviceSyncSchema,
-  setPinSchema,
   validatePinSchema,
-  pinValidationResponseSchema,
-  pinOperationResponseSchema
+  pinValidationResponseSchema
 } from '../schemas/api-schemas';
 
 // Extend Zod with OpenAPI support
@@ -147,7 +145,7 @@ const createApiKeySchema = z.object({
 }).openapi('CreateApiKeyRequest');
 
 const updateApiKeySchema = z.object({
-  name: z.string().min(1, 'Name cannot be empty').describe('Updated API key name'),
+  enabled: z.boolean().describe('Whether the API key is enabled or disabled'),
 }).openapi('UpdateApiKeyRequest');
 
 const apiKeySchema = z.object({
@@ -186,10 +184,8 @@ export function generateOpenApiSpec() {
   registry.register('ApiKeyTestResponse', apiKeyTestResponseSchema);
   
   // PIN management schemas
-  registry.register('SetPinRequest', setPinSchema.openapi('SetPinRequest'));
   registry.register('ValidatePinRequest', validatePinSchema.openapi('ValidatePinRequest'));
   registry.register('PinValidationResponse', pinValidationResponseSchema.openapi('PinValidationResponse'));
-  registry.register('PinOperationResponse', pinOperationResponseSchema.openapi('PinOperationResponse'));
   registry.register('UserIdParams', userIdParamsSchema);
 
   // Register response schemas
@@ -205,7 +201,6 @@ export function generateOpenApiSpec() {
   const deleteSuccessResponse = successResponseSchema(z.object({ id: z.string() }));
   
   // PIN management response schemas
-  const pinOperationSuccessResponse = successResponseSchema(pinOperationResponseSchema);
   const pinValidationSuccessResponse = successResponseSchema(pinValidationResponseSchema);
 
   registry.register('AreasSuccessResponse', areasSuccessResponse);
@@ -220,7 +215,6 @@ export function generateOpenApiSpec() {
   registry.register('DeleteSuccessResponse', deleteSuccessResponse);
 
   // PIN management response schemas
-  registry.register('PinOperationSuccessResponse', pinOperationSuccessResponse);
   registry.register('PinValidationSuccessResponse', pinValidationSuccessResponse);
 
   // Areas endpoints
@@ -925,8 +919,8 @@ export function generateOpenApiSpec() {
   registry.registerPath({
     method: 'patch',
     path: '/api/admin/api-keys/{id}',
-    summary: 'Update an API key',
-    description: 'Updates the name of an existing API key',
+    summary: 'Update API key status',
+    description: 'Updates the enabled/disabled status of an existing API key',
     tags: ['Admin'],
     request: {
       params: z.object({
@@ -942,10 +936,12 @@ export function generateOpenApiSpec() {
     },
     responses: {
       200: {
-        description: 'API key updated successfully',
+        description: 'API key status updated successfully',
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/ApiKeySuccessResponse' },
+            schema: successResponseSchema(z.object({
+              message: z.string(),
+            })),
           },
         },
       },
@@ -1018,17 +1014,45 @@ export function generateOpenApiSpec() {
   });
 
   registry.registerPath({
-    method: 'post',
+    method: 'get',
     path: '/api/admin/api-keys/test',
-    summary: 'Test API key authentication',
-    description: 'Tests the provided API key and returns authentication status',
+    summary: 'Get API key detail',
+    description: 'Validates the provided API key and returns detailed information about the key, associated user, and organization scope',
     tags: ['Admin'],
     responses: {
       200: {
         description: 'API key test successful',
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/ApiKeyTestResponse' },
+            schema: successResponseSchema(z.object({
+              message: z.string().describe('Test result message'),
+              timestamp: z.string().describe('Test timestamp (ISO string)'),
+              authMethod: z.string().describe('Authentication method used'),
+              userId: z.string().describe('User ID associated with the auth'),
+              organizationInfo: z.object({
+                id: z.string().uuid(),
+                name: z.string(),
+                slug: z.string(),
+                logo: z.string().nullable(),
+                metadata: z.record(z.any()).nullable(),
+                createdAt: z.string(),
+                updatedAt: z.string(),
+              }).nullable().describe('Organization information if API key is scoped to an organization or user has active organization'),
+              sessionInfo: z.object({
+                user: z.object({
+                  id: z.string(),
+                  email: z.string(),
+                  name: z.string(),
+                }),
+                hasSession: z.boolean(),
+              }).optional().describe('Session info if authenticated via session'),
+              apiKeyInfo: z.object({
+                keyId: z.string(),
+                keyName: z.string(),
+                rateLimitEnabled: z.boolean(),
+                remaining: z.number().optional(),
+              }).optional().describe('API key info if authenticated via API key'),
+            })),
           },
         },
       },
@@ -1044,103 +1068,6 @@ export function generateOpenApiSpec() {
   });
 
   // PIN Management endpoints
-  registry.registerPath({
-    method: 'post',
-    path: '/api/users/{userId}/keypad-pin',
-    summary: 'Set user keypad PIN',
-    description: 'Sets a 6-digit keypad PIN for a specific user for alarm system access',
-    tags: ['Users'],
-    request: {
-      params: userIdParamsSchema,
-      body: {
-        content: {
-          'application/json': {
-            schema: setPinSchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'PIN set successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/PinOperationSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid PIN format or user ID',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'User not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'delete',
-    path: '/api/users/{userId}/keypad-pin',
-    summary: 'Remove user keypad PIN',
-    description: 'Removes the keypad PIN for a specific user, disabling their keypad access',
-    tags: ['Users'],
-    request: {
-      params: userIdParamsSchema,
-    },
-    responses: {
-      200: {
-        description: 'PIN removed successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/PinOperationSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid user ID format',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'User not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
   registry.registerPath({
     method: 'post',
     path: '/api/alarm/keypad/validate-pin',

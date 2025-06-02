@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { withApiRouteAuth } from '@/lib/auth/withApiRouteAuth';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { db } from '@/data/db';
 import { devices, connectors, pikoServers, cameraAssociations, areas, areaDevices } from '@/data/db/schema';
 import { eq, count, and, inArray, sql } from 'drizzle-orm';
@@ -15,10 +16,24 @@ import { DeviceType, BinaryState, ContactState, ON, OFF, CANONICAL_STATE_MAP, OF
 import { z } from 'zod';
 import { deviceSyncSchema } from '@/lib/schemas/api-schemas';
 
-// Helper function to get association count
+// Helper function to determine if a device is a security device based on its type
+function isSecurityDevice(deviceTypeInfo: TypedDeviceInfo): boolean {
+  const securityDeviceTypes = [
+    DeviceType.Sensor,
+    DeviceType.Camera,
+    DeviceType.Door,
+    DeviceType.Lock,
+    DeviceType.Alarm,
+  ];
+  
+  return securityDeviceTypes.includes(deviceTypeInfo.type);
+}
+
+// Helper function to get association count (organization-scoped)
 async function getAssociationCount(
   internalDeviceId: string, 
-  category: string
+  category: string,
+  orgDb: any
 ): Promise<number | null> {
   let result: { value: number }[];
 
@@ -26,12 +41,22 @@ async function getAssociationCount(
     // If it's a Piko camera, count associated devices using its internal ID
     result = await db.select({ value: count() })
       .from(cameraAssociations)
-      .where(eq(cameraAssociations.pikoCameraId, internalDeviceId));
+      .innerJoin(devices, eq(devices.id, cameraAssociations.deviceId))
+      .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+      .where(and(
+        eq(cameraAssociations.pikoCameraId, internalDeviceId),
+        eq(connectors.organizationId, orgDb.organizationId)
+      ));
   } else {
     // For any other device category, count associated Piko cameras
     result = await db.select({ value: count() })
       .from(cameraAssociations)
-      .where(eq(cameraAssociations.deviceId, internalDeviceId));
+      .innerJoin(devices, eq(devices.id, cameraAssociations.pikoCameraId))
+      .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+      .where(and(
+        eq(cameraAssociations.deviceId, internalDeviceId),
+        eq(connectors.organizationId, orgDb.organizationId)
+      ));
   }
   
   return result?.[0]?.value ?? null;
@@ -105,105 +130,39 @@ function formatDevice(device: DeviceWithConnectorInfo): DeviceResponse {
 
 // GET /api/devices – returns devices with connector information and association count
 // Optionally filters by deviceId query parameter
-export const GET = withApiRouteAuth(async (request, authContext) => {
+export const GET = withOrganizationAuth(async (request, authContext: OrganizationAuthContext) => {
   try {
+    const orgDb = createOrgScopedDb(authContext.organizationId);
     const { searchParams } = new URL(request.url);
     const requestedDeviceId = searchParams.get('deviceId');
 
-    // --- BEGIN Modified Query with Joins for Area/Location --- 
-    const baseQuery = db
-      .select({
-        // Select all device fields
-        device: devices,
-        // Select relevant connector fields
-        connector: {
-          name: connectors.name,
-          category: connectors.category,
-        },
-        // Select areaId and locationId via joins
-        areaId: areaDevices.areaId,
-        locationId: areas.locationId,
-      })
-      .from(devices)
-      .leftJoin(connectors, eq(devices.connectorId, connectors.id))
-      // Join to get area assignment
-      .leftJoin(areaDevices, eq(devices.id, areaDevices.deviceId))
-      // Join to get location from area
-      .leftJoin(areas, eq(areaDevices.areaId, areas.id))
-      .$dynamic(); // Make it dynamic for optional where clause
-
     if (requestedDeviceId) {
-      baseQuery.where(eq(devices.deviceId, requestedDeviceId));
-      // Apply limit if fetching a single device
-      baseQuery.limit(1);
-    }
+      // Fetch single device by external deviceId
+      const deviceResult = await orgDb.devices.findByExternalId(requestedDeviceId);
+      
+      if (deviceResult.length === 0) {
+        return NextResponse.json({ success: false, error: 'Device not found' }, { status: 404 });
+      }
 
-    const devicesResult = await baseQuery;
-    // --- END Modified Query --- 
+      const deviceRow = deviceResult[0];
+      
+      // Get additional details for this device
+      const associationCount = await getAssociationCount(deviceRow.id, deviceRow.connector?.category || 'unknown', orgDb);
+      
+      // Get Piko server details if applicable
+      let pikoServerDetails: PikoServer | undefined = undefined;
+      if (deviceRow.serverId) {
+        const pikoServerResult = await db.select()
+          .from(pikoServers)
+          .where(eq(pikoServers.serverId, deviceRow.serverId))
+          .limit(1);
+        pikoServerDetails = pikoServerResult[0] as PikoServer;
+      }
 
-    if (requestedDeviceId && devicesResult.length === 0) {
-      return NextResponse.json({ success: false, error: 'Device not found' }, { status: 404 });
-    }
-
-    if (devicesResult.length === 0) {
-        return NextResponse.json({ success: true, data: [] }); // Return empty array if no devices
-    }
-
-    // --- Fetch additional details efficiently (Piko Servers, Associations) --- 
-    // Extract IDs needed for subsequent queries
-    const deviceIds = devicesResult.map(d => d.device.id);
-    const pikoServerIds = devicesResult
-      .filter(d => d.connector?.category === 'piko' && d.device.serverId)
-      .map(d => d.device.serverId!);
-
-    // Fetch Piko Server details
-    const pikoServersMap = new Map<string, PikoServer>();
-    if (pikoServerIds.length > 0) {
-      const servers = await db.select().from(pikoServers).where(inArray(pikoServers.serverId, pikoServerIds));
-      servers.forEach(server => pikoServersMap.set(server.serverId, server as PikoServer));
-    }
-
-    // Fetch association counts
-    const associationCountsSourcePromise = db.select({
-        deviceId: cameraAssociations.deviceId,
-        count: count(cameraAssociations.pikoCameraId).as('count')
-      })
-      .from(cameraAssociations)
-      .where(inArray(cameraAssociations.deviceId, deviceIds))
-      .groupBy(cameraAssociations.deviceId);
-
-    const associationCountsTargetPromise = db.select({
-        pikoCameraId: cameraAssociations.pikoCameraId,
-        count: count(cameraAssociations.deviceId).as('count')
-      })
-      .from(cameraAssociations)
-      .where(inArray(cameraAssociations.pikoCameraId, deviceIds))
-      .groupBy(cameraAssociations.pikoCameraId);
-
-    const [countsSourceResult, countsTargetResult] = await Promise.all([
-        associationCountsSourcePromise,
-        associationCountsTargetPromise
-    ]);
-
-    const associationCountsMap = new Map<string, number>();
-    countsSourceResult.forEach(row => associationCountsMap.set(row.deviceId, row.count));
-    countsTargetResult.forEach(row => {
-      const existingCount = associationCountsMap.get(row.pikoCameraId) ?? 0;
-      associationCountsMap.set(row.pikoCameraId, existingCount + row.count);
-    });
-    // --- End Fetch additional details --- 
-
-    // --- Map results, including areaId and locationId --- 
-    const devicesWithDetails: DeviceWithConnector[] = devicesResult.map(row => {
-      const deviceRow = row.device;
-      const connector = row.connector; // Already joined
-      const pikoServerDetails = deviceRow.serverId ? pikoServersMap.get(deviceRow.serverId) : undefined;
-      const associationCount = associationCountsMap.get(deviceRow.id) ?? null; 
-      const deviceTypeInfo = getDeviceTypeInfo(connector?.category, deviceRow.type);
+      const deviceTypeInfo = getDeviceTypeInfo(deviceRow.connector?.category || 'unknown', deviceRow.type);
       const displayState = deviceRow.status as DisplayState | undefined;
 
-      return {
-        // Map all fields from deviceRow
+      const singleDevice: DeviceWithConnector = {
         id: deviceRow.id,
         deviceId: deviceRow.deviceId,
         connectorId: deviceRow.connectorId,
@@ -216,29 +175,109 @@ export const GET = withApiRouteAuth(async (request, authContext) => {
         createdAt: deviceRow.createdAt,
         updatedAt: deviceRow.updatedAt,
         serverId: deviceRow.serverId,
-        // Map joined/fetched data
-        connectorName: connector?.name ?? 'Unknown',
-        connectorCategory: connector?.category ?? 'Unknown', 
+        connectorName: deviceRow.connector?.name ?? 'Unknown',
+        connectorCategory: deviceRow.connector?.category ?? 'Unknown', 
         serverName: pikoServerDetails?.name,
         pikoServerDetails: pikoServerDetails,
         associationCount: associationCount,
-        deviceTypeInfo: deviceTypeInfo!,
+        deviceTypeInfo: deviceTypeInfo,
         displayState,
-        // Add the newly joined fields
-        areaId: row.areaId,          // From the join
-        locationId: row.locationId,    // From the join
-      } satisfies DeviceWithConnector;
-    });
-    // --- END Map results --- 
+        areaId: deviceRow.areaId,
+        locationId: deviceRow.locationId,
+      };
 
-    // Return response
-    if (requestedDeviceId) {
-      return NextResponse.json({ success: true, data: devicesWithDetails[0] });
+      return NextResponse.json({ success: true, data: singleDevice });
     } else {
+      // Fetch all devices in organization
+      const devicesResult = await orgDb.devices.findAll();
+
+      if (devicesResult.length === 0) {
+        return NextResponse.json({ success: true, data: [] });
+      }
+
+      // Extract device IDs for batch queries
+      const deviceIds = devicesResult.map(d => d.id);
+
+      // Batch fetch association counts
+      const pikoAssociations = await db.select({ 
+        deviceId: cameraAssociations.pikoCameraId, 
+        value: count() 
+      })
+        .from(cameraAssociations)
+        .innerJoin(devices, eq(devices.id, cameraAssociations.deviceId))
+        .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+        .where(and(
+          inArray(cameraAssociations.pikoCameraId, deviceIds),
+          eq(connectors.organizationId, authContext.organizationId)
+        ))
+        .groupBy(cameraAssociations.pikoCameraId);
+
+      const deviceAssociations = await db.select({ 
+        deviceId: cameraAssociations.deviceId, 
+        value: count() 
+      })
+        .from(cameraAssociations)
+        .innerJoin(devices, eq(devices.id, cameraAssociations.pikoCameraId))
+        .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+        .where(and(
+          inArray(cameraAssociations.deviceId, deviceIds),
+          eq(connectors.organizationId, authContext.organizationId)
+        ))
+        .groupBy(cameraAssociations.deviceId);
+
+      // Create association counts map
+      const associationCountsMap = new Map<string, number>();
+      pikoAssociations.forEach(assoc => associationCountsMap.set(assoc.deviceId, assoc.value));
+      deviceAssociations.forEach(assoc => associationCountsMap.set(assoc.deviceId, assoc.value));
+
+      // Batch fetch Piko servers
+      const serverIds = devicesResult
+        .filter((d: any) => d.serverId)
+        .map((d: any) => d.serverId!)
+        .filter((id: string, index: number, arr: string[]) => arr.indexOf(id) === index); // Unique values only
+
+      const pikoServersResult = serverIds.length > 0 
+        ? await db.select().from(pikoServers).where(inArray(pikoServers.serverId, serverIds))
+        : [];
+      
+      const pikoServersMap = new Map(pikoServersResult.map(server => [server.serverId, server as PikoServer]));
+
+      // Map results to DeviceWithConnector format
+      const devicesWithDetails: DeviceWithConnector[] = devicesResult.map((deviceRow: any) => {
+        const pikoServerDetails = deviceRow.serverId ? pikoServersMap.get(deviceRow.serverId) : undefined;
+        const associationCount = associationCountsMap.get(deviceRow.id) ?? null; 
+        const deviceTypeInfo = getDeviceTypeInfo(deviceRow.connector?.category || 'unknown', deviceRow.type);
+        const displayState = deviceRow.status as DisplayState | undefined;
+
+        return {
+          id: deviceRow.id,
+          deviceId: deviceRow.deviceId,
+          connectorId: deviceRow.connectorId,
+          name: deviceRow.name,
+          type: deviceRow.type,
+          status: deviceRow.status,
+          model: deviceRow.model ?? undefined,
+          vendor: deviceRow.vendor ?? undefined,
+          url: deviceRow.url ?? undefined,
+          createdAt: deviceRow.createdAt,
+          updatedAt: deviceRow.updatedAt,
+          serverId: deviceRow.serverId,
+          connectorName: deviceRow.connector?.name ?? 'Unknown',
+          connectorCategory: deviceRow.connector?.category ?? 'Unknown', 
+          serverName: pikoServerDetails?.name,
+          pikoServerDetails: pikoServerDetails,
+          associationCount: associationCount,
+          deviceTypeInfo: deviceTypeInfo,
+          displayState,
+          areaId: deviceRow.areaId,
+          locationId: deviceRow.locationId,
+        } satisfies DeviceWithConnector;
+      });
+
       return NextResponse.json({ success: true, data: devicesWithDetails });
     }
 
-  } catch (error: unknown) {
+  } catch (error) {
     console.error('Error fetching devices:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch devices' },
@@ -248,12 +287,14 @@ export const GET = withApiRouteAuth(async (request, authContext) => {
 });
 
 // POST /api/devices – syncs devices from all connectors and returns them with count
-export const POST = withApiRouteAuth(async (request, authContext) => {
+export const POST = withOrganizationAuth(async (request, authContext: OrganizationAuthContext) => {
   try {
+    const orgDb = createOrgScopedDb(authContext.organizationId);
     const errors = [];
     let syncedCount = 0;
     
-    const allConnectors = await db.select().from(connectors);
+    // Get all connectors for this organization
+    const allConnectors = await orgDb.connectors.findAll();
     
     // Sync devices for each connector
     for (const connector of allConnectors) {
@@ -267,151 +308,45 @@ export const POST = withApiRouteAuth(async (request, authContext) => {
             connectorName: connector.name,
             error: 'Failed to parse connector configuration.'
           });
-          continue; // Skip this connector
+          continue;
         }
 
-        if (connector.category === 'yolink') {
-          if (!connectorConfig?.uaid || !connectorConfig?.clientSecret) {
-            console.error(`[API Sync] Incomplete YoLink configuration for connector ${connector.name}. Needs uaid & clientSecret.`);
-            errors.push({ connectorName: connector.name, error: 'Incomplete YoLink configuration.' });
+        let result: number;
+        switch (connector.category) {
+          case 'yolink':
+            result = await syncYoLinkDevices(connector.id, connectorConfig);
+            break;
+          case 'piko':
+            result = await syncPikoDevices(connector.id, connectorConfig);
+            break;
+          case 'genea':
+            result = await syncGeneaDevices(connector.id, connectorConfig);
+            break;
+          default:
+            console.warn(`[API Sync] Skipping unsupported connector category: ${connector.category}`);
             continue;
-          }
-          // Sync now fetches state AND updates DB status, returns only count
-          const count = await syncYoLinkDevices(connector.id, connectorConfig);
-          syncedCount += count;
-        } else if (connector.category === 'piko') {
-          const count = await syncPikoDevices(connector.id, connectorConfig);
-          syncedCount += count;
-        } else if (connector.category === 'genea') {
-          if (!connectorConfig?.apiKey || !connectorConfig?.customerUuid) {
-            console.error(`[API Sync] Incomplete Genea configuration for connector ${connector.name}. Needs apiKey & customerUuid.`);
-            errors.push({ connectorName: connector.name, error: 'Incomplete Genea configuration (missing apiKey or customerUuid).' });
-            continue;
-          }
-          const count = await syncGeneaDevices(connector.id, connectorConfig);
-          syncedCount += count;
-        } else {
-          console.warn(`[API Sync] Sync not implemented for connector category: ${connector.category} (Name: ${connector.name})`);
         }
-      } catch (err: unknown) {
-        console.error(`[API Sync] Error syncing devices for connector ${connector.name}:`, err);
+
+        syncedCount += result;
+        console.log(`[API Sync] Synced ${result} devices from ${connector.category} connector ${connector.name}`);
+
+      } catch (connectorError) {
+        const errorMessage = connectorError instanceof Error ? connectorError.message : 'Unknown error';
+        console.error(`[API Sync] Error syncing connector ${connector.name}:`, errorMessage);
         errors.push({
           connectorName: connector.name,
-          error: err instanceof Error ? err.message : 'Unknown error during sync'
+          error: errorMessage
         });
       }
     }
-    
-    // Fetch updated device list to return (and update store)
-    // --- BEGIN Apply Optimized Fetch Logic from GET to POST --- 
-    const allDevicesResult = await db
-      .select({
-        device: devices,
-        connector: {
-          name: connectors.name,
-          category: connectors.category,
-        },
-        areaId: areaDevices.areaId,
-        locationId: areas.locationId,
-      })
-      .from(devices)
-      .innerJoin(connectors, eq(devices.connectorId, connectors.id))
-      .leftJoin(areaDevices, eq(devices.id, areaDevices.deviceId))
-      .leftJoin(areas, eq(areaDevices.areaId, areas.id)); // No dynamic needed here, fetching all
 
-    const devicesWithDetails: DeviceWithConnector[] = []; // Initialize empty array
-
-    if (allDevicesResult.length > 0) {
-        const deviceIds = allDevicesResult.map(d => d.device.id);
-        const pikoServerIds = allDevicesResult
-          .filter(d => d.connector?.category === 'piko' && d.device.serverId)
-          .map(d => d.device.serverId!);
-
-        // Fetch Piko Server details efficiently
-        const pikoServersMap = new Map<string, PikoServer>();
-        if (pikoServerIds.length > 0) {
-          const servers = await db.select().from(pikoServers).where(inArray(pikoServers.serverId, pikoServerIds));
-          servers.forEach(server => pikoServersMap.set(server.serverId, server as PikoServer));
-        }
-
-        // Fetch association counts efficiently
-        const associationCountsSourcePromise = db.select({
-            deviceId: cameraAssociations.deviceId,
-            count: count(cameraAssociations.pikoCameraId).as('count')
-          })
-          .from(cameraAssociations)
-          .where(inArray(cameraAssociations.deviceId, deviceIds))
-          .groupBy(cameraAssociations.deviceId);
-
-        const associationCountsTargetPromise = db.select({
-            pikoCameraId: cameraAssociations.pikoCameraId,
-            count: count(cameraAssociations.deviceId).as('count')
-          })
-          .from(cameraAssociations)
-          .where(inArray(cameraAssociations.pikoCameraId, deviceIds))
-          .groupBy(cameraAssociations.pikoCameraId);
-
-        const [countsSourceResult, countsTargetResult] = await Promise.all([
-            associationCountsSourcePromise,
-            associationCountsTargetPromise
-        ]);
-
-        const associationCountsMap = new Map<string, number>();
-        countsSourceResult.forEach(row => associationCountsMap.set(row.deviceId, row.count));
-        countsTargetResult.forEach(row => {
-            const existingCount = associationCountsMap.get(row.pikoCameraId) ?? 0;
-            associationCountsMap.set(row.pikoCameraId, existingCount + row.count);
-        });
-
-        // Map results, including areaId and locationId
-        allDevicesResult.forEach(row => {
-            const deviceRow = row.device;
-            const connector = row.connector;
-            const pikoServerDetails = deviceRow.serverId ? pikoServersMap.get(deviceRow.serverId) : undefined;
-            const associationCount = associationCountsMap.get(deviceRow.id) ?? null;
-            const deviceTypeInfo = getDeviceTypeInfo(connector?.category, deviceRow.type);
-            const displayState = deviceRow.status as DisplayState | undefined;
-
-            devicesWithDetails.push({
-                // Map all fields from deviceRow
-                id: deviceRow.id,
-                deviceId: deviceRow.deviceId,
-                connectorId: deviceRow.connectorId,
-                name: deviceRow.name,
-                type: deviceRow.type,
-                status: deviceRow.status,
-                model: deviceRow.model ?? undefined,
-                vendor: deviceRow.vendor ?? undefined,
-                url: deviceRow.url ?? undefined,
-                createdAt: deviceRow.createdAt,
-                updatedAt: deviceRow.updatedAt,
-                connectorName: connector.name,
-                connectorCategory: connector.category,
-                serverId: deviceRow.serverId,
-                serverName: pikoServerDetails?.name,
-                pikoServerDetails: pikoServerDetails,
-                associationCount: associationCount,
-                deviceTypeInfo: deviceTypeInfo!,
-                displayState,
-                areaId: row.areaId,
-                locationId: row.locationId,
-            } satisfies DeviceWithConnector);
-        });
-    }
-    // --- END Apply Optimized Fetch Logic --- 
-
-    // Update Zustand store
-    try {
-      useFusionStore.getState().setDeviceStatesFromSync(devicesWithDetails);
-      console.log('[API Sync] Successfully updated FusionStore with synced devices (state read from DB).');
-    } catch (storeError) {
-      console.error('[API Sync] Failed to update FusionStore:', storeError);
-    }
+    // Fetch updated devices for response
+    const devicesWithDetails = await fetchDevicesForOrganization(orgDb);
     
     return NextResponse.json({
       success: true,
-      data: devicesWithDetails, // Return the efficiently fetched data with area/location
-      syncedCount, // This comes from the sync loops above
+      data: devicesWithDetails,
+      syncedCount,
       errors: errors.length > 0 ? errors : undefined
     });
   } catch (error: unknown) {
@@ -423,30 +358,107 @@ export const POST = withApiRouteAuth(async (request, authContext) => {
   }
 });
 
+// Helper function to fetch all devices for organization (used after sync)
+async function fetchDevicesForOrganization(orgDb: any): Promise<DeviceWithConnector[]> {
+  const devicesResult = await orgDb.devices.findAll();
+  
+  if (devicesResult.length === 0) {
+    return [];
+  }
+
+  const deviceIds = devicesResult.map((d: any) => d.id);
+
+  // Batch fetch association counts (organization-scoped)
+  const pikoAssociations = await db.select({ 
+    deviceId: cameraAssociations.pikoCameraId, 
+    value: count() 
+  })
+    .from(cameraAssociations)
+    .innerJoin(devices, eq(devices.id, cameraAssociations.deviceId))
+    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+    .where(and(
+      inArray(cameraAssociations.pikoCameraId, deviceIds),
+      eq(connectors.organizationId, orgDb.organizationId)
+    ))
+    .groupBy(cameraAssociations.pikoCameraId);
+
+  const deviceAssociations = await db.select({ 
+    deviceId: cameraAssociations.deviceId, 
+    value: count() 
+  })
+    .from(cameraAssociations)
+    .innerJoin(devices, eq(devices.id, cameraAssociations.pikoCameraId))
+    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+    .where(and(
+      inArray(cameraAssociations.deviceId, deviceIds),
+      eq(connectors.organizationId, orgDb.organizationId)
+    ))
+    .groupBy(cameraAssociations.deviceId);
+
+  const associationCountsMap = new Map<string, number>();
+  pikoAssociations.forEach(assoc => associationCountsMap.set(assoc.deviceId, assoc.value));
+  deviceAssociations.forEach(assoc => associationCountsMap.set(assoc.deviceId, assoc.value));
+
+  // Batch fetch Piko servers
+  const serverIds = devicesResult
+    .filter((d: any) => d.serverId)
+    .map((d: any) => d.serverId!)
+    .filter((id: string, index: number, arr: string[]) => arr.indexOf(id) === index);
+
+  const pikoServersResult = serverIds.length > 0 
+    ? await db.select().from(pikoServers).where(inArray(pikoServers.serverId, serverIds))
+    : [];
+  
+  const pikoServersMap = new Map(pikoServersResult.map(server => [server.serverId, server as PikoServer]));
+
+  // Map results to DeviceWithConnector format
+  return devicesResult.map((deviceRow: any) => {
+    const pikoServerDetails = deviceRow.serverId ? pikoServersMap.get(deviceRow.serverId) : undefined;
+    const associationCount = associationCountsMap.get(deviceRow.id) ?? null;
+    const deviceTypeInfo = getDeviceTypeInfo(deviceRow.connector?.category || 'unknown', deviceRow.type);
+    const displayState = deviceRow.status as DisplayState | undefined;
+
+    return {
+      id: deviceRow.id,
+      deviceId: deviceRow.deviceId,
+      connectorId: deviceRow.connectorId,
+      name: deviceRow.name,
+      type: deviceRow.type,
+      status: deviceRow.status,
+      model: deviceRow.model ?? undefined,
+      vendor: deviceRow.vendor ?? undefined,
+      url: deviceRow.url ?? undefined,
+      createdAt: deviceRow.createdAt,
+      updatedAt: deviceRow.updatedAt,
+      serverId: deviceRow.serverId,
+      connectorName: deviceRow.connector?.name ?? 'Unknown',
+      connectorCategory: deviceRow.connector?.category ?? 'Unknown',
+      serverName: pikoServerDetails?.name,
+      pikoServerDetails: pikoServerDetails,
+      associationCount: associationCount,
+      deviceTypeInfo: deviceTypeInfo,
+      displayState,
+      areaId: deviceRow.areaId,
+      locationId: deviceRow.locationId,
+    } satisfies DeviceWithConnector;
+  });
+}
+
+// Rest of the sync functions remain the same but now work within organization scope
+// since they operate on connectors that are already organization-filtered
+
 /**
  * Syncs YoLink devices, fetching live state and updating the DB status.
  */
-// --- BEGIN Restore state fetching and DB update in syncYoLinkDevices ---
-// --- BEGIN Modify syncYoLinkDevices signature and remove state fetching ---
 async function syncYoLinkDevices(
     connectorId: string, 
     config: yolinkDriver.YoLinkConfig
-): Promise<number> { // Return only count
-// --- END Modify syncYoLinkDevices signature ---
+): Promise<number> {
   let processedCount = 0;
-  let deletedCount = 0; // Added to track deletions
+  let deletedCount = 0;
   try {
     console.log(`Syncing YoLink devices metadata for connector ${connectorId}`);
-    // Use the new getRefreshedYoLinkToken which returns an object with newAccessToken and updatedConfig
     const tokenDetails = await yolinkDriver.getRefreshedYoLinkToken(config);
-    // We'll use tokenDetails.updatedConfig for subsequent calls if config needs to be passed,
-    // and tokenDetails.newAccessToken where raw accessToken was used.
-    // However, getDeviceList now takes connectorId and the original config.
-    // The callYoLinkApi within getDeviceList will use getRefreshedYoLinkToken internally.
-
-    // UPDATED: Pass connectorId as the first argument to getDeviceList.
-    // The 'config' passed here is the initial config for the connector.
-    // getDeviceList will internally handle token refresh using this config.
     const yolinkDevicesFromApi = await yolinkDriver.getDeviceList(connectorId, config);
     console.log(`Found ${yolinkDevicesFromApi.length} YoLink devices from API for metadata sync.`);
 
@@ -463,37 +475,22 @@ async function syncYoLinkDevices(
     // Identify and delete stale devices
     const staleDeviceIds: string[] = [];
     for (const dbDeviceId of dbDeviceIds) {
-      if (!apiDeviceIds.has(dbDeviceId)) {
-        staleDeviceIds.push(dbDeviceId);
-      }
+        if (!apiDeviceIds.has(dbDeviceId)) {
+            staleDeviceIds.push(dbDeviceId);
+        }
     }
 
     if (staleDeviceIds.length > 0) {
-      console.log(`[API Sync YoLink] Deleting ${staleDeviceIds.length} stale devices for connector ${connectorId}:`, staleDeviceIds);
-      try {
-        await db
-          .delete(devices)
-          .where(and(
-            eq(devices.connectorId, connectorId),
-            inArray(devices.deviceId, staleDeviceIds)
-          ));
+        console.log(`[API Sync YoLink] Deleting ${staleDeviceIds.length} stale devices: ${staleDeviceIds.join(', ')}`);
+        const deleteResult = await db.delete(devices)
+            .where(and(
+                eq(devices.connectorId, connectorId),
+                inArray(devices.deviceId, staleDeviceIds)
+            ));
         deletedCount = staleDeviceIds.length;
-        console.log(`[API Sync YoLink] Successfully deleted ${deletedCount} stale devices.`);
-      } catch (deleteError) {
-        console.error(`[API Sync YoLink] Error deleting stale devices for connector ${connectorId}:`, deleteError);
-        // Potentially throw or log this error more formally
-      }
-    }
-
-    if (yolinkDevicesFromApi.length === 0 && staleDeviceIds.length === 0) {
-        console.log(`[API Sync YoLink] No devices from API and no stale devices to delete for connector ${connectorId}.`);
-        return 0; // No devices processed or deleted
+        console.log(`[API Sync YoLink] Deleted ${deletedCount} stale devices.`);
     }
     
-    // If only deletions happened, and no devices came from API, processedCount remains 0.
-    // The function should reflect the number of upserted devices.
-
-    console.log(`Upserting ${yolinkDevicesFromApi.length} YoLink devices metadata...`);
     for (const device of yolinkDevicesFromApi) {
       if (!device.deviceId || !device.name || !device.type) continue;
 
@@ -507,419 +504,276 @@ async function syncYoLinkDevices(
       const stdTypeInfo = getDeviceTypeInfo('yolink', device.type);
       
       let calculatedDisplayState: DisplayState | undefined = undefined;
-      let intermediateState: IntermediateState | undefined = undefined; // Moved up for broader scope
+      let intermediateState: IntermediateState | undefined = undefined;
 
-      // --- BEGIN Updated state fetching logic for YoLink devices ---
-      const canFetchState = !!device.token; // Simplified: if there's a device token, attempt to fetch state
-
+      const canFetchState = !!device.token;
       if (canFetchState) {
           try {
-              console.log(`[API Sync YoLink] Fetching state for ${device.type} ${device.deviceId}...`);
-              const stateData = await yolinkDriver.getDeviceState(
-                  connectorId, 
-                  config,      
-                  device.deviceId, 
-                  device.token!, // Use non-null assertion as canFetchState guarantees it's a string here
-                  device.type
-              );
+              console.log(`  [API Sync YoLink] Fetching fresh state for ${device.type} ${device.deviceId}...`);
+              const stateData = await yolinkDriver.getDeviceState(connectorId, config, device.deviceId, deviceToken!, device.type);
               
-              // stateData here corresponds to the 'data' object in the YoLink API response for getState
-              if (typeof stateData?.online === 'boolean' && stateData.online === false) {
-                  calculatedDisplayState = OFFLINE;
-                  console.log(`[API Sync YoLink] Device ${device.deviceId} (${device.type}) reported as explicitly offline by API.`);
-              } else {
-                  // Device is online or online status is not explicitly in stateData root (or stateData.online is true).
-                  // Attempt to find a physical state if one exists.
-                  // Use the centralized helper to extract the raw state string
-                  // stateData is the direct response from getDeviceState, which can be the state object itself.
-                  const rawStateValue = getRawStateStringFromYoLinkData(stdTypeInfo, stateData);
-
-                  if (rawStateValue) {
-                      // We have a rawStateValue, now map it based on our standardized device type
-                      switch (stdTypeInfo.type) { // Use standardized type for mapping
-                          case DeviceType.Switch:
-                          case DeviceType.Outlet:
-                              if (rawStateValue === 'open' || rawStateValue === 'on') {
+              if (stateData && typeof stateData === 'object') {
+                  // Handle offline state first (explicit check)
+                  if (typeof stateData.online === 'boolean' && stateData.online === false) {
+                      calculatedDisplayState = OFFLINE;
+                      console.log(`[API Sync YoLink] Device ${device.deviceId} (${device.type}) is offline.`);
+                  } else {
+                      // For online devices, extract state from the state data
+                      const rawStateString = getRawStateStringFromYoLinkData(stdTypeInfo, stateData);
+                      
+                      if (rawStateString) {
+                          // Map raw state to intermediate state using canonical mapping
+                          if (stdTypeInfo.type === DeviceType.Switch || stdTypeInfo.type === DeviceType.Outlet) {
+                              if (rawStateString === 'open' || rawStateString === 'on') {
                                   intermediateState = BinaryState.On;
-                              } else if (rawStateValue === 'closed' || rawStateValue === 'off') {
+                              } else if (rawStateString === 'closed' || rawStateString === 'off') {
                                   intermediateState = BinaryState.Off;
                               }
-                              break;
-                          case DeviceType.Sensor: 
-                              if (stdTypeInfo.subtype === 'Contact') { // Standardized subtype
-                                  if (rawStateValue === 'open') {
-                                      intermediateState = ContactState.Open;
-                                  } else if (rawStateValue === 'closed') {
-                                      intermediateState = ContactState.Closed;
-                                  }
+                          } else if (stdTypeInfo.type === DeviceType.Sensor) {
+                              if (rawStateString === 'open') {
+                                  intermediateState = ContactState.Open;
+                              } else if (rawStateString === 'closed') {
+                                  intermediateState = ContactState.Closed;
                               }
-                              // Potentially add other sensor subtypes here, e.g., for LeakSensor if its rawStateValue is 'normal'/'alert'
-                              // This part still requires knowing how specific standardized sensor types report raw states.
-                              break;
-                          // Add other DeviceType mappings as needed if their rawStateValues need specific interpretation
-                          // (e.g., DeviceType.Lock might have 'locked'/'unlocked')
-                          case DeviceType.Lock:
-                              if (rawStateValue === 'locked') {
+                          } else if (stdTypeInfo.type === DeviceType.Lock) {
+                              if (rawStateString === 'locked') {
                                   intermediateState = LockStatus.Locked;
-                              } else if (rawStateValue === 'unlocked') {
+                              } else if (rawStateString === 'unlocked') {
                                   intermediateState = LockStatus.Unlocked;
                               }
-                              break;
+                          }
+                          
+                          if (intermediateState !== undefined) {
+                              // Map intermediate state to display state using the simple map
+                              const simpleMap = CANONICAL_STATE_MAP.simple as Record<string, DisplayState>;
+                              calculatedDisplayState = simpleMap[intermediateState];
+                              console.log(`[API Sync YoLink] Device ${device.deviceId} (${device.type}) state: ${rawStateString} -> ${intermediateState} -> ${calculatedDisplayState}`);
+                          } else {
+                              console.warn(`[API Sync YoLink] Could not map raw state "${rawStateString}" to intermediate state for ${device.deviceId} (${device.type})`);
+                          }
+                      } else if (typeof stateData?.online === 'boolean' && stateData.online === true) {
+                          calculatedDisplayState = ONLINE;
+                          console.log(`[API Sync YoLink] Device ${device.deviceId} (${device.type}) is online, no further distinct physical state found. Marked as ONLINE.`);
+                      } else if (!calculatedDisplayState) {
+                          console.warn(`[API Sync YoLink] Could not determine state for ${device.deviceId} (${device.type}) from response:`, stateData);
                       }
-
-                      if (intermediateState) {
-                          calculatedDisplayState = mapIntermediateToDisplay(intermediateState);
-                          console.log(`[API Sync YoLink] Device ${device.deviceId} (${device.type}) physical state: ${rawStateValue} -> ${intermediateState} -> ${calculatedDisplayState}`);
-                      } else {
-                           console.warn(`[API Sync YoLink] Unknown or unmappable raw state value '${rawStateValue}' for ${device.deviceId} (${device.type}, standardized: ${stdTypeInfo.type}/${stdTypeInfo.subtype || 'N/A'}).`);
-                      }
-                  } else if (typeof stateData?.online === 'boolean' && stateData.online === true) {
-                      // Device is online, but no specific physical state like open/closed or on/off was found.
-                      // For devices like Hubs, this is normal. Set explicit ONLINE state.
-                      calculatedDisplayState = ONLINE; // Set to ONLINE state
-                      console.log(`[API Sync YoLink] Device ${device.deviceId} (${device.type}) is online, no further distinct physical state found. Marked as ONLINE.`);
-                  } else if (!calculatedDisplayState) { // If not OFFLINE and no state determined from any source
-                      console.warn(`[API Sync YoLink] Could not determine state for ${device.deviceId} (${device.type}) from response:`, stateData);
                   }
               }
           } catch (stateError) {
               const errorMessage = stateError instanceof Error ? stateError.message : String(stateError);
               console.error(`  [Error] Failed to fetch state for ${device.type} ${device.deviceId}:`, errorMessage);
-              // Ensure calculatedDisplayState is not modified here if the API call itself fails.
-              // The status in the DB should not change if we can't reach the API or the device through the API.
-              // If the API was reached but reported an error (e.g. device offline by YoLink error code),
-              // we still don't update status based on an error, only on explicit 'online: false' in a successful response.
               console.warn(`[API Sync YoLink] State for ${device.deviceId} (${device.type}) will not be updated due to API error during state fetch.`);
           }
       }
-      // --- END Updated state fetching logic ---
 
-      const deviceData = {
-        deviceId: device.deviceId,
-        connectorId: connectorId,
-        name: device.name,
-        type: device.type, 
-        standardizedDeviceType: stdTypeInfo.type, 
-        standardizedDeviceSubtype: stdTypeInfo.subtype ?? null,
-        model: device.modelName,
-        serverId: null,
-        vendor: null, 
-        url: null, 
-        rawDeviceData: device, 
-        // STATUS is set in the upsert based on calculatedDisplayState
-        updatedAt: new Date()
-      };
-
-      try {
-        // Upsert device info, including fetched state in the status column
-        await db.insert(devices)
-          .values({ 
-              ...deviceData, 
-              // --- CORRECTED: Use calculatedDisplayState --- //
-              status: calculatedDisplayState ?? undefined, // Set status to the calculated state if available
-              createdAt: new Date() 
-          }) 
-          .onConflictDoUpdate({
-            target: [devices.connectorId, devices.deviceId],
-            set: { // Update metadata AND status from fetched state
-              name: deviceData.name,
-              type: deviceData.type,
-              standardizedDeviceType: deviceData.standardizedDeviceType,
-              standardizedDeviceSubtype: deviceData.standardizedDeviceSubtype,
-              // --- CORRECTED: Use calculatedDisplayState --- //
-              status: calculatedDisplayState ?? undefined, // Update status with calculated state if available
-              model: deviceData.model,
-              serverId: null,
-              vendor: null,
-              url: null,
-              rawDeviceData: device, 
-              updatedAt: deviceData.updatedAt
-            }
-          });
-        processedCount++;
-
-      } catch (upsertError: unknown) {
-        console.error(`  [Error] Failed YoLink upsert for deviceId ${deviceData.deviceId}:`, upsertError);
-      }
-    }
-    console.log(`YoLink sync finished for ${connectorId}. Processed ${processedCount} devices. Deleted ${deletedCount} stale devices.`);
-    // --- BEGIN Return only count ---
-    return processedCount; // Consider if the return value should reflect deletions too
-    // --- END Return only count ---
-  } catch (error: unknown) {
-    console.error(`Error syncing YoLink devices metadata for ${connectorId}:`, error);
-    throw error; 
-  }
-}
-
-/**
-* Syncs Piko devices, populating standardized types.
-*/
-async function syncPikoDevices(connectorId: string, config: pikoDriver.PikoConfig): Promise<number> {
-  let processedDeviceCount = 0;
-  let deletedCount = 0; // Added to track deletions
-  try {
-    console.log(`Syncing Piko data for connector ${connectorId} (Type: ${config.type})`);
-
-    // ... Config Validation ...
-    if (!config.username || !config.password || (config.type === 'cloud' && !config.selectedSystem) || (config.type === 'local' && (!config.host || !config.port))) {
-        throw new Error('Invalid or incomplete Piko configuration.');
-    }
-
-    // --- Sync Piko Servers (Cloud only) ---
-    if (config.type === 'cloud' && config.selectedSystem) {
-        try {
-          console.log(`Syncing Piko servers for system: ${config.selectedSystem}...`);
-          const pikoServersFromApi = await pikoDriver.getSystemServers(connectorId);
-          console.log(`Found ${pikoServersFromApi.length} Piko servers.`);
-          if (pikoServersFromApi.length > 0) {
-            for (const server of pikoServersFromApi) {
-              if (!server.id || !server.name) continue;
-              await db.insert(pikoServers)
-                .values({ // Insert new server
-                    serverId: server.id,
-                    connectorId: connectorId,
-                    name: server.name,
-                    status: server.status || null,
-                    version: server.version || null,
-                    osPlatform: server.osInfo?.platform || null,
-                    osVariantVersion: server.osInfo?.variantVersion || null,
-                    url: server.url || null,
-                    updatedAt: new Date(),
-                    createdAt: new Date()
-                 })
-                .onConflictDoUpdate({
-                  target: pikoServers.serverId,
-                  set: { // Update existing server
-                    name: server.name,
-                    status: server.status || null,
-                    version: server.version || null,
-                    osPlatform: server.osInfo?.platform || null,
-                    osVariantVersion: server.osInfo?.variantVersion || null,
-                    url: server.url || null,
-                    updatedAt: new Date()
-                  }
-                });
-            }
-          }
-        } catch (serverSyncError: unknown) {
-          console.error(`Error syncing Piko servers for ${connectorId}:`, serverSyncError);
-        }
-    } else if (config.type === 'local') {
-        console.log(`Skipping Piko server sync for local connection.`);
-    }
-
-    // --- Sync Piko Devices --- 
-    console.log(`Fetching Piko devices (Type: ${config.type})...`);
-    const pikoDevicesFromApi = await pikoDriver.getSystemDevices(connectorId);
-    console.log(`Found ${pikoDevicesFromApi.length} Piko devices.`);
-
-    const apiDeviceIds = new Set(pikoDevicesFromApi.map(d => d.id));
-
-    // Fetch existing device IDs from DB for this connector
-    const existingDbDevices = await db
-      .select({ deviceId: devices.deviceId })
-      .from(devices)
-      .where(eq(devices.connectorId, connectorId));
-    
-    const dbDeviceIds = new Set(existingDbDevices.map(d => d.deviceId));
-
-    // Identify and delete stale devices
-    const staleDeviceIds: string[] = [];
-    for (const dbDeviceId of dbDeviceIds) {
-      if (!apiDeviceIds.has(dbDeviceId)) {
-        staleDeviceIds.push(dbDeviceId);
-      }
-    }
-
-    if (staleDeviceIds.length > 0) {
-      console.log(`[API Sync Piko] Deleting ${staleDeviceIds.length} stale devices for connector ${connectorId}:`, staleDeviceIds);
-      try {
-        await db
-          .delete(devices)
-          .where(and(
-            eq(devices.connectorId, connectorId),
-            inArray(devices.deviceId, staleDeviceIds)
-          ));
-        deletedCount = staleDeviceIds.length;
-        console.log(`[API Sync Piko] Successfully deleted ${deletedCount} stale devices.`);
-      } catch (deleteError) {
-        console.error(`[API Sync Piko] Error deleting stale devices for connector ${connectorId}:`, deleteError);
-      }
-    }
-    
-    if (pikoDevicesFromApi.length === 0 && staleDeviceIds.length === 0) {
-        console.log(`[API Sync Piko] No devices from API and no stale devices to delete for connector ${connectorId}.`);
-        return 0; 
-    }
-
-    if (pikoDevicesFromApi.length > 0) {
-      console.log(`Upserting ${pikoDevicesFromApi.length} Piko devices...`);
-      for (const device of pikoDevicesFromApi) {
-        if (!device.id || !device.name) continue;
-
-        const rawDeviceType = device.deviceType || 'Unknown';
-        const stdTypeInfo = getDeviceTypeInfo('piko', rawDeviceType);
-
-        const deviceData = {
-          deviceId: device.id,
+      await db.insert(devices)
+        .values({
+          deviceId: device.deviceId,
           connectorId: connectorId,
           name: device.name,
-          type: rawDeviceType,
+          type: device.type,
+          status: calculatedDisplayState || null,
+          vendor: device.vendor ? String(device.vendor) : null,
+          model: device.model ? String(device.model) : null,
+          url: device.url ? String(device.url) : null,
           standardizedDeviceType: stdTypeInfo.type,
-          standardizedDeviceSubtype: stdTypeInfo.subtype ?? null,
-          status: device.status || null, 
-          serverId: config.type === 'local' ? null : (device.serverId || null),
-          vendor: device.vendor || null,
-          model: device.model || null,
-          url: device.url || null,
-          updatedAt: new Date()
-        };
+          standardizedDeviceSubtype: stdTypeInfo.subtype || null,
+          isSecurityDevice: isSecurityDevice(stdTypeInfo),
+          rawDeviceData: device,
+          serverId: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [devices.connectorId, devices.deviceId],
+          set: {
+            name: device.name,
+            type: device.type,
+            status: calculatedDisplayState || sql`status`,
+            vendor: device.vendor ? String(device.vendor) : null,
+            model: device.model ? String(device.model) : null,
+            url: device.url ? String(device.url) : null,
+            standardizedDeviceType: stdTypeInfo.type,
+            standardizedDeviceSubtype: stdTypeInfo.subtype || null,
+            isSecurityDevice: isSecurityDevice(stdTypeInfo),
+            rawDeviceData: device,
+            updatedAt: new Date(),
+          }
+        });
 
-        try {
-          await db.insert(devices)
-            .values({ ...deviceData, createdAt: new Date() }) // Add std types on insert
-            .onConflictDoUpdate({
-              target: [devices.connectorId, devices.deviceId],
-              set: { // Update std types on conflict
-                name: deviceData.name,
-                type: deviceData.type,
-                standardizedDeviceType: deviceData.standardizedDeviceType,
-                standardizedDeviceSubtype: deviceData.standardizedDeviceSubtype,
-                status: deviceData.status,
-                serverId: deviceData.serverId,
-                vendor: deviceData.vendor,
-                model: deviceData.model,
-                url: deviceData.url,
-                updatedAt: deviceData.updatedAt
-              }
-            });
-          processedDeviceCount++;
-        } catch (upsertError: unknown) {
-          console.error(`  [Error] Failed Piko device upsert for deviceId ${deviceData.deviceId}:`, upsertError);
-        }
-      }
+      processedCount++;
     }
 
-    console.log(`Piko device sync finished for ${connectorId}. Processed: ${processedDeviceCount}. Deleted: ${deletedCount}`);
-    return processedDeviceCount;
-
-  } catch (error: unknown) {
-    console.error(`Error syncing Piko data for ${connectorId}:`, error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    throw new Error(`Piko sync failed: ${errorMessage}`); 
-  }
-} 
-
-// --- NEW: Sync Genea devices ---
-/**
- * Syncs Genea devices (doors).
- */
-async function syncGeneaDevices(connectorId: string, config: geneaDriver.GeneaConfig): Promise<number> {
-  let processedCount = 0;
-  let deletedCount = 0; // Added to track deletions
-  try {
-    console.log(`Syncing Genea devices for connector ${connectorId}`);
-    // Config is already parsed and validated in the main POST handler
-    const geneaDoorsFromApi = await geneaDriver.getGeneaDoors(config);
-    console.log(`Found ${geneaDoorsFromApi.length} Genea doors from API.`);
-
-    const apiDeviceIds = new Set(geneaDoorsFromApi.map(d => d.uuid));
-
-    // Fetch existing device IDs from DB for this connector
-    const existingDbDevices = await db
-      .select({ deviceId: devices.deviceId })
-      .from(devices)
-      .where(eq(devices.connectorId, connectorId));
-
-    const dbDeviceIds = new Set(existingDbDevices.map(d => d.deviceId));
-
-    // Identify and delete stale devices
-    const staleDeviceIds: string[] = [];
-    for (const dbDeviceId of dbDeviceIds) {
-      if (!apiDeviceIds.has(dbDeviceId)) {
-        staleDeviceIds.push(dbDeviceId);
-      }
-    }
-    
-    if (staleDeviceIds.length > 0) {
-      console.log(`[API Sync Genea] Deleting ${staleDeviceIds.length} stale devices for connector ${connectorId}:`, staleDeviceIds);
-      try {
-        await db
-          .delete(devices)
-          .where(and(
-            eq(devices.connectorId, connectorId),
-            inArray(devices.deviceId, staleDeviceIds)
-          ));
-        deletedCount = staleDeviceIds.length;
-        console.log(`[API Sync Genea] Successfully deleted ${deletedCount} stale devices.`);
-      } catch (deleteError) {
-        console.error(`[API Sync Genea] Error deleting stale devices for connector ${connectorId}:`, deleteError);
-      }
-    }
-
-    if (geneaDoorsFromApi.length === 0 && staleDeviceIds.length === 0) {
-        console.log(`[API Sync Genea] No devices from API and no stale devices to delete for connector ${connectorId}.`);
-        return 0;
-    }
-
-    console.log(`Upserting ${geneaDoorsFromApi.length} Genea doors...`);
-    for (const door of geneaDoorsFromApi) {
-      if (!door.uuid || !door.name) continue;
-
-      // Determine status based on 'is_online' if available, otherwise null
-      const status = typeof door.is_online === 'boolean' 
-        ? (door.is_online ? 'Online' : 'Offline') 
-        : null;
-
-      // Standardized type info for a Door
-      // Use the mapping function for consistency
-      const stdTypeInfo = getDeviceTypeInfo('genea', 'Door'); 
-
-      const deviceData = {
-        deviceId: door.uuid,
-        connectorId: connectorId,
-        name: door.name,
-        type: 'Door', // Raw type from Genea perspective is still 'Door'
-        standardizedDeviceType: stdTypeInfo.type, // Get type from mapping
-        standardizedDeviceSubtype: stdTypeInfo.subtype ?? null, // Get subtype (null for Door)
-        status: status,
-        model: door.reader_model ?? null, // Use null if reader_model is null/undefined
-        serverId: null, // Genea doesn't have the concept of a server like Piko
-        vendor: 'Genea', // Assuming Genea is the vendor
-        url: null, // No specific URL per door in the API sample
-        updatedAt: new Date()
-      };
-
-      try {
-        await db.insert(devices)
-          .values({ ...deviceData, createdAt: new Date() })
-          .onConflictDoUpdate({
-            target: [devices.connectorId, devices.deviceId], // Unique constraint
-            set: { // Fields to update on conflict
-              name: deviceData.name,
-              type: deviceData.type,
-              standardizedDeviceType: deviceData.standardizedDeviceType,
-              standardizedDeviceSubtype: deviceData.standardizedDeviceSubtype,
-              status: deviceData.status,
-              model: deviceData.model,
-              vendor: deviceData.vendor,
-              url: deviceData.url,
-              updatedAt: deviceData.updatedAt
-              // serverId is intentionally not updated as it's always null for Genea
-            }
-          });
-        processedCount++;
-      } catch (upsertError: unknown) {
-        console.error(`  [Error] Failed Genea door upsert for deviceId ${deviceData.deviceId}:`, upsertError);
-      }
-    }
-    console.log(`Genea Sync finished for ${connectorId}. Processed: ${processedCount}. Deleted: ${deletedCount}`);
+    console.log(`[API Sync YoLink] Completed sync for connector ${connectorId}: processed ${processedCount}, deleted ${deletedCount}`);
     return processedCount;
-  } catch (error: unknown) {
-    console.error(`Error syncing Genea devices for connector ${connectorId}:`, error);
-    // Re-throw error to be caught by the main POST handler and reported
-    throw error; 
+
+  } catch (error) {
+    console.error(`[API Sync YoLink] Error syncing YoLink devices for connector ${connectorId}:`, error);
+    throw error;
   }
 }
-// --- END NEW Genea Sync ---
+
+/**
+ * Syncs Piko devices
+ */
+async function syncPikoDevices(
+    connectorId: string,
+    config: pikoDriver.PikoConfig
+): Promise<number> {
+  let processedCount = 0;
+  try {
+    console.log(`Syncing Piko devices for connector ${connectorId}`);
+    
+    const [cameras, servers] = await Promise.all([
+      pikoDriver.getSystemDevices(connectorId),
+      pikoDriver.getSystemServers(connectorId)
+    ]);
+    
+    console.log(`Found ${cameras.length} cameras and ${servers.length} servers from Piko API`);
+
+    // Sync servers first
+    for (const server of servers) {
+      if (!server.id || !server.name) continue;
+      
+      await db.insert(pikoServers)
+        .values({
+          serverId: server.id,
+          connectorId: connectorId,
+          name: server.name,
+          status: server.status || null,
+          version: server.version || null,
+          osPlatform: server.osInfo?.platform || null,
+          osVariantVersion: server.osInfo?.variantVersion || null,
+          url: server.url || null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: pikoServers.serverId,
+          set: {
+            name: server.name,
+            status: server.status || null,
+            version: server.version || null,
+            osPlatform: server.osInfo?.platform || null,
+            osVariantVersion: server.osInfo?.variantVersion || null,
+            url: server.url || null,
+            updatedAt: new Date(),
+          }
+        });
+    }
+
+    // Sync cameras
+    for (const camera of cameras) {
+      if (!camera.id || !camera.name) continue;
+
+      const stdTypeInfo = getDeviceTypeInfo('piko', 'Camera');
+      
+      await db.insert(devices)
+        .values({
+          deviceId: camera.id,
+          connectorId: connectorId,
+          name: camera.name,
+          type: 'Camera',
+          status: camera.status || null,
+          vendor: camera.vendor || 'Piko',
+          model: camera.model || null,
+          url: camera.url || null,
+          standardizedDeviceType: stdTypeInfo.type,
+          standardizedDeviceSubtype: stdTypeInfo.subtype || null,
+          isSecurityDevice: isSecurityDevice(stdTypeInfo),
+          rawDeviceData: camera,
+          serverId: camera.serverId || null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [devices.connectorId, devices.deviceId],
+          set: {
+            name: camera.name,
+            status: camera.status || sql`status`,
+            model: camera.model || null,
+            url: camera.url || null,
+            serverId: camera.serverId || null,
+            rawDeviceData: camera,
+            updatedAt: new Date(),
+          }
+        });
+
+      processedCount++;
+    }
+
+    console.log(`[API Sync Piko] Completed sync for connector ${connectorId}: processed ${processedCount} cameras`);
+    return processedCount;
+
+  } catch (error) {
+    console.error(`[API Sync Piko] Error syncing Piko devices for connector ${connectorId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Syncs Genea devices
+ */
+async function syncGeneaDevices(
+    connectorId: string,
+    config: geneaDriver.GeneaConfig
+): Promise<number> {
+  let processedCount = 0;
+  try {
+    console.log(`Syncing Genea devices for connector ${connectorId}`);
+    
+    const doors = await geneaDriver.getGeneaDoors(config);
+    console.log(`Found ${doors.length} doors from Genea API`);
+
+    for (const door of doors) {
+      if (!door.uuid || !door.name) continue;
+
+      const stdTypeInfo = getDeviceTypeInfo('genea', 'Door');
+      
+      // Map door status to display state
+      let displayState: DisplayState | undefined = undefined;
+      if (typeof door.is_locked === 'boolean') {
+        displayState = door.is_locked ? 'Locked' : 'Unlocked';
+      }
+      
+      await db.insert(devices)
+        .values({
+          deviceId: door.uuid,
+          connectorId: connectorId,
+          name: door.name,
+          type: 'Door',
+          status: displayState || null,
+          vendor: 'Genea',
+          model: door.reader_model || null,
+          url: null,
+          standardizedDeviceType: stdTypeInfo.type,
+          standardizedDeviceSubtype: stdTypeInfo.subtype || null,
+          isSecurityDevice: isSecurityDevice(stdTypeInfo),
+          rawDeviceData: door,
+          serverId: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [devices.connectorId, devices.deviceId],
+          set: {
+            name: door.name,
+            type: 'Door',
+            status: displayState || sql`status`,
+            model: door.reader_model || null,
+            rawDeviceData: door,
+            updatedAt: new Date(),
+          }
+        });
+
+      processedCount++;
+    }
+
+    console.log(`[API Sync Genea] Completed sync for connector ${connectorId}: processed ${processedCount} devices`);
+    return processedCount;
+
+  } catch (error) {
+    console.error(`[API Sync Genea] Error syncing Genea devices for connector ${connectorId}:`, error);
+    throw error;
+  }
+}

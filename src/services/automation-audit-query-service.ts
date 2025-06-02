@@ -58,15 +58,26 @@ export interface ExecutionStats {
 
 export class AutomationAuditQueryService {
   /**
-   * Get recent automation executions with pagination
+   * Get recent automation executions with pagination (organization-scoped)
    */
   async getRecentExecutions(
     limit: number = 50,
     offset: number = 0,
-    automationId?: string
+    automationId?: string,
+    organizationId?: string
   ): Promise<AutomationExecutionSummary[]> {
     try {
-      const conditions = automationId ? [eq(automationExecutions.automationId, automationId)] : [];
+      const conditions = [];
+      
+      // Filter by organization if provided
+      if (organizationId) {
+        conditions.push(eq(automations.organizationId, organizationId));
+      }
+      
+      // Filter by specific automation if provided
+      if (automationId) {
+        conditions.push(eq(automationExecutions.automationId, automationId));
+      }
       
       const results = await db
         .select({
@@ -111,10 +122,17 @@ export class AutomationAuditQueryService {
   }
 
   /**
-   * Get detailed execution information including all actions
+   * Get detailed execution information including all actions (organization-scoped)
    */
-  async getExecutionDetail(executionId: string): Promise<AutomationExecutionDetail | null> {
+  async getExecutionDetail(executionId: string, organizationId?: string): Promise<AutomationExecutionDetail | null> {
     try {
+      const conditions = [eq(automationExecutions.id, executionId)];
+      
+      // Filter by organization if provided
+      if (organizationId) {
+        conditions.push(eq(automations.organizationId, organizationId));
+      }
+      
       // Get execution summary
       const executionResult = await db
         .select({
@@ -134,7 +152,7 @@ export class AutomationAuditQueryService {
         })
         .from(automationExecutions)
         .innerJoin(automations, eq(automationExecutions.automationId, automations.id))
-        .where(eq(automationExecutions.id, executionId))
+        .where(and(...conditions))
         .limit(1);
 
       if (executionResult.length === 0) {
@@ -197,11 +215,16 @@ export class AutomationAuditQueryService {
   }
 
   /**
-   * Get execution statistics for an automation or overall system
+   * Get execution statistics for an automation or overall system (organization-scoped)
    */
-  async getExecutionStats(filter: ExecutionStatsFilter = {}): Promise<ExecutionStats> {
+  async getExecutionStats(filter: ExecutionStatsFilter = {}, organizationId?: string): Promise<ExecutionStats> {
     try {
       const conditions = [];
+      
+      // Filter by organization if provided
+      if (organizationId) {
+        conditions.push(eq(automations.organizationId, organizationId));
+      }
       
       if (filter.automationId) {
         conditions.push(eq(automationExecutions.automationId, filter.automationId));
@@ -234,6 +257,7 @@ export class AutomationAuditQueryService {
           failedActions: sql<number>`SUM(${automationExecutions.failedActions})`,
         })
         .from(automationExecutions)
+        .innerJoin(automations, eq(automationExecutions.automationId, automations.id))
         .where(whereClause);
 
       const stats = statsResult[0];
@@ -263,17 +287,25 @@ export class AutomationAuditQueryService {
   }
 
   /**
-   * Get minimal last run info for automation cards (just timestamp and status)
+   * Get minimal last run info for automation cards (organization-scoped)
    */
-  async getLastRunSummary(): Promise<AutomationExecutionSummary[]> {
+  async getLastRunSummary(organizationId?: string): Promise<AutomationExecutionSummary[]> {
     try {
-      // Use a subquery to find the max timestamp per automation, then join back for full data
-      const maxTimestamps = db
+      // Build base conditions
+      const baseConditions = [];
+      if (organizationId) {
+        baseConditions.push(eq(automations.organizationId, organizationId));
+      }
+      
+      // Use a subquery to find the max timestamp per automation within organization, then join back for full data
+      const maxTimestampsQuery = db
         .select({
           automationId: automationExecutions.automationId,
           maxTimestamp: sql<number>`MAX(${automationExecutions.triggerTimestamp})`.as('max_timestamp'),
         })
         .from(automationExecutions)
+        .innerJoin(automations, eq(automationExecutions.automationId, automations.id))
+        .where(baseConditions.length > 0 ? and(...baseConditions) : undefined)
         .groupBy(automationExecutions.automationId)
         .as('max_times');
 
@@ -295,10 +327,10 @@ export class AutomationAuditQueryService {
         .from(automationExecutions)
         .innerJoin(automations, eq(automationExecutions.automationId, automations.id))
         .innerJoin(
-          maxTimestamps,
+          maxTimestampsQuery,
           and(
-            eq(automationExecutions.automationId, maxTimestamps.automationId),
-            eq(automationExecutions.triggerTimestamp, maxTimestamps.maxTimestamp)
+            eq(automationExecutions.automationId, maxTimestampsQuery.automationId),
+            eq(automationExecutions.triggerTimestamp, maxTimestampsQuery.maxTimestamp)
           )
         );
 
@@ -323,15 +355,26 @@ export class AutomationAuditQueryService {
   }
 
   /**
-   * Get execution count for pagination
+   * Get execution count for pagination (organization-scoped)
    */
-  async getExecutionCount(automationId?: string): Promise<number> {
+  async getExecutionCount(automationId?: string, organizationId?: string): Promise<number> {
     try {
-      const conditions = automationId ? [eq(automationExecutions.automationId, automationId)] : [];
+      const conditions = [];
+      
+      // Filter by organization if provided
+      if (organizationId) {
+        conditions.push(eq(automations.organizationId, organizationId));
+      }
+      
+      // Filter by specific automation if provided
+      if (automationId) {
+        conditions.push(eq(automationExecutions.automationId, automationId));
+      }
       
       const result = await db
         .select({ count: count() })
         .from(automationExecutions)
+        .innerJoin(automations, eq(automationExecutions.automationId, automations.id))
         .where(conditions.length > 0 ? and(...conditions) : undefined);
 
       return result[0]?.count || 0;

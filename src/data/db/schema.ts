@@ -9,13 +9,20 @@ export const connectors = sqliteTable("connectors", {
   category: text("category").notNull(),
   name: text("name").notNull(),
   cfg_enc: text("cfg_enc").notNull(), // Stores config as JSON string
+  organizationId: text("organization_id").references(() => organization.id, { onDelete: 'cascade' }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   eventsEnabled: integer("events_enabled", { mode: "boolean" }).notNull().default(false),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  organizationIdx: index("connectors_organization_idx").on(table.organizationId),
+}));
 
 // Remove relation to automations as sourceConnectorId is removed from automations
-export const connectorsRelations = relations(connectors, ({ many }) => ({
+export const connectorsRelations = relations(connectors, ({ one, many }) => ({
+  organization: one(organization, {
+    fields: [connectors.organizationId],
+    references: [organization.id],
+  }),
 	devices: many(devices),
   pikoServers: many(pikoServers),
   events: many(events),
@@ -157,6 +164,7 @@ export const automations = sqliteTable("automations", {
   // Stores the AutomationConfig object with primaryTrigger (standardized types) 
   // and secondaryConditions (standardized types, time windows)
   configJson: text("config_json", { mode: "json" }).notNull().$type<AutomationConfig>(), 
+  organizationId: text("organization_id").references(() => organization.id, { onDelete: 'cascade' }),
   locationScopeId: text("location_scope_id").references(() => locations.id, { onDelete: 'cascade' }),
   tags: text("tags", { mode: "json" }).$type<string[]>().default(sql`'[]'`).notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).default(sql`(unixepoch('now', 'subsec') * 1000)`).notNull(),
@@ -164,6 +172,7 @@ export const automations = sqliteTable("automations", {
 }, (table) => ({
   // Index for filtering by tags - useful for tag-based queries
   tagsIdx: index("automations_tags_idx").on(table.tags),
+  organizationIdx: index("automations_organization_idx").on(table.organizationId),
 }));
 
 // --- ADDED: Relations for Automations ---
@@ -172,6 +181,10 @@ export const automationsRelations = relations(automations, ({ one }) => ({
     fields: [automations.locationScopeId],
     references: [locations.id],
   }),
+  organization: one(organization, {
+    fields: [automations.organizationId],
+    references: [organization.id],
+  }),
 }));
 // --- END ADDED ---
 
@@ -179,6 +192,7 @@ export const automationsRelations = relations(automations, ({ one }) => ({
 export const locations = sqliteTable("locations", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   parentId: text("parent_id").references((): AnySQLiteColumn => locations.id, { onDelete: 'cascade' }), 
+  organizationId: text("organization_id").references(() => organization.id, { onDelete: 'cascade' }), // ADDED: nullable initially
   name: text("name").notNull(),
   path: text("path").notNull(), 
   timeZone: text("time_zone").notNull(),
@@ -193,6 +207,7 @@ export const locations = sqliteTable("locations", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
     parentIdx: index("locations_parent_idx").on(table.parentId),
+    organizationIdx: index("locations_organization_idx").on(table.organizationId), // ADDED: Index for FK
     pathIdx: index("locations_path_idx").on(table.path),
     activeArmingScheduleIdx: index("locations_active_arming_schedule_idx").on(table.activeArmingScheduleId), // Index for FK
 }));
@@ -206,6 +221,10 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
   }),
   children: many(locations, { 
     relationName: 'parentLocation',
+  }),
+  organization: one(organization, { // ADDED: Organization relation
+    fields: [locations.organizationId],
+    references: [organization.id],
   }),
   areas: many(areas), 
   activeArmingSchedule: one(armingSchedules, { // <-- ADDED relation
@@ -339,12 +358,14 @@ export const session = sqliteTable("session", {
   expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
   ipAddress: text("ipAddress"),
   userAgent: text("userAgent"),
+  activeOrganizationId: text("activeOrganizationId").references(() => organization.id, { onDelete: 'set null' }), // ADDED: Active organization
   createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   impersonatedBy: text('impersonatedBy')
 }, (table) => ({
   tokenIdx: index("session_token_idx").on(table.token),
   userIdx: index("session_user_idx").on(table.userId),
+  activeOrgIdx: index("session_active_org_idx").on(table.activeOrganizationId), // ADDED: Index for FK
 }));
 
 export const verification = sqliteTable("verification", {
@@ -365,6 +386,8 @@ export const userRelations = relations(user, ({ many, one }) => ({
   sessions: many(session), // Reference updated table 'session'
   twoFactor: one(twoFactor),
   apiKeys: many(apikey),
+  memberOf: many(member), // ADDED: User is member of organizations
+  sentInvitations: many(invitation), // ADDED: User can send invitations
 }));
 
 export const accountRelations = relations(account, ({ one }) => ({
@@ -378,6 +401,10 @@ export const sessionRelations = relations(session, ({ one }) => ({
   user: one(user, { // Reference updated table 'user'
     fields: [session.userId],
     references: [user.id],
+  }),
+  activeOrganization: one(organization, { // ADDED: Active organization relation
+    fields: [session.activeOrganizationId],
+    references: [organization.id],
   }),
 }));
 
@@ -523,5 +550,82 @@ export const apikeyRelations = relations(apikey, ({ one }) => ({
   user: one(user, {
     fields: [apikey.userId],
     references: [user.id],
+  }),
+}));
+
+// --- Better Auth Organization Schema ---
+
+export const organization = sqliteTable("organization", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  slug: text("slug").unique().notNull(),
+  logo: text("logo"),
+  metadata: text("metadata", { mode: "json" }).$type<Record<string, any> | null>(),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  slugIdx: uniqueIndex("organization_slug_idx").on(table.slug),
+}));
+
+export const member = sqliteTable("member", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  organizationId: text("organizationId").notNull().references(() => organization.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("member"), // owner, admin, member
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  userOrgIdx: uniqueIndex("member_user_org_idx").on(table.userId, table.organizationId),
+  userIdx: index("member_user_idx").on(table.userId),
+  orgIdx: index("member_org_idx").on(table.organizationId),
+}));
+
+export const invitation = sqliteTable("invitation", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text("email").notNull(),
+  inviterId: text("inviterId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  organizationId: text("organizationId").notNull().references(() => organization.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("member"),
+  status: text("status").notNull().default("pending"), // pending, accepted, rejected, expired
+  expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  emailOrgIdx: index("invitation_email_org_idx").on(table.email, table.organizationId),
+  inviterIdx: index("invitation_inviter_idx").on(table.inviterId),
+  orgIdx: index("invitation_org_idx").on(table.organizationId),
+  statusIdx: index("invitation_status_idx").on(table.status),
+}));
+
+// --- Relations for Better Auth Organization Schema ---
+
+export const organizationRelations = relations(organization, ({ many }) => ({
+  members: many(member),
+  invitations: many(invitation),
+  locations: many(locations), // Organization has many locations
+  connectors: many(connectors), // Organization has many connectors
+  automations: many(automations), // NEW: Organization has many automations
+  sessions: many(session), // For activeOrganizationId reference
+}));
+
+export const memberRelations = relations(member, ({ one }) => ({
+  user: one(user, {
+    fields: [member.userId],
+    references: [user.id],
+  }),
+  organization: one(organization, {
+    fields: [member.organizationId],
+    references: [organization.id],
+  }),
+}));
+
+export const invitationRelations = relations(invitation, ({ one }) => ({
+  inviter: one(user, {
+    fields: [invitation.inviterId],
+    references: [user.id],
+  }),
+  organization: one(organization, {
+    fields: [invitation.organizationId],
+    references: [organization.id],
   }),
 }));

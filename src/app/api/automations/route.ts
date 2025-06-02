@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/data/db';
-import { automations } from '@/data/db/schema';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { AutomationConfigSchema } from '@/lib/automation-schemas';
 import { z } from 'zod';
 
@@ -15,65 +15,84 @@ const PostBodySchema = z.object({
 
 /**
  * GET /api/automations
- * Fetches all automation configurations.
+ * Fetches all automation configurations for the active organization.
  */
-export async function GET(request: Request) {
+export const GET = withOrganizationAuth(async (request, authContext: OrganizationAuthContext) => {
   try {
-    const results = await db
-      .select({
-        id: automations.id,
-        name: automations.name,
-        enabled: automations.enabled,
-        createdAt: automations.createdAt,
-        updatedAt: automations.updatedAt,
-        configJson: automations.configJson,
-        locationScopeId: automations.locationScopeId,
-        tags: automations.tags,
-      })
-      .from(automations);
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    const results = await orgDb.automations.findAll();
 
-    return NextResponse.json(results);
+    return NextResponse.json({ success: true, data: results });
 
   } catch (error) {
     console.error("Failed to fetch automations:", error);
-    return NextResponse.json({ message: "Failed to fetch automations" }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      error: "Failed to fetch automations" 
+    }, { status: 500 });
   }
-}
+});
 
 /**
  * POST /api/automations
- * Creates a new automation configuration.
+ * Creates a new automation configuration in the active organization.
  */
-export async function POST(request: Request) {
+export const POST = withOrganizationAuth(async (request, authContext: OrganizationAuthContext) => {
   try {
     const body = await request.json();
     
     const validationResult = PostBodySchema.safeParse(body);
     if (!validationResult.success) {
-      return NextResponse.json({ message: "Invalid request body", errors: validationResult.error.flatten().fieldErrors }, { status: 400 });
+      return NextResponse.json({ 
+        success: false,
+        error: "Invalid request body", 
+        details: validationResult.error.flatten().fieldErrors 
+      }, { status: 400 });
     }
     
     const { name, enabled, config, locationScopeId, tags } = validationResult.data;
+    const orgDb = createOrgScopedDb(authContext.organizationId);
 
-    const newAutomation = await db.insert(automations).values({
-      name: name,
-      enabled: enabled,
-      configJson: config,
-      locationScopeId: locationScopeId,
-      tags: tags,
-    }).returning();
-
-    if (!newAutomation || newAutomation.length === 0) {
-        throw new Error("Failed to create automation record in database.")
+    // Validate locationScopeId belongs to organization if provided
+    if (locationScopeId) {
+      const locationExists = await orgDb.locations.exists(locationScopeId);
+      if (!locationExists) {
+        return NextResponse.json({
+          success: false,
+          error: "Location not found or not accessible"
+        }, { status: 400 });
+      }
     }
 
-    return NextResponse.json(newAutomation[0], { status: 201 });
+    const newAutomation = await orgDb.automations.create({
+      name,
+      enabled,
+      configJson: config,
+      locationScopeId,
+      tags,
+    });
+
+    if (!newAutomation || newAutomation.length === 0) {
+        return NextResponse.json({ 
+          success: false, 
+          error: "Failed to create automation record in database" 
+        }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, data: newAutomation[0] }, { status: 201 });
 
   } catch (error) {
     console.error("Failed to create automation:", error);
     if (error instanceof z.ZodError) {
-       return NextResponse.json({ message: "Invalid configuration data", errors: error.flatten().fieldErrors }, { status: 400 });
+       return NextResponse.json({ 
+         success: false, 
+         error: "Invalid configuration data", 
+         details: error.flatten().fieldErrors 
+       }, { status: 400 });
     }
-    return NextResponse.json({ message: "Failed to create automation" }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      error: "Failed to create automation" 
+    }, { status: 500 });
   }
-} 
+}); 

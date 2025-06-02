@@ -11,6 +11,9 @@ import { DeviceType } from "@/lib/mappings/definitions";
 import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions";
 import { getDeviceTypeIconName } from "@/lib/mappings/presentation";
 import type { Location, Area } from '@/types';
+import { auth } from "@/lib/auth/server";
+import { createOrgScopedDb } from "@/lib/db/org-scoped-db";
+import { headers } from 'next/headers';
 
 // Define specific params type for this page
 interface EditAutomationPageParams {
@@ -33,6 +36,29 @@ interface AutomationFormData {
 export default async function EditAutomationPage({ params }: { params: Promise<EditAutomationPageParams> }) {
   const { id } = await params;
   
+  // Get the session to check authentication and active organization
+  const headersList = await headers();
+  const plainHeaders: Record<string, string> = {};
+  for (const [key, value] of headersList.entries()) {
+    plainHeaders[key] = value;
+  }
+  
+  const session = await auth.api.getSession({ headers: plainHeaders as any });
+  
+  if (!session?.user) {
+    redirect('/login');
+    return null;
+  }
+  
+  const activeOrganizationId = session?.session?.activeOrganizationId;
+  
+  if (!activeOrganizationId) {
+    throw new Error('No active organization found. Please select an organization first.');
+  }
+  
+  // Create organization-scoped database client
+  const orgDb = createOrgScopedDb(activeOrganizationId);
+  
   // Calculate synchronous options outside Promise.all
   const formSourceDeviceTypeOptions = Object.values(DeviceType)
     .filter(type => type !== DeviceType.Unmapped)
@@ -42,46 +68,53 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
         label: typeValue 
     }));
     
-  // Data fetching logic
+  // Data fetching logic using organization-scoped database
   const [
     automationResult, 
     availableConnectorsResult, 
-    // We will fetch all devices here and then process them
-    allDbDevicesWithJoins, 
+    allDevicesResult, 
     allLocationsResult, 
     allAreasResult
   ] = await Promise.all([
-    db.query.automations.findFirst({
-      where: eq(automationsSchema.id, id),
-    }),
-    db.select({ 
-        id: connectors.id,
-        name: connectors.name,
-        category: connectors.category,
-      }).from(connectors).orderBy(asc(connectors.name)),
-    // NEW: Fetch all devices with necessary fields including join for areaId
-    db.select({
-        id: devices.id,
-        name: devices.name,
-        type: devices.type, // The device type string from the database, used by actionHandlers to determine controllability
-        standardizedDeviceType: devices.standardizedDeviceType, // For displaying target devices
-        areaId: areaDevices.areaId, // Joined from areaDevices - Used by RuleBuilder via allAreas prop
-    }).from(devices)
-      .leftJoin(areaDevices, eq(devices.id, areaDevices.deviceId))
-      // No need to join 'areas' here; RuleBuilder uses areaId + allAreas prop.
-      .orderBy(asc(devices.name)),
-    db.query.locations.findMany({ orderBy: [asc(locations.name)] }) as Promise<Location[]>,
-    db.query.areas.findMany({ orderBy: [asc(areas.name)] }) as Promise<Area[]>,
+    orgDb.automations.findById(id),
+    orgDb.connectors.findAll(),
+    orgDb.devices.findAll(),
+    orgDb.locations.findAll(),
+    orgDb.areas.findAll()
   ]);
 
-  if (!automationResult) {
+  // Check if automation exists in this organization
+  if (!automationResult || automationResult.length === 0) {
     notFound();
   }
 
-  const automation = automationResult;
-  const formAvailableConnectors = availableConnectorsResult;
-  const formAllLocations = allLocationsResult;
-  const formAllAreas = allAreasResult;
+  const automation = automationResult[0];
+  const formAvailableConnectors = availableConnectorsResult.map(c => ({
+    id: c.id,
+    name: c.name,
+    category: c.category,
+  }));
+  const formAllLocations = allLocationsResult.map(location => ({
+    id: location.id,
+    parentId: location.parentId,
+    name: location.name,
+    path: location.path,
+    timeZone: location.timeZone,
+    addressStreet: location.addressStreet,
+    addressCity: location.addressCity,
+    addressState: location.addressState,
+    addressPostalCode: location.addressPostalCode,
+    createdAt: location.createdAt,
+    updatedAt: location.updatedAt
+  }));
+  const formAllAreas = allAreasResult.map(area => ({
+    id: area.id,
+    name: area.name,
+    locationId: area.location.id,
+    armedState: area.armedState,
+    createdAt: area.createdAt,
+    updatedAt: area.updatedAt
+  }));
   
   let processedConfigJson: AutomationConfig;
 
@@ -125,7 +158,7 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
       updatedAt: automation.updatedAt ?? new Date(), // Ensure updatedAt is not null
   };
 
-  // --- START: Process allDbDevicesWithJoins to create the two lists ---
+  // --- START: Process allDevicesResult to create the two lists ---
   
   // Determine controllable raw types from action handlers
   const allSupportedRawTypesByAnyHandler = new Set<string>();
@@ -142,9 +175,9 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
   // 1. Determine Targetable Devices (for Actions)
   let formAvailableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; areaId?: string | null; }> = [];
   if (rawTypesArray.length > 0) {
-      formAvailableTargetDevices = allDbDevicesWithJoins
-          .filter(d => rawTypesArray.includes(d.type)) // Filter by controllable raw types
-          .map(d => {
+      formAvailableTargetDevices = allDevicesResult
+          .filter((d: any) => rawTypesArray.includes(d.type)) // Filter by controllable raw types
+          .map((d: any) => {
               const stdType = d.standardizedDeviceType as DeviceType;
               // This list is for Action targets, display fields are important.
               return {
@@ -161,13 +194,13 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
   // RuleBuilder expects: { id: string; name: string; areaId?: string | null; }
   // It uses the areaId to look up the area in the `allAreas` prop (which contains area.locationId)
   // to perform location-based scoping.
-  const devicesForConditions = allDbDevicesWithJoins.map(d => ({
+  const devicesForConditions = allDevicesResult.map((d: any) => ({
       id: d.id,
       name: d.name,
       areaId: d.areaId, // This is crucial for RuleBuilder's existing logic
   }));
 
-  // --- END: Process allDbDevicesWithJoins ---
+  // --- END: Process allDevicesResult ---
 
   return (
     <div className="flex-1 space-y-4 p-4 pt-6 md:p-8">

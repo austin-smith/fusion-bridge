@@ -147,7 +147,7 @@ export async function updateCurrentUser(
     try {
         const currentCookies = await cookies(); // Ensure cookies() is awaited here as well
         const cookieHeaderString = currentCookies.getAll().map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
-        const baseURL = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
+        const baseURL = process.env.BETTER_AUTH_URL || 'http://localhost:3000';
         if (!baseURL) throw new Error("Base URL for API fetch missing.");
         const sessionCheckUrl = new URL('/api/auth/check-session', baseURL.startsWith('http') ? baseURL : `https://${baseURL}`);
         const response = await fetch(sessionCheckUrl.toString(), {

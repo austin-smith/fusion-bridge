@@ -1,6 +1,7 @@
 import { createAuthClient } from "better-auth/react";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { adminClient } from "better-auth/client/plugins";
+import { organizationClient } from "better-auth/client/plugins";
 import { apiKeyClient } from "better-auth/client/plugins";
 
 // Create the client instance. 
@@ -24,6 +25,7 @@ export const authClient = createAuthClient({
             }
         }),
         adminClient(),
+        organizationClient(),
         apiKeyClient()
     ]
 });

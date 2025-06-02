@@ -43,7 +43,12 @@ export default function AutomationsPage() {
     try {
       const response = await fetch('/api/automations');
       if (response.ok) {
-        const automations = await response.json();
+        const result = await response.json();
+        if (!result.success) {
+          console.warn(`Failed to fetch automations for tags: ${result.error}`);
+          return;
+        }
+        const automations = result.data || [];
         const allTags = new Set<string>();
         automations.forEach((automation: any) => {
           if (automation.tags && Array.isArray(automation.tags)) {

@@ -1,71 +1,66 @@
-import { NextResponse } from 'next/server';
-import { withApiRouteAuth } from '@/lib/auth/withApiRouteAuth';
-import { db } from '@/data/db';
-import { locations } from '@/data/db/schema';
-import { eq } from 'drizzle-orm';
+import { NextRequest, NextResponse } from 'next/server';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import type { Location } from '@/types/index';
 import { createLocationSchema } from '@/lib/schemas/api-schemas';
 
-// Fetch all locations
-export const GET = withApiRouteAuth(async (request, authContext) => {
+// Fetch all locations for the active organization
+export const GET = withOrganizationAuth(async (req: NextRequest, authContext: OrganizationAuthContext) => {
   try {
-    const allLocations: Location[] = await db.select().from(locations).orderBy(locations.path); // Order by path
-
-    // TODO: Potentially reconstruct hierarchy here if needed, or leave for client
-
-    return NextResponse.json({ success: true, data: allLocations });
-
+    // Clean organization-scoped database with explicit joins
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    const locations = await orgDb.locations.findAll();
+    
+    return NextResponse.json({
+      success: true,
+      data: locations
+    });
   } catch (error) {
-    console.error("Error fetching locations:", error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ success: false, error: `Failed to fetch locations: ${errorMessage}` }, { status: 500 });
+    console.error('Error fetching locations:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch locations' },
+      { status: 500 }
+    );
   }
 });
 
-// Create a new location
-export const POST = withApiRouteAuth(async (request, authContext) => {
+// Create a new location in the active organization
+export const POST = withOrganizationAuth(async (req: NextRequest, authContext: OrganizationAuthContext) => {
   try {
-    const body = await request.json();
-    const validation = createLocationSchema.safeParse(body);
+    const body = await req.json();
+    const { name, parentId, timeZone, addressStreet, addressCity, addressState, addressPostalCode, notes, externalId } = body;
 
-    if (!validation.success) {
-      return NextResponse.json({ success: false, error: "Invalid input", details: validation.error.flatten() }, { status: 400 });
+    if (!name || !timeZone || !addressStreet || !addressCity || !addressState || !addressPostalCode) {
+      return NextResponse.json(
+        { success: false, error: 'Missing required fields' },
+        { status: 400 }
+      );
     }
 
-    const { name, parentId, timeZone, externalId, addressStreet, addressCity, addressState, addressPostalCode, notes } = validation.data;
-    let path = crypto.randomUUID(); // Default path for root locations
-
-    if (parentId) {
-      // Fetch parent to construct the path
-      const parent = await db.select({ path: locations.path }).from(locations).where(eq(locations.id, parentId)).limit(1);
-      if (!parent || parent.length === 0) {
-        return NextResponse.json({ success: false, error: "Parent location not found" }, { status: 404 });
-      }
-      const newId = crypto.randomUUID();
-      path = `${parent[0].path}.${newId}`;
-    }
-
-    // Insert the new location
-    const [newLocation] = await db.insert(locations).values({
+    // Clean organization-scoped database - organization automatically injected
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    const newLocations = await orgDb.locations.create({
       name,
-      parentId: parentId || null,
-      path,
+      parentId,
       timeZone,
-      externalId: externalId || null,
       addressStreet,
       addressCity,
       addressState,
       addressPostalCode,
-      notes: notes || null,
-      // createdAt and updatedAt have default values in schema
-    }).returning(); // Return the created object
+      notes,
+      externalId,
+      path: parentId ? `${parentId}/${name}` : name // Simplified path logic
+    });
 
-    return NextResponse.json({ success: true, data: newLocation as Location });
-
+    return NextResponse.json({
+      success: true,
+      data: newLocations[0]
+    });
   } catch (error) {
-    console.error("Error creating location:", error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    // Check for specific DB errors if needed (e.g., unique constraint)
-    return NextResponse.json({ success: false, error: `Failed to create location: ${errorMessage}` }, { status: 500 });
+    console.error('Error creating location:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to create location' },
+      { status: 500 }
+    );
   }
 }); 

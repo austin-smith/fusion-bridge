@@ -42,6 +42,8 @@ import { toast } from 'sonner'; // <<< Added for copy toast
 import { ConnectorRow } from '@/components/features/connectors/ConnectorRow'; // <<< Import ConnectorRow
 import { PageHeader } from '@/components/layout/page-header'; // Import PageHeader
 import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
+import { useSession } from '@/lib/auth/client'; // Import useSession for admin detection
+import { authClient } from '@/lib/auth/client'; // Import authClient for organization fetching
 
 // Define structure for fetched YoLink MQTT state from API
 interface FetchedMqttState {
@@ -147,6 +149,10 @@ const ConnectorsTableSkeleton = ({ rowCount = 5 }: { rowCount?: number }) => {
 };
 
 export default function ConnectorsPage() {
+  // Session for admin detection
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === 'admin';
+
   // Select state
   const { connectors, isLoading, getMqttState, getPikoState, getWebhookState, error } = useFusionStore((state) => ({
     connectors: state.connectors,
@@ -176,6 +182,10 @@ export default function ConnectorsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [togglingConnectorId, setTogglingConnectorId] = useState<string | null>(null);
   const [copiedPayloadId, setCopiedPayloadId] = useState<string | null>(null); // <<< State for copy button
+
+  // Admin-only state
+  const [organizations, setOrganizations] = useState<{ id: string; name: string; slug: string }[]>([]);
+  const [currentOrganizationName, setCurrentOrganizationName] = useState<string>('');
 
   // Set page title
   useEffect(() => {
@@ -271,7 +281,63 @@ export default function ConnectorsPage() {
        clearInterval(intervalId);
      };
   }, [refreshConnectorsData]);
-  
+
+  // Fetch organizations for admin users
+  useEffect(() => {
+    if (isAdmin && session?.session?.activeOrganizationId) {
+      // Fetch organizations list
+      authClient.organization.list()
+        .then(result => {
+          if (result?.data) {
+            setOrganizations(result.data.map(org => ({
+              id: org.id,
+              name: org.name,
+              slug: org.slug
+            })));
+          }
+        })
+        .catch(console.error);
+
+      // Get current organization name
+      authClient.organization.list()
+        .then(result => {
+          if (result?.data) {
+            const currentOrg = result.data.find(org => org.id === session.session.activeOrganizationId);
+            if (currentOrg) {
+              setCurrentOrganizationName(currentOrg.name);
+            }
+          }
+        })
+        .catch(console.error);
+    }
+  }, [isAdmin, session?.session?.activeOrganizationId]);
+
+  // Move connector handler
+  const handleMoveToOrganization = useCallback(async (connectorId: string, targetOrgId: string, targetOrgName: string) => {
+    try {
+      const response = await fetch(`/api/admin/connectors/${connectorId}/organization`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organizationId: targetOrgId }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to move connector');
+      }
+
+      // Remove connector from current view since it's no longer in this organization
+      deleteConnector(connectorId);
+      toast.success(result.message || `Connector moved to ${targetOrgName}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to move connector';
+      console.error('Error moving connector:', error);
+      toast.error(message);
+      throw error; // Re-throw so dialog can handle loading state
+    }
+  }, [deleteConnector]);
+
   // --- Event Handlers using renamed actions and state ---
   const handleAddConnectorClick = useCallback(() => {
     setAddConnectorOpen(true);
@@ -492,6 +558,10 @@ export default function ConnectorsPage() {
                       onEdit={handleEditClick}
                       onDelete={handleDeleteClick}
                       onCopy={handleCopy}
+                      isAdmin={isAdmin}
+                      currentOrganizationName={currentOrganizationName}
+                      organizations={organizations}
+                      onMoveToOrganization={handleMoveToOrganization}
                     />
                   );
                 })}

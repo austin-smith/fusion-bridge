@@ -1,13 +1,12 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { withApiRouteAuth, type ApiRouteAuthContext, type RouteContext } from '@/lib/auth/withApiRouteAuth';
-import { db } from '@/data/db';
-import { areas, locations } from '@/data/db/schema';
-import { eq } from 'drizzle-orm';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
+import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
 import type { Area } from '@/types/index';
 import { updateAreaSchema } from '@/lib/schemas/api-schemas';
 
-// Fetch a specific area by ID
-export const GET = withApiRouteAuth(async (request: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
+// Fetch a specific area by ID within the active organization
+export const GET = withOrganizationAuth(async (request: NextRequest, authContext: OrganizationAuthContext, context: RouteContext<{ id: string }>) => {
   if (!context?.params) {
     return NextResponse.json({ success: false, error: "Missing route parameters" }, { status: 400 });
   }
@@ -19,13 +18,14 @@ export const GET = withApiRouteAuth(async (request: NextRequest, authContext: Ap
   }
 
   try {
-    const [area] = await db.select().from(areas).where(eq(areas.id, id)).limit(1);
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    const areas = await orgDb.areas.findById(id);
 
-    if (!area) {
+    if (areas.length === 0) {
       return NextResponse.json({ success: false, error: "Area not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, data: area as Area });
+    return NextResponse.json({ success: true, data: areas[0] as Area });
 
   } catch (error) {
     console.error(`Error fetching area ${id}:`, error);
@@ -34,8 +34,8 @@ export const GET = withApiRouteAuth(async (request: NextRequest, authContext: Ap
   }
 });
 
-// Update an area (name, locationId)
-export const PUT = withApiRouteAuth(async (request: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
+// Update an area within the active organization
+export const PUT = withOrganizationAuth(async (request: NextRequest, authContext: OrganizationAuthContext, context: RouteContext<{ id: string }>) => {
   if (!context?.params) {
     return NextResponse.json({ success: false, error: "Missing route parameters" }, { status: 400 });
   }
@@ -55,41 +55,33 @@ export const PUT = withApiRouteAuth(async (request: NextRequest, authContext: Ap
     }
 
     const { name, locationId } = validation.data;
+    const orgDb = createOrgScopedDb(authContext.organizationId);
 
-    // Check if area exists
-    const [currentArea] = await db.select({ id: areas.id }).from(areas).where(eq(areas.id, id)).limit(1);
-    if (!currentArea) {
+    // Check if area exists (automatically scoped to organization)
+    if (!(await orgDb.areas.exists(id))) {
       return NextResponse.json({ success: false, error: "Area not found" }, { status: 404 });
     }
 
-    // Use a more specific type for updates, excluding non-updatable fields
-    const updates: Partial<Pick<Area, 'name' | 'locationId'>> & { updatedAt: Date } = { updatedAt: new Date() }; 
-
+    // Build update object
+    const updates: any = { updatedAt: new Date() };
     if (name !== undefined) {
       updates.name = name;
     }
-
-    // If locationId is provided in the request, validate it
     if (locationId !== undefined) {
-       // Validate the target location exists
-        const [targetLocation] = await db.select({ id: locations.id }).from(locations).where(eq(locations.id, locationId)).limit(1);
-        if (!targetLocation) {
-            return NextResponse.json({ success: false, error: "Target location not found" }, { status: 404 });
-        }
-        // Assign the non-null, validated ID
-        updates.locationId = locationId; 
+      // Verify location belongs to organization
+      if (!(await orgDb.locations.exists(locationId))) {
+        return NextResponse.json({ success: false, error: "Target location not found or not accessible" }, { status: 404 });
+      }
+      updates.locationId = locationId;
     }
 
     // Perform the update if there are changes besides updatedAt
     if (Object.keys(updates).length > 1) {
-      const [updatedArea] = await db.update(areas)
-        .set(updates)
-        .where(eq(areas.id, id))
-        .returning();
-       return NextResponse.json({ success: true, data: updatedArea as Area });
+      const updatedAreas = await orgDb.areas.update(id, updates);
+      return NextResponse.json({ success: true, data: updatedAreas[0] as Area });
     } else {
-      const [areaData] = await db.select().from(areas).where(eq(areas.id, id)).limit(1);
-      return NextResponse.json({ success: true, data: areaData as Area }); 
+      const areas = await orgDb.areas.findById(id);
+      return NextResponse.json({ success: true, data: areas[0] as Area });
     }
 
   } catch (error) {
@@ -99,8 +91,8 @@ export const PUT = withApiRouteAuth(async (request: NextRequest, authContext: Ap
   }
 });
 
-// Delete an area (database cascade should handle areaDevices)
-export const DELETE = withApiRouteAuth(async (request: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ id: string }>) => {
+// Delete an area within the active organization
+export const DELETE = withOrganizationAuth(async (request: NextRequest, authContext: OrganizationAuthContext, context: RouteContext<{ id: string }>) => {
   if (!context?.params) {
     return NextResponse.json({ success: false, error: "Missing route parameters" }, { status: 400 });
   }
@@ -112,14 +104,15 @@ export const DELETE = withApiRouteAuth(async (request: NextRequest, authContext:
   }
 
   try {
-    // Optional: Check if area exists first
-    const [existing] = await db.select({ id: areas.id }).from(areas).where(eq(areas.id, id)).limit(1);
-    if (!existing) {
-       return NextResponse.json({ success: true, data: { id } }); // Idempotent success
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+    
+    // Check if area exists (automatically scoped to organization)
+    if (!(await orgDb.areas.exists(id))) {
+      return NextResponse.json({ success: true, data: { id } }); // Idempotent success
     }
 
     // Perform the delete
-    await db.delete(areas).where(eq(areas.id, id));
+    await orgDb.areas.delete(id);
 
     return NextResponse.json({ success: true, data: { id } });
 

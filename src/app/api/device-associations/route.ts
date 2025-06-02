@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { db } from '@/data/db';
-import { cameraAssociations, devices, connectors } from '@/data/db/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { devices, cameraAssociations, connectors } from '@/data/db/schema';
+import { eq, inArray, and } from 'drizzle-orm';
 import { z } from 'zod';
 
 // Schema for validating the PUT request body
@@ -17,89 +19,69 @@ const updateAssociationsSchema = z.object({
  * - If pikoCameraId is provided, returns an array of associated deviceId strings.
  * Requires exactly one query parameter.
  */
-export async function GET(request: Request) {
+export const GET = withOrganizationAuth(async (request, authContext: OrganizationAuthContext) => {
   const { searchParams } = new URL(request.url);
   const deviceIdParam = searchParams.get('deviceId');
   const pikoCameraId = searchParams.get('pikoCameraId');
+  const category = searchParams.get('category') || 'unknown';
 
-  // Validate query parameters: exactly one must be provided
-  if ((deviceIdParam && pikoCameraId) || (!deviceIdParam && !pikoCameraId)) {
+  if (!deviceIdParam && !pikoCameraId) {
     return NextResponse.json(
-      { success: false, error: 'Exactly one of deviceId or pikoCameraId must be provided' },
+      { success: false, error: 'Either deviceId or pikoCameraId query parameter is required' },
       { status: 400 }
     );
   }
 
   try {
-    if (deviceIdParam) {
-      // First get the internal UUID for the generic device
-      const device = await db
-        .select({ id: devices.id })
-        .from(devices)
-        .where(eq(devices.deviceId, deviceIdParam))
-        .limit(1);
+    const orgDb = createOrgScopedDb(authContext.organizationId);
 
-      if (!device.length) {
+    if (deviceIdParam) {
+      // Find associations for a generic device (organization-scoped)
+      const deviceResult = await orgDb.devices.findByExternalId(deviceIdParam);
+      
+      if (deviceResult.length === 0) {
         return NextResponse.json(
           { success: false, error: `Device with ID ${deviceIdParam} not found` },
           { status: 404 }
         );
       }
 
-      // Get associations using the internal UUID
-      const associations = await db
-        .select({
-          pikoCameraDeviceId: devices.deviceId
-        })
-        .from(cameraAssociations)
-        .innerJoin(
-          devices,
-          eq(devices.id, cameraAssociations.pikoCameraId)
-        )
-        .where(eq(cameraAssociations.deviceId, device[0].id));
+      const device = deviceResult[0];
       
-      const pikoCameraIds = associations.map(a => a.pikoCameraDeviceId);
-      return NextResponse.json({ success: true, data: pikoCameraIds });
+      // Get associations using organization-scoped method
+      const associations = await orgDb.devices.findAssociations(device.id, category);
+      
+      const associatedDeviceIds = associations.map(a => a.deviceId);
+      return NextResponse.json({ success: true, data: associatedDeviceIds });
 
     } else { // pikoCameraId must be defined here due to the initial check
-      // First get the internal UUID for the Piko camera
-      const pikoCamera = await db
-        .select({ id: devices.id })
-        .from(devices)
-        .where(eq(devices.deviceId, pikoCameraId!))
-        .limit(1);
-
-      if (!pikoCamera.length) {
+      // Find associations for a Piko camera (organization-scoped)
+      const pikoCameraResult = await orgDb.devices.findByExternalId(pikoCameraId!);
+      
+      if (pikoCameraResult.length === 0) {
         return NextResponse.json(
           { success: false, error: `Piko camera with ID ${pikoCameraId} not found` },
           { status: 404 }
         );
       }
 
-      // Get associations using the internal UUID
-      const associations = await db
-        .select({
-          associatedDeviceId: devices.deviceId
-        })
-        .from(cameraAssociations)
-        .innerJoin(
-          devices,
-          eq(devices.id, cameraAssociations.deviceId)
-        )
-        .where(eq(cameraAssociations.pikoCameraId, pikoCamera[0].id));
-
-      const associatedDeviceIds = associations.map(a => a.associatedDeviceId);
+      const pikoCamera = pikoCameraResult[0];
+      
+      // Get associations using organization-scoped method
+      const associations = await orgDb.devices.findAssociations(pikoCamera.id, 'piko');
+      
+      const associatedDeviceIds = associations.map(a => a.deviceId);
       return NextResponse.json({ success: true, data: associatedDeviceIds });
     }
-  } catch (error: unknown) {
-    console.error(`Error fetching associations (query: ${searchParams.toString()}):`, error);
+  } catch (error) {
+    console.error(`Error fetching associations (deviceId: ${deviceIdParam}, pikoCameraId: ${pikoCameraId}):`, error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch device associations';
     return NextResponse.json(
       { success: false, error: 'Failed to fetch device associations' },
       { status: 500 }
     );
   }
-}
+});
 
 /**
  * PUT /api/device-associations
