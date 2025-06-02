@@ -101,9 +101,11 @@ export function OrganizationSwitcher() {
       !isSwitching &&
       !hasInitialized
     ) {
-      console.log('Auto-selecting first organization:', organizations[0].name);
+      // Auto-select first organization alphabetically
+      const firstOrg = [...organizations].sort((a, b) => a.name.localeCompare(b.name))[0];
+      console.log('Auto-selecting first organization:', firstOrg.name);
       setHasInitialized(true);
-      handleOrganizationSwitch(organizations[0]);
+      handleOrganizationSwitch(firstOrg);
     } else if (
       hasMounted && 
       !isLoadingActiveOrg && 
@@ -125,6 +127,11 @@ export function OrganizationSwitcher() {
     // Show loading during initial mount, auth check, or organization fetch
     return !hasMounted || isLoadingActiveOrg || (isLoadingOrganizations && organizations.length === 0);
   }, [hasMounted, isLoadingActiveOrg, isLoadingOrganizations, organizations.length, isSwitching]);
+
+  // Sort organizations alphabetically by name for consistent display
+  const sortedOrganizations = React.useMemo(() => {
+    return [...organizations].sort((a, b) => a.name.localeCompare(b.name));
+  }, [organizations]);
 
   // Show loading state
   if (isLoading) {
@@ -172,8 +179,8 @@ export function OrganizationSwitcher() {
     );
   }
 
-  // Default to first organization if none active
-  const currentOrg = activeOrganization || organizations[0];
+  // Default to first organization (alphabetically) if none active
+  const currentOrg = activeOrganization || sortedOrganizations[0];
 
   return (
     <>
@@ -213,7 +220,7 @@ export function OrganizationSwitcher() {
               <DropdownMenuLabel className="text-xs text-muted-foreground">
                 Organizations
               </DropdownMenuLabel>
-              {organizations.map((org, index) => (
+              {sortedOrganizations.map((org, index) => (
                 <DropdownMenuItem
                   key={org.id}
                   onClick={() => handleOrganizationSwitch(org)}
