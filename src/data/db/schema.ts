@@ -327,9 +327,6 @@ export const user = sqliteTable("user", {
   banned: integer('banned', { mode: 'boolean' }), 
   banReason: text('banReason'), 
   banExpires: integer('banExpires', { mode: 'timestamp' }),
-  // Keypad PIN fields (matching Better Auth additionalFields)
-  keypadPin: text('keypadPin'), // Hashed PIN string
-  keypadPinSetAt: integer('keypadPinSetAt', { mode: 'timestamp' }),
 });
 
 export const account = sqliteTable("account", {
@@ -388,6 +385,7 @@ export const userRelations = relations(user, ({ many, one }) => ({
   apiKeys: many(apikey),
   memberOf: many(member), // ADDED: User is member of organizations
   sentInvitations: many(invitation), // ADDED: User can send invitations
+  keypadPins: many(keypadPins), // NEW: User keypad PINs across organizations
 }));
 
 export const accountRelations = relations(account, ({ one }) => ({
@@ -428,6 +426,36 @@ export const twoFactorRelations = relations(twoFactor, ({ one }) => ({
         fields: [twoFactor.userId],
         references: [user.id],
     }),
+}));
+
+// --- NEW: Keypad PINs Table ---
+export const keypadPins = sqliteTable("keypad_pins", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+  keypadPin: text("keypad_pin").notNull(), // Hashed PIN string
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  // Enforce PIN uniqueness within organization
+  orgPinUniqueIdx: uniqueIndex("keypad_pins_org_pin_unique_idx").on(table.organizationId, table.keypadPin),
+  // One PIN per user per organization
+  userOrgUniqueIdx: uniqueIndex("keypad_pins_user_org_unique_idx").on(table.userId, table.organizationId),
+  // Index for fast lookups
+  organizationIdx: index("keypad_pins_organization_idx").on(table.organizationId),
+  userIdx: index("keypad_pins_user_idx").on(table.userId),
+}));
+
+// --- Relations for Keypad PINs Schema ---
+export const keypadPinsRelations = relations(keypadPins, ({ one }) => ({
+  user: one(user, {
+    fields: [keypadPins.userId],
+    references: [user.id],
+  }),
+  organization: one(organization, {
+    fields: [keypadPins.organizationId],
+    references: [organization.id],
+  }),
 }));
 
 // --- NEW: Service Configurations Table ---
@@ -606,6 +634,7 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   connectors: many(connectors), // Organization has many connectors
   automations: many(automations), // NEW: Organization has many automations
   sessions: many(session), // For activeOrganizationId reference
+  keypadPins: many(keypadPins), // NEW: Organization keypad PINs
 }));
 
 export const memberRelations = relations(member, ({ one }) => ({

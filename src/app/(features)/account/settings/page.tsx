@@ -3,11 +3,11 @@
 import React, { useState } from 'react';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { cn } from '@/lib/utils';
-import { User, Shield, Key, Palette } from 'lucide-react';
+import { User, Shield, Palette, Building2 } from 'lucide-react';
 import { ProfileSettings } from '@/components/features/account/ProfileSettings';
 import { SecuritySettings } from '@/components/features/account/SecuritySettings';
-import { ApiKeysSettings } from '@/components/api-keys/ApiKeysSettings';
 import { AppearanceSettings } from '@/components/features/account/AppearanceSettings';
+import { OrganizationSettings } from '@/components/features/account/OrganizationSettings';
 import { useSession } from '@/lib/auth/client';
 
 const settingsTabs = [
@@ -22,9 +22,9 @@ const settingsTabs = [
     icon: Shield,
   },
   {
-    id: 'api-keys',
-    label: 'API Keys',
-    icon: Key,
+    id: 'organization',
+    label: 'Organization',
+    icon: Building2,
   },
   {
     id: 'appearance',
@@ -48,8 +48,6 @@ function SettingsPage() {
     email: session.user.email || 'Unknown Email',
     image: session.user.image || null,
     twoFactorEnabled: session.user.twoFactorEnabled || false,
-    keypadPin: (session.user as any).keypadPin || null,
-    keypadPinSetAt: (session.user as any).keypadPinSetAt || null,
   };
 
   const renderContent = () => {
@@ -58,8 +56,8 @@ function SettingsPage() {
         return <ProfileSettings user={userData} />;
       case 'security':
         return <SecuritySettings user={userData} />;
-      case 'api-keys':
-        return <ApiKeysSettings user={userData} />;
+      case 'organization':
+        return <OrganizationSettings user={userData} />;
       case 'appearance':
         return <AppearanceSettings />;
       default:

@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/data/db';
-import { user } from '@/data/db/schema';
-import { eq, and, isNotNull } from 'drizzle-orm';
 import crypto from 'crypto';
-import { withApiRouteAuth, type ApiRouteAuthContext } from '@/lib/auth/withApiRouteAuth';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 
 // Helper function to hash PIN using Node.js crypto (same as user management)
 function hashPin(pin: string): string {
   return crypto.pbkdf2Sync(pin, 'pin-salt', 100000, 64, 'sha512').toString('hex');
 }
 
-// POST /api/alarm/keypad/validate-pin - Validate a PIN for keypad access
-async function validatePinHandler(req: NextRequest, authContext: ApiRouteAuthContext) {
+// POST /api/alarm/keypad/validate-pin - Validate a PIN for keypad access (organization-scoped)
+async function validatePinHandler(req: NextRequest, authContext: OrganizationAuthContext) {
   try {
     const { pin } = await req.json();
 
@@ -26,22 +24,14 @@ async function validatePinHandler(req: NextRequest, authContext: ApiRouteAuthCon
     // Hash the provided PIN
     const hashedPin = hashPin(pin);
 
-    // Find user with matching PIN
-    const foundUser = await db.select({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-    }).from(user)
-      .where(
-        and(
-          eq(user.keypadPin, hashedPin),
-          isNotNull(user.keypadPin) // Only consider users who have a PIN set
-        )
-      )
-      .limit(1);
+    // Create organization-scoped database client
+    const orgDb = createOrgScopedDb(authContext.organizationId);
 
-    if (foundUser.length === 0) {
-      // No matching user found
+    // Find user with matching PIN in this organization
+    const foundUserPin = await orgDb.keypadPins.findByPin(hashedPin);
+
+    if (foundUserPin.length === 0) {
+      // No matching PIN found in this organization
       return NextResponse.json({
         success: true,
         data: { valid: false }
@@ -49,13 +39,13 @@ async function validatePinHandler(req: NextRequest, authContext: ApiRouteAuthCon
     }
 
     // Valid PIN found
-    const matchedUser = foundUser[0];
+    const matchedRecord = foundUserPin[0];
     return NextResponse.json({
       success: true,
       data: {
         valid: true,
-        userId: matchedUser.id,
-        userName: matchedUser.name,
+        userId: matchedRecord.user.id,
+        userName: matchedRecord.user.name,
       }
     });
 
@@ -68,4 +58,4 @@ async function validatePinHandler(req: NextRequest, authContext: ApiRouteAuthCon
   }
 }
 
-export const POST = withApiRouteAuth(validatePinHandler); 
+export const POST = withOrganizationAuth(validatePinHandler); 

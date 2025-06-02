@@ -1,6 +1,6 @@
 import { db } from '@/data/db';
-import { locations, areas, devices, areaDevices, connectors, events, pikoServers, cameraAssociations, automations } from '@/data/db/schema';
-import { eq, and, exists, getTableColumns, desc, count, inArray } from 'drizzle-orm';
+import { locations, areas, devices, areaDevices, connectors, events, pikoServers, cameraAssociations, automations, keypadPins, user } from '@/data/db/schema';
+import { eq, and, exists, getTableColumns, desc, count, inArray, ne } from 'drizzle-orm';
 
 /**
  * Organization-scoped database client using proper JOIN-based filtering
@@ -624,6 +624,106 @@ export class OrgScopedDb {
         .where(and(
           eq(automations.id, id),
           eq(automations.organizationId, this.orgId)
+        ))
+        .limit(1);
+      return result.length > 0;
+    }
+  };
+  
+  // Keypad PIN methods (organization-scoped)
+  readonly keypadPins = {
+    findByPin: (hashedPin: string) =>
+      db.select({
+        ...getTableColumns(keypadPins),
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email
+        }
+      })
+      .from(keypadPins)
+      .innerJoin(user, eq(keypadPins.userId, user.id))
+      .where(and(
+        eq(keypadPins.keypadPin, hashedPin),
+        eq(keypadPins.organizationId, this.orgId)
+      ))
+      .limit(1),
+      
+    getUserPin: (userId: string) =>
+      db.select().from(keypadPins)
+        .where(and(
+          eq(keypadPins.userId, userId),
+          eq(keypadPins.organizationId, this.orgId)
+        ))
+        .limit(1),
+        
+    setUserPin: async (userId: string, hashedPin: string) => {
+      // Check if PIN is unique within organization (excluding current user)
+      const existingPin = await db.select({ id: keypadPins.id })
+        .from(keypadPins)
+        .where(and(
+          eq(keypadPins.keypadPin, hashedPin),
+          eq(keypadPins.organizationId, this.orgId),
+          // Exclude current user in case they're updating their own PIN to the same value
+          // This won't work because we might be creating a new record, but the unique constraint will handle it
+        ))
+        .limit(1);
+      
+      if (existingPin.length > 0) {
+        throw new Error('PIN already exists in this organization');
+      }
+      
+      // Use upsert pattern - insert or update existing record
+      return db.insert(keypadPins)
+        .values({
+          userId,
+          organizationId: this.orgId,
+          keypadPin: hashedPin,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+        .onConflictDoUpdate({
+          target: [keypadPins.userId, keypadPins.organizationId],
+          set: {
+            keypadPin: hashedPin,
+            updatedAt: new Date()
+          }
+        })
+        .returning();
+    },
+    
+    removeUserPin: (userId: string) =>
+      db.delete(keypadPins)
+        .where(and(
+          eq(keypadPins.userId, userId),
+          eq(keypadPins.organizationId, this.orgId)
+        )),
+        
+    checkPinUnique: async (hashedPin: string, excludeUserId?: string): Promise<boolean> => {
+      const conditions = [
+        eq(keypadPins.keypadPin, hashedPin),
+        eq(keypadPins.organizationId, this.orgId)
+      ];
+      
+      // Exclude a specific user if provided (useful for updates)
+      if (excludeUserId) {
+        conditions.push(ne(keypadPins.userId, excludeUserId));
+      }
+      
+      const result = await db.select({ id: keypadPins.id })
+        .from(keypadPins)
+        .where(and(...conditions))
+        .limit(1);
+      
+      return result.length === 0; // true if unique (no results found)
+    },
+    
+    exists: async (userId: string): Promise<boolean> => {
+      const result = await db.select({ id: keypadPins.id })
+        .from(keypadPins)
+        .where(and(
+          eq(keypadPins.userId, userId),
+          eq(keypadPins.organizationId, this.orgId)
         ))
         .limit(1);
       return result.length > 0;

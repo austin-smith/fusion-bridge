@@ -189,125 +189,126 @@ export function ApiKeysSettings({ user }: ApiKeysSettingsProps) {
               />
             </div>
           ) : (
-            <div className="space-y-3">
-              {apiKeys.map((apiKey) => (
-                <div key={apiKey.id} className="border rounded-lg p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-medium text-sm">
-                          {apiKey.name || 'Unnamed API Key'}
-                        </h4>
-                        <Badge 
-                          variant={apiKey.enabled ? 'default' : 'secondary'}
-                          className="text-xs"
-                        >
-                          {apiKey.enabled ? 'Active' : 'Disabled'}
-                        </Badge>
-                        {apiKey.organizationId && (
-                          <Badge variant="outline" className="text-xs">
-                            <Building2 className="h-3 w-3 mr-1" />
-                            {apiKey.organizationName || 'Organization'}
+            <div className="space-y-6">
+              {/* API Keys List */}
+              <div className="space-y-3">
+                {apiKeys.map((apiKey) => (
+                  <div key={apiKey.id} className="border rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-medium text-sm">
+                            {apiKey.name || 'Unnamed API Key'}
+                          </h4>
+                          <Badge 
+                            variant={apiKey.enabled ? 'default' : 'secondary'}
+                            className="text-xs"
+                          >
+                            {apiKey.enabled ? 'Active' : 'Disabled'}
                           </Badge>
-                        )}
-                        {apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date() && (
-                          <Badge variant="destructive" className="text-xs">Expired</Badge>
-                        )}
-                      </div>
-                      
-                      <div className="text-xs text-muted-foreground space-y-1">
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono">{maskApiKey(apiKey.start)}</span>
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            Created {formatDate(apiKey.createdAt.toISOString())}
-                          </span>
+                          {apiKey.organizationId && (
+                            <Badge variant="outline" className="text-xs">
+                              <Building2 className="h-3 w-3 mr-1" />
+                              {apiKey.organizationName || 'Organization'}
+                            </Badge>
+                          )}
+                          {apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date() && (
+                            <Badge variant="destructive" className="text-xs">Expired</Badge>
+                          )}
                         </div>
                         
-                        <div className="flex items-center gap-3">
-                          {apiKey.lastRequest && (
+                        <div className="text-xs text-muted-foreground space-y-1">
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono">{maskApiKey(apiKey.start)}</span>
                             <span className="flex items-center gap-1">
-                              <Activity className="h-3 w-3" />
-                              Last used {formatRelativeTime(apiKey.lastRequest.toISOString())}
+                              <Calendar className="h-3 w-3" />
+                              Created {formatDate(apiKey.createdAt.toISOString())}
                             </span>
-                          )}
-                          {apiKey.rateLimitEnabled && (
-                            <span>
-                              {apiKey.rateLimitMax || 1000} req/day
-                              {apiKey.remaining !== null && (
-                                <span className="ml-1">({apiKey.remaining} remaining)</span>
-                              )}
-                            </span>
-                          )}
+                          </div>
+                          
+                          <div className="flex items-center gap-3">
+                            {apiKey.lastRequest && (
+                              <span className="flex items-center gap-1">
+                                <Activity className="h-3 w-3" />
+                                Last used {formatRelativeTime(apiKey.lastRequest.toISOString())}
+                              </span>
+                            )}
+                            {apiKey.rateLimitEnabled && (
+                              <span>
+                                {apiKey.rateLimitMax || 1000} req/day
+                                {apiKey.remaining !== null && (
+                                  <span className="ml-1">({apiKey.remaining} remaining)</span>
+                                )}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
+                      
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => navigator.clipboard.writeText(apiKey.id)}>
+                            <Copy className="h-4 w-4 mr-2" />
+                            Copy Key ID
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem 
+                            onClick={() => handleOpenDeleteDialog(apiKey)}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-                    
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => navigator.clipboard.writeText(apiKey.id)}>
-                          <Copy className="h-4 w-4 mr-2" />
-                          Copy Key ID
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem 
-                          onClick={() => handleOpenDeleteDialog(apiKey)}
-                          className="text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                  </div>
+                ))}
+              </div>
+
+              {/* Usage Information Section */}
+              <div className="border-t pt-6">
+                <h3 className="text-lg font-semibold mb-4">Usage & Integration</h3>
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold mb-2">Authentication</h4>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Include your API key in the <code className="px-1 py-0.5 bg-muted rounded text-xs">x-api-key</code> header:
+                    </p>
+                    <pre className="p-3 bg-muted rounded text-xs overflow-x-auto">
+                      <code>curl -H &quot;x-api-key: your_api_key_here&quot; http://fusion-bridge-production.up.railway.app/api/endpoint</code>
+                    </pre>
+                  </div>
+                  
+                  <div>
+                    <h4 className="text-sm font-semibold mb-2">Organization Scoping</h4>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      API keys are scoped to the organization you were active in when creating them. 
+                      They will only have access to data within that organization.
+                    </p>
+                    <div className="text-xs text-muted-foreground p-3 bg-blue-50 rounded border-l-2 border-blue-200">
+                      <strong>Note:</strong> To create API keys for different organizations, 
+                      switch to that organization first, then create the key.
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 className="text-sm font-semibold mb-2">Security</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Keep your API keys secure and never expose them in client-side code. 
+                      Rotate keys regularly for enhanced security. Each key can only access 
+                      data from its assigned organization.
+                    </p>
                   </div>
                 </div>
-              ))}
+              </div>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Usage Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Usage Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <h4 className="text-sm font-semibold mb-1">Authentication</h4>
-            <p className="text-sm text-muted-foreground mb-2">
-              Include your API key in the <code className="px-1 py-0.5 bg-muted rounded text-xs">x-api-key</code> header:
-            </p>
-            <pre className="p-2 bg-muted rounded text-xs overflow-x-auto">
-              <code>curl -H &quot;x-api-key: your_api_key_here&quot; http://fusion-bridge-production.up.railway.app/api/endpoint</code>
-            </pre>
-          </div>
-          
-          <div>
-            <h4 className="text-sm font-semibold mb-1">Organization Scoping</h4>
-            <p className="text-sm text-muted-foreground mb-2">
-              API keys are scoped to the organization you were active in when creating them. 
-              They will only have access to data within that organization.
-            </p>
-            <div className="text-xs text-muted-foreground p-2 bg-blue-50 rounded border-l-2 border-blue-200">
-              <strong>Note:</strong> To create API keys for different organizations, 
-              switch to that organization first, then create the key.
-            </div>
-          </div>
-          
-          <div>
-            <h4 className="text-sm font-semibold mb-1">Security</h4>
-            <p className="text-sm text-muted-foreground">
-              Keep your API keys secure and never expose them in client-side code. 
-              Rotate keys regularly for enhanced security. Each key can only access 
-              data from its assigned organization.
-            </p>
-          </div>
         </CardContent>
       </Card>
 

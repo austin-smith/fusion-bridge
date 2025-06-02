@@ -127,6 +127,13 @@
       "when": 1748818839510,
       "tag": "0017_grey_leech",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1748841572752,
+      "tag": "0018_tiny_doorman",
+      "breakpoints": true
     }
   ]
 }

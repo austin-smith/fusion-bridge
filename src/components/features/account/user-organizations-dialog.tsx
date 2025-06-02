@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -93,13 +93,7 @@ export function UserOrganizationsDialog({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isOpen && user.id) {
-      fetchUserOrganizations();
-    }
-  }, [isOpen, user.id]);
-
-  const fetchUserOrganizations = async () => {
+  const fetchUserOrganizations = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -119,7 +113,13 @@ export function UserOrganizationsDialog({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user.id]);
+
+  useEffect(() => {
+    if (isOpen && user.id) {
+      fetchUserOrganizations();
+    }
+  }, [isOpen, user.id, fetchUserOrganizations]);
 
   const handleClose = () => {
     onOpenChange(false);

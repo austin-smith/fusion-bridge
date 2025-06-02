@@ -1,17 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/data/db';
-import { user } from '@/data/db/schema';
-import { eq } from 'drizzle-orm';
 import crypto from 'crypto';
-import { withApiRouteAuth, type ApiRouteAuthContext, type RouteContext } from '@/lib/auth/withApiRouteAuth';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { type RouteContext } from '@/lib/auth/withApiRouteAuth';
+import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 
 // Helper function to hash PIN using Node.js crypto
 function hashPin(pin: string): string {
   return crypto.pbkdf2Sync(pin, 'pin-salt', 100000, 64, 'sha512').toString('hex');
 }
 
-// POST /api/users/[userId]/keypad-pin - Set user PIN
-async function setPinHandler(req: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ userId: string }>) {
+// GET /api/users/[userId]/keypad-pin - Check if user has PIN set (organization-scoped)
+async function getPinStatusHandler(req: NextRequest, authContext: OrganizationAuthContext, context: RouteContext<{ userId: string }>) {
+  try {
+    const { userId } = await context.params;
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: 'User ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Create organization-scoped database client
+    const orgDb = createOrgScopedDb(authContext.organizationId);
+
+    // Check if user has a PIN set in this organization
+    const userPin = await orgDb.keypadPins.getUserPin(userId);
+
+    if (userPin.length > 0) {
+      return NextResponse.json({
+        hasPin: true,
+        setAt: userPin[0].createdAt.toISOString()
+      });
+    } else {
+      return NextResponse.json({
+        hasPin: false,
+        setAt: null
+      });
+    }
+
+  } catch (error) {
+    console.error('Error checking PIN status:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to check PIN status' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/users/[userId]/keypad-pin - Set user PIN (organization-scoped)
+async function setPinHandler(req: NextRequest, authContext: OrganizationAuthContext, context: RouteContext<{ userId: string }>) {
   try {
     const { pin } = await req.json();
     const { userId } = await context.params;
@@ -31,31 +69,30 @@ async function setPinHandler(req: NextRequest, authContext: ApiRouteAuthContext,
       );
     }
 
-    // Check if user exists
-    const existingUser = await db.select().from(user).where(eq(user.id, userId)).limit(1);
-    if (!existingUser.length) {
-      return NextResponse.json(
-        { success: false, error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
     // Hash the PIN
     const hashedPin = hashPin(pin);
 
-    // Update user with hashed PIN and timestamp
-    await db.update(user)
-      .set({ 
-        keypadPin: hashedPin,
-        keypadPinSetAt: new Date(),
-        updatedAt: new Date()
-      })
-      .where(eq(user.id, userId));
+    // Create organization-scoped database client
+    const orgDb = createOrgScopedDb(authContext.organizationId);
 
-    return NextResponse.json({
-      success: true,
-      data: { userId, message: 'PIN set successfully' }
-    });
+    try {
+      // Set user PIN (includes uniqueness validation within organization)
+      await orgDb.keypadPins.setUserPin(userId, hashedPin);
+
+      return NextResponse.json({
+        success: true,
+        data: { userId, message: 'PIN set successfully' }
+      });
+
+    } catch (dbError: any) {
+      if (dbError.message === 'PIN already exists in this organization') {
+        return NextResponse.json(
+          { success: false, error: 'PIN already exists in this organization. Please choose a different PIN.' },
+          { status: 400 }
+        );
+      }
+      throw dbError; // Re-throw other database errors
+    }
 
   } catch (error) {
     console.error('Error setting user PIN:', error);
@@ -66,8 +103,8 @@ async function setPinHandler(req: NextRequest, authContext: ApiRouteAuthContext,
   }
 }
 
-// DELETE /api/users/[userId]/keypad-pin - Remove user PIN
-async function removePinHandler(req: NextRequest, authContext: ApiRouteAuthContext, context: RouteContext<{ userId: string }>) {
+// DELETE /api/users/[userId]/keypad-pin - Remove user PIN (organization-scoped)
+async function removePinHandler(req: NextRequest, authContext: OrganizationAuthContext, context: RouteContext<{ userId: string }>) {
   try {
     const { userId } = await context.params;
 
@@ -78,23 +115,11 @@ async function removePinHandler(req: NextRequest, authContext: ApiRouteAuthConte
       );
     }
 
-    // Check if user exists
-    const existingUser = await db.select().from(user).where(eq(user.id, userId)).limit(1);
-    if (!existingUser.length) {
-      return NextResponse.json(
-        { success: false, error: 'User not found' },
-        { status: 404 }
-      );
-    }
+    // Create organization-scoped database client
+    const orgDb = createOrgScopedDb(authContext.organizationId);
 
-    // Remove PIN by setting to null
-    await db.update(user)
-      .set({ 
-        keypadPin: null,
-        keypadPinSetAt: null,
-        updatedAt: new Date()
-      })
-      .where(eq(user.id, userId));
+    // Remove user PIN from organization
+    await orgDb.keypadPins.removeUserPin(userId);
 
     return NextResponse.json({
       success: true,
@@ -110,5 +135,6 @@ async function removePinHandler(req: NextRequest, authContext: ApiRouteAuthConte
   }
 }
 
-export const POST = withApiRouteAuth(setPinHandler);
-export const DELETE = withApiRouteAuth(removePinHandler); 
+export const GET = withOrganizationAuth(getPinStatusHandler);
+export const POST = withOrganizationAuth(setPinHandler);
+export const DELETE = withOrganizationAuth(removePinHandler); 
