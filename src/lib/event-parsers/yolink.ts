@@ -70,14 +70,18 @@ function translateRawYoLinkState(deviceInfo: TypedDeviceInfo, rawState: string |
 interface RawYoLinkData {
     state?: string | { 
         lock?: string; 
-        event?: { // For SmartRemoter button events
+        event?: { // For other device types that might use this structure
             keyMask?: number;
             type?: string; // "Press" or "LongPress"
         };
         [key: string]: any; 
     }; // Allow string or object for state
+    event?: { // For SmartRemoter button events (StatusChange structure)
+        keyMask?: number;
+        type?: string; // "Press" or "LongPress"
+    };
     alertType?: string;
-    battery?: number; // Field may exist, but we won't process it into an event for now
+    battery?: number; // YoLink battery level 0-4 (0=empty, 4=full)
     version?: string;
     loraInfo?: Record<string, any>;
     stateChangedAt?: number;
@@ -169,6 +173,12 @@ function handlePowerReport({ event, timestamp, connectorId, deviceInfo }: EventC
         rawEventPayload: event.data
     };
     
+    // Add battery percentage if available
+    const batteryPercentage = extractBatteryPercentage(event.data);
+    if (batteryPercentage !== undefined) {
+        (payload as any).batteryPercentage = batteryPercentage;
+    }
+    
     return [{
         eventId: crypto.randomUUID(),
         timestamp: timestamp,
@@ -183,7 +193,8 @@ function handlePowerReport({ event, timestamp, connectorId, deviceInfo }: EventC
 }
 
 function handleSmartFobButtonPress({ event, timestamp, connectorId, deviceInfo }: EventContext): StandardizedEvent[] {
-    const buttonEvent = (event.data?.state as any)?.event;
+    // SmartRemoter button presses are always StatusChange events with data.event structure
+    const buttonEvent = event.data?.event;
     const keyMask = buttonEvent?.keyMask;
     const pressType = buttonEvent?.type;
     
@@ -202,6 +213,9 @@ function handleSmartFobButtonPress({ event, timestamp, connectorId, deviceInfo }
     
     const standardizedEvents: StandardizedEvent[] = [];
     
+    // Extract battery percentage if available
+    const batteryPercentage = extractBatteryPercentage(event.data);
+    
     // Parse keyMask to identify which buttons were pressed (bits 0-7 = buttons 1-8)
     for (let buttonNumber = 0; buttonNumber < 8; buttonNumber++) {
         if (keyMask & (1 << buttonNumber)) {
@@ -210,6 +224,11 @@ function handleSmartFobButtonPress({ event, timestamp, connectorId, deviceInfo }
                 pressType: pressType as 'Press' | 'LongPress',
                 keyMask: keyMask
             };
+            
+            // Add battery percentage if available
+            if (batteryPercentage !== undefined) {
+                (payload as any).batteryPercentage = batteryPercentage;
+            }
             
             const eventType = pressType === 'LongPress' ? EventType.BUTTON_LONG_PRESSED : EventType.BUTTON_PRESSED;
             
@@ -262,6 +281,12 @@ function handleGenericStateChange({ event, timestamp, connectorId, deviceInfo }:
         displayState: displayState,
     };
     
+    // Add battery percentage if available
+    const batteryPercentage = extractBatteryPercentage(event.data);
+    if (batteryPercentage !== undefined) {
+        (payload as any).batteryPercentage = batteryPercentage;
+    }
+    
     return [{
         eventId: crypto.randomUUID(),
         timestamp: timestamp,
@@ -282,6 +307,12 @@ function handleGenericDiagnosticReport({ event, timestamp, connectorId, deviceIn
         message: `YoLink Diagnostic Report: ${event.event}`,
         rawEventPayload: event.data
     };
+    
+    // Add battery percentage if available
+    const batteryPercentage = extractBatteryPercentage(event.data);
+    if (batteryPercentage !== undefined) {
+        (payload as any).batteryPercentage = batteryPercentage;
+    }
     
     return [{
         eventId: crypto.randomUUID(),
@@ -304,6 +335,12 @@ function createUnknownEvent({ event, timestamp, connectorId, deviceInfo }: Event
         rawEventPayload: event.data
     };
     
+    // Add battery percentage if available
+    const batteryPercentage = extractBatteryPercentage(event.data);
+    if (batteryPercentage !== undefined) {
+        (payload as any).batteryPercentage = batteryPercentage;
+    }
+    
     return [{
         eventId: crypto.randomUUID(),
         timestamp: timestamp,
@@ -325,15 +362,21 @@ const EVENT_HANDLERS: EventHandler[] = [
         handler: handlePowerReport
     },
     
-    // SmartFob button presses (specific device type + event structure)
+    // SmartFob button presses (specific device type + StatusChange events only)
     {
         condition: ({ event, deviceInfo }) => {
-            return deviceInfo.type === DeviceType.SmartFob && 
-                   event.event.endsWith('.Alert') && 
-                   !!event.data?.state && 
-                   typeof event.data.state === 'object' && 
-                   'event' in event.data.state &&
-                   event.data.state.event !== undefined;
+            if (deviceInfo.type !== DeviceType.SmartFob) return false;
+            
+            // Button presses are always StatusChange events, never Alert events
+            if (!event.event.endsWith('.StatusChange')) return false;
+            
+            // Check for button data in data.event structure
+            const buttonEvent = event.data?.event;
+            
+            return buttonEvent !== undefined && 
+                   typeof buttonEvent === 'object' && 
+                   'keyMask' in buttonEvent && 
+                   'type' in buttonEvent;
         },
         handler: handleSmartFobButtonPress
     },
@@ -353,3 +396,25 @@ const EVENT_HANDLERS: EventHandler[] = [
         handler: handleGenericDiagnosticReport
     }
 ]; 
+
+// --- Battery Data Extraction ---
+/**
+ * Extracts battery percentage from YoLink event data.
+ * Converts YoLink's 0-4 scale to 0-100 percentage.
+ * @param eventData The event data object
+ * @returns Battery percentage (0-100) or undefined if no battery data
+ */
+function extractBatteryPercentage(eventData?: RawYoLinkData): number | undefined {
+    if (!eventData?.battery || typeof eventData.battery !== 'number') {
+        return undefined;
+    }
+    
+    // Validate YoLink battery range (0-4)
+    if (eventData.battery < 0 || eventData.battery > 4) {
+        console.warn(`[YoLink Parser] Invalid battery level: ${eventData.battery}. Expected 0-4.`);
+        return undefined;
+    }
+    
+    // Convert YoLink 0-4 scale to 0-100 percentage
+    return Math.round((eventData.battery / 4) * 100);
+} 

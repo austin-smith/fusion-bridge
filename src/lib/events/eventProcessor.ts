@@ -69,15 +69,39 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
       // We might still want to process for automations if the event is not device-specific or if automations can handle events without full device context
       // For now, let's proceed to automations even if device context is limited.
     } else {
-      // 3. Device Status Update (if applicable and device found)
+      // 3. Device Status and Battery Update (if applicable and device found)
+      const updateData: { status?: string; batteryPercentage?: number; updatedAt: Date } = {
+        updatedAt: new Date()
+      };
+
+      // Check for status update (STATE_CHANGED events)
       if (event.type === EventType.STATE_CHANGED && event.payload?.displayState && typeof event.payload.displayState === 'string') {
+        updateData.status = event.payload.displayState;
+      }
+
+      // Check for battery update (any event with battery data)
+      if (event.payload?.batteryPercentage !== undefined && typeof event.payload.batteryPercentage === 'number') {
+        const batteryPercentage = event.payload.batteryPercentage;
+        if (batteryPercentage >= 0 && batteryPercentage <= 100) {
+          updateData.batteryPercentage = batteryPercentage;
+        } else {
+          console.warn(`[EventProcessor] Invalid battery percentage ${batteryPercentage} for device ${event.deviceId}. Expected 0-100.`);
+        }
+      }
+
+      // Perform single database update if there's anything to update
+      if (updateData.status !== undefined || updateData.batteryPercentage !== undefined) {
         try {
           await db.update(devicesTableSchema)
-            .set({ status: event.payload.displayState, updatedAt: new Date() })
+            .set(updateData)
             .where(eq(devicesTableSchema.id, internalDeviceRecord.id));
-          console.log(`[EventProcessor] Device ${internalDeviceRecord.id} status updated to '${event.payload.displayState}'.`);
+          
+          const updates: string[] = [];
+          if (updateData.status) updates.push(`status to '${updateData.status}'`);
+          if (updateData.batteryPercentage !== undefined) updates.push(`battery to ${updateData.batteryPercentage}%`);
+          console.log(`[EventProcessor] Device ${internalDeviceRecord.id} updated: ${updates.join(', ')}.`);
         } catch (dbError) {
-          console.error(`[EventProcessor] Failed to update device status for ${internalDeviceRecord.id}:`, dbError);
+          console.error(`[EventProcessor] Failed to update device ${internalDeviceRecord.id}:`, dbError);
         }
       }
 

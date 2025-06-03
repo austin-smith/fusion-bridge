@@ -1,0 +1,1 @@
+ALTER TABLE `devices` ADD `battery_percentage` integer;

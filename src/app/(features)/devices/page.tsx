@@ -87,6 +87,7 @@ interface DisplayedDevice extends Omit<DeviceWithConnector, 'status' | 'type' | 
   type: string; // Add back raw device type string
   // Add server details explicitly
   pikoServerDetails?: PikoServer; // <-- Add the field here
+  batteryPercentage?: number | null; // Add battery percentage field
   // status: string | null; // Keep status omitted as it's replaced by displayState
   createdAt: Date;
   updatedAt: Date;
@@ -286,6 +287,7 @@ export default function DevicesPage() {
                 serverName: serverName,
                 serverId: serverId,
                 pikoServerDetails: pikoServerDetails,
+                batteryPercentage: fullDevice.batteryPercentage ?? undefined, // Get from fullDevice instead of state
                 createdAt: new Date(fullDevice.createdAt),
                 updatedAt: new Date(fullDevice.updatedAt), 
             };

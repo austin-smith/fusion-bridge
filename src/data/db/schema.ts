@@ -75,6 +75,7 @@ export const devices = sqliteTable("devices", {
   standardizedDeviceType: text("standardized_device_type").$type<DeviceType>(), // Mapped DeviceType enum value
   standardizedDeviceSubtype: text("standardized_device_subtype").$type<DeviceSubtype | null>(), // Mapped DeviceSubtype enum value (nullable)
   status: text("status"),
+  batteryPercentage: integer("battery_percentage"), // 0-100 percentage, nullable
   serverId: text("server_id"), // Optional: e.g., Piko Server ID
   vendor: text("vendor"),
   model: text("model"),

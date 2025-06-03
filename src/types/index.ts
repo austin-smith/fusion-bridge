@@ -55,6 +55,7 @@ export type DeviceWithConnector = {
   name: string;
   type: string;
   status?: string | null;
+  batteryPercentage?: number | null;
   vendor?: string | null;
   model?: string | null;
   url?: string | null;

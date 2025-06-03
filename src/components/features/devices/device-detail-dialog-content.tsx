@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import type { DisplayState, TypedDeviceInfo } from '@/lib/mappings/definitions';
 import { ActionableState } from '@/lib/mappings/definitions';
 import { DeviceType, ON, OFF } from '@/lib/mappings/definitions';
-import { getDisplayStateIcon } from '@/lib/mappings/presentation';
+import { getDisplayStateIcon, getBatteryIcon, getBatteryColorClass } from '@/lib/mappings/presentation';
 import { getDeviceTypeIcon } from "@/lib/mappings/presentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,6 +76,7 @@ export interface DeviceDetailProps {
   serverName?: string;
   serverId?: string;
   pikoServerDetails?: PikoServer;
+  batteryPercentage?: number | null; // Add battery percentage
   createdAt: Date;
   updatedAt: Date;
   // Add lastStateEvent / lastStatusEvent if needed in dialog?
@@ -717,10 +718,6 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         setShowLiveVideo(true);
     }
   };
-  
-  // --- BEGIN Power Control Component --- //
-  // REMOVED: DevicePowerControl component is no longer needed
-  // --- END Power Control Component --- //
 
   // --- BEGIN Status Badge Component --- //
   const DeviceStatusBadge = () => {
@@ -865,7 +862,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   };
 
   return (
-    <>
+    <TooltipProvider delayDuration={300}>
       {/* Add hidden image for preloading */} 
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img ref={preloaderImgRef} alt="" style={{ display: 'none' }} /> 
@@ -903,30 +900,28 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
             {/* Right side: Action Switch (Conditional) */}
             {isActionable && (
               <div className="flex-shrink-0">
-                <TooltipProvider delayDuration={100}> 
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="flex items-center gap-2">
-                        {isLoadingAction && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />} 
-                        <Switch
-                          id={`header-action-switch-${device.internalId}`}
-                          checked={isOn}
-                          onCheckedChange={(checked) => {
-                            executeDeviceAction(
-                              device.internalId,
-                              checked ? ActionableState.SET_ON : ActionableState.SET_OFF
-                            );
-                          }}
-                          disabled={isLoadingAction}
-                          aria-label={isLoadingAction ? 'Processing' : (isOn ? 'Turn Off' : 'Turn On')}
-                        />
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{isLoadingAction ? 'Processing...' : (isOn ? 'Turn Off' : 'Turn On')}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center gap-2">
+                      {isLoadingAction && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />} 
+                      <Switch
+                        id={`header-action-switch-${device.internalId}`}
+                        checked={isOn}
+                        onCheckedChange={(checked) => {
+                          executeDeviceAction(
+                            device.internalId,
+                            checked ? ActionableState.SET_ON : ActionableState.SET_OFF
+                          );
+                        }}
+                        disabled={isLoadingAction}
+                        aria-label={isLoadingAction ? 'Processing' : (isOn ? 'Turn Off' : 'Turn On')}
+                      />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{isLoadingAction ? 'Processing...' : (isOn ? 'Turn Off' : 'Turn On')}</p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
             )}
           </div>
@@ -1027,6 +1022,34 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                   <span className="text-muted-foreground">Unknown</span>
                 )}
             />
+            {/* Battery Information - Conditional Rendering */}
+            {device.batteryPercentage !== null && device.batteryPercentage !== undefined && (
+              <DetailRow 
+                label="Battery" 
+                value={
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center cursor-default">
+                        {(() => {
+                          const BatteryIcon = getBatteryIcon(device.batteryPercentage);
+                          const colorClass = getBatteryColorClass(device.batteryPercentage);
+                          return <BatteryIcon className={`h-6 w-6 ${colorClass}`} />;
+                        })()}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent 
+                      side="top" 
+                      align="center"
+                      sideOffset={5}
+                      alignOffset={0}
+                      avoidCollisions={false}
+                    >
+                      <p>{device.batteryPercentage}%</p>
+                    </TooltipContent>
+                  </Tooltip>
+                }
+              />
+            )}
             <DetailRow label="Model" value={device.model || "—"} />
             {device.connectorCategory === 'piko' && device.vendor && (
               <DetailRow label="Vendor" value={device.vendor} />
@@ -1309,6 +1332,6 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
           <Button type="button" variant="secondary">Close</Button>
         </DialogClose>
       </DialogFooter>
-    </>
+    </TooltipProvider>
   );
 }; 

@@ -16,6 +16,8 @@ import {
     Siren, Cctv, Warehouse, Combine, Router, Cable, Lock, Power, Radio, Droplets, ToggleLeft, Thermometer, HelpCircle, Gamepad,
     // State-specific icons
     Unlock, PowerOff, DoorOpen, DoorClosed, AlertTriangle, ShieldCheck, Activity, WifiOff, Wifi, Ban, Video,
+    // Battery icons
+    Battery, BatteryLow, BatteryMedium, BatteryFull,
     // Event category icons
     KeyRound, PersonStanding,
     // ADD: Armed State Icons
@@ -100,6 +102,11 @@ const nameToIconComponentMap: Record<string, LucideIcon> = {
   Video: LucideIcons.Video,
   Ban: LucideIcons.Ban,
   Gamepad: LucideIcons.Gamepad,
+  // Battery icons
+  Battery: LucideIcons.Battery,
+  BatteryLow: LucideIcons.BatteryLow,
+  BatteryMedium: LucideIcons.BatteryMedium,
+  BatteryFull: LucideIcons.BatteryFull,
   // Add other icons used elsewhere if needed
 };
 
@@ -153,6 +160,49 @@ export function getArmedStateIcon(state: ArmedState | undefined): LucideIcon {
         return HelpCircle; // Icon for undefined/null state
     }
     return armedStateIconMap[state] || HelpCircle; // Return mapped icon or HelpCircle as fallback
+}
+
+
+// --- Battery Icon Mapping ---
+/**
+ * Gets the appropriate battery icon based on percentage.
+ * Maps to the 4 available Lucide battery icons.
+ * @param percentage Battery percentage (0-100)
+ * @returns The appropriate LucideIcon component
+ */
+export function getBatteryIcon(percentage: number | null | undefined): LucideIcon {
+    if (percentage === null || percentage === undefined) {
+        return HelpCircle; // No battery data available
+    }
+    
+    if (percentage === 0) {
+        return Battery; // Empty battery
+    } else if (percentage <= 25) {
+        return BatteryLow; // Low battery (1-25%)
+    } else if (percentage <= 75) {
+        return BatteryMedium; // Medium battery (26-75%)
+    } else {
+        return BatteryFull; // Full battery (76-100%)
+    }
+}
+
+/**
+ * Gets the appropriate color class for battery icons based on percentage.
+ * @param percentage Battery percentage (0-100)
+ * @returns Tailwind color class string
+ */
+export function getBatteryColorClass(percentage: number | null | undefined): string {
+    if (percentage === null || percentage === undefined) {
+        return 'text-muted-foreground'; // No battery data available
+    }
+    
+    if (percentage < 25) {
+        return 'text-red-500'; // Critical - needs attention
+    } else if (percentage < 50) {
+        return 'text-amber-500'; // Caution - getting low
+    } else {
+        return 'text-green-500'; // Good - above half
+    }
 }
 
 
