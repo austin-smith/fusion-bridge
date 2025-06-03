@@ -21,6 +21,14 @@ export interface UnknownEventPayload {
   rawEventPayload?: Record<string, any>; // <--- Make optional - The original raw event
 }
 
+// Payload for button press events from smart fobs/remotes
+// Note: This interface is for documentation and validation. Button events use the generic payload structure.
+export interface ButtonEventPayload {
+  buttonNumber: number; // 1-8 (user-friendly numbering)
+  pressType: 'Press' | 'LongPress';
+  keyMask: number; // Original keyMask from YoLink for reference (0-255)
+}
+
 // Core standardized event structure used throughout the system for EXTERNAL events.
 export interface StandardizedEvent {
   eventId: string; // Unique ID for this specific event instance

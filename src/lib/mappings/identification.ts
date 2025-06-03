@@ -22,7 +22,7 @@ export const deviceIdentifierMap: Partial<Record<ConnectorCategory, Record<strin
     'Outlet': { type: DeviceType.Outlet, subtype: DeviceSubtype.Single },
     'PowerFailureAlarm': { type: DeviceType.Sensor, subtype: DeviceSubtype.PowerFailure },
     'Siren': { type: DeviceType.Alarm, subtype: DeviceSubtype.Siren },
-    'SmartRemoter': { type: DeviceType.Unmapped },
+    'SmartRemoter': { type: DeviceType.SmartFob },
     'SpeakerHub': { type: DeviceType.Hub, subtype: DeviceSubtype.Speaker },
     'Sprinkler': { type: DeviceType.Sprinkler },
     'Switch': { type: DeviceType.Switch, subtype: DeviceSubtype.Toggle },

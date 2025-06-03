@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
 import { formatConnectorCategory } from '@/lib/utils';
 import type { TypedDeviceInfo } from '@/lib/mappings/definitions';
-import { AlertTriangle, MoreHorizontal, Clock, ListTree, Expand, ZoomIn, PlayIcon } from 'lucide-react';
+import { AlertTriangle, MoreHorizontal, Clock, ListTree, Expand, ZoomIn, PlayIcon, Gamepad } from 'lucide-react';
 import { LOCKED, UNLOCKED, ON, OFF, OPEN, CLOSED, LEAK_DETECTED, DRY, MOTION_DETECTED, NO_MOTION, VIBRATION_DETECTED, NO_VIBRATION, SensorAlertState } from '@/lib/mappings/definitions'; // <-- Import specific states
 import type { DeviceWithConnector, Area } from '@/types/index'; // <-- Added Area, DeviceWithConnector
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"; // <-- Added Popover imports
@@ -434,6 +434,12 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                                           <Badge variant="outline" className={cn("text-[10px] h-5 inline-flex items-center gap-1", stateColor)}>
                                             <StateIcon className="h-3 w-3" />
                                             {event.displayState}
+                                          </Badge>
+                                        ) : (event.eventType === EventType.BUTTON_PRESSED || event.eventType === EventType.BUTTON_LONG_PRESSED) ? (
+                                          // Special case for Smart Fob button events - simple inline
+                                          <Badge variant="outline" className="text-[10px] h-5 inline-flex items-center gap-1">
+                                            <Gamepad className="h-3 w-3" />
+                                            Button {String(event.payload?.buttonNumber || '?')} {event.eventType === EventType.BUTTON_LONG_PRESSED ? '(Long)' : ''}
                                           </Badge>
                                         ) : (event.eventType !== EventType.STATE_CHANGED && event.eventType !== EventType.BATTERY_LEVEL_CHANGED) ? (
                                           // For other significant events, show Type / Subtype styled like the table view

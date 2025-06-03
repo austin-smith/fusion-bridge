@@ -22,6 +22,8 @@ export const AVAILABLE_AUTOMATION_TOKENS: AutomationToken[] = [
     { token: '{{event.statusType}}', description: 'Specific status (ONLINE, OFFLINE, UNAUTHORIZED)', group: 'Event Payload' },
     { token: '{{event.rawStatusValue}}', description: 'Original raw status value from the source device', group: 'Event Payload' },
     { token: '{{event.originalEventType}}', description: 'The raw event type string from the source system', group: 'Event Payload' },
+    { token: '{{event.buttonNumber}}', description: 'Button number pressed on Smart Fob (1-8)', group: 'Event Payload' },
+    { token: '{{event.buttonPressType}}', description: 'Type of button press (Press or Long Press)', group: 'Event Payload' },
     // Add more flattened payload fields here if needed
 
     // --- Device Context Data ---

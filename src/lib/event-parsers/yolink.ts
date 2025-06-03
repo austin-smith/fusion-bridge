@@ -68,7 +68,14 @@ function translateRawYoLinkState(deviceInfo: TypedDeviceInfo, rawState: string |
 
 // --- YoLink Raw Event Structure (Based on Provided Example) ---
 interface RawYoLinkData {
-    state?: string | { lock?: string; [key: string]: any }; // Allow string or object for state
+    state?: string | { 
+        lock?: string; 
+        event?: { // For SmartRemoter button events
+            keyMask?: number;
+            type?: string; // "Press" or "LongPress"
+        };
+        [key: string]: any; 
+    }; // Allow string or object for state
     alertType?: string;
     battery?: number; // Field may exist, but we won't process it into an event for now
     version?: string;
@@ -123,118 +130,226 @@ export async function parseYoLinkEvent(
     const identifier = event.event.split('.')[0]; // e.g., "DoorSensor"
     const deviceInfo = getDeviceTypeInfo('yolink', identifier);
 
-    const standardizedEvents: StandardizedEvent[] = [];
-
-    // --- BEGIN Add Power Report Handling ---
-    if (event.event.endsWith('.powerReport')) {
-        console.log(`[YoLink Parser] Detected Power Report: ${event.event} for device ${event.deviceId}`);
-        const payload: UnknownEventPayload = { 
-            originalEventType: event.event,
-            message: `YoLink Power Report: ${event.event}`,
-            rawEventPayload: event.data
-        };
-        standardizedEvents.push({
-            eventId: crypto.randomUUID(),
-            timestamp: timestamp,
-            connectorId: connectorId,
-            deviceId: event.deviceId,
-            deviceInfo: deviceInfo, 
-            category: EventCategory.DIAGNOSTICS,
-            type: EventType.POWER_CHECK_IN,    
-            payload: payload,
-            originalEvent: event,
-        });
-    }
-    // --- END Add Power Report Handling ---
-
-    // --- BEGIN State Change Events (.Alert, .StatusChange) ---
-    else if (event.event.endsWith('.Alert') || event.event.endsWith('.StatusChange') || event.event.endsWith('.setState')) {
-        if (deviceInfo.type !== DeviceType.Unmapped && event.data?.state !== undefined) {
-            const rawState = getRawStateStringFromYoLinkData(deviceInfo, event.data?.state);
-
-            const intermediateState = translateRawYoLinkState(deviceInfo, rawState);
-
-            if (intermediateState) {
-                const displayState = intermediateStateToDisplayString(intermediateState, deviceInfo);
-                if (displayState) {
-                    const payload: StateChangedPayload = {
-                        intermediateState: intermediateState,
-                        displayState: displayState,
-                    };
-                    standardizedEvents.push({
-                        eventId: crypto.randomUUID(),
-                        timestamp: timestamp,
-                        connectorId: connectorId,
-                        deviceId: event.deviceId,
-                        deviceInfo: deviceInfo,
-                        category: EventCategory.DEVICE_STATE,
-                        type: EventType.STATE_CHANGED,
-                        payload: payload,
-                        originalEvent: event,
-                    });
-                } else {
-                    console.warn(`[YoLink Parser][${connectorId}] Could not map intermediate state '${intermediateState}' to display state for device ${event.deviceId} during ${event.event}`);
-                }
-            } else {
-                 console.warn(`[YoLink Parser] State Change for ${event.event}: Could not translate raw YoLink state '${String(rawState)}' for ${event.deviceId}.`);
+    // --- Process event through handler registry ---
+    const eventContext = { event, timestamp, connectorId, deviceInfo };
+    
+    for (const handler of EVENT_HANDLERS) {
+        if (handler.condition(eventContext)) {
+            const result = handler.handler(eventContext);
+            if (result.length > 0) {
+                return result; // Return first successful handler result
             }
-        } else if (deviceInfo.type === DeviceType.Unmapped) {
-            console.warn(`[YoLink Parser] State Change event '${event.event}' for unmapped device ${event.deviceId}. Cannot process state.`);
-        } else { // event.data?.state is undefined
-             console.warn(`[YoLink Parser] State Change event '${event.event}' for device ${event.deviceId} is missing 'data.state'. Cannot determine state.`);
         }
     }
-    // --- END State Change Events ---
 
-    // --- BEGIN Check for Generic Diagnostic Report --- 
-    else if (event.event.endsWith('.Report')) { // This catches other '.Report' types not covered by '.powerReport'
-        console.log(`[YoLink Parser] Detected Diagnostic Report: ${event.event} for device ${event.deviceId}`);
-        const payload: UnknownEventPayload = { 
-            originalEventType: event.event,
-            message: `YoLink Diagnostic Report: ${event.event}`,
-            rawEventPayload: event.data
-        };
-        standardizedEvents.push({
-            eventId: crypto.randomUUID(),
-            timestamp: timestamp,
-            connectorId: connectorId,
-            deviceId: event.deviceId,
-            deviceInfo: deviceInfo, 
-            category: EventCategory.DIAGNOSTICS,
-            type: EventType.DEVICE_CHECK_IN,    
-            payload: payload,
-            originalEvent: event,
-        });
+    // --- Fallback: Create unknown event ---
+    return createUnknownEvent(eventContext);
+}
+
+// --- Event Handler Types ---
+interface EventContext {
+    event: RawYoLinkEventPayload;
+    timestamp: Date;
+    connectorId: string;
+    deviceInfo: TypedDeviceInfo;
+}
+
+interface EventHandler {
+    condition: (context: EventContext) => boolean;
+    handler: (context: EventContext) => StandardizedEvent[];
+}
+
+// --- Individual Event Handlers ---
+
+function handlePowerReport({ event, timestamp, connectorId, deviceInfo }: EventContext): StandardizedEvent[] {
+    console.log(`[YoLink Parser] Detected Power Report: ${event.event} for device ${event.deviceId}`);
+    const payload: UnknownEventPayload = { 
+        originalEventType: event.event,
+        message: `YoLink Power Report: ${event.event}`,
+        rawEventPayload: event.data
+    };
+    
+    return [{
+        eventId: crypto.randomUUID(),
+        timestamp: timestamp,
+        connectorId: connectorId,
+        deviceId: event.deviceId,
+        deviceInfo: deviceInfo, 
+        category: EventCategory.DIAGNOSTICS,
+        type: EventType.POWER_CHECK_IN,    
+        payload: payload,
+        originalEvent: event,
+    }];
+}
+
+function handleSmartFobButtonPress({ event, timestamp, connectorId, deviceInfo }: EventContext): StandardizedEvent[] {
+    const buttonEvent = (event.data?.state as any)?.event;
+    const keyMask = buttonEvent?.keyMask;
+    const pressType = buttonEvent?.type;
+    
+    // Enhanced validation for button event data
+    if (typeof keyMask !== 'number' || keyMask < 0 || keyMask > 255) {
+        console.warn(`[YoLink Parser] SmartFob event '${event.event}' for device ${event.deviceId} has invalid keyMask: ${keyMask}. Expected number 0-255.`);
+        return [];
     }
-    // --- END Check for Generic Diagnostic Report ---
-
-    // --- BATTERY HANDLING REMOVED ---
-
-    // TODO: Add other specific handlers here (e.g., for battery, online status etc.)
-    // If another handler succeeds, set successfullyParsed = true and return its event(s).
-
-
-    // --- Catch-all for Unknown/Unhandled Events --- 
-    // If no specific handler created an event above, create an UNKNOWN event.
-    if (standardizedEvents.length === 0) {
-        console.warn(`[YoLink Parser] Creating UNKNOWN_EXTERNAL_EVENT for unhandled/unparseable event. Device: ${event.deviceId}, Original Event Type: ${event.event}`);
-        const payload: UnknownEventPayload = {
-            originalEventType: event.event,
-            message: `Unknown or unhandled YoLink event: ${event.event}`,
-            rawEventPayload: event.data
-        };
-        standardizedEvents.push({
-            eventId: crypto.randomUUID(),
-            timestamp: timestamp,
-            connectorId: connectorId,
-            deviceId: event.deviceId, 
-            deviceInfo: deviceInfo,
-            category: EventCategory.UNKNOWN,
-            type: EventType.UNKNOWN_EXTERNAL_EVENT,
-            payload: payload,
-            originalEvent: event,
-        });
+    
+    if (typeof pressType !== 'string' || !['Press', 'LongPress'].includes(pressType)) {
+        console.warn(`[YoLink Parser] SmartFob event '${event.event}' for device ${event.deviceId} has invalid pressType: ${pressType}. Expected 'Press' or 'LongPress'.`);
+        return [];
     }
 
+    console.log(`[YoLink Parser] Detected SmartFob button event: keyMask=${keyMask}, type=${pressType} for device ${event.deviceId}`);
+    
+    const standardizedEvents: StandardizedEvent[] = [];
+    
+    // Parse keyMask to identify which buttons were pressed (bits 0-7 = buttons 1-8)
+    for (let buttonNumber = 0; buttonNumber < 8; buttonNumber++) {
+        if (keyMask & (1 << buttonNumber)) {
+            const payload = {
+                buttonNumber: buttonNumber + 1, // Convert from 0-7 to 1-8 for user-friendly numbering
+                pressType: pressType as 'Press' | 'LongPress',
+                keyMask: keyMask
+            };
+            
+            const eventType = pressType === 'LongPress' ? EventType.BUTTON_LONG_PRESSED : EventType.BUTTON_PRESSED;
+            
+            standardizedEvents.push({
+                eventId: crypto.randomUUID(),
+                timestamp: timestamp,
+                connectorId: connectorId,
+                deviceId: event.deviceId,
+                deviceInfo: deviceInfo,
+                category: EventCategory.DEVICE_STATE,
+                type: eventType,
+                payload: payload,
+                originalEvent: event,
+            });
+            
+            console.log(`[YoLink Parser] Created ${eventType} event for button ${buttonNumber + 1} on device ${event.deviceId}`);
+        }
+    }
+    
     return standardizedEvents;
-} 
+}
+
+function handleGenericStateChange({ event, timestamp, connectorId, deviceInfo }: EventContext): StandardizedEvent[] {
+    if (deviceInfo.type === DeviceType.Unmapped) {
+        console.warn(`[YoLink Parser] State Change event '${event.event}' for unmapped device ${event.deviceId}. Cannot process state.`);
+        return [];
+    }
+    
+    if (event.data?.state === undefined) {
+        console.warn(`[YoLink Parser] State Change event '${event.event}' for device ${event.deviceId} is missing 'data.state'. Cannot determine state.`);
+        return [];
+    }
+
+    const rawState = getRawStateStringFromYoLinkData(deviceInfo, event.data?.state);
+    const intermediateState = translateRawYoLinkState(deviceInfo, rawState);
+
+    if (!intermediateState) {
+        console.warn(`[YoLink Parser] State Change for ${event.event}: Could not translate raw YoLink state '${String(rawState)}' for ${event.deviceId}.`);
+        return [];
+    }
+
+    const displayState = intermediateStateToDisplayString(intermediateState, deviceInfo);
+    if (!displayState) {
+        console.warn(`[YoLink Parser][${connectorId}] Could not map intermediate state '${intermediateState}' to display state for device ${event.deviceId} during ${event.event}`);
+        return [];
+    }
+
+    const payload: StateChangedPayload = {
+        intermediateState: intermediateState,
+        displayState: displayState,
+    };
+    
+    return [{
+        eventId: crypto.randomUUID(),
+        timestamp: timestamp,
+        connectorId: connectorId,
+        deviceId: event.deviceId,
+        deviceInfo: deviceInfo,
+        category: EventCategory.DEVICE_STATE,
+        type: EventType.STATE_CHANGED,
+        payload: payload,
+        originalEvent: event,
+    }];
+}
+
+function handleGenericDiagnosticReport({ event, timestamp, connectorId, deviceInfo }: EventContext): StandardizedEvent[] {
+    console.log(`[YoLink Parser] Detected Diagnostic Report: ${event.event} for device ${event.deviceId}`);
+    const payload: UnknownEventPayload = { 
+        originalEventType: event.event,
+        message: `YoLink Diagnostic Report: ${event.event}`,
+        rawEventPayload: event.data
+    };
+    
+    return [{
+        eventId: crypto.randomUUID(),
+        timestamp: timestamp,
+        connectorId: connectorId,
+        deviceId: event.deviceId,
+        deviceInfo: deviceInfo, 
+        category: EventCategory.DIAGNOSTICS,
+        type: EventType.DEVICE_CHECK_IN,    
+        payload: payload,
+        originalEvent: event,
+    }];
+}
+
+function createUnknownEvent({ event, timestamp, connectorId, deviceInfo }: EventContext): StandardizedEvent[] {
+    console.warn(`[YoLink Parser] Creating UNKNOWN_EXTERNAL_EVENT for unhandled/unparseable event. Device: ${event.deviceId}, Original Event Type: ${event.event}`);
+    const payload: UnknownEventPayload = {
+        originalEventType: event.event,
+        message: `Unknown or unhandled YoLink event: ${event.event}`,
+        rawEventPayload: event.data
+    };
+    
+    return [{
+        eventId: crypto.randomUUID(),
+        timestamp: timestamp,
+        connectorId: connectorId,
+        deviceId: event.deviceId, 
+        deviceInfo: deviceInfo,
+        category: EventCategory.UNKNOWN,
+        type: EventType.UNKNOWN_EXTERNAL_EVENT,
+        payload: payload,
+        originalEvent: event,
+    }];
+}
+
+// --- Event Handler Registry (processed in order - most specific first) ---
+const EVENT_HANDLERS: EventHandler[] = [
+    // Power reports (most specific)
+    {
+        condition: ({ event }) => event.event.endsWith('.powerReport'),
+        handler: handlePowerReport
+    },
+    
+    // SmartFob button presses (specific device type + event structure)
+    {
+        condition: ({ event, deviceInfo }) => {
+            return deviceInfo.type === DeviceType.SmartFob && 
+                   event.event.endsWith('.Alert') && 
+                   !!event.data?.state && 
+                   typeof event.data.state === 'object' && 
+                   'event' in event.data.state &&
+                   event.data.state.event !== undefined;
+        },
+        handler: handleSmartFobButtonPress
+    },
+    
+    // Generic state changes (broader match)
+    {
+        condition: ({ event }) => 
+            event.event.endsWith('.Alert') || 
+            event.event.endsWith('.StatusChange') || 
+            event.event.endsWith('.setState'),
+        handler: handleGenericStateChange
+    },
+    
+    // Generic diagnostic reports (broader match)
+    {
+        condition: ({ event }) => event.event.endsWith('.Report'),
+        handler: handleGenericDiagnosticReport
+    }
+]; 

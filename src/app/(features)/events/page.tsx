@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Play, Loader2, ListTree, Maximize, Minimize } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Play, Loader2, ListTree, Maximize, Minimize, Gamepad } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -672,6 +672,30 @@ export default function EventsPage() {
       cell: ({ row }) => {
         const eventType = row.original.eventType as EventType;
         const eventSubtype = row.original.eventSubtype;
+        
+        // Special case for Smart Fob button events - simple inline
+        if (eventType === EventType.BUTTON_PRESSED || eventType === EventType.BUTTON_LONG_PRESSED) {
+          const buttonNumber = row.original.payload?.buttonNumber;
+          const buttonText = `Button ${buttonNumber || '?'}${eventType === EventType.BUTTON_LONG_PRESSED ? ' (Long)' : ''}`;
+          
+          return (
+            <TooltipProvider delayDuration={100}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="font-normal inline-flex items-center gap-1">
+                    <Gamepad className="h-3 w-3" />
+                    <span>{buttonText}</span>
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{buttonText}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          );
+        }
+        
+        // Regular event type handling
         const typeDisplayName = EVENT_TYPE_DISPLAY_MAP[eventType] || eventType;
         const subtypeDisplayName = eventSubtype ? (EVENT_SUBTYPE_DISPLAY_MAP[eventSubtype] ?? eventSubtype) : null;
 

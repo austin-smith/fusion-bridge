@@ -9,6 +9,7 @@ export enum DeviceType {
   Lock = 'Lock',
   Outlet = 'Outlet',
   Sensor = 'Sensor',
+  SmartFob = 'Smart Fob',
   Sprinkler = 'Sprinkler',
   Switch = 'Switch',
   Thermostat = 'Thermostat',
@@ -59,6 +60,7 @@ type SubtypeMap = {
   [DeviceType.Lock]: never;
   [DeviceType.Outlet]: DeviceSubtype.Multi | DeviceSubtype.Single;
   [DeviceType.Sensor]: DeviceSubtype.COSmoke | DeviceSubtype.Contact | DeviceSubtype.Leak | DeviceSubtype.Motion | DeviceSubtype.PowerFailure | DeviceSubtype.Vibration;
+  [DeviceType.SmartFob]: never;
   [DeviceType.Sprinkler]: never;
   [DeviceType.Switch]: DeviceSubtype.Dimmer | DeviceSubtype.Toggle;
   [DeviceType.Thermostat]: never;
@@ -249,6 +251,8 @@ export enum EventType {
   // --- Category: DEVICE_STATE ---
   STATE_CHANGED = 'STATE_CHANGED',             // Generic state change (binary, lock, contact sensor states)
   BATTERY_LEVEL_CHANGED = 'BATTERY_LEVEL_CHANGED',
+  BUTTON_PRESSED = 'BUTTON_PRESSED',           // Button pressed on smart fob/remote
+  BUTTON_LONG_PRESSED = 'BUTTON_LONG_PRESSED', // Button long pressed on smart fob/remote
 
   // --- Category: ACCESS_CONTROL ---
   ACCESS_GRANTED = 'ACCESS_GRANTED',
@@ -356,6 +360,8 @@ export const DOOR_FORCED_OPEN_DISPLAY = 'Door Forced Open';
 export const ACCESS_GRANTED_DISPLAY = 'Access Granted';
 export const ACCESS_DENIED_DISPLAY = 'Access Denied';
 export const EXIT_REQUEST_DISPLAY = 'Exit Request'; // Added
+export const BUTTON_PRESSED_DISPLAY = 'Button Pressed';
+export const BUTTON_LONG_PRESSED_DISPLAY = 'Button Long Pressed';
 
 // --- EVENT TYPE DISPLAY MAP --- 
 // Grouped visually by Category for clarity
@@ -363,6 +369,8 @@ export const EVENT_TYPE_DISPLAY_MAP = {
   // DEVICE_STATE
   [EventType.STATE_CHANGED]: STATE_CHANGED_DISPLAY,
   [EventType.BATTERY_LEVEL_CHANGED]: 'Battery Level Changed',
+  [EventType.BUTTON_PRESSED]: BUTTON_PRESSED_DISPLAY,
+  [EventType.BUTTON_LONG_PRESSED]: BUTTON_LONG_PRESSED_DISPLAY,
   
   // ACCESS_CONTROL
   [EventType.ACCESS_GRANTED]: ACCESS_GRANTED_DISPLAY,

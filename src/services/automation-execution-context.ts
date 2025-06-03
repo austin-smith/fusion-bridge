@@ -214,9 +214,29 @@ export class OrganizationAutomationContext {
       
       // Create facts object from the standardized event
       const facts = {
+        event: {
+          category: event.category,
+          type: event.type,
+          subtype: event.subtype,
+          displayState: (event.payload as any)?.displayState,
+          originalEventType: (event.payload as any)?.originalEventType,
+          // Button-specific facts for Smart Fob devices (with validation)
+          buttonNumber: this.getValidButtonNumber(event.payload),
+          buttonPressType: this.getValidButtonPressType(event.payload),
+        },
+        device: {
+          id: event.deviceId,
+          externalId: event.deviceId,
+          type: event.deviceInfo?.type,
+          subtype: event.deviceInfo?.subtype,
+        },
+        connector: {
+          id: event.connectorId,
+        },
+        // Legacy flat structure for backward compatibility
         eventType: event.type,
-        eventCategory: event.category, // Fixed: use 'category' not 'eventCategory'
-        eventSubtype: event.subtype,   // Fixed: use 'subtype' not 'eventSubtype'
+        eventCategory: event.category,
+        eventSubtype: event.subtype,
         deviceId: event.deviceId,
         connectorId: event.connectorId,
         timestamp: event.timestamp,
@@ -369,6 +389,26 @@ export class OrganizationAutomationContext {
     
     // TODO: Implement organization-specific error notification
     console.error(`[Automation Context][${this.organizationId}] Execution ${executionId} failed: ${errorMessage}`);
+  }
+
+  /**
+   * Validate and extract button number from event payload
+   */
+  private getValidButtonNumber(payload: any): number | undefined {
+    if (payload && typeof payload.buttonNumber === 'number' && payload.buttonNumber >= 1 && payload.buttonNumber <= 8) {
+      return payload.buttonNumber;
+    }
+    return undefined;
+  }
+
+  /**
+   * Validate and extract button press type from event payload
+   */
+  private getValidButtonPressType(payload: any): string | undefined {
+    if (payload && typeof payload.pressType === 'string' && ['Press', 'LongPress'].includes(payload.pressType)) {
+      return payload.pressType;
+    }
+    return undefined;
   }
 }
 

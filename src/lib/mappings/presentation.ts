@@ -13,7 +13,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import {
     // Device type icons
-    Siren, Cctv, Warehouse, Combine, Router, Cable, Lock, Power, Radio, Droplets, ToggleLeft, Thermometer, HelpCircle,
+    Siren, Cctv, Warehouse, Combine, Router, Cable, Lock, Power, Radio, Droplets, ToggleLeft, Thermometer, HelpCircle, Gamepad,
     // State-specific icons
     Unlock, PowerOff, DoorOpen, DoorClosed, AlertTriangle, ShieldCheck, Activity, WifiOff, Wifi, Ban, Video,
     // Event category icons
@@ -41,6 +41,7 @@ export const deviceTypeIcons: Record<DeviceType, LucideIcon> = {
     [DeviceType.Lock]: Lock,
     [DeviceType.Outlet]: Power,
     [DeviceType.Sensor]: Radio,
+    [DeviceType.SmartFob]: Gamepad,
     [DeviceType.Sprinkler]: Droplets,
     [DeviceType.Switch]: ToggleLeft,
     [DeviceType.Thermostat]: Thermometer,
@@ -59,6 +60,7 @@ const deviceTypeToIconNameMap: Record<DeviceType, string> = {
     [DeviceType.Lock]: 'Lock',
     [DeviceType.Outlet]: 'Power',
     [DeviceType.Sensor]: 'Radio',
+    [DeviceType.SmartFob]: 'Gamepad',
     [DeviceType.Sprinkler]: 'Droplets',
     [DeviceType.Switch]: 'ToggleLeft',
     [DeviceType.Thermostat]: 'Thermometer',
@@ -97,6 +99,7 @@ const nameToIconComponentMap: Record<string, LucideIcon> = {
   Wifi: LucideIcons.Wifi,
   Video: LucideIcons.Video,
   Ban: LucideIcons.Ban,
+  Gamepad: LucideIcons.Gamepad,
   // Add other icons used elsewhere if needed
 };
 
@@ -285,4 +288,3 @@ export const getSeverityCardStyles = (level: SeverityLevel): SeverityCardStyle =
             return { borderClass: 'border-transparent' }; 
     }
 };
-// --- END NEW --- 

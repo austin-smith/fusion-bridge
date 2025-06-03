@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, EyeIcon, Image as ImageIcon, AlertCircle, Loader2, PlayIcon } from "lucide-react";
+import { Check, Copy, EyeIcon, Image as ImageIcon, AlertCircle, Loader2, PlayIcon, Gamepad } from "lucide-react";
 import {
   Dialog,
   DialogContent,

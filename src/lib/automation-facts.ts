@@ -112,6 +112,26 @@ export const AVAILABLE_AUTOMATION_FACTS: AutomationFact[] = [
         operators: stringOperators,
         valueInputType: 'text', // Or maybe 'select' if we define all possible display states?
     },
+    {
+        id: 'event.buttonNumber',
+        label: 'Button Number',
+        group: 'Event',
+        dataType: 'number',
+        operators: numberOperators,
+        valueInputType: 'number',
+    },
+    {
+        id: 'event.buttonPressType',
+        label: 'Button Press Type',
+        group: 'Event',
+        dataType: 'enum',
+        operators: enumOperators,
+        valueInputType: 'select',
+        valueOptions: [
+            { value: 'Press', label: 'Short Press' },
+            { value: 'LongPress', label: 'Long Press' }
+        ],
+    },
 
     // --- Device Facts ---
     {

@@ -596,6 +596,9 @@ function resolveTokens(
                 originalEventType: (stdEvent.payload as any).originalEventType,
                 rawStateValue: (stdEvent.payload as any).rawStateValue,
                 rawStatusValue: (stdEvent.payload as any).rawStatusValue,
+                // Button-specific fields for Smart Fob devices
+                buttonNumber: (stdEvent.payload as any).buttonNumber,
+                buttonPressType: (stdEvent.payload as any).pressType,
             } : {}),
         } : (tokenFactContext?.event ?? null), // If no stdEvent, still allow facts to have an 'event' object
         // For global access like {{currentTimeUTC}} if needed, could be added to tokenFactContext.schedule
