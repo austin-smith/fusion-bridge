@@ -68,8 +68,8 @@ export function initializeWebSocketService(): void {
     }
   });
 
-  // WebSocket server port - configurable but defaults to 3001
-  const wsPort = parseInt(process.env.WEBSOCKET_PORT || '3001');
+  // WebSocket server port - configurable but defaults to 8443
+  const wsPort = parseInt(process.env.WEBSOCKET_PORT || '8443');
   httpServer.listen(wsPort, () => {
     console.log(`[WebSocket Service] WebSocket server running on port ${wsPort}`);
     console.log(`[WebSocket Service] WebSocket endpoint: ws://localhost:${wsPort}/api/stream`);

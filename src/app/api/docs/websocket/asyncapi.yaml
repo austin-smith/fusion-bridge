@@ -17,7 +17,7 @@ servers:
     variables:
       port:
         description: Port for the WebSocket server
-        default: '3001'
+        default: '8443'
   production:
     url: 'wss://fusion-bridge-production.up.railway.app' # Assumed production URL based on HTTP API
     protocol: wss
