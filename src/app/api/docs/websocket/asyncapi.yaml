@@ -1,0 +1,245 @@
+asyncapi: 2.6.0
+info:
+  title: Fusion WebSocket API
+  version: '1.0.0'
+  description: |
+    The Fusion WebSocket API provides real-time event streaming from the Fusion platform.
+    Clients connect to the `/api/stream` endpoint using the WebSocket protocol.
+    Authentication is performed via an API key provided in the `x-api-key` header during the initial HTTP upgrade request.
+  contact:
+    name: Fusion Support
+
+servers:
+  development:
+    url: 'ws://localhost:{port}'
+    protocol: ws
+    description: Development WebSocket server
+    variables:
+      port:
+        description: Port for the WebSocket server
+        default: '3001'
+  production:
+    url: 'wss://fusion-bridge-production.up.railway.app' # Assumed production URL based on HTTP API
+    protocol: wss
+    description: Production WebSocket server
+
+defaultContentType: application/json
+
+channels:
+  /api/stream:
+    description: The main channel for streaming events and receiving authentication confirmation.
+    bindings:
+      ws:
+        method: GET
+        query:
+          type: object
+          properties: {} # No query parameters expected for WebSocket handshake itself
+        headers:
+          type: object
+          properties:
+            x-api-key:
+              type: string
+              description: The API key for authenticating the WebSocket connection.
+          required:
+            - x-api-key
+        bindingVersion: 0.1.0
+    subscribe:
+      summary: Receive messages from the server, including authentication status and events.
+      operationId: receiveWebSocketMessage
+      messages:
+        - $ref: '#/components/messages/authenticationMessage'
+        - $ref: '#/components/messages/eventMessage'
+
+components:
+  messages:
+    authenticationMessage:
+      name: authenticationMessage
+      title: Authentication Message
+      summary: Confirms successful authentication and provides connection details.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AuthenticationMessage'
+    eventMessage:
+      name: eventMessage
+      title: Event Message
+      summary: Delivers a standardized event object.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventMessage'
+
+  schemas:
+    WebSocketMessageBase:
+      type: object
+      properties:
+        type:
+          type: string
+          description: The type of the message.
+        data:
+          description: The message payload, structure depends on the message type.
+        timestamp:
+          type: integer
+          format: int64
+          description: Epoch milliseconds when the message was generated.
+      required:
+        - type
+        - timestamp
+
+    AuthenticationMessage:
+      allOf:
+        - $ref: '#/components/schemas/WebSocketMessageBase'
+        - type: object
+          properties:
+            type:
+              const: 'authenticated'
+            data:
+              type: object
+              properties:
+                clientId:
+                  type: string
+                  format: uuid
+                  description: Unique identifier for this WebSocket client connection.
+                userId:
+                  type: string
+                  description: Identifier of the authenticated user.
+                organizationId:
+                  type: string
+                  format: uuid # Assuming organizationId is a UUID based on context
+                  description: Identifier of the organization the connection is scoped to.
+                connectedAt:
+                  type: string
+                  format: date-time
+                  description: ISO 8601 timestamp of when the connection was established.
+              required:
+                - clientId
+                - userId
+                - organizationId
+                - connectedAt
+          required:
+            - data
+
+
+    EventMessage:
+      allOf:
+        - $ref: '#/components/schemas/WebSocketMessageBase'
+        - type: object
+          properties:
+            type:
+              const: 'event'
+            data:
+              $ref: '#/components/schemas/StandardizedEvent'
+          required:
+            - data
+
+    StandardizedEvent:
+      type: object
+      description: Represents a standardized event from the system.
+      properties:
+        id:
+          type: integer # Changed from number to integer based on "Event ID"
+          description: Event ID.
+        eventUuid:
+          type: string
+          format: uuid
+          description: Event UUID.
+        deviceId:
+          type: string
+          description: Device ID.
+        deviceName:
+          type: string
+          description: Device name. (Optional)
+        connectorId:
+          type: string
+          description: Connector ID.
+        connectorName:
+          type: string
+          description: Connector name. (Optional)
+        connectorCategory:
+          type: string
+          description: Connector category.
+        areaId:
+          type: string
+          format: uuid # Assuming areaId is a UUID
+          description: Area UUID. (Optional)
+        areaName:
+          type: string
+          description: Area name. (Optional)
+        locationId:
+          type: string
+          format: uuid # Assuming locationId is a UUID
+          description: Location UUID. (Optional)
+        locationName:
+          type: string
+          description: Location name. (Optional)
+        timestamp:
+          type: integer # Changed from number, as it's epoch milliseconds
+          format: int64
+          description: Event timestamp (epoch milliseconds).
+        eventCategory:
+          type: string
+          description: Event category.
+        eventType:
+          type: string
+          description: Event type.
+        eventSubtype:
+          type: string
+          description: Event subtype. (Optional)
+        payload:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Standardized event payload.
+        rawPayload:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Raw event payload.
+        deviceTypeInfo:
+          type: object
+          properties:
+            deviceType:
+              type: string
+              description: Device type.
+            category:
+              type: string
+              description: Device category.
+            displayName:
+              type: string
+              description: Display name.
+            supportedFeatures:
+              type: array
+              items:
+                type: string
+              description: Supported features.
+          required:
+            - deviceType
+            - category
+            - displayName
+            - supportedFeatures
+          description: Information about the device type.
+        displayState:
+          type: string
+          description: Display state. (Optional)
+        rawEventType:
+          type: string
+          description: Raw event type. (Optional)
+      required:
+        - id
+        - eventUuid
+        - deviceId
+        - connectorId
+        - connectorCategory
+        - timestamp
+        - eventCategory
+        - eventType
+        - deviceTypeInfo
+      # Optional fields are not listed in 'required': deviceName, connectorName, areaId, areaName, locationId, locationName, eventSubtype, payload, rawPayload, displayState, rawEventType
+
+  securitySchemes:
+    apiKeyHeader:
+      type: apiKey
+      in: header # Specifies that the API key is sent in a request header
+      name: x-api-key # The name of the header
+      description: API key to authenticate the WebSocket connection during the handshake.
+
+security:
+  - apiKeyHeader: [] 

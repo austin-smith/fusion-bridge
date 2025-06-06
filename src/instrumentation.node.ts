@@ -6,7 +6,7 @@ export async function register() {
   // Dynamically import server-only service within the server-only function
   const { initializeAllConnections } = await import('@/services/mqtt-service');
 
-  console.log('[Instrumentation Node] Initializing all connections (MQTT, WebSocket)...');
+  console.log('[Instrumentation Node] Initializing all connections (MQTT)...');
   try {
     await initializeAllConnections();
     console.log('[Instrumentation Node] All connections initialization process completed.');
@@ -14,6 +14,16 @@ export async function register() {
     console.error('[Instrumentation Node] Failed during connection initialization:', err);
     // Optionally re-throw or handle the error appropriately
     // throw err;
+  }
+
+  // Initialize WebSocket service
+  console.log('[Instrumentation Node] Initializing WebSocket service...');
+  try {
+    const { initializeWebSocketService } = await import('@/services/websockets-service');
+    initializeWebSocketService();
+    console.log('[Instrumentation Node] WebSocket service initialization completed.');
+  } catch (err) {
+    console.error('[Instrumentation Node] Failed during WebSocket service initialization:', err);
   }
 
   // Initialize CRON jobs

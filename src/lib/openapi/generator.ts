@@ -243,6 +243,14 @@ export function generateOpenApiSpec() {
   // PIN management response schemas
   registry.register('PinValidationSuccessResponse', pinValidationSuccessResponse);
 
+  // Register the security scheme for API key authentication
+  registry.registerComponent('securitySchemes', 'ApiKeyAuth', {
+    type: 'apiKey',
+    in: 'header',
+    name: 'x-api-key',
+    description: 'API Key for authentication. Provide your key in the `x-api-key` header for all requests.'
+  });
+
   // Areas endpoints
   registry.registerPath({
     method: 'get',
@@ -1139,6 +1147,12 @@ export function generateOpenApiSpec() {
       title: 'Fusion API',
       description: 'Unify. Automate. Protect.',
     },
+    // Apply the security scheme globally to all paths
+    security: [
+      {
+        ApiKeyAuth: [],
+      },
+    ],
     servers: [
       {
         url: process.env.NODE_ENV === 'production' 

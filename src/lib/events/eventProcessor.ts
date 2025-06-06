@@ -1,15 +1,18 @@
 import { db } from '@/data/db';
 import {
-  events as eventsTableSchema, // Alias to avoid naming conflict with the 'events' variable
+  events as eventsTableSchema, // Alias to avoid naming conflict with the 'events' variables
   devices as devicesTableSchema,
   areas as areasTableSchema,
   areaDevices as areaDevicesTableSchema,
+  connectors as connectorsTableSchema,
 } from '@/data/db/schema';
 import type { StandardizedEvent } from '@/types/events';
 import { eq, and, InferSelectModel } from 'drizzle-orm';
 import { ArmedState, EventType } from '@/lib/mappings/definitions';
 import { isSecurityRiskEvent } from '@/lib/security/alarmLogic';
-import { processEvent as processEventForAutomations } from '@/services/automation-service'; // Import automation service
+import { processEvent as processEventForAutomations } from '@/services/automation-service';
+import { broadcastToOrganization } from '@/services/websockets-service';
+import type { EventMessage } from '@/types/websockets';
 
 // Infer types from schemas
 type Device = InferSelectModel<typeof devicesTableSchema>;
@@ -153,6 +156,32 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
       await processEventForAutomations(event);
     } catch (automationError) {
       console.error(`[EventProcessor] Error during automation processing for event ${event.eventId}:`, automationError);
+    }
+
+    // 6. Broadcast event to WebSocket clients
+    try {
+      // Get connector organization ID for event broadcasting
+      const connector = await db.query.connectors.findFirst({
+        where: eq(connectorsTableSchema.id, event.connectorId),
+        columns: { organizationId: true },
+      });
+
+      if (connector?.organizationId) {
+        const eventMessage: EventMessage = {
+          type: 'event',
+          data: event,
+          timestamp: Date.now(),
+        };
+        
+        const clientCount = broadcastToOrganization(connector.organizationId, eventMessage);
+        if (clientCount > 0) {
+          console.log(`[EventProcessor] Event ${event.eventId} broadcasted to ${clientCount} WebSocket clients in organization ${connector.organizationId}`);
+        }
+      } else {
+        console.warn(`[EventProcessor] Connector ${event.connectorId} not found or missing organization ID. Skipping WebSocket broadcast.`);
+      }
+    } catch (broadcastError) {
+      console.error(`[EventProcessor] Error during WebSocket broadcast for event ${event.eventId}:`, broadcastError);
     }
     
     console.log(`[EventProcessor] Event ${event.eventId} fully processed.`);

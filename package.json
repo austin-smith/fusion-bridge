@@ -96,6 +96,7 @@
     "states-us": "^1.1.1",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
+    "ts-node": "^10.9.2",
     "use-debounce": "^10.0.4",
     "uuid": "^11.1.0",
     "websocket": "^1.0.35",
