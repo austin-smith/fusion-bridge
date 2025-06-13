@@ -231,11 +231,18 @@ export function ExecutionDetailsModal({
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const data: AutomationExecutionDetail = await response.json();
+      const apiResponse = await response.json();
+      
+      // Check if the API response has the expected structure
+      if (!apiResponse.success || !apiResponse.data) {
+        throw new Error('Invalid API response structure');
+      }
+      
+      const data: AutomationExecutionDetail = apiResponse.data;
       
       // Convert date strings back to Date objects
       data.triggerTimestamp = new Date(data.triggerTimestamp);
-      data.actions = data.actions.map(action => ({
+      data.actions = (data.actions || []).map(action => ({
         ...action,
         startedAt: new Date(action.startedAt),
         completedAt: action.completedAt ? new Date(action.completedAt) : undefined,

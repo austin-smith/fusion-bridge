@@ -312,19 +312,29 @@ export default function AutomationExecutionsPage() {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const data: ExecutionResponse = await response.json();
+      
+      const apiResponse = await response.json();
+      
+      // Check if the API response has the expected structure
+      if (!apiResponse.success || !apiResponse.data) {
+        throw new Error('Invalid API response structure');
+      }
+      
+      const data = apiResponse.data;
+      const executions = data.executions || [];
+      const hasMoreData = data.pagination?.hasMore ?? false;
       
       if (loadMore) {
         // Append new executions to existing ones
-        setExecutions(prev => [...prev, ...data.executions]);
-        setOffset(prev => prev + data.executions.length);
+        setExecutions(prev => [...prev, ...executions]);
+        setOffset(prev => prev + executions.length);
       } else {
         // Replace executions (initial load)
-        setExecutions(data.executions);
-        setOffset(data.executions.length);
+        setExecutions(executions);
+        setOffset(executions.length);
       }
       
-      setHasMore(data.hasMore);
+      setHasMore(hasMoreData);
     } catch (err) {
       console.error('Failed to fetch executions:', err);
       setError('Failed to load execution history');
