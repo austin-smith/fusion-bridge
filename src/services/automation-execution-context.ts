@@ -1,15 +1,24 @@
 import 'server-only';
 
 import { db } from '@/data/db';
-import { automations, automationExecutions, automationActionExecutions } from '@/data/db/schema';
-import { eq } from 'drizzle-orm';
+import { automations, automationExecutions, automationActionExecutions, connectors, devices, cameraAssociations, areas } from '@/data/db/schema';
+import { eq, inArray } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
 import type { OrgScopedDb } from '@/lib/db/org-scoped-db';
 import type { AutomationConfig, AutomationAction } from '@/lib/automation-schemas';
-import { AutomationConfigSchema } from '@/lib/automation-schemas';
-import { AutomationTriggerType } from '@/lib/automation-types';
+import { AutomationConfigSchema, SetDeviceStateActionParamsSchema, ArmAreaActionParamsSchema, DisarmAreaActionParamsSchema, SendPushNotificationActionParamsSchema } from '@/lib/automation-schemas';
+import { AutomationTriggerType, AutomationActionType } from '@/lib/automation-types';
 import { Engine } from 'json-rules-engine';
 import type { JsonRuleGroup } from '@/lib/automation-schemas';
+import { ActionableState, ArmedState } from '@/lib/mappings/definitions';
+import { requestDeviceStateChange } from '@/lib/device-actions';
+import { getPushoverConfiguration } from '@/data/repositories/service-configurations';
+import { sendPushoverNotification } from '@/services/drivers/pushover';
+import type { ResolvedPushoverMessageParams } from '@/types/pushover-types';
+import { internalSetAreaArmedState } from '@/lib/actions/area-alarm-actions';
+import * as piko from '@/services/drivers/piko';
+import type { PikoCreateBookmarkPayload } from '@/services/drivers/piko';
+import { z } from 'zod';
 
 export interface OrganizationAutomation {
   id: string;
@@ -29,18 +38,393 @@ interface ActionExecutionResults {
 }
 
 /**
- * Simple action executor for organization context
- * For now, this simulates successful action execution to properly track counts
- * TODO: Integrate with the full automation service action execution logic
+ * Resolves tokens in action parameter templates using the provided context
+ */
+function resolveTokens(
+  params: Record<string, unknown> | null | undefined,
+  stdEvent: StandardizedEvent | null,
+  tokenFactContext: Record<string, any> | null | undefined
+): Record<string, unknown> | null | undefined {
+  if (params === null || params === undefined) return params;
+
+  const contextForTokenReplacement: Record<string, any> = {
+    // Prioritize facts from tokenFactContext
+    schedule: tokenFactContext?.schedule ?? null,
+    device: tokenFactContext?.device ?? null,
+    area: tokenFactContext?.area ?? null,
+    location: tokenFactContext?.location ?? null,
+    connector: tokenFactContext?.connector ?? null,
+    // Event-specific details, only if stdEvent is provided
+    event: stdEvent ? {
+      ...(tokenFactContext?.event ?? {}),
+      id: stdEvent.eventId,
+      category: stdEvent.category,
+      type: stdEvent.type,
+      subtype: stdEvent.subtype,
+      timestamp: stdEvent.timestamp.toISOString(),
+      timestampMs: stdEvent.timestamp.getTime(),
+      deviceId: stdEvent.deviceId,
+      connectorId: stdEvent.connectorId,
+      ...(stdEvent.payload && typeof stdEvent.payload === 'object' ? {
+        displayState: (stdEvent.payload as any).displayState,
+        statusType: (stdEvent.payload as any).statusType,
+        detectionType: (stdEvent.payload as any).detectionType,
+        confidence: (stdEvent.payload as any).confidence,
+        zone: (stdEvent.payload as any).zone,
+        originalEventType: (stdEvent.payload as any).originalEventType,
+        rawStateValue: (stdEvent.payload as any).rawStateValue,
+        rawStatusValue: (stdEvent.payload as any).rawStatusValue,
+        buttonNumber: (stdEvent.payload as any).buttonNumber,
+        buttonPressType: (stdEvent.payload as any).pressType,
+      } : {}),
+    } : (tokenFactContext?.event ?? null),
+  };
+
+  const resolved = { ...params };
+
+  const replaceToken = (template: string): string => {
+    if (typeof template !== 'string') return template;
+    if (!contextForTokenReplacement) return template;
+
+    return template.replace(/\{\{\s*([^}]+)\s*\}\}/g, (match, path) => {
+      const keys = path.trim().split('.');
+      let value: unknown = contextForTokenReplacement;
+      try {
+        for (const key of keys) {
+          if (value === null || value === undefined || typeof value !== 'object') {
+            console.warn(`[Token Resolve] Cannot access key '${key}' in path '${path}'. Parent not object or null/undefined.`);
+            return match;
+          }
+          if (key in value) value = (value as Record<string, unknown>)[key];
+          else { console.warn(`[Token Resolve] Path '${path}' not found (key '${key}' missing).`); return match; }
+        }
+        if (value === undefined || value === null) return '';
+        else if (typeof value === 'object') return JSON.stringify(value);
+        else return String(value);
+      } catch (e) { console.error(`[Token Resolve] Error resolving path ${path}:`, e); return match; }
+    });
+  };
+
+  for (const key in resolved) {
+    if (Object.prototype.hasOwnProperty.call(resolved, key)) {
+      const paramValue = resolved[key];
+      if (typeof paramValue === 'string') resolved[key] = replaceToken(paramValue);
+      else if (Array.isArray(paramValue) && key === 'headers') {
+        resolved[key] = paramValue.map(header => {
+          if (typeof header === 'object' && header !== null && 'keyTemplate' in header && 'valueTemplate' in header) {
+            return {
+              keyTemplate: typeof header.keyTemplate === 'string' ? replaceToken(header.keyTemplate) : header.keyTemplate,
+              valueTemplate: typeof header.valueTemplate === 'string' ? replaceToken(header.valueTemplate) : header.valueTemplate,
+            };
+          }
+          return header;
+        });
+      }
+    }
+  }
+  return resolved;
+}
+
+/**
+ * Real action executor for organization context
+ * Implements actual action execution logic with proper error handling
  */
 async function executeAutomationAction(action: AutomationAction, context: Record<string, any>): Promise<void> {
   console.log(`[Automation Action Executor] Executing action type: ${action.type}`);
   
-  // For now, simulate action execution to get proper counts in the UI
-  // In the future, this should call the actual action execution logic from automation-service.ts
-  
-  // Add a small delay to simulate real action execution
-  await new Promise(resolve => setTimeout(resolve, 100));
+  const stdEvent = context.triggerEvent || null;
+  const tokenFactContext = context;
+
+  switch (action.type) {
+    case AutomationActionType.CREATE_EVENT: {
+      const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as any;
+      
+      const targetConnector = await db.query.connectors.findFirst({ 
+        where: eq(connectors.id, resolvedParams.targetConnectorId!) 
+      });
+      if (!targetConnector) throw new Error("Target connector not found for CREATE_EVENT");
+      
+      const eventTimestamp = stdEvent?.timestamp.toISOString() ?? tokenFactContext.schedule?.triggeredAtUTC ?? new Date().toISOString();
+      
+      if (targetConnector.category === 'piko') {
+        const sourceDeviceInternalId = tokenFactContext.device?.id;
+        let associatedPikoCameraExternalIds: string[] = [];
+        
+        if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string') {
+          try {
+            const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId })
+              .from(cameraAssociations)
+              .where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
+            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
+            if (internalCameraIds.length > 0) {
+              const cameraDevices = await db.select({ externalId: devices.deviceId })
+                .from(devices)
+                .where(inArray(devices.id, internalCameraIds));
+              associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
+            }
+          } catch (assocError) {
+            console.error(`[Automation Action Executor] Error fetching camera associations:`, assocError);
+          }
+        }
+
+        const pikoPayload: piko.PikoCreateEventPayload = {
+          source: resolvedParams.sourceTemplate,
+          caption: resolvedParams.captionTemplate,
+          description: resolvedParams.descriptionTemplate,
+          timestamp: eventTimestamp,
+          ...(associatedPikoCameraExternalIds.length > 0 && { metadata: { cameraRefs: associatedPikoCameraExternalIds } })
+        };
+        await piko.createPikoEvent(targetConnector.id, pikoPayload);
+      } else {
+        console.warn(`[Automation Action Executor] Unsupported target connector category ${targetConnector.category}`);
+        throw new Error(`Unsupported connector category: ${targetConnector.category}`);
+      }
+      break;
+    }
+
+    case AutomationActionType.CREATE_BOOKMARK: {
+      const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as any;
+      
+      const targetConnector = await db.query.connectors.findFirst({ 
+        where: eq(connectors.id, resolvedParams.targetConnectorId!) 
+      });
+      if (!targetConnector) throw new Error("Target connector not found for CREATE_BOOKMARK");
+      
+      const eventTimestampMs = stdEvent?.timestamp.getTime() ?? tokenFactContext.schedule?.triggeredAtMs ?? new Date().getTime();
+      
+      if (targetConnector.category === 'piko') {
+        let associatedPikoCameraExternalIds: string[] = [];
+        const sourceDeviceInternalId = tokenFactContext.device?.id;
+        
+        if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string') {
+          try {
+            const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId })
+              .from(cameraAssociations)
+              .where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
+            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
+            if (internalCameraIds.length === 0) {
+              console.warn(`[Automation Action Executor] No Piko cameras associated with source device ${sourceDeviceInternalId}. Skipping.`);
+              break;
+            }
+            const cameraDevices = await db.select({ externalId: devices.deviceId })
+              .from(devices)
+              .where(inArray(devices.id, internalCameraIds));
+            associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
+          } catch (assocError) {
+            console.error(`[Automation Action Executor] Error fetching camera associations:`, assocError);
+            throw new Error(`Failed to fetch camera associations: ${assocError instanceof Error ? assocError.message : String(assocError)}`);
+          }
+        }
+        
+        if (associatedPikoCameraExternalIds.length === 0) {
+          console.warn(`[Automation Action Executor] No camera associations, skipping bookmark creation.`);
+          break;
+        }
+
+        let durationMs = 5000;
+        try {
+          const parsedDuration = parseInt(resolvedParams.durationMsTemplate, 10);
+          if (!isNaN(parsedDuration) && parsedDuration > 0) durationMs = parsedDuration;
+        } catch {}
+
+        let tags: string[] = [];
+        if (resolvedParams.tagsTemplate && resolvedParams.tagsTemplate.trim() !== '') {
+          try {
+            tags = resolvedParams.tagsTemplate.split(',').map((tag: string) => tag.trim()).filter((tag: string) => tag !== '');
+          } catch {}
+        }
+
+        for (const pikoCameraDeviceId of associatedPikoCameraExternalIds) {
+          const pikoPayload: PikoCreateBookmarkPayload = {
+            name: resolvedParams.nameTemplate,
+            description: resolvedParams.descriptionTemplate || undefined,
+            startTimeMs: eventTimestampMs,
+            durationMs: durationMs,
+            tags: tags.length > 0 ? tags : undefined
+          };
+          await piko.createPikoBookmark(targetConnector.id, pikoCameraDeviceId, pikoPayload);
+        }
+      } else {
+        console.warn(`[Automation Action Executor] Unsupported target connector category ${targetConnector.category}`);
+        throw new Error(`Unsupported connector category: ${targetConnector.category}`);
+      }
+      break;
+    }
+
+    case AutomationActionType.SEND_HTTP_REQUEST: {
+      const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as any;
+      
+      const headers = new Headers({ 'User-Agent': 'FusionBridge Automation/1.0' });
+      if (Array.isArray(resolvedParams.headers)) {
+        for (const header of resolvedParams.headers) {
+          if (header.keyTemplate && typeof header.keyTemplate === 'string' && typeof header.valueTemplate === 'string') {
+            const key = header.keyTemplate.trim();
+            if (key) {
+              try {
+                headers.set(key, header.valueTemplate);
+              } catch (e) {
+                console.warn(`[Automation Action Executor] Invalid header name: "${key}". Skipping.`, e);
+              }
+            }
+          }
+        }
+      }
+      
+      const fetchOptions: RequestInit = { method: resolvedParams.method, headers: headers };
+      if (['POST', 'PUT', 'PATCH'].includes(resolvedParams.method) && resolvedParams.bodyTemplate) {
+        if (!headers.has('Content-Type') && resolvedParams.bodyTemplate.trim().startsWith('{')) {
+          headers.set('Content-Type', 'application/json');
+        }
+        fetchOptions.body = resolvedParams.bodyTemplate;
+      }
+      
+      const response = await fetch(resolvedParams.urlTemplate, fetchOptions);
+      if (!response.ok) {
+        let responseBody = '';
+        try {
+          responseBody = await response.text();
+          console.error(`[Automation Action Executor] Response body (error): ${responseBody.substring(0, 500)}...`);
+        } catch {
+          console.error(`[Automation Action Executor] Could not read response body on error.`);
+        }
+        throw new Error(`HTTP request failed with status ${response.status}: ${response.statusText}`);
+      }
+      break;
+    }
+
+    case AutomationActionType.SET_DEVICE_STATE: {
+      const params = action.params as z.infer<typeof SetDeviceStateActionParamsSchema>;
+      if (!params.targetDeviceInternalId || typeof params.targetDeviceInternalId !== 'string') {
+        throw new Error(`Invalid or missing targetDeviceInternalId for setDeviceState action.`);
+      }
+      if (!params.targetState || !Object.values(ActionableState).includes(params.targetState as ActionableState)) {
+        throw new Error(`Invalid or missing targetState for setDeviceState action.`);
+      }
+      
+      console.log(`[Automation Action Executor] Executing setDeviceState. Target: ${params.targetDeviceInternalId}, State: ${params.targetState}`);
+      await requestDeviceStateChange(params.targetDeviceInternalId, params.targetState as ActionableState);
+      console.log(`[Automation Action Executor] Successfully requested state change for ${params.targetDeviceInternalId} to ${params.targetState}`);
+      break;
+    }
+
+    case AutomationActionType.SEND_PUSH_NOTIFICATION: {
+      const resolvedTemplates = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof SendPushNotificationActionParamsSchema>;
+      
+      const resolvedTitle = resolvedTemplates.titleTemplate;
+      const resolvedMessage = resolvedTemplates.messageTemplate;
+      const resolvedTargetUserKey = resolvedTemplates.targetUserKeyTemplate;
+      
+      const pushoverConfig = await getPushoverConfiguration();
+      if (!pushoverConfig) throw new Error(`Pushover service is not configured.`);
+      if (!pushoverConfig.isEnabled) throw new Error(`Pushover service is disabled.`);
+      if (!pushoverConfig.apiToken || !pushoverConfig.groupKey) throw new Error(`Pushover configuration is incomplete.`);
+      
+      const recipientKey = (resolvedTargetUserKey && resolvedTargetUserKey !== '__all__') ? resolvedTargetUserKey : pushoverConfig.groupKey;
+      const pushoverParams: ResolvedPushoverMessageParams = {
+        message: resolvedMessage,
+        title: resolvedTitle,
+        ...((action.params as any).priority !== 0 && { priority: (action.params as any).priority }),
+      };
+      
+      const result = await sendPushoverNotification(pushoverConfig.apiToken, recipientKey, pushoverParams);
+      if (!result.success) {
+        const errorDetail = result.errors?.join(', ') || result.errorMessage || 'Unknown Pushover API error';
+        throw new Error(`Failed to send Pushover notification: ${errorDetail}`);
+      }
+      console.log(`[Automation Action Executor] Successfully sent Pushover notification.`);
+      break;
+    }
+
+    case AutomationActionType.ARM_AREA: {
+      const params = action.params as z.infer<typeof ArmAreaActionParamsSchema>;
+      const { scoping, targetAreaIds: specificAreaIds, armMode } = params;
+      let areasToProcess: string[] = [];
+
+      if (scoping === 'SPECIFIC_AREAS') {
+        if (!specificAreaIds || specificAreaIds.length === 0) {
+          console.warn(`[Automation Action Executor] Scoping is SPECIFIC_AREAS but no targetAreaIds provided. Skipping.`);
+          break;
+        }
+        areasToProcess = specificAreaIds;
+      } else if (scoping === 'ALL_AREAS_IN_SCOPE') {
+        // For organization context, get all areas in the organization
+        const orgAreas = await context.orgDb.areas.findAll();
+        areasToProcess = orgAreas.map((a: any) => a.id);
+        if (areasToProcess.length === 0) {
+          console.log(`[Automation Action Executor] No areas found in organization scope.`);
+          break;
+        }
+      }
+
+      console.log(`[Automation Action Executor] Attempting to arm ${areasToProcess.length} area(s) to mode ${armMode}. IDs: ${areasToProcess.join(', ')}`);
+      for (const areaId of areasToProcess) {
+        try {
+          const updatedArea = await internalSetAreaArmedState(areaId, armMode, {
+            lastArmedStateChangeReason: 'automation_arm',
+            isArmingSkippedUntil: null,
+            nextScheduledArmTime: null,
+            nextScheduledDisarmTime: null,
+          });
+          if (updatedArea) {
+            console.log(`[Automation Action Executor] Successfully armed area ${areaId} to ${armMode}.`);
+          } else {
+            console.warn(`[Automation Action Executor] Failed to arm area ${areaId} to ${armMode} (area not found or no update occurred).`);
+          }
+        } catch (areaError) {
+          console.error(`[Automation Action Executor] Error arming area ${areaId} to ${armMode}:`, areaError instanceof Error ? areaError.message : areaError);
+          throw areaError; // Re-throw to mark action as failed
+        }
+      }
+      break;
+    }
+
+    case AutomationActionType.DISARM_AREA: {
+      const params = action.params as z.infer<typeof DisarmAreaActionParamsSchema>;
+      const { scoping, targetAreaIds: specificAreaIds } = params;
+      let areasToProcess: string[] = [];
+
+      if (scoping === 'SPECIFIC_AREAS') {
+        if (!specificAreaIds || specificAreaIds.length === 0) {
+          console.warn(`[Automation Action Executor] Scoping is SPECIFIC_AREAS but no targetAreaIds provided. Skipping.`);
+          break;
+        }
+        areasToProcess = specificAreaIds;
+      } else if (scoping === 'ALL_AREAS_IN_SCOPE') {
+        // For organization context, get all areas in the organization
+        const orgAreas = await context.orgDb.areas.findAll();
+        areasToProcess = orgAreas.map((a: any) => a.id);
+        if (areasToProcess.length === 0) {
+          console.log(`[Automation Action Executor] No areas found in organization scope.`);
+          break;
+        }
+      }
+
+      console.log(`[Automation Action Executor] Attempting to disarm ${areasToProcess.length} area(s). IDs: ${areasToProcess.join(', ')}`);
+      for (const areaId of areasToProcess) {
+        try {
+          const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.DISARMED, {
+            lastArmedStateChangeReason: 'automation_disarm',
+            isArmingSkippedUntil: null,
+            nextScheduledArmTime: null,
+            nextScheduledDisarmTime: null,
+          });
+          if (updatedArea) {
+            console.log(`[Automation Action Executor] Successfully disarmed area ${areaId}.`);
+          } else {
+            console.warn(`[Automation Action Executor] Failed to disarm area ${areaId} (area not found or no update occurred).`);
+          }
+        } catch (areaError) {
+          console.error(`[Automation Action Executor] Error disarming area ${areaId}:`, areaError instanceof Error ? areaError.message : areaError);
+          throw areaError; // Re-throw to mark action as failed
+        }
+      }
+      break;
+    }
+
+    default:
+      console.warn(`[Automation Action Executor] Unknown action type: ${(action as any).type}`);
+      throw new Error(`Unhandled action type: ${(action as any).type}`);
+  }
   
   console.log(`[Automation Action Executor] Successfully executed action type: ${action.type}`);
 }
