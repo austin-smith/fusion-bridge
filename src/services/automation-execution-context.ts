@@ -1,8 +1,8 @@
 import 'server-only';
 
 import { db } from '@/data/db';
-import { automations, automationExecutions, automationActionExecutions, connectors, devices, cameraAssociations, areas } from '@/data/db/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { automations, automationExecutions, automationActionExecutions, connectors, devices, cameraAssociations, areas, areaDevices } from '@/data/db/schema';
+import { eq, inArray, and } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
 import type { OrgScopedDb } from '@/lib/db/org-scoped-db';
 import type { AutomationConfig, AutomationAction } from '@/lib/automation-schemas';
@@ -54,9 +54,8 @@ function resolveTokens(
     area: tokenFactContext?.area ?? null,
     location: tokenFactContext?.location ?? null,
     connector: tokenFactContext?.connector ?? null,
-    // Event-specific details, only if stdEvent is provided
-    event: stdEvent ? {
-      ...(tokenFactContext?.event ?? {}),
+    // Use the event context from tokenFactContext if available, otherwise build from stdEvent
+    event: tokenFactContext?.event ?? (stdEvent ? {
       id: stdEvent.eventId,
       category: stdEvent.category,
       type: stdEvent.type,
@@ -77,7 +76,7 @@ function resolveTokens(
         buttonNumber: (stdEvent.payload as any).buttonNumber,
         buttonPressType: (stdEvent.payload as any).pressType,
       } : {}),
-    } : (tokenFactContext?.event ?? null),
+    } : null),
   };
 
   const resolved = { ...params };
@@ -535,8 +534,11 @@ export class OrganizationAutomationContext {
       // Create execution record with correct total actions count
       const executionId = await this.createExecutionRecord(automation.id, config.actions.length, event.eventId);
       
+      // Build rich context for action execution including device information
+      const actionContext = await this.buildActionContext(event, automation);
+      
       // Execute actions with organization-scoped permissions
-      const actionResults = await this.executeActions(config.actions, executionId, { triggerEvent: event });
+      const actionResults = await this.executeActions(config.actions, executionId, actionContext);
       
       // Complete execution with final counts
       await this.completeExecution(executionId, actionResults);
@@ -665,6 +667,147 @@ export class OrganizationAutomationContext {
     // For now, return false to avoid unintended executions
     console.log(`[Automation Context][${this.organizationId}] Schedule evaluation not yet implemented for: ${automation.name}`);
     return false;
+  }
+
+  /**
+   * Build rich action context including device, area, location, and connector information
+   */
+  private async buildActionContext(event: StandardizedEvent, automation: OrganizationAutomation): Promise<Record<string, any>> {
+    const context: Record<string, any> = {
+      triggerEvent: event,
+      organizationId: this.organizationId,
+      orgDb: this.orgDb
+    };
+
+    try {
+      // Fetch device information
+      const deviceRecord = await db.query.devices.findFirst({
+        where: and(
+          eq(devices.connectorId, event.connectorId),
+          eq(devices.deviceId, event.deviceId)
+        ),
+        columns: {
+          id: true,
+          name: true,
+          standardizedDeviceType: true,
+          standardizedDeviceSubtype: true,
+          vendor: true,
+          model: true,
+          status: true,
+          batteryPercentage: true
+        }
+      });
+
+      if (deviceRecord) {
+        context.device = {
+          id: deviceRecord.id,
+          name: deviceRecord.name,
+          type: deviceRecord.standardizedDeviceType,
+          subtype: deviceRecord.standardizedDeviceSubtype,
+          vendor: deviceRecord.vendor,
+          model: deviceRecord.model,
+          status: deviceRecord.status,
+          batteryPercentage: deviceRecord.batteryPercentage
+        };
+
+        // Fetch area and location information if device is associated
+        const areaAssociation = await db.query.areaDevices.findFirst({
+          where: eq(areaDevices.deviceId, deviceRecord.id),
+          with: {
+            area: {
+              with: {
+                location: true
+              }
+            }
+          }
+        });
+
+        if (areaAssociation?.area) {
+          context.area = {
+            id: areaAssociation.area.id,
+            name: areaAssociation.area.name,
+            armedState: areaAssociation.area.armedState,
+            locationId: areaAssociation.area.locationId
+          };
+
+          if (areaAssociation.area.location) {
+            context.location = {
+              id: areaAssociation.area.location.id,
+              name: areaAssociation.area.location.name,
+              timeZone: areaAssociation.area.location.timeZone,
+              addressCity: areaAssociation.area.location.addressCity,
+              addressState: areaAssociation.area.location.addressState
+            };
+          }
+        }
+      } else {
+        // Device not found in database, use event info as fallback
+        context.device = {
+          id: null,
+          name: event.deviceId, // Use external ID as fallback name
+          type: event.deviceInfo?.type || null,
+          subtype: event.deviceInfo?.subtype || null,
+          vendor: null,
+          model: null,
+          status: null,
+          batteryPercentage: null
+        };
+      }
+
+      // Fetch connector information
+      const connectorRecord = await db.query.connectors.findFirst({
+        where: eq(connectors.id, event.connectorId),
+        columns: {
+          id: true,
+          name: true,
+          category: true
+        }
+      });
+
+      if (connectorRecord) {
+        context.connector = {
+          id: connectorRecord.id,
+          name: connectorRecord.name,
+          category: connectorRecord.category
+        };
+      }
+
+      // Add event context for easy access
+      context.event = {
+        id: event.eventId,
+        category: event.category,
+        type: event.type,
+        subtype: event.subtype,
+        timestamp: event.timestamp.toISOString(),
+        timestampMs: event.timestamp.getTime(),
+        deviceId: event.deviceId,
+        connectorId: event.connectorId,
+        ...(event.payload && typeof event.payload === 'object' ? {
+          displayState: (event.payload as any).displayState,
+          statusType: (event.payload as any).statusType,
+          detectionType: (event.payload as any).detectionType,
+          confidence: (event.payload as any).confidence,
+          zone: (event.payload as any).zone,
+          originalEventType: (event.payload as any).originalEventType,
+          rawStateValue: (event.payload as any).rawStateValue,
+          rawStatusValue: (event.payload as any).rawStatusValue,
+          buttonNumber: (event.payload as any).buttonNumber,
+          buttonPressType: (event.payload as any).pressType,
+        } : {})
+      };
+
+    } catch (error) {
+      console.error(`[Automation Context][${this.organizationId}] Error building action context:`, error);
+      // Continue with minimal context on error
+      context.device = {
+        id: null,
+        name: event.deviceId,
+        type: event.deviceInfo?.type || null,
+        subtype: event.deviceInfo?.subtype || null
+      };
+    }
+
+    return context;
   }
 
   /**

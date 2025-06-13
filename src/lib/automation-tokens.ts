@@ -11,6 +11,7 @@ export const AVAILABLE_AUTOMATION_TOKENS: AutomationToken[] = [
     { token: '{{event.id}}', description: 'Unique ID of this processed event', group: 'Event' },
     { token: '{{event.category}}', description: 'Standardized category (DEVICE_STATE, DEVICE_STATUS, etc.)', group: 'Event' },
     { token: '{{event.type}}', description: 'Standardized type (STATE_CHANGED, ONLINE, etc.)', group: 'Event' },
+    { token: '{{event.subtype}}', description: 'Standardized subtype (additional classification if available)', group: 'Event' },
     { token: '{{event.timestamp}}', description: 'Timestamp event occurred (ISO format)', group: 'Event' },
     { token: '{{event.timestampMs}}', description: 'Timestamp event occurred (Epoch milliseconds)', group: 'Event' },
     { token: '{{event.deviceId}}', description: 'Connector-specific ID of the triggering device', group: 'Event' },
