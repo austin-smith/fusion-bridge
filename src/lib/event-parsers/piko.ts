@@ -96,7 +96,7 @@ export async function parsePikoEvent(
         specificEventType = EventType.INTRUSION;
     } else if (inputPortId === 'cvedia.rt.crossing') {
         specificEventType = EventType.LINE_CROSSING;
-    } else if (inputPortId === 'objectremovedetector' || inputPortId === 'cvedia.rt.objectremoved') {
+    } else if (inputPortId === 'objectremovedetector' || inputPortId === 'cvedia.rt.object_removed') {
         specificEventType = EventType.OBJECT_REMOVED;
     } else if (pikoEventType === 'analyticsSdkObjectDetected') {
         specificEventType = EventType.OBJECT_DETECTED;
