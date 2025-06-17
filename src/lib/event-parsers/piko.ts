@@ -12,7 +12,8 @@ type ParsedPikoEventType = EventType.ANALYTICS_EVENT
                          | EventType.TAILGATING 
                          | EventType.INTRUSION 
                          | EventType.LINE_CROSSING
-                         | EventType.OBJECT_DETECTED;
+                         | EventType.OBJECT_DETECTED
+                         | EventType.OBJECT_REMOVED;
 
 /**
  * Parses the event parameters from a Piko JSON-RPC event update message 
@@ -95,6 +96,8 @@ export async function parsePikoEvent(
         specificEventType = EventType.INTRUSION;
     } else if (inputPortId === 'cvedia.rt.crossing') {
         specificEventType = EventType.LINE_CROSSING;
+    } else if (inputPortId === 'objectremovedetector' || inputPortId === 'cvedia.rt.objectremoved') {
+        specificEventType = EventType.OBJECT_REMOVED;
     } else if (pikoEventType === 'analyticsSdkObjectDetected') {
         specificEventType = EventType.OBJECT_DETECTED;
         if (inputPortId?.includes('person')) {
