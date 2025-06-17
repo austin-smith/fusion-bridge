@@ -10,7 +10,7 @@ import { AutomationConfigSchema, SetDeviceStateActionParamsSchema, ArmAreaAction
 import { AutomationTriggerType, AutomationActionType } from '@/lib/automation-types';
 import { Engine } from 'json-rules-engine';
 import type { JsonRuleGroup } from '@/lib/automation-schemas';
-import { ActionableState, ArmedState } from '@/lib/mappings/definitions';
+import { ActionableState, ArmedState, EVENT_TYPE_DISPLAY_MAP, EVENT_CATEGORY_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP } from '@/lib/mappings/definitions';
 import { requestDeviceStateChange } from '@/lib/device-actions';
 import { getPushoverConfiguration } from '@/data/repositories/service-configurations';
 import { sendPushoverNotification } from '@/services/drivers/pushover';
@@ -57,9 +57,14 @@ function resolveTokens(
     // Use the event context from tokenFactContext if available, otherwise build from stdEvent
     event: tokenFactContext?.event ?? (stdEvent ? {
       id: stdEvent.eventId,
-      category: stdEvent.category,
-      type: stdEvent.type,
-      subtype: stdEvent.subtype,
+      // Display versions (user-friendly)
+      category: EVENT_CATEGORY_DISPLAY_MAP[stdEvent.category] || stdEvent.category,
+      type: EVENT_TYPE_DISPLAY_MAP[stdEvent.type] || stdEvent.type,
+      subtype: stdEvent.subtype ? (EVENT_SUBTYPE_DISPLAY_MAP[stdEvent.subtype] || stdEvent.subtype) : null,
+      // ID versions (backend values)
+      categoryId: stdEvent.category,
+      typeId: stdEvent.type,
+      subtypeId: stdEvent.subtype,
       timestamp: stdEvent.timestamp.toISOString(),
       timestampMs: stdEvent.timestamp.getTime(),
       deviceId: stdEvent.deviceId,
@@ -775,9 +780,14 @@ export class OrganizationAutomationContext {
       // Add event context for easy access
       context.event = {
         id: event.eventId,
-        category: event.category,
-        type: event.type,
-        subtype: event.subtype,
+        // Display versions (user-friendly)
+        category: EVENT_CATEGORY_DISPLAY_MAP[event.category] || event.category,
+        type: EVENT_TYPE_DISPLAY_MAP[event.type] || event.type,
+        subtype: event.subtype ? (EVENT_SUBTYPE_DISPLAY_MAP[event.subtype] || event.subtype) : null,
+        // ID versions (backend values)
+        categoryId: event.category,
+        typeId: event.type,
+        subtypeId: event.subtype,
         timestamp: event.timestamp.toISOString(),
         timestampMs: event.timestamp.getTime(),
         deviceId: event.deviceId,

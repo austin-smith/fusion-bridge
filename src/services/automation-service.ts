@@ -17,7 +17,7 @@ import { findEventsInWindow } from '@/data/repositories/events'; // Import the s
 import { Engine } from 'json-rules-engine';
 import type { JsonRuleCondition, JsonRuleGroup } from '@/lib/automation-schemas'; // Import rule types
 import { requestDeviceStateChange } from '@/lib/device-actions';
-import { ActionableState, ArmedState } from '@/lib/mappings/definitions';
+import { ActionableState, ArmedState, EVENT_TYPE_DISPLAY_MAP, EVENT_CATEGORY_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP } from '@/lib/mappings/definitions';
 // Import Pushover config repository and driver
 import { getPushoverConfiguration } from '@/data/repositories/service-configurations';
 import { sendPushoverNotification } from '@/services/drivers/pushover';
@@ -580,9 +580,14 @@ function resolveTokens(
         event: stdEvent ? {
             ...(tokenFactContext?.event ?? {}), // Allow override from facts if specific event fields put there
             id: stdEvent.eventId,
-            category: stdEvent.category,
-            type: stdEvent.type,
-            subtype: stdEvent.subtype,
+            // Display versions (user-friendly)
+            category: EVENT_CATEGORY_DISPLAY_MAP[stdEvent.category] || stdEvent.category,
+            type: EVENT_TYPE_DISPLAY_MAP[stdEvent.type] || stdEvent.type,
+            subtype: stdEvent.subtype ? (EVENT_SUBTYPE_DISPLAY_MAP[stdEvent.subtype] || stdEvent.subtype) : null,
+            // ID versions (backend values)
+            categoryId: stdEvent.category,
+            typeId: stdEvent.type,
+            subtypeId: stdEvent.subtype,
             timestamp: stdEvent.timestamp.toISOString(),
             timestampMs: stdEvent.timestamp.getTime(),
             deviceId: stdEvent.deviceId, 
