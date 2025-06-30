@@ -634,6 +634,23 @@ async function syncPikoDevices(
     
     console.log(`Found ${cameras.length} cameras and ${servers.length} servers from Piko API`);
 
+    // Handle device deletions - delete devices not in current API response
+    const apiDeviceIds = cameras.map(c => c.id).filter(Boolean);
+    
+    if (apiDeviceIds.length > 0) {
+        await db.delete(devices)
+            .where(and(
+                eq(devices.connectorId, connectorId),
+                sql`${devices.deviceId} NOT IN (${sql.join(apiDeviceIds.map(id => sql`${id}`), sql`, `)})`
+            ));
+        console.log(`[API Sync Piko] Deleted stale devices not in current API response.`);
+    } else {
+        // If no devices from API, delete all devices for this connector
+        await db.delete(devices)
+            .where(eq(devices.connectorId, connectorId));
+        console.log(`[API Sync Piko] Deleted all devices (no devices from API).`);
+    }
+
     // Sync servers first
     for (const server of servers) {
       if (!server.id || !server.name) continue;
@@ -727,6 +744,23 @@ async function syncGeneaDevices(
     
     const doors = await geneaDriver.getGeneaDoors(config);
     console.log(`Found ${doors.length} doors from Genea API`);
+
+    // Handle device deletions - delete devices not in current API response
+    const apiDeviceIds = doors.map(d => d.uuid).filter(Boolean);
+    
+    if (apiDeviceIds.length > 0) {
+        await db.delete(devices)
+            .where(and(
+                eq(devices.connectorId, connectorId),
+                sql`${devices.deviceId} NOT IN (${sql.join(apiDeviceIds.map(id => sql`${id}`), sql`, `)})`
+            ));
+        console.log(`[API Sync Genea] Deleted stale devices not in current API response.`);
+    } else {
+        // If no devices from API, delete all devices for this connector
+        await db.delete(devices)
+            .where(eq(devices.connectorId, connectorId));
+        console.log(`[API Sync Genea] Deleted all devices (no devices from API).`);
+    }
 
     for (const door of doors) {
       if (!door.uuid || !door.name) continue;

@@ -892,7 +892,7 @@ export function AddConnectorModal() {
               ? `Update the details for the connector: ${editingConnector?.name || ''}`
               : isPiko
                 ? pikoWizardStep === 'credentials'
-                  ? `Enter your Piko account credentials ${selectedPikoType === 'local' ? 'and local connection details.' : '.'}`
+                  ? `Enter your Piko account credentials${selectedPikoType === 'local' ? ' and local connection details.' : '.'}`
                   : 'Select your Piko system.'
                 : selectedCategory === 'netbox' // Add description for NetBox
                   ? 'Configure a webhook endpoint for NetBox integration.'

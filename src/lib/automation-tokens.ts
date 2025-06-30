@@ -9,8 +9,12 @@ export interface AutomationToken {
 export const AVAILABLE_AUTOMATION_TOKENS: AutomationToken[] = [
     // --- Event Data (from StandardizedEvent) ---
     { token: '{{event.id}}', description: 'Unique ID of this processed event', group: 'Event' },
-    { token: '{{event.category}}', description: 'Standardized category (DEVICE_STATE, DEVICE_STATUS, etc.)', group: 'Event' },
-    { token: '{{event.type}}', description: 'Standardized type (STATE_CHANGED, ONLINE, etc.)', group: 'Event' },
+    { token: '{{event.categoryId}}', description: 'Event category ID', group: 'Event' },
+    { token: '{{event.category}}', description: 'Event category display name', group: 'Event' },
+    { token: '{{event.typeId}}', description: 'Event type ID', group: 'Event' },
+    { token: '{{event.type}}', description: 'Event type display name', group: 'Event' },
+    { token: '{{event.subtypeId}}', description: 'Event subtype ID', group: 'Event' },
+    { token: '{{event.subtype}}', description: 'Event subtype display name', group: 'Event' },
     { token: '{{event.timestamp}}', description: 'Timestamp event occurred (ISO format)', group: 'Event' },
     { token: '{{event.timestampMs}}', description: 'Timestamp event occurred (Epoch milliseconds)', group: 'Event' },
     { token: '{{event.deviceId}}', description: 'Connector-specific ID of the triggering device', group: 'Event' },
@@ -29,7 +33,7 @@ export const AVAILABLE_AUTOMATION_TOKENS: AutomationToken[] = [
     // --- Device Context Data ---
     { token: '{{device.id}}', description: 'Internal system ID of the device record (if found)', group: 'Device' },
     { token: '{{device.name}}', description: 'Name of the triggering device (from DB or fallback)', group: 'Device' },
-    { token: '{{device.type}}', description: 'Standardized device type (Sensor, Lock, etc.)', group: 'Device' },
-    { token: '{{device.subtype}}', description: 'Standardized device subtype (Contact, Leak, etc.)', group: 'Device' },
+    { token: '{{device.type}}', description: 'Device type display name', group: 'Device' },
+    { token: '{{device.subtype}}', description: 'Device subtype display name', group: 'Device' },
     // Add more device fields if they are reliably populated in the context (e.g., model, vendor)
 ]; 
