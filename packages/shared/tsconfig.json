@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../../apps/web/src/*"]
+    },
+    "composite": false,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*", "../../apps/web/src/**/*"],
+  "exclude": ["node_modules", "dist"]
+} 

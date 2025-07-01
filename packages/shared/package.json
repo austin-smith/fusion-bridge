@@ -1,0 +1,23 @@
+{
+  "name": "@fusion-bridge/shared",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.4",
+    "@next/env": "^15.3.4",
+    "better-auth": "^1.2.7",
+    "better-sqlite3": "^9.4.3",
+    "drizzle-orm": "^0.43.1",
+    "next": "^15.0.0",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "typescript": "^5.8.3"
+  }
+}
