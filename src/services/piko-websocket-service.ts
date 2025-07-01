@@ -730,9 +730,21 @@ function scheduleReconnect(connectorId: string): void {
             return;
         }
 
-        console.log(`[scheduleReconnect][${connectorId}] Timeout fired. Attempting initPikoWebSocket...`);
+        console.log(`[scheduleReconnect][${connectorId}] Timeout fired. Checking token expiration before reconnect...`);
+        
+        // Check if token is expired and force refresh if needed
+        const tokenExpired = currentState?.tokenInfo?.expiresAt 
+            ? Date.now() >= currentState.tokenInfo.expiresAt 
+            : true; // Treat missing expiration as expired
+        
+        if (tokenExpired) {
+            console.log(`[scheduleReconnect][${connectorId}] Token is expired, forcing refresh on reconnect attempt.`);
+        } else {
+            console.log(`[scheduleReconnect][${connectorId}] Token is still valid, reconnecting with existing token.`);
+        }
+
         try {
-            await initPikoWebSocket(connectorId);
+            await initPikoWebSocket(connectorId, undefined, 0, tokenExpired);
         } catch (err) {
             console.error(`[${connectorId}] Reconnection attempt via initPikoWebSocket failed in scheduleReconnect:`, err);
              // Error handling within init should manage state
