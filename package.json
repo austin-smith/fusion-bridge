@@ -8,5 +8,9 @@
   ],
   "engines": {
     "node": "20"
+  },
+  "scripts": {
+    "build": "npm run build --workspace=@fusion-bridge/web",
+    "start": "npm run start --workspace=@fusion-bridge/web"
   }
 } 
