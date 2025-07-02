@@ -19,10 +19,11 @@ REDIS_PASSWORD=
 REDIS_DB=0
 ```
 
-For production environments:
+For production environments (Railway):
 ```bash
-REDIS_HOST=your-redis-instance.railway.app
+REDIS_HOST=redis.railway.internal
 REDIS_PORT=6379
+REDIS_USERNAME=default
 REDIS_PASSWORD=your-secure-password
 REDIS_DB=0
 ```
@@ -72,7 +73,24 @@ railway variables
 
 ### 3. Update your environment variables
 
-Copy the Redis URL and parse it for individual components, or use the provided environment variables from Railway.
+Railway will automatically set these variables when you add Redis:
+
+```bash
+REDIS_HOST=redis.railway.internal
+REDIS_PORT=6379
+REDIS_USERNAME=default  # Railway's default Redis username
+REDIS_PASSWORD=auto-generated-password
+```
+
+You can also set them manually:
+
+```bash
+railway variables set REDIS_HOST=redis.railway.internal
+railway variables set REDIS_PORT=6379
+railway variables set REDIS_USERNAME=default
+railway variables set REDIS_PASSWORD=your-password
+railway variables set REDIS_DB=0
+```
 
 ## Testing the Implementation
 
