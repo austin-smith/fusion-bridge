@@ -19,7 +19,7 @@ REDIS_URL=redis://localhost:6379
 For production environments (Railway):
 ```bash
 # Railway automatically provides this via service reference
-REDIS_URL=${{ fusion-redis-dev.REDIS_URL }}
+REDIS_URL=${{ fusion-redis.REDIS_URL }}
 ```
 
 ## Local Development Setup
@@ -78,16 +78,16 @@ In your Next.js service, add the Redis URL as a reference variable:
 
 1. Go to your Next.js service → Variables tab
 2. Add a new variable: `REDIS_URL`
-3. Set the value to: `${{ fusion-redis-dev.REDIS_URL }}`
+3. Set the value to: `${{ fusion-redis.REDIS_URL }}`
 
 This automatically references your Redis service and includes authentication.
 
 Alternatively, set it via CLI:
 ```bash
-railway variables set REDIS_URL='${{ fusion-redis-dev.REDIS_URL }}'
+railway variables set REDIS_URL='${{ fusion-redis.REDIS_URL }}'
 ```
 
-**Note**: Replace `fusion-redis-dev` with your actual Redis service name.
+**Note**: Replace `fusion-redis` with your actual Redis service name.
 
 ## Testing the Implementation
 
