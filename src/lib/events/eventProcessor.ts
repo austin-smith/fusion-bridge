@@ -4,12 +4,15 @@ import {
   devices as devicesTableSchema,
   areas as areasTableSchema,
   areaDevices as areaDevicesTableSchema,
+  connectors as connectorsTableSchema,
 } from '@/data/db/schema';
 import type { StandardizedEvent } from '@/types/events';
 import { eq, and, InferSelectModel } from 'drizzle-orm';
 import { ArmedState, EventType } from '@/lib/mappings/definitions';
 import { isSecurityRiskEvent } from '@/lib/security/alarmLogic';
 import { processEvent as processEventForAutomations } from '@/services/automation-service'; // Import automation service
+import { getRedisPubClient } from '@/lib/redis/client';
+import { getEventChannelName, type RedisEventMessage } from '@/lib/redis/types';
 
 // Infer types from schemas
 type Device = InferSelectModel<typeof devicesTableSchema>;
@@ -47,6 +50,55 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
       rawPayload: event.originalEvent as any,    // Drizzle expects specific JSON type or string, cast for now
     });
     console.log(`[EventProcessor] Event ${event.eventId} persisted to database.`);
+
+    // Publish event to Redis for real-time distribution
+    try {
+      // Get connector info to determine organizationId
+      const connector = await db.query.connectors.findFirst({
+        where: eq(connectorsTableSchema.id, event.connectorId),
+        with: {
+          devices: {
+            where: and(
+              eq(devicesTableSchema.connectorId, event.connectorId),
+              eq(devicesTableSchema.deviceId, event.deviceId)
+            ),
+            limit: 1
+          }
+        }
+      });
+
+      if (connector?.organizationId) {
+        const deviceInfo = connector.devices?.[0];
+        
+        // Create Redis event message with enriched data
+        const redisMessage: RedisEventMessage = {
+          eventUuid: event.eventId,
+          timestamp: event.timestamp.toISOString(),
+          organizationId: connector.organizationId,
+          category: event.category,
+          type: event.type,
+          subtype: event.subtype,
+          deviceId: event.deviceId,
+          deviceName: deviceInfo?.name,
+          connectorId: event.connectorId,
+          connectorName: connector.name,
+          payload: event.payload,
+          rawPayload: event.originalEvent
+        };
+
+        // Publish to organization's event channel
+        const channel = getEventChannelName(connector.organizationId);
+        const pubClient = getRedisPubClient();
+        await pubClient.publish(channel, JSON.stringify(redisMessage));
+        
+        console.log(`[EventProcessor] Event ${event.eventId} published to Redis channel: ${channel}`);
+      } else {
+        console.warn(`[EventProcessor] Could not publish event ${event.eventId} to Redis: no organizationId found`);
+      }
+    } catch (redisError) {
+      // Don't fail the entire event processing if Redis publish fails
+      console.error(`[EventProcessor] Failed to publish event ${event.eventId} to Redis:`, redisError);
+    }
 
     // 2. Fetch Device Information for further processing
     const internalDeviceRecord: Partial<Device> | undefined = await db.query.devices.findFirst({
