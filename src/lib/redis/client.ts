@@ -6,24 +6,8 @@ import Redis from 'ioredis';
  * This is server-only and should never be imported in client components.
  */
 
-// Redis connection options
-const redisOptions = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-  username: process.env.REDIS_USERNAME || process.env.REDIS_USER || 'default',
-  password: process.env.REDIS_PASSWORD,
-  db: parseInt(process.env.REDIS_DB || '0'),
-  family: 0, // Enable dual stack lookup (IPv4 + IPv6) for Railway
-  retryStrategy: (times: number) => {
-    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s...
-    const delay = Math.min(1000 * Math.pow(2, times - 1), 30000);
-    return delay;
-  },
-  maxRetriesPerRequest: 3,
-  enableReadyCheck: true,
-  connectTimeout: 10000,
-  lazyConnect: true, // Don't connect until first command
-};
+// Redis connection options - Railway REDIS_URL with dual stack lookup
+const redisOptions = process.env.REDIS_URL + '?family=0';
 
 // Create Redis clients
 let redisClient: Redis | null = null;

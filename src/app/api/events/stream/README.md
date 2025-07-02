@@ -12,20 +12,14 @@ This endpoint provides real-time event streaming using Server-Sent Events (SSE).
 Add the following to your `.env.local` file:
 
 ```bash
-# Redis Configuration
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_DB=0
+# Redis Configuration (local development)
+REDIS_URL=redis://localhost:6379
 ```
 
 For production environments (Railway):
 ```bash
-REDIS_HOST=redis.railway.internal
-REDIS_PORT=6379
-REDIS_USERNAME=default
-REDIS_PASSWORD=your-secure-password
-REDIS_DB=0
+# Railway automatically provides this via service reference
+REDIS_URL=${{ fusion-redis-dev.REDIS_URL }}
 ```
 
 ## Local Development Setup
@@ -57,6 +51,13 @@ redis-cli ping
 # Should return: PONG
 ```
 
+### 3. Set your local environment variable
+
+Add to your `.env.local`:
+```bash
+REDIS_URL=redis://localhost:6379
+```
+
 ## Production Setup (Railway)
 
 ### 1. Add Redis to your Railway project
@@ -71,26 +72,22 @@ railway add redis
 railway variables
 ```
 
-### 3. Update your environment variables
+### 3. Set up the Redis URL reference
 
-Railway will automatically set these variables when you add Redis:
+In your Next.js service, add the Redis URL as a reference variable:
 
+1. Go to your Next.js service → Variables tab
+2. Add a new variable: `REDIS_URL`
+3. Set the value to: `${{ fusion-redis-dev.REDIS_URL }}`
+
+This automatically references your Redis service and includes authentication.
+
+Alternatively, set it via CLI:
 ```bash
-REDIS_HOST=redis.railway.internal
-REDIS_PORT=6379
-REDIS_USERNAME=default  # Railway's default Redis username
-REDIS_PASSWORD=auto-generated-password
+railway variables set REDIS_URL='${{ fusion-redis-dev.REDIS_URL }}'
 ```
 
-You can also set them manually:
-
-```bash
-railway variables set REDIS_HOST=redis.railway.internal
-railway variables set REDIS_PORT=6379
-railway variables set REDIS_USERNAME=default
-railway variables set REDIS_PASSWORD=your-password
-railway variables set REDIS_DB=0
-```
+**Note**: Replace `fusion-redis-dev` with your actual Redis service name.
 
 ## Testing the Implementation
 
@@ -387,6 +384,7 @@ The system handles server restarts gracefully:
 - **Redis Failover**: Clients receive system messages when Redis goes down/up
 - **Connection Recovery**: Automatic resubscription when Redis reconnects
 - **Error Isolation**: Individual connection failures don't affect other connections
+- **Railway IPv6 Support**: Dual stack DNS lookup for Railway's IPv6 private network
 
 ## Monitoring
 
