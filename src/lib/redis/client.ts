@@ -22,15 +22,14 @@ export function getRedisClient(): Redis {
     redisClient = new Redis(redisOptions);
     
     redisClient.on('error', (err: any) => {
-      console.error('[Redis Client] Error:', {
-        message: err.message,
-        code: err.code,
-        stack: err.stack
-      });
+      // Only log non-connection errors to reduce noise
+      if (err.code !== 'ECONNREFUSED' && err.code !== 'ENOTFOUND') {
+        console.error('[Redis Client] Error:', err.message);
+      }
     });
     
     redisClient.on('connect', () => {
-      console.log('[Redis Client] Connected to Redis successfully');
+      console.log('[Redis Client] Connected to Redis');
     });
     
     redisClient.on('ready', () => {
@@ -39,14 +38,6 @@ export function getRedisClient(): Redis {
     
     redisClient.on('close', () => {
       console.log('[Redis Client] Connection closed');
-    });
-    
-    redisClient.on('reconnecting', () => {
-      console.log('[Redis Client] Reconnecting to Redis...');
-    });
-    
-    redisClient.on('end', () => {
-      console.log('[Redis Client] Connection ended');
     });
   }
   
