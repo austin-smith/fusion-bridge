@@ -188,6 +188,40 @@ const apiKeyTestResponseSchema = z.object({
   timestamp: z.string().describe('Test timestamp (ISO string)'),
 }).openapi('ApiKeyTestResponse');
 
+// SSE Event Stream schemas
+const sseStreamQuerySchema = z.object({
+  categories: z.string().optional().describe('Comma-separated event categories to filter by'),
+  eventTypes: z.string().optional().describe('Comma-separated event types to filter by'),
+}).openapi('SSEStreamQuery');
+
+const sseStatsResponseSchema = z.object({
+  success: z.literal(true),
+  data: z.object({
+    organizationId: z.string().describe('Organization UUID'),
+    activeConnections: z.number().describe('Number of active SSE connections for this organization'),
+    subscribedChannels: z.number().describe('Number of Redis channels subscribed for this organization'),
+    timestamp: z.string().describe('Current timestamp (ISO string)'),
+    redis: z.object({
+      healthy: z.boolean().describe('Whether Redis connection is healthy'),
+      pingMs: z.number().nullable().describe('Redis ping latency in milliseconds'),
+    }).describe('Redis connection status'),
+  }),
+}).openapi('SSEStatsResponse');
+
+const sseStreamResponseSchema = z.string().describe('Server-Sent Events stream in text/event-stream format. Includes connection events, real-time events, heartbeat messages, and system notifications.').openapi('SSEStreamResponse', {
+  example: `event: connection
+data: {"type":"connection","organizationId":"org-123","timestamp":"2024-01-01T00:00:00.000Z"}
+
+event: event  
+data: {"id":1,"eventUuid":"550e8400-e29b-41d4-a716-446655440000","deviceId":"front-door-camera","deviceName":"Front Door Camera","connectorId":"piko-001","connectorName":"Piko Server Main","connectorCategory":"piko","areaId":"living-area-123","areaName":"Living Area","locationId":"home-location-456","locationName":"Main House","timestamp":1704067200000,"eventCategory":"security","eventType":"motion","eventSubtype":"motion_detected","payload":{"motion":true,"confidence":0.95,"zone":"entrance"},"rawPayload":{"event_type":"motion","camera_id":"front-door-camera","confidence":95,"timestamp":"2024-01-01T00:00:00Z"},"deviceTypeInfo":{"deviceType":"camera","category":"security","displayName":"Security Camera","supportedFeatures":["motion_detection","video_recording","live_stream"]},"displayState":"motion_detected","rawEventType":"motion"}
+
+event: heartbeat
+data: {"type":"heartbeat","timestamp":"2024-01-01T00:00:30.000Z"}
+
+event: system
+data: {"type":"system","message":"Redis connection lost","timestamp":"2024-01-01T00:01:00.000Z"}`
+});
+
 export function generateOpenApiSpec() {
   const registry = new OpenAPIRegistry();
 
@@ -213,6 +247,11 @@ export function generateOpenApiSpec() {
   registry.register('ValidatePinRequest', validatePinSchema.openapi('ValidatePinRequest'));
   registry.register('PinValidationResponse', pinValidationResponseSchema.openapi('PinValidationResponse'));
   registry.register('UserIdParams', userIdParamsSchema);
+
+  // SSE Event Stream schemas
+  registry.register('SSEStreamQuery', sseStreamQuerySchema);
+  registry.register('SSEStatsResponse', sseStatsResponseSchema);
+  registry.register('SSEStreamResponse', sseStreamResponseSchema);
 
   // Register response schemas
   const areasSuccessResponse = successResponseSchema(z.array(areaSchema));
@@ -575,6 +614,100 @@ export function generateOpenApiSpec() {
         content: {
           'application/json': {
             schema: { $ref: '#/components/schemas/EventsPagedResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  // SSE Event Stream endpoints
+  registry.registerPath({
+    method: 'get',
+    path: '/api/events/stream',
+    summary: 'Real-time event stream (SSE)',
+    description: 'Server-Sent Events endpoint for real-time event streaming.',
+    tags: ['Events'],
+    request: {
+      query: sseStreamQuerySchema,
+    },
+    responses: {
+      200: {
+        description: 'Server-Sent Events stream',
+        content: {
+          'text/event-stream': {
+            schema: { $ref: '#/components/schemas/SSEStreamResponse' },
+          },
+        },
+        headers: {
+          'Content-Type': {
+            description: 'text/event-stream',
+            schema: { type: 'string' }
+          },
+          'Cache-Control': {
+            description: 'no-cache, no-transform',
+            schema: { type: 'string' }
+          },
+          'Connection': {
+            description: 'keep-alive',
+            schema: { type: 'string' }
+          }
+        }
+      },
+      401: {
+        description: 'Authentication required - missing or invalid API key',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      429: {
+        description: 'Connection limit exceeded - maximum 5 connections per API key',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/events/stream/stats',
+    summary: 'SSE connection statistics',
+    description: 'Get connection statistics for the requesting organization including active connections and Redis health.',
+    tags: ['Events'],
+    responses: {
+      200: {
+        description: 'Connection statistics',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/SSEStatsResponse' },
+          },
+        },
+      },
+      401: {
+        description: 'Authentication required - missing or invalid API key',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
           },
         },
       },
