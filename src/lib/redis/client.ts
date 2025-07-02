@@ -13,6 +13,7 @@ const redisOptions = {
   username: process.env.REDIS_USERNAME || process.env.REDIS_USER || 'default',
   password: process.env.REDIS_PASSWORD,
   db: parseInt(process.env.REDIS_DB || '0'),
+  family: 0, // Enable dual stack lookup (IPv4 + IPv6) for Railway
   retryStrategy: (times: number) => {
     // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s...
     const delay = Math.min(1000 * Math.pow(2, times - 1), 30000);
@@ -34,15 +35,6 @@ let redisSubClient: Redis | null = null;
  */
 export function getRedisClient(): Redis {
   if (!redisClient) {
-    // Log the Redis configuration for debugging (without password)
-    console.log('[Redis Client] Connecting with config:', {
-      host: redisOptions.host,
-      port: redisOptions.port,
-      username: redisOptions.username,
-      db: redisOptions.db,
-      hasPassword: !!redisOptions.password
-    });
-    
     redisClient = new Redis(redisOptions);
     
     redisClient.on('error', (err: any) => {
