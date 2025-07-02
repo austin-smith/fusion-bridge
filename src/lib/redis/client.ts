@@ -34,17 +34,27 @@ let redisSubClient: Redis | null = null;
  */
 export function getRedisClient(): Redis {
   if (!redisClient) {
+    // Log the Redis configuration for debugging (without password)
+    console.log('[Redis Client] Connecting with config:', {
+      host: redisOptions.host,
+      port: redisOptions.port,
+      username: redisOptions.username,
+      db: redisOptions.db,
+      hasPassword: !!redisOptions.password
+    });
+    
     redisClient = new Redis(redisOptions);
     
     redisClient.on('error', (err: any) => {
-      // Only log non-connection errors to reduce noise
-      if (err.code !== 'ECONNREFUSED' && err.code !== 'ENOTFOUND') {
-        console.error('[Redis Client] Error:', err.message);
-      }
+      console.error('[Redis Client] Error:', {
+        message: err.message,
+        code: err.code,
+        stack: err.stack
+      });
     });
     
     redisClient.on('connect', () => {
-      console.log('[Redis Client] Connected to Redis');
+      console.log('[Redis Client] Connected to Redis successfully');
     });
     
     redisClient.on('ready', () => {
@@ -53,6 +63,14 @@ export function getRedisClient(): Redis {
     
     redisClient.on('close', () => {
       console.log('[Redis Client] Connection closed');
+    });
+    
+    redisClient.on('reconnecting', () => {
+      console.log('[Redis Client] Reconnecting to Redis...');
+    });
+    
+    redisClient.on('end', () => {
+      console.log('[Redis Client] Connection ended');
     });
   }
   
