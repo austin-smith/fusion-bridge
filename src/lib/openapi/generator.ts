@@ -190,7 +190,7 @@ const apiKeyTestResponseSchema = z.object({
 
 // SSE Event Stream schemas
 const sseStreamQuerySchema = z.object({
-  categories: z.string().optional().describe('Comma-separated event categories to filter by'),
+  eventCategories: z.string().optional().describe('Comma-separated event categories to filter by'),
   eventTypes: z.string().optional().describe('Comma-separated event types to filter by'),
 }).openapi('SSEStreamQuery');
 
@@ -208,18 +208,29 @@ const sseStatsResponseSchema = z.object({
   }),
 }).openapi('SSEStatsResponse');
 
-const sseStreamResponseSchema = z.string().describe('Server-Sent Events stream in text/event-stream format. Includes connection events, real-time events, heartbeat messages, and system notifications.').openapi('SSEStreamResponse', {
+const sseStreamResponseSchema = z.string().describe('Server-Sent Events stream in text/event-stream format. Includes connection events, real-time events, heartbeat messages, system notifications, error messages, and arming state changes.').openapi('SSEStreamResponse', {
   example: `event: connection
 data: {"type":"connection","organizationId":"org-123","timestamp":"2024-01-01T00:00:00.000Z"}
 
 event: event  
-data: {"id":1,"eventUuid":"550e8400-e29b-41d4-a716-446655440000","deviceId":"front-door-camera","deviceName":"Front Door Camera","connectorId":"piko-001","connectorName":"Piko Server Main","connectorCategory":"piko","areaId":"living-area-123","areaName":"Living Area","locationId":"home-location-456","locationName":"Main House","timestamp":1704067200000,"eventCategory":"security","eventType":"motion","eventSubtype":"motion_detected","payload":{"motion":true,"confidence":0.95,"zone":"entrance"},"rawPayload":{"event_type":"motion","camera_id":"front-door-camera","confidence":95,"timestamp":"2024-01-01T00:00:00Z"},"deviceTypeInfo":{"deviceType":"camera","category":"security","displayName":"Security Camera","supportedFeatures":["motion_detection","video_recording","live_stream"]},"displayState":"motion_detected","rawEventType":"motion"}
+data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2024-01-01T00:00:00.000Z","organizationId":"org-123","eventCategory":"security","eventCategoryDisplayName":"Security","eventType":"motion","eventTypeDisplayName":"Motion Detected","eventSubtype":"motion_detected","eventSubtypeDisplayName":"Motion Detected","deviceId":"front-door-camera","deviceName":"Front Door Camera","connectorId":"piko-001","connectorName":"Piko Server Main","locationId":"home-location-456","locationName":"Main House","areaId":"living-area-123","areaName":"Living Area","payload":{"motion":true,"confidence":0.95,"zone":"entrance"},"rawPayload":{"event_type":"motion","camera_id":"front-door-camera","confidence":95,"timestamp":"2024-01-01T00:00:00Z"}}
+event: arming
+data: {"type":"arming","organizationId":"org-123","timestamp":"2024-01-01T00:02:00.000Z","area":{"id":"living-area-123","name":"Living Area","locationId":"home-location-456","locationName":"Main House","previousState":"DISARMED","previousStateDisplayName":"Disarmed","currentState":"ARMED_AWAY","currentStateDisplayName":"Armed - Away"}}
 
 event: heartbeat
 data: {"type":"heartbeat","timestamp":"2024-01-01T00:00:30.000Z"}
 
 event: system
-data: {"type":"system","message":"Redis connection lost","timestamp":"2024-01-01T00:01:00.000Z"}`
+data: {"type":"system","message":"Redis connection lost","timestamp":"2024-01-01T00:01:00.000Z"}
+
+event: system
+data: {"type":"system","message":"Redis connection restored","timestamp":"2024-01-01T00:01:30.000Z"}
+
+event: system
+data: {"type":"system","message":"Server restarting - reconnect in 5000ms","timestamp":"2024-01-01T00:02:00.000Z"}
+
+event: error
+data: {"type":"error","error":"Connection authentication failed","code":"AUTH_ERROR","timestamp":"2024-01-01T00:01:15.000Z"}`
 });
 
 export function generateOpenApiSpec() {

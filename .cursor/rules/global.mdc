@@ -1,5 +1,5 @@
 ---
-description: lobal stack decisions
+description: Global stack decisions
 glob:
 alwaysApply: true
 ---

@@ -132,8 +132,8 @@ x-api-key: your-api-key-here
 
 ## Query Parameters
 
-- `categories` (optional): Comma-separated list of event categories to filter
-  - Example: `?categories=access,security,alarm`
+- `eventCategories` (optional): Comma-separated list of event categories to filter
+  - Example: `?eventCategories=access,security,alarm`
 - `eventTypes` (optional): Comma-separated list of event types to filter
   - Example: `?eventTypes=STATE_CHANGED,MOTION_DETECTED`
 
@@ -301,7 +301,7 @@ stream_events()
 
 ```bash
 curl -N -H "x-api-key: your-api-key-here" \
-  "https://your-app.com/api/events/stream?categories=access,security"
+  "https://your-app.com/api/events/stream?eventCategories=access,security"
 ```
 
 ## Filtered Streaming
@@ -310,13 +310,13 @@ To receive only specific events:
 
 ```javascript
 // Only receive access and security events
-const url = '/api/events/stream?categories=access,security';
+const url = '/api/events/stream?eventCategories=access,security';
 
 // Only receive state changes and motion events
 const url = '/api/events/stream?eventTypes=STATE_CHANGED,MOTION_DETECTED';
 
 // Combine filters
-const url = '/api/events/stream?categories=security&eventTypes=MOTION_DETECTED,INTRUSION_DETECTED';
+const url = '/api/events/stream?eventCategories=security&eventTypes=MOTION_DETECTED,INTRUSION_DETECTED';
 ```
 
 ## Error Handling

@@ -429,7 +429,6 @@ async function executeActionWithRetry(
                 for (const areaId of areasToProcess) {
                     try {
                         const updatedArea = await internalSetAreaArmedState(areaId, armMode, {
-                            lastArmedStateChangeReason: 'automation_arm', // Added reason
                             isArmingSkippedUntil: null,                  // Clear schedule fields
                             nextScheduledArmTime: null,
                             nextScheduledDisarmTime: null,
@@ -483,7 +482,6 @@ async function executeActionWithRetry(
                 for (const areaId of areasToProcess) {
                     try {
                         const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.DISARMED, {
-                            lastArmedStateChangeReason: 'automation_disarm', // Added reason
                             isArmingSkippedUntil: null,                     // Clear schedule fields
                             nextScheduledArmTime: null,
                             nextScheduledDisarmTime: null,

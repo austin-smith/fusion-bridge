@@ -28,16 +28,33 @@ class SSEConnectionManager {
     this.subscriber.on('message', (channel: string, message: string) => {
       try {
         const organizationId = channel.replace('events:', '');
-        const event: RedisEventMessage = JSON.parse(message);
+        const parsedMessage = JSON.parse(message);
+        
+        // Determine message type
+        const messageType = parsedMessage.type;
         
         // Route message to all connections for this organization
         this.connections.forEach((conn) => {
           if (conn.organizationId === organizationId) {
-            // Apply connection-specific filters
-            if (this.shouldSendEvent(conn, event)) {
+            let shouldSend = false;
+            let sseEventType = 'event';
+            
+            // Handle different message types
+            if (messageType === 'arming') {
+              // Arming messages are always sent (no filtering for now)
+              shouldSend = true;
+              sseEventType = 'arming';
+            } else {
+              // Legacy event messages
+              const event = parsedMessage as RedisEventMessage;
+              shouldSend = this.shouldSendEvent(conn, event);
+              sseEventType = 'event';
+            }
+            
+            if (shouldSend) {
               try {
                 const encoder = new TextEncoder();
-                conn.controller.enqueue(encoder.encode(this.formatSSE(event, 'event')));
+                conn.controller.enqueue(encoder.encode(this.formatSSE(parsedMessage, sseEventType)));
               } catch (error) {
                 // Connection likely closed, will be cleaned up later
                 console.warn(`[SSE Manager] Failed to send to connection ${conn.id}:`, error);
@@ -95,12 +112,12 @@ class SSEConnectionManager {
 
   private shouldSendEvent(conn: SSEConnection, event: RedisEventMessage): boolean {
     // Apply event category filter
-    if (conn.eventCategories && !conn.eventCategories.includes(event.category)) {
+    if (conn.eventCategories && !conn.eventCategories.includes(event.eventCategory)) {
       return false;
     }
     
     // Apply event type filter
-    if (conn.eventTypes && !conn.eventTypes.includes(event.type)) {
+    if (conn.eventTypes && !conn.eventTypes.includes(event.eventType)) {
       return false;
     }
     

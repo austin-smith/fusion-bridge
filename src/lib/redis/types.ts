@@ -3,6 +3,7 @@
  */
 
 import type { StandardizedEvent } from '@/types/events';
+import type { ArmedState } from '@/lib/mappings/definitions';
 
 /**
  * Event message format published to Redis channels
@@ -11,9 +12,12 @@ export interface RedisEventMessage {
   eventUuid: string;
   timestamp: string;
   organizationId: string;
-  category: string;
-  type: string;
-  subtype?: string;
+  eventCategory: string;
+  eventType: string;
+  eventSubtype?: string;
+  eventCategoryDisplayName: string;
+  eventTypeDisplayName: string;
+  eventSubtypeDisplayName?: string;
   deviceId: string;
   deviceName?: string;
   connectorId: string;
@@ -29,7 +33,7 @@ export interface RedisEventMessage {
 /**
  * SSE message types
  */
-export type SSEMessageType = 'connection' | 'event' | 'heartbeat' | 'error' | 'system';
+export type SSEMessageType = 'connection' | 'event' | 'heartbeat' | 'error' | 'system' | 'arming';
 
 /**
  * Base SSE message structure
@@ -69,6 +73,24 @@ export interface SSEErrorMessage extends SSEMessage {
 export interface SSESystemMessage extends SSEMessage {
   type: 'system';
   message: string;
+}
+
+/**
+ * SSE arming message (for area armed state changes)
+ */
+export interface SSEArmingMessage extends SSEMessage {
+  type: 'arming';
+  organizationId: string;
+  area: {
+    id: string;
+    name: string;
+    locationId: string;
+    locationName: string;
+    previousState: ArmedState;
+    previousStateDisplayName: string;
+    currentState: ArmedState;
+    currentStateDisplayName: string;
+  };
 }
 
 /**

@@ -1,9 +1,11 @@
 import { db } from '@/data/db';
 import { areas, locations, armingSchedules } from '@/data/db/schema';
-import { ArmedState } from '@/lib/mappings/definitions';
+import { ArmedState, ArmedStateDisplayNames } from '@/lib/mappings/definitions';
 import { eq, and, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Area } from '@/types/index';
+import { getRedisPubClient } from '@/lib/redis/client';
+import { getEventChannelName, type SSEArmingMessage } from '@/lib/redis/types';
 
 // Corrected imports for date-fns and date-fns-tz based on documentation
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
@@ -126,7 +128,12 @@ export async function internalSetAreaArmedState(
   const { areaId: validatedAreaId, armedState: validatedArmedState } = validation.data;
 
   try {
-    const [currentArea] = await db.select({ id: areas.id })
+    // Fetch current area state with location for context
+    const [currentArea] = await db.select({
+      id: areas.id,
+      armedState: areas.armedState,
+      locationId: areas.locationId
+    })
       .from(areas)
       .where(eq(areas.id, validatedAreaId))
       .limit(1);
@@ -135,6 +142,9 @@ export async function internalSetAreaArmedState(
       console.warn(`[AreaAlarmActions] Area not found: ${validatedAreaId}`);
       return null; 
     }
+
+    // Store previous state for the message
+    const previousState = currentArea.armedState;
 
     const updateData: Partial<typeof areas.$inferInsert> = {
       armedState: validatedArmedState,
@@ -152,9 +162,58 @@ export async function internalSetAreaArmedState(
         return null;
     }
     
-    // Logging for this internal function can be more generic or removed if callers log sufficiently
-    // console.log(`[AreaAlarmActions] Successfully updated armed state and other fields for area ${validatedAreaId}`);
-    return updatedResult[0] as Area;
+    const updatedArea = updatedResult[0];
+
+    // Fetch full area context for the arming message
+    const areaWithContext = await db.query.areas.findFirst({
+      where: eq(areas.id, validatedAreaId),
+      with: {
+        location: {
+          columns: {
+            id: true,
+            name: true,
+            organizationId: true
+          }
+        }
+      }
+    });
+
+    if (!areaWithContext || !areaWithContext.location) {
+      console.error(`[AreaAlarmActions] Failed to fetch area context for arming message: ${validatedAreaId}`);
+      return updatedArea as Area; // Still return the updated area even if we can't publish the message
+    }
+
+    // Publish arming message to Redis
+    if (areaWithContext.location.organizationId) {
+      try {
+        const armingMessage: SSEArmingMessage = {
+          type: 'arming',
+          organizationId: areaWithContext.location.organizationId,
+          timestamp: new Date().toISOString(),
+          area: {
+            id: updatedArea.id,
+            name: updatedArea.name,
+            locationId: updatedArea.locationId,
+            locationName: areaWithContext.location.name,
+            previousState: previousState,
+            previousStateDisplayName: ArmedStateDisplayNames[previousState],
+            currentState: validatedArmedState,
+            currentStateDisplayName: ArmedStateDisplayNames[validatedArmedState]
+          }
+        };
+
+        const channel = getEventChannelName(areaWithContext.location.organizationId);
+        const pubClient = getRedisPubClient();
+        await pubClient.publish(channel, JSON.stringify(armingMessage));
+        
+        console.log(`[AreaAlarmActions] Published arming message for area ${validatedAreaId}: ${previousState} -> ${validatedArmedState}`);
+      } catch (redisError) {
+        // Don't fail the operation if Redis publish fails
+        console.error(`[AreaAlarmActions] Failed to publish arming message for area ${validatedAreaId}:`, redisError);
+      }
+    }
+    
+    return updatedArea as Area;
 
   } catch (error) {
     console.error(`[AreaAlarmActions] Error in internalSetAreaArmedState for area ${validatedAreaId}:`, error);
@@ -260,7 +319,6 @@ export async function processAreaArmingSchedules() {
         } else {
           await db.update(areas).set({
             armedState: ArmedState.ARMED_AWAY, 
-            lastArmedStateChangeReason: 'scheduled_arm',
             isArmingSkippedUntil: null,
           }).where(eq(areas.id, currentAreaState.id));
           console.log(`CRON: Area ${currentAreaState.id} ARMED by schedule at ${nowUtc.toISOString()}.`);
@@ -277,7 +335,6 @@ export async function processAreaArmingSchedules() {
       ) {
         await db.update(areas).set({
           armedState: ArmedState.DISARMED,
-          lastArmedStateChangeReason: 'scheduled_disarm',
         }).where(eq(areas.id, areaStateBeforeDisarmCheck.id));
         console.log(`CRON: Area ${areaStateBeforeDisarmCheck.id} DISARMED by schedule at ${nowUtc.toISOString()}.`);
       }
@@ -287,61 +344,6 @@ export async function processAreaArmingSchedules() {
     }
   }
   console.log(`CRON: processAreaArmingSchedules finished at ${new Date().toISOString()}`);
-}
-
-export async function armAreaNow(areaId: string) {
-  if (!areaId) { // Basic check, Zod in internalSetAreaArmedState will do more thorough validation
-    // To maintain consistency with original error throwing for this specific function:
-    const err = new Error("Area ID is required.");
-    console.error(`ACTION_ERROR: armAreaNow for (missing ID):`, err);
-    return { success: false, error: err.message };
-  }
-
-  try {
-    const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.ARMED_AWAY, {
-      lastArmedStateChangeReason: 'manual_arm',
-      isArmingSkippedUntil: null,
-      nextScheduledArmTime: null,
-      nextScheduledDisarmTime: null,
-    });
-
-    if (!updatedArea) {
-      // internalSetAreaArmedState returns null if area not found or other non-exception failure.
-      // Throw an error to be caught by this function's catch block for consistent error response.
-      throw new Error("Area not found or update failed.");
-    }
-    console.log(`ACTION: Area ${areaId} ARMED manually.`);
-    return { success: true, area: updatedArea };
-  } catch (error) {
-    console.error(`ACTION_ERROR: armAreaNow for ${areaId}:`, error);
-    return { success: false, error: (error instanceof Error ? error.message : String(error)) };
-  }
-}
-
-export async function disarmAreaNow(areaId: string) {
-  if (!areaId) {
-    const err = new Error("Area ID is required.");
-    console.error(`ACTION_ERROR: disarmAreaNow for (missing ID):`, err);
-    return { success: false, error: err.message };
-  }
-
-  try {
-    const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.DISARMED, {
-      lastArmedStateChangeReason: 'manual_disarm',
-      isArmingSkippedUntil: null,
-      nextScheduledArmTime: null,
-      nextScheduledDisarmTime: null,
-    });
-
-    if (!updatedArea) {
-      throw new Error("Area not found or update failed.");
-    }
-    console.log(`ACTION: Area ${areaId} DISARMED manually.`);
-    return { success: true, area: updatedArea };
-  } catch (error) {
-    console.error(`ACTION_ERROR: disarmAreaNow for ${areaId}:`, error);
-    return { success: false, error: (error instanceof Error ? error.message : String(error)) };
-  }
 }
 
 export async function skipNextScheduledArm(areaId: string) {
@@ -364,7 +366,6 @@ export async function skipNextScheduledArm(areaId: string) {
     const result = await db.update(areas)
       .set({
         isArmingSkippedUntil: skipUntilTimestamp,
-        lastArmedStateChangeReason: 'skip_scheduled_arm_request',
       })
       .where(eq(areas.id, areaId))
       .returning();
@@ -445,7 +446,6 @@ export async function getAreaSecurityStatus(areaId: string) {
       status: {
         areaId: area.id,
         currentArmedState: area.armedState,
-        lastArmedStateChangeReason: area.lastArmedStateChangeReason,
         nextScheduledArmTimeUTC: nextArmTime?.toISOString() || null,
         nextScheduledDisarmTimeUTC: nextDisarmTime?.toISOString() || null,
         isArmingSkippedUntilUTC: area.isArmingSkippedUntil ? new Date(area.isArmingSkippedUntil).toISOString() : null,

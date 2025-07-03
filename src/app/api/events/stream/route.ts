@@ -48,7 +48,7 @@ export const GET = withOrganizationAuth(async (
 
   // Parse query parameters for filtering
   const searchParams = request.nextUrl.searchParams;
-  const eventCategories = searchParams.get('categories')?.split(',').map(c => c.trim()).filter(Boolean);
+  const eventCategories = searchParams.get('eventCategories')?.split(',').map(c => c.trim()).filter(Boolean);
   const eventTypes = searchParams.get('eventTypes')?.split(',').map(t => t.trim()).filter(Boolean);
   
   // Create a unique connection ID

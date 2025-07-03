@@ -8,7 +8,7 @@ import {
 } from '@/data/db/schema';
 import type { StandardizedEvent } from '@/types/events';
 import { eq, and, InferSelectModel } from 'drizzle-orm';
-import { ArmedState, EventType } from '@/lib/mappings/definitions';
+import { ArmedState, EventType, EVENT_CATEGORY_DISPLAY_MAP, EVENT_TYPE_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP } from '@/lib/mappings/definitions';
 import { isSecurityRiskEvent } from '@/lib/security/alarmLogic';
 import { processEvent as processEventForAutomations } from '@/services/automation-service'; // Import automation service
 import { getRedisPubClient } from '@/lib/redis/client';
@@ -17,6 +17,57 @@ import { getEventChannelName, type RedisEventMessage } from '@/lib/redis/types';
 // Infer types from schemas
 type Device = InferSelectModel<typeof devicesTableSchema>;
 type Area = InferSelectModel<typeof areasTableSchema>;
+
+/**
+ * Creates an enriched Redis message with location and area information
+ * Gracefully handles missing device info by publishing event without enrichment
+ */
+async function createEnrichedRedisMessage(
+  event: StandardizedEvent, 
+  connector: any, 
+  deviceInfo: any
+): Promise<RedisEventMessage> {
+  // Extract location and area information if device is associated
+  let locationId: string | undefined;
+  let locationName: string | undefined;
+  let areaId: string | undefined;
+  let areaName: string | undefined;
+
+  if (deviceInfo?.areaDevices?.[0]) {
+    const areaDevice = deviceInfo.areaDevices[0];
+    if (areaDevice.area) {
+      areaId = areaDevice.area.id;
+      areaName = areaDevice.area.name;
+      
+      if (areaDevice.area.location) {
+        locationId = areaDevice.area.location.id;
+        locationName = areaDevice.area.location.name;
+      }
+    }
+  }
+
+  return {
+    eventUuid: event.eventId,
+    timestamp: event.timestamp.toISOString(),
+    organizationId: connector.organizationId,
+    eventCategory: event.category,
+    eventCategoryDisplayName: EVENT_CATEGORY_DISPLAY_MAP[event.category] || event.category,
+    eventType: event.type,
+    eventTypeDisplayName: EVENT_TYPE_DISPLAY_MAP[event.type] || event.type,
+    eventSubtype: event.subtype,
+    eventSubtypeDisplayName: event.subtype ? (EVENT_SUBTYPE_DISPLAY_MAP[event.subtype] || event.subtype) : undefined,
+    deviceId: event.deviceId,
+    deviceName: deviceInfo?.name, // Will be undefined if device not found - that's ok
+    connectorId: event.connectorId,
+    connectorName: connector.name,
+    locationId,
+    locationName,
+    areaId,
+    areaName,
+    payload: event.payload,
+    rawPayload: event.originalEvent
+  };
+}
 
 /**
  * Processes a standardized event: persists it, updates device status,
@@ -51,70 +102,53 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
     });
     console.log(`[EventProcessor] Event ${event.eventId} persisted to database.`);
 
-    // Publish event to Redis for real-time distribution
-    try {
-      // Get connector info to determine organizationId
-      const connector = await db.query.connectors.findFirst({
-        where: eq(connectorsTableSchema.id, event.connectorId),
-        with: {
-          devices: {
-            where: and(
-              eq(devicesTableSchema.connectorId, event.connectorId),
-              eq(devicesTableSchema.deviceId, event.deviceId)
-            ),
-            limit: 1
+    // 2. Get comprehensive device and connector information for all processing
+    const deviceLookup = await db.query.connectors.findFirst({
+      where: eq(connectorsTableSchema.id, event.connectorId),
+      with: {
+        devices: {
+          where: and(
+            eq(devicesTableSchema.connectorId, event.connectorId),
+            eq(devicesTableSchema.deviceId, event.deviceId)
+          ),
+          limit: 1,
+          with: {
+            areaDevices: {
+              with: {
+                area: {
+                  with: {
+                    location: true
+                  }
+                }
+              }
+            }
           }
         }
-      });
+      }
+    });
 
+    const connector = deviceLookup;
+    const internalDeviceRecord = connector?.devices?.[0];
+
+    // Publish event to Redis for real-time distribution
+    try {
       if (connector?.organizationId) {
-        const deviceInfo = connector.devices?.[0];
+        const enrichedMessage = await createEnrichedRedisMessage(event, connector, internalDeviceRecord);
         
-        // Create Redis event message with enriched data
-        const redisMessage: RedisEventMessage = {
-          eventUuid: event.eventId,
-          timestamp: event.timestamp.toISOString(),
-          organizationId: connector.organizationId,
-          category: event.category,
-          type: event.type,
-          subtype: event.subtype,
-          deviceId: event.deviceId,
-          deviceName: deviceInfo?.name,
-          connectorId: event.connectorId,
-          connectorName: connector.name,
-          payload: event.payload,
-          rawPayload: event.originalEvent
-        };
-
-        // Publish to organization's event channel
         const channel = getEventChannelName(connector.organizationId);
         const pubClient = getRedisPubClient();
-        await pubClient.publish(channel, JSON.stringify(redisMessage));
+        await pubClient.publish(channel, JSON.stringify(enrichedMessage));
         
-        console.log(`[EventProcessor] Event ${event.eventId} published to Redis channel: ${channel}`);
+        const areaName = enrichedMessage.areaName;
+        const locationName = enrichedMessage.locationName;
+        console.log(`[EventProcessor] Event ${event.eventId} published to Redis channel: ${channel} (area: ${areaName || 'none'}, location: ${locationName || 'none'})`);
       } else {
-        console.warn(`[EventProcessor] Could not publish event ${event.eventId} to Redis: no organizationId found`);
+        console.warn(`[EventProcessor] Could not publish event ${event.eventId} to Redis: missing organizationId`);
       }
     } catch (redisError) {
       // Don't fail the entire event processing if Redis publish fails
       console.error(`[EventProcessor] Failed to publish event ${event.eventId} to Redis:`, redisError);
     }
-
-    // 2. Fetch Device Information for further processing
-    const internalDeviceRecord: Partial<Device> | undefined = await db.query.devices.findFirst({
-      where: and(
-        eq(devicesTableSchema.connectorId, event.connectorId),
-        eq(devicesTableSchema.deviceId, event.deviceId) // Matching external device ID
-      ),
-      // Select all columns needed for isSecurityRiskEvent and status update
-      columns: {
-        id: true, 
-        isSecurityDevice: true, 
-        standardizedDeviceType: true,
-        standardizedDeviceSubtype: true,
-        // any other fields required by isSecurityRiskEvent if it evolves
-      }
-    });
 
     if (!internalDeviceRecord || !internalDeviceRecord.id) {
       console.warn(`[EventProcessor] Device not found in DB for connectorId: ${event.connectorId}, deviceId: ${event.deviceId}. Skipping status update and alarm logic for this event path.`);
@@ -157,42 +191,28 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
         }
       }
 
-      // 4. Alarm Logic Integration (if device found)
+      // 4. Alarm Logic Integration (reuse area info from device lookup)
       try {
-        const areaDeviceLink = await db.query.areaDevices.findFirst({
-          where: eq(areaDevicesTableSchema.deviceId, internalDeviceRecord.id),
-          columns: { areaId: true },
-        });
+        const areaDevice = internalDeviceRecord.areaDevices?.[0];
+        if (areaDevice?.area) {
+          const area = areaDevice.area;
+          
+          if (area.armedState === ArmedState.ARMED_AWAY || area.armedState === ArmedState.ARMED_STAY) {
+            // Pass the Partial<Device> we fetched. isSecurityRiskEvent is designed to handle this.
+            const isRisk = isSecurityRiskEvent(event, internalDeviceRecord as Partial<Device>); 
 
-        if (areaDeviceLink && areaDeviceLink.areaId) {
-          const area: Area | undefined = await db.query.areas.findFirst({
-            where: eq(areasTableSchema.id, areaDeviceLink.areaId),
-          });
-
-          if (area) {
-            if (area.armedState === ArmedState.ARMED_AWAY || area.armedState === ArmedState.ARMED_STAY) {
-              // Pass the Partial<Device> we fetched. isSecurityRiskEvent is designed to handle this.
-              const isRisk = isSecurityRiskEvent(event, internalDeviceRecord as Partial<Device>); 
-
-              if (isRisk) {
-                // If area is armed (AWAY or STAY) and a risk event occurs, always set to TRIGGERED.
-                // The previous check `area.armedState !== ArmedState.TRIGGERED` was redundant here.
-                await db.update(areasTableSchema)
-                  .set({
-                    armedState: ArmedState.TRIGGERED,
-                    lastArmedStateChangeReason: 'security_event_trigger',
-                    updatedAt: new Date(),
-                  })
-                  .where(eq(areasTableSchema.id, area.id));
-                console.log(`[EventProcessor] Area ${area.id} set to TRIGGERED due to event ${event.eventId} from device ${internalDeviceRecord.id}.`);
-                // TODO: Trigger notifications here (e.g., send email, push notification)
-              }
+            if (isRisk) {
+              // If area is armed (AWAY or STAY) and a risk event occurs, always set to TRIGGERED.
+              await db.update(areasTableSchema)
+                .set({
+                  armedState: ArmedState.TRIGGERED,
+                  updatedAt: new Date(),
+                })
+                .where(eq(areasTableSchema.id, area.id));
+              console.log(`[EventProcessor] Area ${area.id} set to TRIGGERED due to event ${event.eventId} from device ${internalDeviceRecord.id}.`);
+              // TODO: Trigger notifications here (e.g., send email, push notification)
             }
-          } else {
-            console.warn(`[EventProcessor] Area ${areaDeviceLink.areaId} not found for device ${internalDeviceRecord.id}. Skipping alarm logic for this path.`);
           }
-        } else {
-          // console.log(`[EventProcessor] Device ${internalDeviceRecord.id} is not associated with an area. Skipping alarm logic for this path.`);
         }
       } catch (alarmError) {
         console.error(`[EventProcessor] Error during alarm logic for event ${event.eventId} (device ${internalDeviceRecord.id}):`, alarmError);
