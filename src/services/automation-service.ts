@@ -590,20 +590,8 @@ function resolveTokens(
             subtypeId: stdEvent.subtype,
             timestamp: stdEvent.timestamp.toISOString(),
             timestampMs: stdEvent.timestamp.getTime(),
-            deviceId: stdEvent.deviceId, 
-            connectorId: stdEvent.connectorId,
             ...(stdEvent.payload && typeof stdEvent.payload === 'object' ? {
                 displayState: (stdEvent.payload as any).displayState,
-                statusType: (stdEvent.payload as any).statusType,
-                detectionType: (stdEvent.payload as any).detectionType,
-                confidence: (stdEvent.payload as any).confidence,
-                zone: (stdEvent.payload as any).zone,
-                originalEventType: (stdEvent.payload as any).originalEventType,
-                rawStateValue: (stdEvent.payload as any).rawStateValue,
-                rawStatusValue: (stdEvent.payload as any).rawStatusValue,
-                // Button-specific fields for Smart Fob devices
-                buttonNumber: (stdEvent.payload as any).buttonNumber,
-                buttonPressType: (stdEvent.payload as any).pressType,
             } : {}),
         } : (tokenFactContext?.event ?? null), // If no stdEvent, still allow facts to have an 'event' object
         // For global access like {{currentTimeUTC}} if needed, could be added to tokenFactContext.schedule
@@ -754,7 +742,6 @@ async function evaluateTemporalCondition(
              event: {
                  category: event.category ?? null, type: event.type ?? null, subtype: event.subtype ?? null,
                  displayState: eventPayload?.displayState ?? null, statusType: eventPayload?.statusType ?? null,
-                 rawStateValue: eventPayload?.rawStateValue ?? null, originalEventType: eventPayload?.originalEventType ?? null,
              },
              device: { 
                  externalId: event.deviceId ?? null, type: event.deviceInfo?.type ?? null, subtype: event.deviceInfo?.subtype ?? null

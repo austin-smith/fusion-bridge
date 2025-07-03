@@ -578,9 +578,11 @@ export function RuleBuilder({
                         <SelectContent>
                             {Object.entries(groupedFacts).map(([groupName, facts]) => (
                                 <SelectGroup key={groupName}>
-                                    <SelectLabel>{groupName}</SelectLabel>
+                                    <SelectLabel className="py-2 px-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                        {groupName}
+                                    </SelectLabel>
                                     {facts.map(fact => (
-                                        <SelectItem key={fact.id} value={fact.id}>
+                                        <SelectItem key={fact.id} value={fact.id} className="pl-6">
                                             {fact.label}
                                         </SelectItem>
                                     ))}

@@ -96,14 +96,6 @@ export const AVAILABLE_AUTOMATION_FACTS: AutomationFact[] = [
         valueInputType: 'select',
         valueOptions: mapToOptions(EVENT_SUBTYPE_DISPLAY_MAP),
     },
-     {
-        id: 'event.originalEventType',
-        label: 'Raw Event Type String',
-        group: 'Event',
-        dataType: 'string',
-        operators: stringOperators,
-        valueInputType: 'text',
-    },
     {
         id: 'event.displayState',
         label: 'Event Display State',

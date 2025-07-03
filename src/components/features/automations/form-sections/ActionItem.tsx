@@ -4,7 +4,7 @@ import React from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { 
@@ -18,7 +18,6 @@ import {
     FormField,
     FormItem,
     FormLabel,
-    FormMessage,
 } from "@/components/ui/form";
 import { Trash2, HelpCircle, Users, ShieldCheck, ShieldOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -56,6 +55,30 @@ const ARM_MODE_OPTIONS = [
     { value: ArmedState.ARMED_AWAY, label: "Arm Away" },
     { value: ArmedState.ARMED_STAY, label: "Arm Stay" },
 ];
+
+// Action type groups for better organization
+const ACTION_GROUPS = [
+    {
+        id: 'video-camera',
+        label: 'Video',
+        actions: [AutomationActionType.CREATE_EVENT, AutomationActionType.CREATE_BOOKMARK]
+    },
+    {
+        id: 'alarm',
+        label: 'Alarm',
+        actions: [AutomationActionType.ARM_AREA, AutomationActionType.DISARM_AREA]
+    },
+    {
+        id: 'device-control',
+        label: 'Device Control',
+        actions: [AutomationActionType.SET_DEVICE_STATE]
+    },
+    {
+        id: 'other',
+        label: 'Other',
+        actions: [AutomationActionType.SEND_PUSH_NOTIFICATION, AutomationActionType.SEND_HTTP_REQUEST]
+    }
+] as const;
 
 type ConnectorSelect = typeof connectors.$inferSelect;
 type TargetDeviceOption = {
@@ -151,7 +174,6 @@ export function ActionItem({
     }
   }, [actionType, isDropdownOpen, groupUsers.length, isFetchingUsers]);
 
-  const actionTitle = getActionTitle(actionType);
   const ActionIcon = () => {
     const { icon: IconComponent, className } = getActionIconProps(actionType);
     return <IconComponent className={`${className} mr-2`} />;
@@ -225,8 +247,62 @@ export function ActionItem({
               <AccordionTrigger className="px-4 py-3 hover:no-underline">
                   <div className="flex items-center w-full pr-14">
                       <div className="flex items-center flex-shrink-0">
-                          <ActionIcon />
-                          <span className="text-sm font-semibold">{actionTitle}</span>
+                          <div 
+                              className="flex items-center gap-1 cursor-pointer"
+                              onClick={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => e.stopPropagation()}
+                          >
+                              <Select
+                                  value={actionType ?? availableActionTypes[0]}
+                                  onValueChange={handleActionTypeChange}
+                                  disabled={isLoading}
+                              >
+                                  <SelectTrigger className="border-none shadow-none px-0 py-0 h-auto bg-transparent hover:bg-transparent focus:ring-0 text-sm font-semibold gap-1 flex items-center">
+                                      <SelectValue>
+                                          {actionType && (
+                                              <div className="flex items-center gap-1">
+                                                  <ActionIcon />
+                                                  <span>{getActionTitle(actionType)}</span>
+                                              </div>
+                                          )}
+                                      </SelectValue>
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                  {availableActionTypes.length === 0 ? (
+                                      <div className="px-2 py-1.5 text-sm text-muted-foreground text-center">
+                                          No actions available for this trigger type.
+                                      </div>
+                                  ) : (
+                                      ACTION_GROUPS.map(group => {
+                                          const groupActions = group.actions.filter(action => 
+                                              availableActionTypes.includes(action)
+                                          );
+                                          
+                                          if (groupActions.length === 0) return null;
+                                          
+                                          return (
+                                              <SelectGroup key={group.id}>
+                                                  <SelectLabel className="py-2 px-1 text-xs font-medium text-muted-foreground">
+                                                      {group.label}
+                                                  </SelectLabel>
+                                                  {groupActions.map(type => {
+                                                      const { icon: IconComponent } = getActionIconProps(type);
+                                                      return (
+                                                          <SelectItem key={type} value={type} className="pl-6">
+                                                              <div className="flex items-center gap-2">
+                                                                  <IconComponent className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                                                  <span>{getActionTitle(type)}</span>
+                                                              </div>
+                                                          </SelectItem>
+                                                      );
+                                                  })}
+                                              </SelectGroup>
+                                          );
+                                      })
+                                  )}
+                              </SelectContent>
+                          </Select>
+                      </div>
                       </div>
                       {!isOpen && 
                           <div className="ml-2 overflow-hidden flex-1 w-0 flex items-center">
@@ -263,39 +339,7 @@ export function ActionItem({
               </Button>
           </div>
           <AccordionContent className="px-4 pb-4 pt-2">
-              <div className="space-y-4">
-                  <FormField 
-                      control={form.control}
-                      name={`config.actions.${index}.type`} 
-                      render={({ field, fieldState }) => ( 
-                          <FormItem>
-                              <FormLabel>Action Type</FormLabel>
-                              <FormControl>
-                                  <Select
-                                      value={actionType ?? availableActionTypes[0]}
-                                      onValueChange={handleActionTypeChange}
-                                      disabled={isLoading}
-                                  >
-                                      <SelectTrigger className={cn("w-[220px]", fieldState.error && 'border-destructive')}>
-                                          <SelectValue placeholder="Select Action Type" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                          {availableActionTypes.map(type => (
-                                              <SelectItem key={type} value={type}>{getActionTitle(type)}</SelectItem>
-                                          ))}
-                                          {availableActionTypes.length === 0 && (
-                                              <div className="px-2 py-1.5 text-sm text-muted-foreground text-center">
-                                                  No actions available for this trigger type.
-                                              </div>
-                                          )}
-                                      </SelectContent>
-                                  </Select>
-                              </FormControl>
-                              <FormMessage />
-                          </FormItem>
-                      )}
-                  />
-                  
+              <div className="space-y-4 [&>*>*]:space-y-1">
                   {(actionType === AutomationActionType.CREATE_EVENT || actionType === AutomationActionType.CREATE_BOOKMARK) && (
                       <FormField
                           control={form.control}
@@ -357,7 +401,6 @@ export function ActionItem({
                                               ? 'Select the Piko system to create an event in.'
                                               : 'Select the Piko system to create a bookmark in.'}
                                       </FormDescription>
-                                      <FormMessage />
                                   </FormItem>
                               );
                           }}
@@ -380,23 +423,21 @@ export function ActionItem({
                       {actionType === AutomationActionType.CREATE_EVENT && (
                         <>
                               <FormField control={form.control} name={`config.actions.${index}.params.sourceTemplate`} render={({ field, fieldState }) => (
-                                  <FormItem>
+                                  <FormItem className="space-y-1">
                                       <div className="flex items-center justify-between">
                                           <FormLabel>Source</FormLabel>
                                           <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('sourceTemplate', index, token, 'action')} />
                                       </div>
                                       <FormControl><Input placeholder="Fusion" {...field} value={field.value ?? ''} disabled={isLoading} className={cn("w-full max-w-xs", fieldState.error && 'border-destructive')} /></FormControl>
-                                      <FormMessage />
                                   </FormItem>
                               )} />
                               <FormField control={form.control} name={`config.actions.${index}.params.captionTemplate`} render={({ field, fieldState }) => (
-                                  <FormItem>
+                                  <FormItem className="space-y-1">
                                       <div className="flex items-center justify-between">
                                           <FormLabel>Caption</FormLabel>
                                           <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('captionTemplate', index, token, 'action')} />
                                       </div>
-                                      <FormControl><Textarea placeholder="Device: {{device.name}} // Event: {{event.data.state}} at {{event.time}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                      <FormMessage />
+                                      <FormControl><Textarea placeholder="Device: {{device.name}} // Event: {{event.displayState}} at {{event.timestamp}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
                                   </FormItem>
                               )} />
                               <FormField control={form.control} name={`config.actions.${index}.params.descriptionTemplate`} render={({ field, fieldState }) => (
@@ -405,8 +446,7 @@ export function ActionItem({
                                           <FormLabel>Description</FormLabel>
                                           <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('descriptionTemplate', index, token, 'action')} />
                                       </div>
-                                      <FormControl><Textarea placeholder="Device: {{event.deviceId}} // Type: {{event.event}} // State: {{event.data.state}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                      <FormMessage />
+                                      <FormControl><Textarea placeholder="Device: {{device.externalId}} // Type: {{event.type}} // State: {{event.displayState}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
                                   </FormItem>
                               )} />
                           </>
@@ -421,7 +461,6 @@ export function ActionItem({
                                           <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('nameTemplate', index, token, 'action')}/>
                                       </div>
                                       <FormControl><Input placeholder="e.g., Alert: {{device.name}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                      <FormMessage />
                                   </FormItem>
                               )} />
                               <FormField control={form.control} name={`config.actions.${index}.params.descriptionTemplate`} render={({ field, fieldState }) => (
@@ -431,7 +470,6 @@ export function ActionItem({
                                           <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('descriptionTemplate', index, token, 'action')}/>
                                       </div>
                                       <FormControl><Textarea placeholder="e.g., Device: {{device.name}} triggered event {{event.event}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                      <FormMessage />
                                   </FormItem>
                               )} />
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -457,7 +495,6 @@ export function ActionItem({
                                               />
                                           </FormControl>
                                           <FormDescription className={descriptionStyles}>Duration in milliseconds.</FormDescription>
-                                          <FormMessage />
                                       </FormItem>
                                   )} />
                                   <FormField control={form.control} name={`config.actions.${index}.params.tagsTemplate`} render={({ field, fieldState }) => (
@@ -473,7 +510,6 @@ export function ActionItem({
                                               />
                                           </FormControl>
                                           <FormDescription className={descriptionStyles}>Enter tags separated by commas.</FormDescription>
-                                          <FormMessage />
                                       </FormItem>
                                   )} />
                               </div>
@@ -525,7 +561,6 @@ export function ActionItem({
                                                           )}
                                                       </SelectContent>
                                                   </Select>
-                                                  <FormMessage />
                                               </FormItem>
                                           )}
                                       />
@@ -551,7 +586,6 @@ export function ActionItem({
                                                           ))}
                                                       </SelectContent>
                                                   </Select>
-                                                  <FormMessage />
                                               </FormItem>
                                           )}
                                       />
@@ -576,7 +610,6 @@ export function ActionItem({
                                           </div>
                                           <FormControl><Input placeholder="Notification title" {...field} value={field.value ?? ''} disabled={isLoading} className={cn("w-full", fieldState.error && 'border-destructive')} /></FormControl>
                                           <FormDescription className={descriptionStyles}>Optional title for the notification.</FormDescription>
-                                          <FormMessage />
                                       </FormItem>
                                   )}
                               />
@@ -592,7 +625,6 @@ export function ActionItem({
                                           </div>
                                           <FormControl><Textarea placeholder="Notification message content" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
                                           <FormDescription className={descriptionStyles}>The main content of the notification.</FormDescription>
-                                          <FormMessage />
                                       </FormItem>
                                   )}
                               />
@@ -657,11 +689,9 @@ export function ActionItem({
                                                       )}
                                                   </SelectContent>
                                               </Select>
-                                              {fetchUsersError && <FormMessage className="text-destructive">{fetchUsersError}</FormMessage>}
                                               <FormDescription className={descriptionStyles}>
                                                   Select a specific user to send to, or leave empty to send to all users in the group.
                                               </FormDescription>
-                                              <FormMessage />
                                           </FormItem>
                                       );
                                   }}
@@ -701,7 +731,6 @@ export function ActionItem({
                                               <FormDescription className={descriptionStyles}>
                                                   Affects notification delivery and sound.
                                               </FormDescription>
-                                              <FormMessage />
                                           </FormItem>
                                       );
                                   }}
@@ -737,7 +766,6 @@ export function ActionItem({
                                                   ))}
                                               </RadioGroup>
                                           </FormControl>
-                                          <FormMessage />
                                       </FormItem>
                                   )}
                               />
@@ -764,7 +792,6 @@ export function ActionItem({
                                                     No areas available to select.
                                                 </FormDescription>
                                               )}
-                                              <FormMessage />
                                           </FormItem>
                                       )}
                                   />
@@ -795,7 +822,6 @@ export function ActionItem({
                                                   ))}
                                               </RadioGroup>
                                           </FormControl>
-                                          <FormMessage />
                                       </FormItem>
                                   )}
                               />
@@ -830,7 +856,6 @@ export function ActionItem({
                                                   ))}
                                               </RadioGroup>
                                           </FormControl>
-                                          <FormMessage />
                                       </FormItem>
                                   )}
                               />
@@ -856,8 +881,7 @@ export function ActionItem({
                                                 <FormDescription className={descriptionStyles}>
                                                     No areas available to select.
                                                 </FormDescription>
-                                              )}
-                                              <FormMessage /> 
+                                              )} 
                                           </FormItem>
                                       )}
                                   />

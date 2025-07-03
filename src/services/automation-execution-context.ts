@@ -68,18 +68,8 @@ function resolveTokens(
       timestamp: stdEvent.timestamp.toISOString(),
       timestampMs: stdEvent.timestamp.getTime(),
       deviceId: stdEvent.deviceId,
-      connectorId: stdEvent.connectorId,
       ...(stdEvent.payload && typeof stdEvent.payload === 'object' ? {
         displayState: (stdEvent.payload as any).displayState,
-        statusType: (stdEvent.payload as any).statusType,
-        detectionType: (stdEvent.payload as any).detectionType,
-        confidence: (stdEvent.payload as any).confidence,
-        zone: (stdEvent.payload as any).zone,
-        originalEventType: (stdEvent.payload as any).originalEventType,
-        rawStateValue: (stdEvent.payload as any).rawStateValue,
-        rawStatusValue: (stdEvent.payload as any).rawStatusValue,
-        buttonNumber: (stdEvent.payload as any).buttonNumber,
-        buttonPressType: (stdEvent.payload as any).pressType,
       } : {}),
     } : null),
   };
@@ -626,7 +616,6 @@ export class OrganizationAutomationContext {
         'event.type': event.type,
         'event.subtype': event.subtype,
         'event.displayState': (event.payload as any)?.displayState,
-        'event.originalEventType': (event.payload as any)?.originalEventType,
         'event.buttonNumber': this.getValidButtonNumber(event.payload),
         'event.buttonPressType': this.getValidButtonPressType(event.payload),
         
@@ -706,6 +695,7 @@ export class OrganizationAutomationContext {
       if (deviceRecord) {
         context.device = {
           id: deviceRecord.id,
+          externalId: event.deviceId,
           name: deviceRecord.name,
           type: deviceRecord.standardizedDeviceType,
           subtype: deviceRecord.standardizedDeviceSubtype,
@@ -749,6 +739,7 @@ export class OrganizationAutomationContext {
         // Device not found in database, use event info as fallback
         context.device = {
           id: null,
+          externalId: event.deviceId,
           name: event.deviceId, // Use external ID as fallback name
           type: event.deviceInfo?.type || null,
           subtype: event.deviceInfo?.subtype || null,
@@ -798,8 +789,6 @@ export class OrganizationAutomationContext {
           detectionType: (event.payload as any).detectionType,
           confidence: (event.payload as any).confidence,
           zone: (event.payload as any).zone,
-          originalEventType: (event.payload as any).originalEventType,
-          rawStateValue: (event.payload as any).rawStateValue,
           rawStatusValue: (event.payload as any).rawStatusValue,
           buttonNumber: (event.payload as any).buttonNumber,
           buttonPressType: (event.payload as any).pressType,
@@ -811,6 +800,7 @@ export class OrganizationAutomationContext {
       // Continue with minimal context on error
       context.device = {
         id: null,
+        externalId: event.deviceId,
         name: event.deviceId,
         type: event.deviceInfo?.type || null,
         subtype: event.deviceInfo?.subtype || null
