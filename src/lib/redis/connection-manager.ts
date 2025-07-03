@@ -112,12 +112,12 @@ class SSEConnectionManager {
 
   private shouldSendEvent(conn: SSEConnection, event: RedisEventMessage): boolean {
     // Apply event category filter
-    if (conn.eventCategories && !conn.eventCategories.includes(event.eventCategory)) {
+    if (conn.eventCategories && !conn.eventCategories.includes(event.event.category)) {
       return false;
     }
     
     // Apply event type filter
-    if (conn.eventTypes && !conn.eventTypes.includes(event.eventType)) {
+    if (conn.eventTypes && !conn.eventTypes.includes(event.event.type)) {
       return false;
     }
     

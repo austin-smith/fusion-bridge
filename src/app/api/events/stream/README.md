@@ -151,9 +151,6 @@ Events are sent as JSON in the SSE `data` field:
   "eventUuid": "550e8400-e29b-41d4-a716-446655440000",
   "timestamp": "2024-01-10T14:30:00.000Z",
   "organizationId": "org_123",
-  "category": "access",
-  "type": "STATE_CHANGED",
-  "subtype": "LOCKED",
   "deviceId": "device_123",
   "deviceName": "Front Door",
   "connectorId": "conn_456",
@@ -162,11 +159,17 @@ Events are sent as JSON in the SSE `data` field:
   "locationName": "Main Building",
   "areaId": "area_101",
   "areaName": "Lobby",
-  "payload": {
+  "event": {
+    "category": "access",
+    "categoryDisplayName": "Access Control",
+    "type": "STATE_CHANGED",
+    "typeDisplayName": "State Changed",
+    "subtype": "LOCKED",
+    "subtypeDisplayName": "Locked",
     "displayState": "Locked",
     "batteryPercentage": 85
   },
-  "rawPayload": { ... }
+  "rawEvent": { ... }
 }
 ```
 
@@ -202,7 +205,7 @@ eventSource.addEventListener('event', (e) => {
   console.log('Received event:', event);
   
   // Process event based on type
-  switch(event.type) {
+  switch(event.event.type) {
     case 'STATE_CHANGED':
       handleStateChange(event);
       break;

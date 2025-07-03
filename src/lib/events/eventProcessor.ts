@@ -50,12 +50,6 @@ async function createEnrichedRedisMessage(
     eventUuid: event.eventId,
     timestamp: event.timestamp.toISOString(),
     organizationId: connector.organizationId,
-    eventCategory: event.category,
-    eventCategoryDisplayName: EVENT_CATEGORY_DISPLAY_MAP[event.category] || event.category,
-    eventType: event.type,
-    eventTypeDisplayName: EVENT_TYPE_DISPLAY_MAP[event.type] || event.type,
-    eventSubtype: event.subtype,
-    eventSubtypeDisplayName: event.subtype ? (EVENT_SUBTYPE_DISPLAY_MAP[event.subtype] || event.subtype) : undefined,
     deviceId: event.deviceId,
     deviceName: deviceInfo?.name, // Will be undefined if device not found - that's ok
     connectorId: event.connectorId,
@@ -64,8 +58,16 @@ async function createEnrichedRedisMessage(
     locationName,
     areaId,
     areaName,
-    payload: event.payload,
-    rawPayload: event.originalEvent
+    event: {
+      ...event.payload, // Spread the standardized payload data into the event object first
+      categoryId: event.category,
+      category: EVENT_CATEGORY_DISPLAY_MAP[event.category] || event.category,
+      typeId: event.type,
+      type: EVENT_TYPE_DISPLAY_MAP[event.type] || event.type,
+      subTypeId: event.subtype,
+      subType: event.subtype ? (EVENT_SUBTYPE_DISPLAY_MAP[event.subtype] || event.subtype) : undefined,
+    },
+    rawEvent: event.originalEvent
   };
 }
 

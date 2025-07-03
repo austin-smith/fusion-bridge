@@ -12,12 +12,6 @@ export interface RedisEventMessage {
   eventUuid: string;
   timestamp: string;
   organizationId: string;
-  eventCategory: string;
-  eventType: string;
-  eventSubtype?: string;
-  eventCategoryDisplayName: string;
-  eventTypeDisplayName: string;
-  eventSubtypeDisplayName?: string;
   deviceId: string;
   deviceName?: string;
   connectorId: string;
@@ -26,8 +20,16 @@ export interface RedisEventMessage {
   locationName?: string;
   areaId?: string;
   areaName?: string;
-  payload: any;
-  rawPayload?: any;
+  event: {
+    categoryId: string;
+    category: string;
+    typeId: string;
+    type: string;
+    subTypeId?: string;
+    subType?: string;
+    [key: string]: any; // For additional standardized event data like displayState, batteryPercentage, etc.
+  };
+  rawEvent?: any;
 }
 
 /**
