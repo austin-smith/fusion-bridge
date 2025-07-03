@@ -244,85 +244,80 @@ export function ActionItem({
           className={`${bgColor} border-2 ${borderColor} rounded-md overflow-hidden shadow-sm`}
       >
           <div className="relative">
-              <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                  <div className="flex items-center w-full pr-14">
-                      <div className="flex items-center flex-shrink-0">
-                          <div 
-                              className="flex items-center gap-1 cursor-pointer"
-                              onClick={(e) => e.stopPropagation()}
-                              onPointerDown={(e) => e.stopPropagation()}
-                          >
-                              <Select
-                                  value={actionType ?? availableActionTypes[0]}
-                                  onValueChange={handleActionTypeChange}
-                                  disabled={isLoading}
-                              >
-                                  <SelectTrigger className="border-none shadow-none px-0 py-0 h-auto bg-transparent hover:bg-transparent focus:ring-0 text-sm font-semibold gap-1 flex items-center">
-                                      <SelectValue>
-                                          {actionType && (
-                                              <div className="flex items-center gap-1">
-                                                  <ActionIcon />
-                                                  <span>{getActionTitle(actionType)}</span>
-                                              </div>
-                                          )}
-                                      </SelectValue>
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                  {availableActionTypes.length === 0 ? (
-                                      <div className="px-2 py-1.5 text-sm text-muted-foreground text-center">
-                                          No actions available for this trigger type.
+              <div className="flex items-center px-4 py-3">
+                  <div className="flex items-center flex-shrink-0">
+                      <Select
+                          value={actionType ?? availableActionTypes[0]}
+                          onValueChange={handleActionTypeChange}
+                          disabled={isLoading}
+                      >
+                          <SelectTrigger className="border-none shadow-none px-0 py-0 h-auto bg-transparent hover:bg-transparent focus:ring-0 text-sm font-semibold gap-1 flex items-center">
+                              <SelectValue>
+                                  {actionType && (
+                                      <div className="flex items-center gap-1">
+                                          <ActionIcon />
+                                          <span>{getActionTitle(actionType)}</span>
                                       </div>
-                                  ) : (
-                                      ACTION_GROUPS.map(group => {
-                                          const groupActions = group.actions.filter(action => 
-                                              availableActionTypes.includes(action)
-                                          );
-                                          
-                                          if (groupActions.length === 0) return null;
-                                          
-                                          return (
-                                              <SelectGroup key={group.id}>
-                                                  <SelectLabel className="py-2 px-1 text-xs font-medium text-muted-foreground">
-                                                      {group.label}
-                                                  </SelectLabel>
-                                                  {groupActions.map(type => {
-                                                      const { icon: IconComponent } = getActionIconProps(type);
-                                                      return (
-                                                          <SelectItem key={type} value={type} className="pl-6">
-                                                              <div className="flex items-center gap-2">
-                                                                  <IconComponent className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                                                                  <span>{getActionTitle(type)}</span>
-                                                              </div>
-                                                          </SelectItem>
-                                                      );
-                                                  })}
-                                              </SelectGroup>
-                                          );
-                                      })
                                   )}
-                              </SelectContent>
-                          </Select>
-                      </div>
-                      </div>
-                      {!isOpen && 
-                          <div className="ml-2 overflow-hidden flex-1 w-0 flex items-center">
-                              <span className="text-xs text-muted-foreground truncate inline-block w-full">
-                                  {formatActionDetail(
-                                      actionType, 
-                                      actionParams, 
-                                      {
-                                          connectors: sortedPikoConnectors,
-                                          devices: sortedAvailableTargetDevices,
-                                          areas: sortedAvailableAreas || [],
-                                          ruleLocationScope: currentRuleLocationScope,
-                                      },
-                                      { includeType: false }
-                                  )}
-                              </span>
-                          </div>
-                      }
+                              </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                          {availableActionTypes.length === 0 ? (
+                              <div className="px-2 py-1.5 text-sm text-muted-foreground text-center">
+                                  No actions available for this trigger type.
+                              </div>
+                          ) : (
+                              ACTION_GROUPS.map(group => {
+                                  const groupActions = group.actions.filter(action => 
+                                      availableActionTypes.includes(action)
+                                  );
+                                  
+                                  if (groupActions.length === 0) return null;
+                                  
+                                  return (
+                                      <SelectGroup key={group.id}>
+                                          <SelectLabel className="py-2 px-1 text-xs font-medium text-muted-foreground">
+                                              {group.label}
+                                          </SelectLabel>
+                                          {groupActions.map(type => {
+                                              const { icon: IconComponent } = getActionIconProps(type);
+                                              return (
+                                                  <SelectItem key={type} value={type} className="pl-6">
+                                                      <div className="flex items-center gap-2">
+                                                          <IconComponent className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                                          <span>{getActionTitle(type)}</span>
+                                                      </div>
+                                                  </SelectItem>
+                                              );
+                                          })}
+                                      </SelectGroup>
+                                  );
+                              })
+                          )}
+                      </SelectContent>
+                  </Select>
                   </div>
-              </AccordionTrigger>
+                  {!isOpen && 
+                      <div className="ml-2 overflow-hidden flex-1 w-0 flex items-center">
+                          <span className="text-xs text-muted-foreground truncate inline-block w-full">
+                              {formatActionDetail(
+                                  actionType, 
+                                  actionParams, 
+                                  {
+                                      connectors: sortedPikoConnectors,
+                                      devices: sortedAvailableTargetDevices,
+                                      areas: sortedAvailableAreas || [],
+                                      ruleLocationScope: currentRuleLocationScope,
+                                  },
+                                  { includeType: false }
+                              )}
+                          </span>
+                      </div>
+                  }
+                  <AccordionTrigger className="ml-auto p-0 hover:no-underline">
+                      <span className="sr-only">Toggle action details</span>
+                  </AccordionTrigger>
+              </div>
               <Button 
                   type="button" 
                   variant="ghost" 
