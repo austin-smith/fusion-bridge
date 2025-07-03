@@ -1,6 +1,6 @@
 import 'server-only';
 import { getRedisSubClient } from './client';
-import { getEventChannelName, type RedisEventMessage } from './types';
+import { getEventChannelName, getEventThumbnailChannelName, type RedisEventMessage } from './types';
 
 interface SSEConnection {
   id: string;
@@ -9,6 +9,7 @@ interface SSEConnection {
   eventCategories?: string[];
   eventTypes?: string[];
   connectedAt: Date;
+  includeThumbnails?: boolean;
 }
 
 class SSEConnectionManager {
@@ -27,15 +28,28 @@ class SSEConnectionManager {
     
     this.subscriber.on('message', (channel: string, message: string) => {
       try {
-        const organizationId = channel.replace('events:', '');
+        // Extract organization ID from channel (handles both regular and thumbnail channels)
+        let organizationId: string;
+        const isThumbnailChannel = channel.includes(':with-thumbnails');
+        
+        if (isThumbnailChannel) {
+          // Format: events:{orgId}:with-thumbnails
+          organizationId = channel.replace('events:', '').replace(':with-thumbnails', '');
+        } else {
+          // Format: events:{orgId}
+          organizationId = channel.replace('events:', '');
+        }
+        
         const parsedMessage = JSON.parse(message);
         
         // Determine message type
         const messageType = parsedMessage.type;
         
-        // Route message to all connections for this organization
+        // Route message to connections based on their channel subscription
         this.connections.forEach((conn) => {
-          if (conn.organizationId === organizationId) {
+          // Check if connection is for this organization and correct channel type
+          if (conn.organizationId === organizationId && 
+              conn.includeThumbnails === isThumbnailChannel) {
             let shouldSend = false;
             let sseEventType = 'event';
             
@@ -152,7 +166,10 @@ class SSEConnectionManager {
   async addConnection(connection: SSEConnection): Promise<void> {
     this.connections.set(connection.id, connection);
     
-    const channel = getEventChannelName(connection.organizationId);
+    // Determine which channel to subscribe to based on thumbnail preference
+    const channel = connection.includeThumbnails 
+      ? getEventThumbnailChannelName(connection.organizationId)
+      : getEventChannelName(connection.organizationId);
     
     // Subscribe to organization channel if not already subscribed
     if (!this.subscribedChannels.has(channel)) {
@@ -161,7 +178,7 @@ class SSEConnectionManager {
       console.log(`[SSE Manager] Subscribed to channel: ${channel}`);
     }
     
-    console.log(`[SSE Manager] Added connection ${connection.id} for org ${connection.organizationId} (total: ${this.connections.size})`);
+    console.log(`[SSE Manager] Added connection ${connection.id} for org ${connection.organizationId} (thumbnails: ${connection.includeThumbnails || false}, total: ${this.connections.size})`);
   }
 
   async removeConnection(connectionId: string): Promise<void> {
@@ -170,13 +187,19 @@ class SSEConnectionManager {
 
     this.connections.delete(connectionId);
     
-    const channel = getEventChannelName(connection.organizationId);
+    // Determine which channel this connection was using
+    const channel = connection.includeThumbnails 
+      ? getEventThumbnailChannelName(connection.organizationId)
+      : getEventChannelName(connection.organizationId);
     
-    // Check if any other connections need this channel
+    // Check if any other connections need this specific channel
     const hasOtherConnections = Array.from(this.connections.values())
-      .some(conn => conn.organizationId === connection.organizationId);
+      .some(conn => 
+        conn.organizationId === connection.organizationId && 
+        conn.includeThumbnails === connection.includeThumbnails
+      );
     
-    // Unsubscribe if no other connections for this organization
+    // Unsubscribe if no other connections for this organization and thumbnail preference
     if (!hasOtherConnections && this.subscribedChannels.has(channel)) {
       await this.subscriber.unsubscribe(channel);
       this.subscribedChannels.delete(channel);

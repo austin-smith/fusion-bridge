@@ -30,6 +30,11 @@ export interface RedisEventMessage {
     [key: string]: any; // For additional standardized event data like displayState, batteryPercentage, etc.
   };
   rawEvent?: any;
+  thumbnailData?: {
+    data: string;        // base64 encoded image
+    contentType: string; // e.g., 'image/jpeg'
+    size: number;        // size in bytes
+  };
 }
 
 /**
@@ -100,6 +105,13 @@ export interface SSEArmingMessage extends SSEMessage {
  */
 export function getEventChannelName(organizationId: string): string {
   return `events:${organizationId}`;
+}
+
+/**
+ * Redis channel for events with thumbnails
+ */
+export function getEventThumbnailChannelName(organizationId: string): string {
+  return `events:${organizationId}:with-thumbnails`;
 }
 
 /**

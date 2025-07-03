@@ -192,6 +192,7 @@ const apiKeyTestResponseSchema = z.object({
 const sseStreamQuerySchema = z.object({
   eventCategories: z.string().optional().describe('Comma-separated event categories to filter by'),
   eventTypes: z.string().optional().describe('Comma-separated event types to filter by'),
+  includeThumbnails: z.boolean().optional().describe('Include Piko thumbnails for applicable events (default: false)'),
 }).openapi('SSEStreamQuery');
 
 const sseStatsResponseSchema = z.object({
@@ -208,12 +209,15 @@ const sseStatsResponseSchema = z.object({
   }),
 }).openapi('SSEStatsResponse');
 
-const sseStreamResponseSchema = z.string().describe('Server-Sent Events stream in text/event-stream format. Includes connection events, real-time events, heartbeat messages, system notifications, error messages, and arming state changes.').openapi('SSEStreamResponse', {
+const sseStreamResponseSchema = z.string().describe('Server-Sent Events stream in text/event-stream format. Includes connection events, real-time events, heartbeat messages, system notifications, error messages, and arming state changes. Events may include Piko thumbnail data when includeThumbnails=true.').openapi('SSEStreamResponse', {
   example: `event: connection
 data: {"type":"connection","organizationId":"org-123","timestamp":"2024-01-01T00:00:00.000Z"}
 
 event: event  
-data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2024-01-01T00:00:00.000Z","organizationId":"org-123","deviceId":"front-door-camera","deviceName":"Front Door Camera","connectorId":"piko-001","connectorName":"Piko Server Main","locationId":"home-location-456","locationName":"Main House","areaId":"living-area-123","areaName":"Living Area","event":{"categoryId":"security","category":"Security","typeId":"motion","type":"Motion Detected","subTypeId":"motion_detected","subType":"Motion Detected","motion":true,"confidence":0.95,"zone":"entrance"},"rawEvent":{"event_type":"motion","camera_id":"front-door-camera","confidence":95,"timestamp":"2024-01-01T00:00:00Z"}}
+data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2024-01-01T00:00:00.000Z","organizationId":"org-123","deviceId":"front-door-camera","deviceName":"Front Door Camera","connectorId":"piko-001","connectorName":"Piko Server Main","locationId":"home-location-456","locationName":"Main House","areaId":"living-area-123","areaName":"Living Area","event":{"categoryId":"analytics","category":"Analytics","typeId":"object_detected","type":"Object Detected","subTypeId":"person","subType":"Person","objectTrackId":"track_12345","confidence":0.95,"zone":"entrance"},"rawEvent":{"eventType":"analyticsSdkObjectDetected","eventResourceId":"front-door-camera","objectTrackId":"track_12345","timestamp":"2024-01-01T00:00:00Z"},"thumbnailData":{"data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==","contentType":"image/jpeg","size":1024}}
+
+event: event
+data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440001","timestamp":"2024-01-01T00:01:00.000Z","organizationId":"org-123","deviceId":"side-gate-sensor","deviceName":"Side Gate Sensor","connectorId":"netbox-001","connectorName":"NetBox Controller","locationId":"home-location-456","locationName":"Main House","areaId":"perimeter-area-124","areaName":"Perimeter","event":{"categoryId":"security","category":"Security","typeId":"door_opened","type":"Door Opened","motion":true,"zone":"side_entrance"},"rawEvent":{"event_type":"door","sensor_id":"side-gate-sensor","state":"open","timestamp":"2024-01-01T00:01:00Z"}}
 
 event: arming
 data: {"type":"arming","organizationId":"org-123","timestamp":"2024-01-01T00:02:00.000Z","area":{"id":"living-area-123","name":"Living Area","locationId":"home-location-456","locationName":"Main House","previousState":"DISARMED","previousStateDisplayName":"Disarmed","currentState":"ARMED_AWAY","currentStateDisplayName":"Armed - Away"}}

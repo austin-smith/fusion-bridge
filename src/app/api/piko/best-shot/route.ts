@@ -21,16 +21,19 @@ export async function GET(request: NextRequest) {
   // pikoSystemId is now optional - used ONLY to confirm cloud type if present
   const pikoSystemIdFromQuery = searchParams.get('pikoSystemId'); 
   const objectTrackId = searchParams.get('objectTrackId');
-  const cameraId = searchParams.get('cameraId');
+  const cameraIdParam = searchParams.get('cameraId');
 
   // Minimal validation log
-  if (!connectorId || !objectTrackId || !cameraId) {
-    console.error(`Piko best-shot: Missing required params. Connector: ${connectorId}, ObjectTrack: ${objectTrackId}, Camera: ${cameraId}`);
+  if (!connectorId || !objectTrackId || !cameraIdParam) {
+    console.error(`Piko best-shot: Missing required params. Connector: ${connectorId}, ObjectTrack: ${objectTrackId}, Camera: ${cameraIdParam}`);
     return NextResponse.json(
       { success: false, error: 'Missing required query parameters: connectorId, objectTrackId, cameraId' },
       { status: 400 }
     );
   }
+
+  // Strip curly braces from cameraId if present (handles Piko device IDs stored with braces)
+  const cameraId = cameraIdParam.replace(/[{}]/g, '');
 
   try {
     // 3. Retrieve Connector Configuration (using connectorId)

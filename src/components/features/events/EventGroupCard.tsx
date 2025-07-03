@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { ImagePreviewDialog } from './image-preview-dialog'; // <-- Import the new dialog
 import { VideoPlaybackDialog, type VideoPlaybackDialogProps } from './video-playback-dialog'; // <-- Import VideoPlaybackDialog and its props type
 import { toast } from 'react-hot-toast';
+import { getThumbnailSource, findAreaCameras, buildThumbnailUrl } from '@/services/event-thumbnail-resolver';
 
 // Define the structure for a group of events
 // This might be refined later based on the grouping logic in EventCardView
@@ -91,60 +92,39 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     return `${format(startTime, 'h:mm:ss a')} - ${format(endTime, 'h:mm:ss a')}`;
   }, [startTime, endTime]);
   
-  // --- Area Piko Camera Calculation (as before) --- 
-  const areaPikoCamera = useMemo(() => {
-    if (!areaId) return null;
-    const currentArea = areas.find(a => a.id === areaId);
-    if (!currentArea || !currentArea.deviceIds || currentArea.deviceIds.length === 0) return null;
-    const areaDeviceIds = new Set(currentArea.deviceIds);
-    const foundCamera = allDevices.find(device => 
-        areaDeviceIds.has(device.id) && 
-        device.deviceTypeInfo?.type === DeviceType.Camera &&
-        device.connectorCategory === 'piko' &&
-        device.connectorId && 
-        device.deviceId
-    );
-    return foundCamera || null; // Ensure null return if not found
-  }, [areaId, allDevices, areas]); // Correct dependencies
-
-  // --- UPDATED Thumbnail Logic --- 
+  // --- Use shared service for thumbnail logic --- 
   const thumbnailUrl = useMemo(() => {
-    let bestShotEvent: EnrichedEvent | undefined = undefined;
+    // Find area cameras using shared service
+    const areaCameras = findAreaCameras(areaId, allDevices, areas);
+    
+    // Try to find the best event for thumbnail (most recent analytics event preferred)
+    let bestEvent: EnrichedEvent | undefined;
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i];
-      if (
-        event.connectorCategory === 'piko' &&
-        event.eventCategory === EventCategory.ANALYTICS &&
-        event.bestShotUrlComponents?.objectTrackId &&
-        event.bestShotUrlComponents?.cameraId &&
-        event.bestShotUrlComponents?.connectorId
-      ) {
-        bestShotEvent = event;
+      const source = getThumbnailSource(event, areaCameras);
+      if (source?.type === 'best-shot') {
+        bestEvent = event;
         break;
       }
     }
-
-    if (bestShotEvent && bestShotEvent.bestShotUrlComponents) {
-      const { connectorId, cameraId, objectTrackId } = bestShotEvent.bestShotUrlComponents;
-      const url = `/api/piko/best-shot?connectorId=${connectorId}&cameraId=${cameraId}&objectTrackId=${objectTrackId}`;
-      // console.log(`[EventGroupCard] Using Best Shot URL: ${url}`);
-      return url;
-    }
-
-    if (areaPikoCamera) { 
-      const timestampMs = endTime.getTime(); 
-      // Ensure areaPikoCamera properties are accessed safely
-      if (areaPikoCamera.connectorId && areaPikoCamera.deviceId) {
-        const url = `/api/piko/device-thumbnail?connectorId=${areaPikoCamera.connectorId}&cameraId=${areaPikoCamera.deviceId}&timestamp=${timestampMs}`;
-        // console.log(`[EventGroupCard] Using Area Thumbnail URL: ${url}`);
-        return url;
-      }
+    
+    // If no best shot event, use the most recent event with area camera
+    if (!bestEvent) {
+      bestEvent = events[events.length - 1];
     }
     
-    // console.log(`[EventGroupCard] No thumbnail URL found for group ${groupKey}`);
-    return undefined;
+    // Get thumbnail source and build URL
+    const source = getThumbnailSource(bestEvent, areaCameras);
+    if (!source) return undefined;
+    
+    return buildThumbnailUrl(source);
+  }, [events, areaId, allDevices, areas]);
 
-  }, [events, areaPikoCamera, endTime]); // Added groupKey to dependency for logging
+  // --- Keep the area camera for video playback logic ---
+  const areaPikoCamera = useMemo(() => {
+    const cameras = findAreaCameras(areaId, allDevices, areas);
+    return cameras[0] || null;
+  }, [areaId, allDevices, areas]);
 
   // --- Sizing Logic (as before) --- 
   const cardSizeClass = useMemo(() => {

@@ -5,7 +5,7 @@ import { eq, and, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Area } from '@/types/index';
 import { getRedisPubClient } from '@/lib/redis/client';
-import { getEventChannelName, type SSEArmingMessage } from '@/lib/redis/types';
+import { getEventChannelName, getEventThumbnailChannelName, type SSEArmingMessage } from '@/lib/redis/types';
 
 // Corrected imports for date-fns and date-fns-tz based on documentation
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
@@ -203,10 +203,20 @@ export async function internalSetAreaArmedState(
         };
 
         const channel = getEventChannelName(areaWithContext.location.organizationId);
+        const thumbnailChannel = getEventThumbnailChannelName(areaWithContext.location.organizationId);
         const pubClient = getRedisPubClient();
+        
+        // Always publish to regular channel
         await pubClient.publish(channel, JSON.stringify(armingMessage));
         
-        console.log(`[AreaAlarmActions] Published arming message for area ${validatedAreaId}: ${previousState} -> ${validatedArmedState}`);
+        // Also publish to thumbnail channel if there are subscribers
+        const [, thumbnailSubscriberCount] = await pubClient.pubsub('NUMSUB', thumbnailChannel) as [string, number];
+        if (thumbnailSubscriberCount > 0) {
+          await pubClient.publish(thumbnailChannel, JSON.stringify(armingMessage));
+        }
+        
+        const channelsPublished = thumbnailSubscriberCount > 0 ? `${channel} and ${thumbnailChannel}` : channel;
+        console.log(`[AreaAlarmActions] Published arming message for area ${validatedAreaId}: ${previousState} -> ${validatedArmedState} to channel(s): ${channelsPublished}`);
       } catch (redisError) {
         // Don't fail the operation if Redis publish fails
         console.error(`[AreaAlarmActions] Failed to publish arming message for area ${validatedAreaId}:`, redisError);

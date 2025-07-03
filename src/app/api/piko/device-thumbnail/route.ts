@@ -6,14 +6,17 @@ export const dynamic = 'force-dynamic'; // Ensure fresh data
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const connectorId = searchParams.get('connectorId');
-  const cameraId = searchParams.get('cameraId'); // <-- CORRECTED: Read 'cameraId' param
+  const cameraIdParam = searchParams.get('cameraId'); // <-- CORRECTED: Read 'cameraId' param
   const timestampMsStr = searchParams.get('timestamp'); // Use 'timestamp' as sent by frontend
   const size = searchParams.get('size');
 
-  if (!connectorId || !cameraId) { // <-- Check cameraId
+  if (!connectorId || !cameraIdParam) { // <-- Check cameraId
     console.error('[API Thumb] Error: Missing connectorId or cameraId'); // <-- Update error log
     return NextResponse.json({ success: false, error: 'Missing connectorId or cameraId' }, { status: 400 }); // <-- Update error message
   }
+
+  // Strip curly braces from cameraId if present (handles Piko device IDs stored with braces)
+  const cameraId = cameraIdParam.replace(/[{}]/g, '');
 
   try {
     // --- Fetch Thumbnail ---

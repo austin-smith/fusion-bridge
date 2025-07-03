@@ -8,11 +8,14 @@ import {
 } from '@/data/db/schema';
 import type { StandardizedEvent } from '@/types/events';
 import { eq, and, InferSelectModel } from 'drizzle-orm';
-import { ArmedState, EventType, EVENT_CATEGORY_DISPLAY_MAP, EVENT_TYPE_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP } from '@/lib/mappings/definitions';
+import { ArmedState, EventType, EVENT_CATEGORY_DISPLAY_MAP, EVENT_TYPE_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP, DeviceType } from '@/lib/mappings/definitions';
 import { isSecurityRiskEvent } from '@/lib/security/alarmLogic';
 import { processEvent as processEventForAutomations } from '@/services/automation-service'; // Import automation service
 import { getRedisPubClient } from '@/lib/redis/client';
-import { getEventChannelName, type RedisEventMessage } from '@/lib/redis/types';
+import { getEventChannelName, getEventThumbnailChannelName, type RedisEventMessage } from '@/lib/redis/types';
+import { shouldFetchThumbnail, fetchEventThumbnail, type EventThumbnailData } from '@/services/event-thumbnail-fetcher';
+import { getDeviceTypeInfo } from '@/lib/mappings/identification';
+import { findAreaCameras } from '@/services/event-thumbnail-resolver';
 
 // Infer types from schemas
 type Device = InferSelectModel<typeof devicesTableSchema>;
@@ -25,7 +28,8 @@ type Area = InferSelectModel<typeof areasTableSchema>;
 async function createEnrichedRedisMessage(
   event: StandardizedEvent, 
   connector: any, 
-  deviceInfo: any
+  deviceInfo: any,
+  thumbnailData?: EventThumbnailData | null
 ): Promise<RedisEventMessage> {
   // Extract location and area information if device is associated
   let locationId: string | undefined;
@@ -67,7 +71,8 @@ async function createEnrichedRedisMessage(
       subTypeId: event.subtype,
       subType: event.subtype ? (EVENT_SUBTYPE_DISPLAY_MAP[event.subtype] || event.subtype) : undefined,
     },
-    rawEvent: event.originalEvent
+    rawEvent: event.originalEvent,
+    thumbnailData: thumbnailData || undefined
   };
 }
 
@@ -132,18 +137,112 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
     const connector = deviceLookup;
     const internalDeviceRecord = connector?.devices?.[0];
 
+    // Check for thumbnail subscribers and fetch thumbnail if needed
+    let thumbnailData: EventThumbnailData | null = null;
+    
+    // Get area cameras if event has an area association
+    const areaId = internalDeviceRecord?.areaDevices?.[0]?.area?.id;
+    let areaCameras: any[] = [];
+    
+    if (areaId && connector?.organizationId) {
+      try {
+        // Fetch all devices to find area cameras
+        const allDevices = await db.query.devices.findMany({
+          with: {
+            connector: true,
+            areaDevices: {
+              with: {
+                area: true
+              }
+            }
+          }
+        });
+        
+        // Map to the format expected by shared service
+        const devicesWithArea = allDevices.map(device => ({
+          ...device,
+          areaId: device.areaDevices?.[0]?.areaId,
+          connectorCategory: device.connector?.category || 'unknown',
+          deviceTypeInfo: getDeviceTypeInfo(device.connector?.category || 'unknown', device.type)
+        }));
+        
+        // Use shared service to find area cameras
+        areaCameras = findAreaCameras(areaId, devicesWithArea);
+        
+        if (areaCameras.length > 0) {
+          console.log(`[EventProcessor] Found ${areaCameras.length} Piko camera(s) in area ${areaId} for event ${event.eventId}`);
+        } else {
+          console.log(`[EventProcessor] No Piko cameras found in area ${areaId} for event ${event.eventId}`);
+        }
+      } catch (cameraFetchError) {
+        console.warn(`[EventProcessor] Failed to fetch area cameras for event ${event.eventId}:`, cameraFetchError);
+        // Continue without area cameras
+      }
+    }
+    
+    if (connector?.organizationId && shouldFetchThumbnail(event, areaCameras)) {
+      try {
+        const pubClient = getRedisPubClient();
+        const thumbnailChannel = getEventThumbnailChannelName(connector.organizationId);
+        const [, subscriberCount] = await pubClient.pubsub('NUMSUB', thumbnailChannel) as [string, number];
+        
+        if (subscriberCount > 0) {
+          console.log(`[EventProcessor] Event ${event.eventId} has ${subscriberCount} thumbnail subscribers. Fetching thumbnail...`);
+          
+          // Convert area cameras to the format expected by thumbnail fetcher
+          const areaCameraDevices = areaCameras.map(cam => ({
+            id: cam.id,
+            deviceId: cam.deviceId,
+            connectorId: cam.connectorId,
+            connectorCategory: cam.connector?.category || 'piko',
+            deviceTypeInfo: getDeviceTypeInfo(cam.connector?.category || 'piko', cam.type),
+            name: cam.name,
+            type: cam.type,
+            status: cam.status,
+            batteryPercentage: cam.batteryPercentage,
+            vendor: cam.vendor,
+            model: cam.model,
+            url: cam.url,
+            createdAt: cam.createdAt,
+            updatedAt: cam.updatedAt
+          }));
+          
+          thumbnailData = await fetchEventThumbnail(event, areaCameraDevices);
+          
+          if (thumbnailData) {
+            console.log(`[EventProcessor] Thumbnail fetched successfully for event ${event.eventId} (${thumbnailData.size} bytes)`);
+          }
+        }
+      } catch (thumbnailError) {
+        console.error(`[EventProcessor] Error checking subscribers or fetching thumbnail for event ${event.eventId}:`, thumbnailError);
+        // Continue without thumbnail
+      }
+    }
+
     // Publish event to Redis for real-time distribution
     try {
       if (connector?.organizationId) {
-        const enrichedMessage = await createEnrichedRedisMessage(event, connector, internalDeviceRecord);
-        
-        const channel = getEventChannelName(connector.organizationId);
+        const baseChannel = getEventChannelName(connector.organizationId);
+        const thumbnailChannel = getEventThumbnailChannelName(connector.organizationId);
         const pubClient = getRedisPubClient();
-        await pubClient.publish(channel, JSON.stringify(enrichedMessage));
         
-        const areaName = enrichedMessage.areaName;
-        const locationName = enrichedMessage.locationName;
-        console.log(`[EventProcessor] Event ${event.eventId} published to Redis channel: ${channel} (area: ${areaName || 'none'}, location: ${locationName || 'none'})`);
+        // Always create and publish base message (without thumbnail)
+        const baseMessage = await createEnrichedRedisMessage(event, connector, internalDeviceRecord);
+        await pubClient.publish(baseChannel, JSON.stringify(baseMessage));
+        
+        // Check if thumbnail channel has subscribers and always publish if they exist
+        const [, thumbnailSubscriberCount] = await pubClient.pubsub('NUMSUB', thumbnailChannel) as [string, number];
+        if (thumbnailSubscriberCount > 0) {
+          // Always publish to thumbnail channel when there are subscribers
+          // Include thumbnail data if available, null if not
+          const messageForThumbnailChannel = await createEnrichedRedisMessage(event, connector, internalDeviceRecord, thumbnailData);
+          await pubClient.publish(thumbnailChannel, JSON.stringify(messageForThumbnailChannel));
+        }
+        
+        const areaName = baseMessage.areaName;
+        const locationName = baseMessage.locationName;
+        const thumbnailStatus = thumbnailData ? `with thumbnail (${thumbnailData.size} bytes)` : 'no thumbnail';
+        console.log(`[EventProcessor] Event ${event.eventId} published to channel(s): ${baseChannel}${thumbnailSubscriberCount > 0 ? ` and ${thumbnailChannel} (${thumbnailStatus})` : ''} (area: ${areaName || 'none'}, location: ${locationName || 'none'})`);
       } else {
         console.warn(`[EventProcessor] Could not publish event ${event.eventId} to Redis: missing organizationId`);
       }
