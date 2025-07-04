@@ -6,6 +6,7 @@
     "dev": "next dev",
     "prebuild": "npm run migrate",
     "build": "next build",
+    "build:analyze": "ANALYZE=true next build",
     "start": "next start",
     "lint": "next lint",
     "db:studio": "drizzle-kit studio",
@@ -106,6 +107,7 @@
   "devDependencies": {
     "@better-auth/cli": "^1.2.7",
     "@eslint/eslintrc": "^3.3.1",
+    "@next/bundle-analyzer": "^15.3.5",
     "@serwist/build": "^9.0.14",
     "@serwist/next": "^9.0.14",
     "@types/better-sqlite3": "^7.6.9",

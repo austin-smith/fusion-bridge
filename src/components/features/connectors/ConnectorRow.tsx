@@ -13,8 +13,7 @@ import { TableCell, TableRow } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 import { formatConnectorCategory } from "@/lib/utils";
 import { formatDistanceToNow } from 'date-fns';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { OptimizedSyntaxHighlighter } from '@/components/common/optimized-syntax-highlighter';
 import { MoveConnectorDialog } from './move-connector-dialog';
 
 // <<< Add ConnectionStatus type back >>>
@@ -272,9 +271,8 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
                       }
                       <span className="sr-only">{copiedPayloadId === `${connector.id}-${copyIdSuffix}` ? 'Copied' : 'Copy JSON'}</span>
                     </Button>
-                    <SyntaxHighlighter
+                    <OptimizedSyntaxHighlighter
                       language="json"
-                      style={atomDark}
                       customStyle={{
                         maxHeight: '50rem',
                         overflowY: 'auto',
@@ -287,7 +285,7 @@ export const ConnectorRow: React.FC<ConnectorRowProps> = ({
                       }}
                     >
                       {JSON.stringify(lastPayload, null, 2)}
-                    </SyntaxHighlighter>
+                    </OptimizedSyntaxHighlighter>
                   </div>
                 </PopoverContent>
               )}

@@ -7,19 +7,17 @@ import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
 import { cn } from '@/lib/utils';
 import { AlertCircle, Loader2 } from 'lucide-react';
 
-// --- React Grid Layout Imports ---
-import { Responsive, WidthProvider, Layout, Layouts } from 'react-grid-layout';
+// --- Optimized Grid Layout Import ---
+import { OptimizedGridLayout } from '@/components/common/optimized-grid-layout';
+import type { Layout, Layouts } from 'react-grid-layout';
 
-// Import required CSS
+// Import required CSS (keep here since component needs it)
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 
 // --- Shadcn Card Imports ---
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 // --- End Shadcn Card Imports ---
-
-const ResponsiveGridLayout = WidthProvider(Responsive);
-// --- End React Grid Layout Imports ---
 
 // --- Internal Grid Component --- 
 interface AreaCameraGridProps {
@@ -120,7 +118,7 @@ const AreaCameraGrid: React.FC<AreaCameraGridProps> = ({ cameraDevices }) => {
   }
   
   return (
-    <ResponsiveGridLayout
+    <OptimizedGridLayout
       className="layout camera-wall-grid"
       layouts={layouts}
       breakpoints={breakpoints}
@@ -131,9 +129,6 @@ const AreaCameraGrid: React.FC<AreaCameraGridProps> = ({ cameraDevices }) => {
       isDraggable
       isResizable
       onLayoutChange={onLayoutChange}
-      // Prevent breaking changes from new versions
-      // useCSSTransforms={true} 
-      // measureBeforeMount={false}
     >
        {validPikoCameras.map((device) => {
          return (
@@ -160,7 +155,7 @@ const AreaCameraGrid: React.FC<AreaCameraGridProps> = ({ cameraDevices }) => {
            </div>
          );
        })}
-    </ResponsiveGridLayout>
+    </OptimizedGridLayout>
   );
 };
 

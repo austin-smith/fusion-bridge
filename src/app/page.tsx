@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, memo, useCallback } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Button } from '@/components/ui/button';
 import { PlusCircle, Trash2 } from 'lucide-react';
@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // Skeleton Component for Connector Grid Card
-const ConnectorCardSkeleton = () => {
+const ConnectorCardSkeleton = memo(() => {
   return (
     <div className="p-4 border rounded-lg flex flex-col justify-between min-h-[120px]">
       <div>
@@ -30,10 +30,67 @@ const ConnectorCardSkeleton = () => {
       </div>
     </div>
   );
-};
+});
 
-export default function Home() {
-  const { connectors, isLoading, error, setConnectors, deleteConnector, setAddConnectorOpen, setLoading, setError } = useFusionStore();
+ConnectorCardSkeleton.displayName = 'ConnectorCardSkeleton';
+
+// Optimized connector card component
+const ConnectorCard = memo(({ 
+  connector, 
+  onDelete 
+}: { 
+  connector: ConnectorWithConfig; 
+  onDelete: (id: string) => void; 
+}) => {
+  const handleDelete = useCallback(() => {
+    onDelete(connector.id);
+  }, [connector.id, onDelete]);
+
+  return (
+    <div 
+      key={connector.id} 
+      className="p-4 border rounded-lg hover:shadow-md transition-shadow flex flex-col justify-between"
+    >
+      <div>
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <h3 className="font-medium mb-1">{connector.name}</h3>
+            <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+              <ConnectorIcon connectorCategory={connector.category} size={12} />
+              <span className="text-xs">{formatConnectorCategory(connector.category)}</span>
+            </Badge>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={handleDelete}
+            className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 flex-shrink-0"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="sr-only">Delete</span>
+          </Button>
+        </div>
+      </div>
+      <div className="mt-auto pt-2 text-xs text-muted-foreground">
+          Created: {new Date(connector.createdAt).toLocaleString()}
+      </div>
+    </div>
+  );
+});
+
+ConnectorCard.displayName = 'ConnectorCard';
+
+function Home() {
+  const { 
+    connectors, 
+    isLoading, 
+    error, 
+    setConnectors, 
+    deleteConnector, 
+    setAddConnectorOpen, 
+    setLoading, 
+    setError 
+  } = useFusionStore();
 
   // Set page title
   useEffect(() => {
@@ -63,7 +120,7 @@ export default function Home() {
     fetchConnectors();
   }, [setConnectors, setLoading, setError]);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = useCallback(async (id: string) => {
     try {
       setLoading(true);
       const response = await fetch(`/api/connectors/${id}`, {
@@ -83,7 +140,11 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [deleteConnector, setError, setLoading]);
+
+  const handleAddConnectorOpen = useCallback(() => {
+    setAddConnectorOpen(true);
+  }, [setAddConnectorOpen]);
 
   return (
     <TooltipProvider>
@@ -98,7 +159,7 @@ export default function Home() {
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold">Connectors</h2>
               <Button 
-                onClick={() => setAddConnectorOpen(true)}
+                onClick={handleAddConnectorOpen}
                 className="flex items-center gap-2"
               >
                 <PlusCircle className="h-4 w-4" />
@@ -119,7 +180,7 @@ export default function Home() {
                 <p className="text-muted-foreground">No connectors found</p>
                 <Button 
                   variant="link" 
-                  onClick={() => setAddConnectorOpen(true)}
+                  onClick={handleAddConnectorOpen}
                   className="mt-2"
                 >
                   Add your first connector
@@ -128,34 +189,11 @@ export default function Home() {
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {connectors.map((connector: ConnectorWithConfig) => (
-                  <div 
-                    key={connector.id} 
-                    className="p-4 border rounded-lg hover:shadow-md transition-shadow flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h3 className="font-medium mb-1">{connector.name}</h3>
-                          <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                            <ConnectorIcon connectorCategory={connector.category} size={12} />
-                            <span className="text-xs">{formatConnectorCategory(connector.category)}</span>
-                          </Badge>
-                        </div>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={() => handleDelete(connector.id)}
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 flex-shrink-0"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">Delete</span>
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="mt-auto pt-2 text-xs text-muted-foreground">
-                        Created: {new Date(connector.createdAt).toLocaleString()}
-                    </div>
-                  </div>
+                  <ConnectorCard 
+                    key={connector.id}
+                    connector={connector}
+                    onDelete={handleDelete}
+                  />
                 ))}
               </div>
             )}
@@ -166,4 +204,6 @@ export default function Home() {
       </div>
     </TooltipProvider>
   );
-} 
+}
+
+export default memo(Home); 
