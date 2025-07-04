@@ -19,6 +19,8 @@ import { internalSetAreaArmedState } from '@/lib/actions/area-alarm-actions';
 import * as piko from '@/services/drivers/piko';
 import type { PikoCreateBookmarkPayload } from '@/services/drivers/piko';
 import { z } from 'zod';
+import type { ThumbnailContext } from '@/types/automation-thumbnails';
+import { createEmptyThumbnailContext } from '@/types/automation-thumbnails';
 
 export interface OrganizationAutomation {
   id: string;
@@ -43,9 +45,13 @@ interface ActionExecutionResults {
 function resolveTokens(
   params: Record<string, unknown> | null | undefined,
   stdEvent: StandardizedEvent | null,
-  tokenFactContext: Record<string, any> | null | undefined
+  tokenFactContext: Record<string, any> | null | undefined,
+  thumbnailContext: ThumbnailContext | null = null
 ): Record<string, unknown> | null | undefined {
   if (params === null || params === undefined) return params;
+
+  // Create thumbnail context if not provided
+  const thumbnailCtx = thumbnailContext || createEmptyThumbnailContext();
 
   const contextForTokenReplacement: Record<string, any> = {
     // Prioritize facts from tokenFactContext
@@ -54,7 +60,7 @@ function resolveTokens(
     area: tokenFactContext?.area ?? null,
     location: tokenFactContext?.location ?? null,
     connector: tokenFactContext?.connector ?? null,
-    // Use the event context from tokenFactContext if available, otherwise build from stdEvent
+    // Use the event context from tokenFactContext if available (preferred), otherwise build from stdEvent
     event: tokenFactContext?.event ?? (stdEvent ? {
       id: stdEvent.eventId,
       // Display versions (user-friendly)
@@ -68,10 +74,15 @@ function resolveTokens(
       timestamp: stdEvent.timestamp.toISOString(),
       timestampMs: stdEvent.timestamp.getTime(),
       deviceId: stdEvent.deviceId,
+      // Thumbnail data
+      thumbnail: thumbnailCtx.dataUri || '',
       ...(stdEvent.payload && typeof stdEvent.payload === 'object' ? {
         displayState: (stdEvent.payload as any).displayState,
       } : {}),
-    } : null),
+    } : {
+      // For cases without stdEvent, still provide thumbnail data
+      thumbnail: thumbnailCtx.dataUri || '',
+    }),
   };
 
   const resolved = { ...params };
@@ -128,10 +139,11 @@ async function executeAutomationAction(action: AutomationAction, context: Record
   
   const stdEvent = context.triggerEvent || null;
   const tokenFactContext = context;
+  const thumbnailContext = context.thumbnailContext || createEmptyThumbnailContext();
 
   switch (action.type) {
     case AutomationActionType.CREATE_EVENT: {
-      const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as any;
+      const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext, thumbnailContext) as any;
       
       const targetConnector = await db.query.connectors.findFirst({ 
         where: eq(connectors.id, resolvedParams.targetConnectorId!) 
@@ -177,7 +189,7 @@ async function executeAutomationAction(action: AutomationAction, context: Record
     }
 
     case AutomationActionType.CREATE_BOOKMARK: {
-      const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as any;
+      const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext, thumbnailContext) as any;
       
       const targetConnector = await db.query.connectors.findFirst({ 
         where: eq(connectors.id, resolvedParams.targetConnectorId!) 
@@ -246,7 +258,7 @@ async function executeAutomationAction(action: AutomationAction, context: Record
     }
 
     case AutomationActionType.SEND_HTTP_REQUEST: {
-      const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as any;
+      const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext, thumbnailContext) as any;
       
       const headers = new Headers({ 'User-Agent': 'FusionBridge Automation/1.0' });
       if (Array.isArray(resolvedParams.headers)) {
@@ -302,7 +314,7 @@ async function executeAutomationAction(action: AutomationAction, context: Record
     }
 
     case AutomationActionType.SEND_PUSH_NOTIFICATION: {
-      const resolvedTemplates = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof SendPushNotificationActionParamsSchema>;
+      const resolvedTemplates = resolveTokens(action.params, stdEvent, tokenFactContext, thumbnailContext) as z.infer<typeof SendPushNotificationActionParamsSchema>;
       
       const resolvedTitle = resolvedTemplates.titleTemplate;
       const resolvedMessage = resolvedTemplates.messageTemplate;
@@ -673,6 +685,9 @@ export class OrganizationAutomationContext {
       orgDb: this.orgDb
     };
 
+    // Extract thumbnail context from event if available
+    const thumbnailContext: ThumbnailContext = (event as any)._thumbnailContext || createEmptyThumbnailContext();
+
     try {
       // Fetch device information
       const deviceRecord = await db.query.devices.findFirst({
@@ -768,7 +783,7 @@ export class OrganizationAutomationContext {
         };
       }
 
-      // Add event context for easy access
+      // Add event context for easy access including thumbnail data
       context.event = {
         id: event.eventId,
         // Display versions (user-friendly)
@@ -783,6 +798,8 @@ export class OrganizationAutomationContext {
         timestampMs: event.timestamp.getTime(),
         deviceId: event.deviceId,
         connectorId: event.connectorId,
+        // Thumbnail data from context
+        thumbnail: thumbnailContext.dataUri || '',
         ...(event.payload && typeof event.payload === 'object' ? {
           displayState: (event.payload as any).displayState,
           statusType: (event.payload as any).statusType,
@@ -795,6 +812,9 @@ export class OrganizationAutomationContext {
         } : {})
       };
 
+      // Store thumbnail context separately for easy access in action execution
+      context.thumbnailContext = thumbnailContext;
+
     } catch (error) {
       console.error(`[Automation Context][${this.organizationId}] Error building action context:`, error);
       // Continue with minimal context on error
@@ -805,6 +825,9 @@ export class OrganizationAutomationContext {
         type: event.deviceInfo?.type || null,
         subtype: event.deviceInfo?.subtype || null
       };
+      
+      // Still provide empty thumbnail context on error
+      context.thumbnailContext = createEmptyThumbnailContext();
     }
 
     return context;
@@ -833,7 +856,7 @@ export class OrganizationAutomationContext {
         try {
           const startTime = Date.now();
           
-          // Execute action with organization context
+          // Execute action with organization context including thumbnail data
           await executeAutomationAction(action, {
             organizationId: this.organizationId,
             orgDb: this.orgDb,

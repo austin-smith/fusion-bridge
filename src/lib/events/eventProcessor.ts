@@ -5,6 +5,7 @@ import {
   areas as areasTableSchema,
   areaDevices as areaDevicesTableSchema,
   connectors as connectorsTableSchema,
+  automations as automationsTableSchema,
 } from '@/data/db/schema';
 import type { StandardizedEvent } from '@/types/events';
 import { eq, and, InferSelectModel } from 'drizzle-orm';
@@ -16,6 +17,9 @@ import { getEventChannelName, getEventThumbnailChannelName, type RedisEventMessa
 import { shouldFetchThumbnail, fetchEventThumbnail, type EventThumbnailData } from '@/services/event-thumbnail-fetcher';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { findAreaCameras } from '@/services/event-thumbnail-resolver';
+import { AutomationThumbnailAnalyzer } from '@/services/automation-thumbnail-analyzer';
+import { createThumbnailContext } from '@/types/automation-thumbnails';
+import { getThumbnailSource } from '@/services/event-thumbnail-resolver';
 
 // Infer types from schemas
 type Device = InferSelectModel<typeof devicesTableSchema>;
@@ -137,7 +141,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
     const connector = deviceLookup;
     const internalDeviceRecord = connector?.devices?.[0];
 
-    // Check for thumbnail subscribers and fetch thumbnail if needed
+    // 3. Check thumbnail requirements from both SSE and automations
     let thumbnailData: EventThumbnailData | null = null;
     
     // Get area cameras if event has an area association
@@ -179,43 +183,100 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
         // Continue without area cameras
       }
     }
-    
-    if (connector?.organizationId && shouldFetchThumbnail(event, areaCameras)) {
+
+    // Check if thumbnail is needed
+    let thumbnailNeeded = false;
+    let sseSubscriberCount = 0;
+    let automationRequiresThumbnail = false;
+
+    if (connector?.organizationId) {
+      const pubClient = getRedisPubClient();
+      
+      // Check SSE subscribers
+      if (shouldFetchThumbnail(event, areaCameras)) {
+        try {
+          const thumbnailChannel = getEventThumbnailChannelName(connector.organizationId);
+          const [, subscriberCount] = await pubClient.pubsub('NUMSUB', thumbnailChannel) as [string, number];
+          sseSubscriberCount = subscriberCount;
+          
+          if (subscriberCount > 0) {
+            console.log(`[EventProcessor] Event ${event.eventId} has ${subscriberCount} SSE thumbnail subscribers`);
+            thumbnailNeeded = true;
+          }
+        } catch (sseError) {
+          console.warn(`[EventProcessor] Failed to check SSE subscribers for event ${event.eventId}:`, sseError);
+        }
+      }
+
+      // Check automation thumbnail requirements
       try {
-        const pubClient = getRedisPubClient();
-        const thumbnailChannel = getEventThumbnailChannelName(connector.organizationId);
-        const [, subscriberCount] = await pubClient.pubsub('NUMSUB', thumbnailChannel) as [string, number];
-        
-        if (subscriberCount > 0) {
-          console.log(`[EventProcessor] Event ${event.eventId} has ${subscriberCount} thumbnail subscribers. Fetching thumbnail...`);
-          
-          // Convert area cameras to the format expected by thumbnail fetcher
-          const areaCameraDevices = areaCameras.map(cam => ({
-            id: cam.id,
-            deviceId: cam.deviceId,
-            connectorId: cam.connectorId,
-            connectorCategory: cam.connector?.category || 'piko',
-            deviceTypeInfo: getDeviceTypeInfo(cam.connector?.category || 'piko', cam.type),
-            name: cam.name,
-            type: cam.type,
-            status: cam.status,
-            batteryPercentage: cam.batteryPercentage,
-            vendor: cam.vendor,
-            model: cam.model,
-            url: cam.url,
-            createdAt: cam.createdAt,
-            updatedAt: cam.updatedAt
+        // Get enabled automations for this organization
+        const orgAutomations = await db.query.automations.findMany({
+          where: and(
+            eq(automationsTableSchema.organizationId, connector.organizationId),
+            eq(automationsTableSchema.enabled, true)
+          ),
+          columns: {
+            id: true,
+            configJson: true,
+          }
+        });
+
+        if (orgAutomations.length > 0) {
+          // Check if any automation needs thumbnails
+          const automationConfigs = orgAutomations.map(automation => ({
+            id: automation.id,
+            config: automation.configJson
           }));
-          
-          thumbnailData = await fetchEventThumbnail(event, areaCameraDevices);
-          
-          if (thumbnailData) {
-            console.log(`[EventProcessor] Thumbnail fetched successfully for event ${event.eventId} (${thumbnailData.size} bytes)`);
+
+          automationRequiresThumbnail = await AutomationThumbnailAnalyzer.organizationRequiresThumbnails(
+            connector.organizationId,
+            automationConfigs
+          );
+
+          if (automationRequiresThumbnail) {
+            console.log(`[EventProcessor] Event ${event.eventId} - automations in organization ${connector.organizationId} require thumbnails`);
+            thumbnailNeeded = true;
           }
         }
+      } catch (automationError) {
+        console.warn(`[EventProcessor] Failed to check automation thumbnail requirements for event ${event.eventId}:`, automationError);
+      }
+    }
+
+    // Fetch thumbnail if needed by either SSE or automations
+    if (thumbnailNeeded && connector?.organizationId) {
+      try {
+        console.log(`[EventProcessor] Fetching thumbnail for event ${event.eventId} (SSE: ${sseSubscriberCount > 0}, Automations: ${automationRequiresThumbnail})`);
+        
+        // Convert area cameras to the format expected by thumbnail fetcher
+        const areaCameraDevices = areaCameras.map(cam => ({
+          id: cam.id,
+          deviceId: cam.deviceId,
+          connectorId: cam.connectorId,
+          connectorCategory: cam.connector?.category || 'piko',
+          deviceTypeInfo: getDeviceTypeInfo(cam.connector?.category || 'piko', cam.type),
+          name: cam.name,
+          type: cam.type,
+          status: cam.status,
+          batteryPercentage: cam.batteryPercentage,
+          vendor: cam.vendor,
+          model: cam.model,
+          url: cam.url,
+          createdAt: cam.createdAt,
+          updatedAt: cam.updatedAt
+        }));
+        
+        thumbnailData = await fetchEventThumbnail(event, areaCameraDevices);
+        
+        if (thumbnailData) {
+          console.log(`[EventProcessor] Thumbnail fetched successfully for event ${event.eventId} (${thumbnailData.size} bytes)`);
+        } else {
+          console.log(`[EventProcessor] No thumbnail available for event ${event.eventId}`);
+        }
       } catch (thumbnailError) {
-        console.error(`[EventProcessor] Error checking subscribers or fetching thumbnail for event ${event.eventId}:`, thumbnailError);
-        // Continue without thumbnail
+        console.error(`[EventProcessor] Error fetching thumbnail for event ${event.eventId}:`, thumbnailError);
+        // Continue without thumbnail - this should not fail event processing
       }
     }
 
@@ -231,8 +292,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
         await pubClient.publish(baseChannel, JSON.stringify(baseMessage));
         
         // Check if thumbnail channel has subscribers and always publish if they exist
-        const [, thumbnailSubscriberCount] = await pubClient.pubsub('NUMSUB', thumbnailChannel) as [string, number];
-        if (thumbnailSubscriberCount > 0) {
+        if (sseSubscriberCount > 0) {
           // Always publish to thumbnail channel when there are subscribers
           // Include thumbnail data if available, null if not
           const messageForThumbnailChannel = await createEnrichedRedisMessage(event, connector, internalDeviceRecord, thumbnailData);
@@ -242,7 +302,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
         const areaName = baseMessage.areaName;
         const locationName = baseMessage.locationName;
         const thumbnailStatus = thumbnailData ? `with thumbnail (${thumbnailData.size} bytes)` : 'no thumbnail';
-        console.log(`[EventProcessor] Event ${event.eventId} published to channel(s): ${baseChannel}${thumbnailSubscriberCount > 0 ? ` and ${thumbnailChannel} (${thumbnailStatus})` : ''} (area: ${areaName || 'none'}, location: ${locationName || 'none'})`);
+        console.log(`[EventProcessor] Event ${event.eventId} published to channel(s): ${baseChannel}${sseSubscriberCount > 0 ? ` and ${thumbnailChannel} (${thumbnailStatus})` : ''} (area: ${areaName || 'none'}, location: ${locationName || 'none'})`);
       } else {
         console.warn(`[EventProcessor] Could not publish event ${event.eventId} to Redis: missing organizationId`);
       }
@@ -256,7 +316,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
       // We might still want to process for automations if the event is not device-specific or if automations can handle events without full device context
       // For now, let's proceed to automations even if device context is limited.
     } else {
-      // 3. Device Status and Battery Update (if applicable and device found)
+      // 4. Device Status and Battery Update (if applicable and device found)
       const updateData: { status?: string; batteryPercentage?: number; updatedAt: Date } = {
         updatedAt: new Date()
       };
@@ -292,7 +352,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
         }
       }
 
-      // 4. Alarm Logic Integration (reuse area info from device lookup)
+      // 5. Alarm Logic Integration (reuse area info from device lookup)
       try {
         const areaDevice = internalDeviceRecord.areaDevices?.[0];
         if (areaDevice?.area) {
@@ -320,9 +380,20 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
       }
     } // End of if(internalDeviceRecord)
 
-    // 5. Process event for automations
+    // 6. Process event for automations with thumbnail context
     try {
-      console.log(`[EventProcessor] Sending event ${event.eventId} to AutomationService.`);
+      console.log(`[EventProcessor] Sending event ${event.eventId} to AutomationService${thumbnailData ? ' with thumbnail' : ''}.`);
+      
+      // Create thumbnail context for automation service
+      const thumbnailContext = thumbnailData ? 
+        createThumbnailContext(thumbnailData, getThumbnailSource(event, areaCameras) ?? undefined) : 
+        null;
+      
+      // Store thumbnail context on the event for the automation service to access
+      if (thumbnailContext) {
+        (event as any)._thumbnailContext = thumbnailContext;
+      }
+      
       await processEventForAutomations(event);
     } catch (automationError) {
       console.error(`[EventProcessor] Error during automation processing for event ${event.eventId}:`, automationError);

@@ -32,6 +32,9 @@ import { automationAuditService, AutomationAuditService } from '@/services/autom
 import { ExecutionStatus, ActionExecutionStatus } from '@/lib/automation-audit-types';
 import { OrganizationAutomationContext } from '@/services/automation-execution-context';
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db'; // Import the factory function
+// Import thumbnail context types
+import type { ThumbnailContext } from '@/types/automation-thumbnails';
+import { createEmptyThumbnailContext } from '@/types/automation-thumbnails';
 
 // Helper for exhaustive checks
 function assertNever(value: never, message: string = "Unhandled discriminated union member"): never {
@@ -202,6 +205,7 @@ async function executeActionWithRetry(
     action: AutomationAction,
     stdEvent: StandardizedEvent | null, // Now optional
     tokenFactContext: Record<string, any>,
+    thumbnailContext: ThumbnailContext | null = null, // NEW: Add thumbnail context
     executionId: string | null = null, // For audit tracking
     actionIndex: number = 0 // For audit tracking
 ) {
@@ -213,7 +217,7 @@ async function executeActionWithRetry(
     // Start action audit tracking
     if (executionId) {
         try {
-            const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext);
+            const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext, thumbnailContext);
             actionExecutionId = await automationAuditService.startActionExecution({
                 executionId,
                 actionIndex,
@@ -231,7 +235,7 @@ async function executeActionWithRetry(
                 // This action inherently relies on a triggering event context for some fields like timestamp.
                 // If stdEvent is null (scheduled trigger), we might need to adjust behavior or disallow.
                 // For now, it will try to use stdEvent if present, or tokenFactContext.schedule.triggeredAtUTC...
-                const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof import('@/lib/automation-schemas').CreateEventActionParamsSchema>;
+                const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext, thumbnailContext) as z.infer<typeof import('@/lib/automation-schemas').CreateEventActionParamsSchema>;
                 // Validation as before
                 // ...
                 // For pikoPayload.timestamp, use stdEvent.timestamp or fallback to context.schedule.triggeredAtUTC
@@ -276,7 +280,7 @@ async function executeActionWithRetry(
                 break;
             }
             case AutomationActionType.CREATE_BOOKMARK: {
-                const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof import('@/lib/automation-schemas').CreateBookmarkParamsSchema>;
+                const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext, thumbnailContext) as z.infer<typeof import('@/lib/automation-schemas').CreateBookmarkParamsSchema>;
                 // ... validation ...
                 const eventTimestampMs = stdEvent?.timestamp.getTime() ?? tokenFactContext.schedule?.triggeredAtMs ?? new Date().getTime();
                 // ... (original CREATE_BOOKMARK logic, ensuring stdEvent?.deviceId is handled if stdEvent is null)
@@ -329,7 +333,7 @@ async function executeActionWithRetry(
             }
             // ... other cases remain largely the same but use resolveTokens which is now null-aware for stdEvent
             case AutomationActionType.SEND_HTTP_REQUEST: {
-                const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof SendHttpRequestActionParamsSchema>;
+                const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext, thumbnailContext) as z.infer<typeof SendHttpRequestActionParamsSchema>;
                 // ... (original SEND_HTTP_REQUEST logic)
                 const headers = new Headers({ 'User-Agent': 'FusionBridge Automation/1.0' });
                 if (Array.isArray(resolvedParams.headers)) {
@@ -369,7 +373,7 @@ async function executeActionWithRetry(
             }
             case AutomationActionType.SEND_PUSH_NOTIFICATION: {
                 // Resolve tokens for title, message, and target user key
-                const resolvedTemplates = resolveTokens(action.params, stdEvent, tokenFactContext) as z.infer<typeof SendPushNotificationActionParamsSchema>;
+                const resolvedTemplates = resolveTokens(action.params, stdEvent, tokenFactContext, thumbnailContext) as z.infer<typeof SendPushNotificationActionParamsSchema>;
                 // ... (original SEND_PUSH_NOTIFICATION logic)
                 const resolvedTitle = resolvedTemplates.titleTemplate;
                 const resolvedMessage = resolvedTemplates.messageTemplate; 
@@ -558,14 +562,19 @@ async function executeActionWithRetry(
  * Resolves tokens in action parameter templates.
  * stdEvent is now optional and used if present for event-specific tokens.
  * tokenFactContext is the primary source for general facts (device, area, location, schedule).
+ * thumbnailContext provides thumbnail data for thumbnail-related tokens.
  */
 function resolveTokens(
     params: Record<string, unknown> | null | undefined,
     stdEvent: StandardizedEvent | null, // Now optional
-    tokenFactContext: Record<string, any> | null | undefined
+    tokenFactContext: Record<string, any> | null | undefined,
+    thumbnailContext: ThumbnailContext | null = null // NEW: Add thumbnail context
 ): Record<string, unknown> | null | undefined {
 
     if (params === null || params === undefined) return params;
+
+    // Create thumbnail context if not provided
+    const thumbnailCtx = thumbnailContext || createEmptyThumbnailContext();
 
     const contextForTokenReplacement: Record<string, any> = {
         // Prioritize facts from tokenFactContext
@@ -588,10 +597,16 @@ function resolveTokens(
             subtypeId: stdEvent.subtype,
             timestamp: stdEvent.timestamp.toISOString(),
             timestampMs: stdEvent.timestamp.getTime(),
+            // Thumbnail data
+            thumbnail: thumbnailCtx.dataUri || '',
             ...(stdEvent.payload && typeof stdEvent.payload === 'object' ? {
                 displayState: (stdEvent.payload as any).displayState,
             } : {}),
-        } : (tokenFactContext?.event ?? null), // If no stdEvent, still allow facts to have an 'event' object
+        } : {
+            // For scheduled events, still provide thumbnail data if available
+            ...(tokenFactContext?.event ?? {}),
+            thumbnail: thumbnailCtx.dataUri || '',
+        },
         // For global access like {{currentTimeUTC}} if needed, could be added to tokenFactContext.schedule
         // currentTimeUTC: tokenFactContext?.schedule?.triggeredAtUTC, 
         // currentTimeLocal: tokenFactContext?.schedule?.triggeredAtLocal

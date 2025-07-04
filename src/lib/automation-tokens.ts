@@ -19,6 +19,9 @@ export const AVAILABLE_AUTOMATION_TOKENS: AutomationToken[] = [
     { token: '{{event.timestamp}}', description: 'Timestamp event occurred (ISO format)', group: 'Event' },
     { token: '{{event.timestampMs}}', description: 'Timestamp event occurred (Epoch milliseconds)', group: 'Event' },
 
+    // --- Event Thumbnail Data ---
+    { token: '{{event.thumbnail}}', description: 'Complete data URI with embedded thumbnail (data:image/jpeg;base64,...)', group: 'Event' },
+
     // --- Device Context Data ---
     { token: '{{device.id}}', description: 'Internal system ID of the triggering device', group: 'Device' },
     { token: '{{device.externalId}}', description: 'Connector-specific external ID of the triggering device', group: 'Device' },
