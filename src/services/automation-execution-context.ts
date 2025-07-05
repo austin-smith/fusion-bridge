@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { db } from '@/data/db';
-import { automations, automationExecutions, automationActionExecutions, connectors, devices, cameraAssociations, areas, areaDevices } from '@/data/db/schema';
+import { automations, automationExecutions, automationActionExecutions, connectors, devices, cameraAssociations, areas, areaDevices, locations } from '@/data/db/schema';
 import { eq, inArray, and } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
 import type { OrgScopedDb } from '@/lib/db/org-scoped-db';
@@ -21,6 +21,10 @@ import type { PikoCreateBookmarkPayload } from '@/services/drivers/piko';
 import { z } from 'zod';
 import type { ThumbnailContext } from '@/types/automation-thumbnails';
 import { createEmptyThumbnailContext } from '@/types/automation-thumbnails';
+import { evaluateAutomationTimeFilter } from '@/lib/automation-time-evaluator';
+import { CronExpressionParser } from 'cron-parser';
+import { formatInTimeZone, toZonedTime } from 'date-fns-tz';
+import { parse, format } from 'date-fns';
 
 export interface OrganizationAutomation {
   id: string;
@@ -536,6 +540,24 @@ export class OrganizationAutomationContext {
         return;
       }
       
+      // Check time-of-day filter if configured (only on event triggers)
+      if (config.trigger.type === AutomationTriggerType.EVENT) {
+        const eventTrigger = config.trigger; // TypeScript now knows this is an event trigger
+        if (eventTrigger.timeOfDayFilter) {
+          const timeFilterPassed = await evaluateAutomationTimeFilter(
+            automation.id,
+            eventTrigger.timeOfDayFilter,
+            event.timestamp, // Use event timestamp as reference
+            event.deviceId   // Event's device location context
+          );
+          
+          if (!timeFilterPassed) {
+            console.log(`[Automation Context][${this.organizationId}] Time-of-day filter not met for: ${automation.name}`);
+            return;
+          }
+        }
+      }
+      
       console.log(`[Automation Context][${this.organizationId}] Executing automation: ${automation.name}`);
       
       // Create execution record with correct total actions count
@@ -580,6 +602,9 @@ export class OrganizationAutomationContext {
         console.log(`[Automation Context][${this.organizationId}] Schedule conditions not met for: ${automation.name}`);
         return;
       }
+      
+      // Note: Scheduled automations don't have time-of-day filters since they're already time-based
+      // Time-of-day filters are only available on event-based automations
       
       console.log(`[Automation Context][${this.organizationId}] Executing scheduled automation: ${automation.name}`);
       
@@ -666,13 +691,157 @@ export class OrganizationAutomationContext {
   }
 
   /**
-   * Evaluate scheduled trigger conditions (placeholder for now)
+   * Evaluate scheduled trigger conditions
    */
   private async evaluateScheduleTrigger(config: AutomationConfig, automation: OrganizationAutomation, currentTime: Date): Promise<boolean> {
-    // TODO: Implement proper schedule evaluation logic
-    // For now, return false to avoid unintended executions
-    console.log(`[Automation Context][${this.organizationId}] Schedule evaluation not yet implemented for: ${automation.name}`);
-    return false;
+    const logPrefix = `[Automation Context][${this.organizationId}]`;
+    
+    try {
+      // Extract the scheduled trigger - we know it's scheduled from the caller
+      const scheduledTrigger = config.trigger;
+      if (scheduledTrigger.type !== AutomationTriggerType.SCHEDULED) {
+        console.error(`${logPrefix} Expected scheduled trigger but got: ${scheduledTrigger.type}`);
+        return false;
+      }
+
+      // Get timezone - use trigger timezone, fall back to location timezone, then UTC
+      let timezone = scheduledTrigger.timeZone || 'UTC';
+      
+      // For sunrise/sunset schedules, we need location data
+      if (scheduledTrigger.scheduleType === 'sunrise' || scheduledTrigger.scheduleType === 'sunset') {
+        // Get location ID for sun times lookup
+        const locationId = automation.locationScopeId;
+        if (!locationId) {
+          console.warn(`${logPrefix} Sunrise/sunset schedule requires location scope but none set for: ${automation.name}`);
+          return false;
+        }
+
+        // Get location data for timezone and sun times
+        const location = await db.query.locations.findFirst({
+          where: eq(locations.id, locationId),
+          columns: {
+            timeZone: true,
+            sunriseTime: true,
+            sunsetTime: true,
+            sunTimesUpdatedAt: true
+          }
+        });
+
+        if (!location) {
+          console.warn(`${logPrefix} Location ${locationId} not found for sunrise/sunset schedule: ${automation.name}`);
+          return false;
+        }
+
+        // Use location timezone if not overridden
+        if (!scheduledTrigger.timeZone) {
+          timezone = location.timeZone;
+        }
+
+        // Check if sun times are available and fresh
+        if (!location.sunriseTime || !location.sunsetTime) {
+          console.warn(`${logPrefix} No sun times data for location ${locationId}. Skipping: ${automation.name}`);
+          return false;
+        }
+
+        // Check if sun times are reasonably fresh (within 7 days)
+        if (location.sunTimesUpdatedAt && (Date.now() - location.sunTimesUpdatedAt.getTime()) > 7 * 24 * 60 * 60 * 1000) {
+          console.warn(`${logPrefix} Sun times data for location ${locationId} is stale. Skipping: ${automation.name}`);
+          return false;
+        }
+
+        // Evaluate sunrise/sunset schedule
+        return this.evaluateSunSchedule(
+          scheduledTrigger.scheduleType,
+          scheduledTrigger.scheduleType === 'sunrise' ? location.sunriseTime : location.sunsetTime,
+          scheduledTrigger.offsetMinutes || 0,
+          currentTime,
+          timezone
+        );
+      }
+
+      // Handle fixed_time schedule
+      if (scheduledTrigger.scheduleType === 'fixed_time') {
+        if (!scheduledTrigger.cronExpression) {
+          console.error(`${logPrefix} Fixed time schedule missing CRON expression: ${automation.name}`);
+          return false;
+        }
+
+        return this.evaluateFixedTimeSchedule(
+          scheduledTrigger.cronExpression,
+          currentTime,
+          timezone
+        );
+      }
+
+      console.error(`${logPrefix} Unknown schedule type: ${(scheduledTrigger as any).scheduleType}`);
+      return false;
+
+    } catch (error) {
+      console.error(`${logPrefix} Error evaluating schedule trigger for ${automation.name}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Evaluate fixed time schedule using CRON expression
+   */
+  private evaluateFixedTimeSchedule(cronExpression: string, currentTime: Date, timezone: string): boolean {
+    try {
+      const interval = CronExpressionParser.parse(cronExpression, { 
+        currentDate: currentTime,
+        tz: timezone 
+      });
+      
+      // Get the previous scheduled time
+      const prevTime = interval.prev();
+      
+      // Check if the previous scheduled time is within the last minute
+      // This handles the case where we run every minute and need to catch schedules
+      const timeDiff = currentTime.getTime() - prevTime.getTime();
+      const shouldExecute = timeDiff >= 0 && timeDiff < 60000; // Within last minute
+      
+      if (shouldExecute) {
+        console.log(`[Schedule Evaluation] Fixed time schedule triggered: ${cronExpression} (prev: ${prevTime.toISOString()}, current: ${currentTime.toISOString()})`);
+      }
+      
+      return shouldExecute;
+    } catch (error) {
+      console.error(`[Schedule Evaluation] Error parsing CRON expression "${cronExpression}":`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Evaluate sunrise/sunset schedule
+   */
+  private evaluateSunSchedule(
+    scheduleType: 'sunrise' | 'sunset',
+    sunTimeStr: string, // "HH:mm" format
+    offsetMinutes: number,
+    currentTime: Date,
+    timezone: string
+  ): boolean {
+    try {
+      // Parse the sun time for today in the timezone
+      const todayStr = formatInTimeZone(currentTime, timezone, 'yyyy-MM-dd');
+      const sunTimeToday = parse(`${todayStr} ${sunTimeStr}`, 'yyyy-MM-dd HH:mm', new Date());
+      
+      // Apply offset
+      const scheduledTime = new Date(sunTimeToday.getTime() + (offsetMinutes * 60 * 1000));
+      
+      // Check if current time is within 1 minute of the scheduled time
+      const timeDiff = Math.abs(currentTime.getTime() - scheduledTime.getTime());
+      const shouldExecute = timeDiff < 60000; // Within 1 minute
+      
+      if (shouldExecute) {
+        console.log(`[Schedule Evaluation] ${scheduleType} schedule triggered: ${sunTimeStr} + ${offsetMinutes}min = ${format(scheduledTime, 'HH:mm')} (current: ${formatInTimeZone(currentTime, timezone, 'HH:mm')})`);
+      }
+      
+      return shouldExecute;
+    } catch (error) {
+      console.error(`[Schedule Evaluation] Error evaluating ${scheduleType} schedule:`, error);
+      return false;
+    }
   }
 
   /**

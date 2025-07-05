@@ -275,27 +275,99 @@ export const TemporalConditionSchema = z.object({
 // Type helper for a single temporal condition (automatically updated)
 export type TemporalCondition = z.infer<typeof TemporalConditionSchema>;
 
+// --- NEW: Time-of-Day Filter Schema ---
+export const TimeOfDayFilterSchema = z.discriminatedUnion("type", [
+  // Any time - no restrictions
+  z.object({
+    type: z.literal("any_time"),
+  }),
+  
+  // During the day - between sunrise and sunset
+  z.object({
+    type: z.literal("during_day"),
+    sunriseOffsetMinutes: z.number().int().min(-240).max(240).default(0), // ±4 hours
+    sunsetOffsetMinutes: z.number().int().min(-240).max(240).default(0),  // ±4 hours
+  }),
+  
+  // At night - between sunset and sunrise
+  z.object({
+    type: z.literal("at_night"), 
+    sunsetOffsetMinutes: z.number().int().min(-240).max(240).default(0),  // ±4 hours
+    sunriseOffsetMinutes: z.number().int().min(-240).max(240).default(0), // ±4 hours (for next day)
+  }),
+  
+  // Specific time ranges
+  z.object({
+    type: z.literal("specific_times"),
+    startTime: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, "Invalid time format (HH:mm)"),
+    endTime: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, "Invalid time format (HH:mm)"),
+  }),
+]);
+
+export type TimeOfDayFilter = z.infer<typeof TimeOfDayFilterSchema>;
+
 // --- NEW: Automation Trigger Schema (Discriminated Union) ---
 // Inserted BEFORE the original AutomationConfigSchema
+// Base scheduled trigger schema
+const BaseScheduledTriggerSchema = z.object({
+  type: z.literal(AutomationTriggerType.SCHEDULED),
+  scheduleType: z.enum(['fixed_time', 'sunrise', 'sunset']),
+  // For fixed_time schedules:
+  cronExpression: z.string().optional(),
+  // For sunrise/sunset schedules:  
+  offsetMinutes: z.number().int().min(-240).max(240).optional(), // ±4 hours like time-of-day filter
+  // Common timezone field:
+  timeZone: z.string().optional(), // IANA timezone name, e.g., "America/New_York"
+});
+
+// Enhanced scheduled trigger with validation
+export const ScheduledTriggerSchema = BaseScheduledTriggerSchema.refine((data) => {
+  // Require cronExpression for fixed_time schedules
+  if (data.scheduleType === 'fixed_time') {
+    return data.cronExpression && data.cronExpression.trim() !== '';
+  }
+  // For sunrise/sunset, cronExpression should not be set
+  return true;
+}, {
+  message: "CRON expression is required for fixed time schedules",
+  path: ["cronExpression"],
+}).refine((data) => {
+  // Require offsetMinutes for sunrise/sunset schedules
+  if (data.scheduleType === 'sunrise' || data.scheduleType === 'sunset') {
+    return data.offsetMinutes !== undefined;
+  }
+  return true;
+}, {
+  message: "Offset minutes is required for sunrise/sunset schedules",
+  path: ["offsetMinutes"],
+});
+
+// Utility function for validating scheduled triggers (for forms and processing)
+export const validateScheduledTrigger = (trigger: z.infer<typeof BaseScheduledTriggerSchema>) => {
+  return ScheduledTriggerSchema.safeParse(trigger);
+};
+
 export const AutomationTriggerSchema = z.discriminatedUnion("type", [
   z.object({ 
     type: z.literal(AutomationTriggerType.EVENT), 
     conditions: JsonRuleGroupSchema, // This is the primary event trigger conditions
+    timeOfDayFilter: TimeOfDayFilterSchema.optional(), // MOVED HERE: Only event triggers get time-of-day filters
   }),
-  z.object({ 
-    type: z.literal(AutomationTriggerType.SCHEDULED), 
-    cronExpression: z.string().min(1, "CRON expression cannot be empty."),
-    timeZone: z.string().optional(), // IANA timezone name, e.g., "America/New_York"
-  })
+  BaseScheduledTriggerSchema // Use base schema for discriminated union
 ]);
 
 export type AutomationTrigger = z.infer<typeof AutomationTriggerSchema>;
+
+// Export types for the new scheduled trigger schemas
+export type BaseScheduledTrigger = z.infer<typeof BaseScheduledTriggerSchema>;
+export type ScheduledTrigger = z.infer<typeof ScheduledTriggerSchema>;
 
 // Schema for the overall automation configuration (already includes temporalConditions array)
 export const AutomationConfigSchema = z.object({
   // conditions: JsonRuleGroupSchema, // OLD field
   trigger: AutomationTriggerSchema, // NEW field, replacing 'conditions'
   temporalConditions: z.array(TemporalConditionSchema).optional(), 
+  // timeOfDayFilter removed from root - now only in event triggers
   actions: z.array(AutomationActionSchema).min(1, { message: "At least one action must be configured" }),
 });
 

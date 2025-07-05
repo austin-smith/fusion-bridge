@@ -148,6 +148,13 @@
       "when": 1751674753500,
       "tag": "0020_elite_dragon_man",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1751685328115,
+      "tag": "0021_nifty_jack_power",
+      "breakpoints": true
     }
   ]
 }

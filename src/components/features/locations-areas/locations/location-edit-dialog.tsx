@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TimezoneSelector } from '@/components/common/timezone-selector';
+import { LocationSunTimesDisplay } from '@/components/features/locations-areas/locations/LocationSunTimesDisplay';
 import { Check, ChevronsUpDown, MapPin, RotateCcw, Map } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -583,6 +584,11 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
                   Coordinates are automatically determined from the address when creating or updating locations. 
                   You can also enter them manually or use the refresh button to re-geocode the current address.
                 </p>
+
+                {/* Sun Times Display - Only show for existing locations with coordinates */}
+                {isEditing && locationToEdit && locationToEdit.latitude && locationToEdit.longitude && (
+                  <LocationSunTimesDisplay location={locationToEdit} />
+                )}
               </CardContent>
             </Card>
 

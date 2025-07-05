@@ -100,6 +100,9 @@ export interface Location {
   notes?: string | null; // Added: Optional notes
   latitude?: string | null;
   longitude?: string | null;
+  sunriseTime?: string | null; // "HH:mm" format in local timezone
+  sunsetTime?: string | null;  // "HH:mm" format in local timezone
+  sunTimesUpdatedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
   activeArmingScheduleId?: string | null;

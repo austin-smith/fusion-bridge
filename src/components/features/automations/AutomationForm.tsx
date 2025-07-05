@@ -36,9 +36,10 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Input } from "@/components/ui/input";
 import { FormDescription } from "@/components/ui/form";
 import { ScheduleBuilder } from './form-sections/ScheduleBuilder';
+import { TimeOfDayFilterSection } from './form-sections/TimeOfDayFilterSection';
 import { Activity, CalendarDays } from 'lucide-react';
 import { TimezoneSelector } from '@/components/common/timezone-selector';
-import type { AutomationTrigger } from '@/lib/automation-schemas';
+import type { AutomationTrigger, TimeOfDayFilter } from '@/lib/automation-schemas';
 
 interface AutomationFormData {
     id: string;
@@ -145,10 +146,20 @@ export default function AutomationForm({
             ? addInternalIds(getClonedInitialConditions(initialPersistedTrigger.conditions))
             : addInternalIds(getClonedInitialConditions(undefined))
     );
-    const scheduledTriggerConfigRef = React.useRef<{ cronExpression: string; timeZone?: string }>(
+    const scheduledTriggerConfigRef = React.useRef<{
+        scheduleType: 'fixed_time' | 'sunrise' | 'sunset';
+        cronExpression?: string;
+        offsetMinutes?: number;
+        timeZone?: string;
+    }>(
         initialPersistedTrigger?.type === AutomationTriggerType.SCHEDULED
-            ? { cronExpression: ensureDefaultCron(initialPersistedTrigger.cronExpression), timeZone: initialPersistedTrigger.timeZone }
-            : { cronExpression: '0 9 * * 1', timeZone: undefined }
+            ? {
+                scheduleType: initialPersistedTrigger.scheduleType || 'fixed_time',
+                cronExpression: initialPersistedTrigger.scheduleType === 'fixed_time' ? ensureDefaultCron(initialPersistedTrigger.cronExpression) : undefined,
+                offsetMinutes: initialPersistedTrigger.scheduleType !== 'fixed_time' ? initialPersistedTrigger.offsetMinutes : undefined,
+                timeZone: initialPersistedTrigger.timeZone
+            }
+            : { scheduleType: 'fixed_time', cronExpression: '0 9 * * 1', timeZone: undefined }
     );
 
     // Ref to store the previous trigger state for comparison in useEffect
@@ -240,11 +251,31 @@ export default function AutomationForm({
         if (parsedSourceTrigger) {
             if (parsedSourceTrigger.type === AutomationTriggerType.SCHEDULED) {
                 // console.log("[GetInitialValues] Identified as SCHEDULED from parsedSourceTrigger. DB type was:", rawConfigJson?.trigger?.type);
+                const scheduleType = parsedSourceTrigger.scheduleType || 'fixed_time';
+                
+                if (scheduleType === 'fixed_time') {
+                    triggerConfigForDefaultValues = {
+                        type: AutomationTriggerType.SCHEDULED,
+                        scheduleType: 'fixed_time' as const,
+                        cronExpression: ensureDefaultCron(parsedSourceTrigger.cronExpression),
+                        timeZone: parsedSourceTrigger.timeZone || undefined,
+                    };
+                } else if (scheduleType === 'sunrise' || scheduleType === 'sunset') {
+                    triggerConfigForDefaultValues = {
+                        type: AutomationTriggerType.SCHEDULED,
+                        scheduleType: scheduleType,
+                        offsetMinutes: parsedSourceTrigger.offsetMinutes || 0,
+                        timeZone: parsedSourceTrigger.timeZone || undefined,
+                    };
+                } else {
+                    // Fallback to fixed_time for unknown schedule types
                 triggerConfigForDefaultValues = {
                     type: AutomationTriggerType.SCHEDULED,
+                        scheduleType: 'fixed_time' as const,
                     cronExpression: ensureDefaultCron(parsedSourceTrigger.cronExpression),
                     timeZone: parsedSourceTrigger.timeZone || undefined,
                 };
+                }
             } else if (parsedSourceTrigger.type === AutomationTriggerType.EVENT) {
                 // console.log("[GetInitialValues] Identified as EVENT from parsedSourceTrigger. DB type was:", rawConfigJson?.trigger?.type);
                 triggerConfigForDefaultValues = {
@@ -279,7 +310,7 @@ export default function AutomationForm({
             config: {
                 trigger: triggerConfigForDefaultValues, 
                 temporalConditions: initialTemporalConditions,
-                actions: initialActions as AutomationAction[]
+                actions: initialActions as AutomationAction[],
             }
         };
     }, []); // Minimal dependencies for useCallback if initialData is stable, or expand if needed.
@@ -308,10 +339,12 @@ export default function AutomationForm({
         const reinitializedTrigger = defaultFormValues.config.trigger;
         if (reinitializedTrigger.type === AutomationTriggerType.EVENT) {
             eventTriggerConditionsRef.current = reinitializedTrigger.conditions;
-            scheduledTriggerConfigRef.current = { cronExpression: '0 9 * * 1', timeZone: undefined };
+            scheduledTriggerConfigRef.current = { scheduleType: 'fixed_time', cronExpression: '0 9 * * 1', timeZone: undefined };
         } else if (reinitializedTrigger.type === AutomationTriggerType.SCHEDULED) {
             scheduledTriggerConfigRef.current = {
-                cronExpression: ensureDefaultCron(reinitializedTrigger.cronExpression),
+                scheduleType: reinitializedTrigger.scheduleType || 'fixed_time',
+                cronExpression: reinitializedTrigger.scheduleType === 'fixed_time' ? ensureDefaultCron(reinitializedTrigger.cronExpression) : undefined,
+                offsetMinutes: reinitializedTrigger.scheduleType !== 'fixed_time' ? reinitializedTrigger.offsetMinutes : undefined,
                 timeZone: reinitializedTrigger.timeZone,
             };
             eventTriggerConditionsRef.current = addInternalIds(getClonedInitialConditions(undefined));
@@ -376,14 +409,31 @@ export default function AutomationForm({
         if (triggerFromForm.type === AutomationTriggerType.EVENT) {
             triggerPayload = {
                 type: AutomationTriggerType.EVENT,
-                conditions: cleanConditionNode(triggerFromForm.conditions) 
+                conditions: cleanConditionNode(triggerFromForm.conditions),
+                ...(triggerFromForm.timeOfDayFilter && { timeOfDayFilter: triggerFromForm.timeOfDayFilter })
             };
         } else if (triggerFromForm.type === AutomationTriggerType.SCHEDULED) {
+            // Handle all schedule types
+            if (triggerFromForm.scheduleType === 'fixed_time') {
             triggerPayload = {
                 type: AutomationTriggerType.SCHEDULED,
+                    scheduleType: 'fixed_time',
                 cronExpression: ensureDefaultCron(triggerFromForm.cronExpression),
                 timeZone: triggerFromForm.timeZone || undefined
             };
+            } else if (triggerFromForm.scheduleType === 'sunrise' || triggerFromForm.scheduleType === 'sunset') {
+                triggerPayload = {
+                    type: AutomationTriggerType.SCHEDULED,
+                    scheduleType: triggerFromForm.scheduleType,
+                    offsetMinutes: triggerFromForm.offsetMinutes || 0,
+                    timeZone: triggerFromForm.timeZone || undefined
+                };
+            } else {
+                console.error("Invalid schedule type in scheduled trigger:", triggerFromForm.scheduleType);
+                toast.error("Invalid schedule type. Cannot save automation.");
+                setIsLoading(false);
+                return;
+            }
         } else {
             // console.error("Unknown trigger type in form submission:", triggerFromForm);
             toast.error("Invalid trigger type. Cannot save automation.");
@@ -584,7 +634,11 @@ export default function AutomationForm({
                                                         // Update the form with a complete SCHEDULED trigger
                                                         form.setValue('config.trigger', {
                                                             type: AutomationTriggerType.SCHEDULED,
-                                                            cronExpression: scheduledTriggerConfigRef.current.cronExpression || '0 9 * * 1',
+                                                            scheduleType: scheduledTriggerConfigRef.current.scheduleType,
+                                                            cronExpression: scheduledTriggerConfigRef.current.scheduleType === 'fixed_time' ? 
+                                                                scheduledTriggerConfigRef.current.cronExpression || '0 9 * * 1' : undefined,
+                                                            offsetMinutes: scheduledTriggerConfigRef.current.scheduleType !== 'fixed_time' ? 
+                                                                scheduledTriggerConfigRef.current.offsetMinutes : undefined,
                                                             timeZone: scheduledTriggerConfigRef.current.timeZone,
                                                         }, { shouldValidate: true, shouldDirty: true });
                                                         
@@ -594,7 +648,9 @@ export default function AutomationForm({
                                                         const currentTrigger = form.getValues('config.trigger');
                                                         if (currentTrigger.type === AutomationTriggerType.SCHEDULED) {
                                                             scheduledTriggerConfigRef.current = {
-                                                                cronExpression: currentTrigger.cronExpression,
+                                                                scheduleType: currentTrigger.scheduleType || 'fixed_time',
+                                                                cronExpression: currentTrigger.scheduleType === 'fixed_time' ? ensureDefaultCron(currentTrigger.cronExpression) : undefined,
+                                                                offsetMinutes: currentTrigger.scheduleType !== 'fixed_time' ? currentTrigger.offsetMinutes : undefined,
                                                                 timeZone: currentTrigger.timeZone,
                                                             };
                                                         }
@@ -647,29 +703,93 @@ export default function AutomationForm({
                                 <div className="space-y-4 p-4 border rounded-md bg-background">
                                     <FormField
                                         control={form.control}
-                                        name="config.trigger.cronExpression"
-                                        render={({ field }) => (
+                                        name="config.trigger"
+                                        render={({ field }) => {
+                                            const currentTrigger = field.value as AutomationTrigger;
+                                            
+                                            return (
                                             <FormItem>
                                                 <FormLabel>Schedule</FormLabel>
                                                 <FormControl>
                                                     <ScheduleBuilder
-                                                        currentCronExpression={field.value || '0 9 * * 1'} 
+                                                            scheduleType={currentTrigger.type === AutomationTriggerType.SCHEDULED ? currentTrigger.scheduleType : 'fixed_time'}
+                                                            onScheduleTypeChange={(newScheduleType) => {
+                                                                // Update trigger with new schedule type
+                                                                if (newScheduleType === 'fixed_time') {
+                                                                    const newTrigger = {
+                                                                        type: AutomationTriggerType.SCHEDULED,
+                                                                        scheduleType: 'fixed_time' as const,
+                                                                        cronExpression: scheduledTriggerConfigRef.current.cronExpression || '0 9 * * 1',
+                                                                        timeZone: currentTrigger.type === AutomationTriggerType.SCHEDULED ? currentTrigger.timeZone : undefined,
+                                                                    };
+                                                                    field.onChange(newTrigger);
+                                                                    
+                                                                    // Update ref
+                                                                    scheduledTriggerConfigRef.current = {
+                                                                        scheduleType: 'fixed_time',
+                                                                        cronExpression: newTrigger.cronExpression,
+                                                                        timeZone: newTrigger.timeZone,
+                                                                    };
+                                                                } else {
+                                                                    const newTrigger = {
+                                                                        type: AutomationTriggerType.SCHEDULED,
+                                                                        scheduleType: newScheduleType,
+                                                                        offsetMinutes: scheduledTriggerConfigRef.current.offsetMinutes || 0,
+                                                                        timeZone: currentTrigger.type === AutomationTriggerType.SCHEDULED ? currentTrigger.timeZone : undefined,
+                                                                    };
+                                                                    field.onChange(newTrigger);
+                                                                    
+                                                                    // Update ref
+                                                                    scheduledTriggerConfigRef.current = {
+                                                                        scheduleType: newScheduleType,
+                                                                        offsetMinutes: newTrigger.offsetMinutes,
+                                                                        timeZone: newTrigger.timeZone,
+                                                                    };
+                                                                }
+                                                            }}
+                                                            
+                                                            cronExpression={currentTrigger.type === AutomationTriggerType.SCHEDULED && currentTrigger.scheduleType === 'fixed_time' ? currentTrigger.cronExpression : '0 9 * * 1'}
                                                         onCronExpressionChange={(newCron) => {
                                                             const cronValue = ensureDefaultCron(newCron);
                                                             
-                                                            // Update both the form field and backup ref
-                                                            field.onChange(cronValue);
-                                                            scheduledTriggerConfigRef.current.cronExpression = cronValue;
+                                                                // Update trigger with new CRON expression
+                                                                field.onChange({
+                                                                    ...currentTrigger,
+                                                                    cronExpression: cronValue,
+                                                                });
+                                                                
+                                                                // Update backup ref
+                                                                scheduledTriggerConfigRef.current = {
+                                                                    ...scheduledTriggerConfigRef.current,
+                                                                    cronExpression: cronValue,
+                                                                };
+                                                            }}
+                                                            
+                                                            offsetMinutes={currentTrigger.type === AutomationTriggerType.SCHEDULED && currentTrigger.scheduleType !== 'fixed_time' ? currentTrigger.offsetMinutes : 0}
+                                                            onOffsetChange={(newOffset) => {
+                                                                // Update trigger with new offset
+                                                                field.onChange({
+                                                                    ...currentTrigger,
+                                                                    offsetMinutes: newOffset,
+                                                                });
                                                         }}
+                                                            
                                                         disabled={isLoading}
+                                                            locationScope={currentRuleLocationScope}
                                                     />
                                                 </FormControl>
                                                 <FormDescription className="text-xs pt-1">
-                                                   Raw CRON: <code className="p-0.5 bg-muted rounded text-xs font-mono">{field.value || 'Not set'}</code>
+                                                        {currentTrigger.type === AutomationTriggerType.SCHEDULED && currentTrigger.scheduleType === 'fixed_time' && (
+                                                            <>Raw CRON: <code className="p-0.5 bg-muted rounded text-xs font-mono">{currentTrigger.cronExpression || 'Not set'}</code></>
+                                                        )}
+                                                        {currentTrigger.type === AutomationTriggerType.SCHEDULED && currentTrigger.scheduleType !== 'fixed_time' && (
+                                                            <>Schedule Type: <code className="p-0.5 bg-muted rounded text-xs font-mono">{currentTrigger.scheduleType}</code> with <code className="p-0.5 bg-muted rounded text-xs font-mono">{currentTrigger.offsetMinutes}min</code> offset</>
+                                                        )}
                                                 </FormDescription>
                                                 <FormMessage />
                                             </FormItem>
-                                        )}
+                                            );
+                                        }}
                                     />
                                     <FormField
                                         control={form.control}
@@ -685,7 +805,10 @@ export default function AutomationForm({
                                                             
                                                             // Update both the form field and backup ref
                                                             field.onChange(tzValue);
-                                                            scheduledTriggerConfigRef.current.timeZone = tzValue;
+                                                            scheduledTriggerConfigRef.current = {
+                                                                ...scheduledTriggerConfigRef.current,
+                                                                timeZone: tzValue,
+                                                            };
                                                         }}
                                                         disabled={isLoading || !!watchedLocationScopeId}
                                                         placeholder={!!watchedLocationScopeId ? "Uses location's time zone" : "Select a time zone..."}
@@ -736,6 +859,13 @@ export default function AutomationForm({
                             )}
                         </CardContent>
                     </Card>
+
+                    {displayTriggerType === AutomationTriggerType.EVENT && (
+                        <TimeOfDayFilterSection
+                            form={form}
+                            isLoading={isLoading}
+                        />
+                    )}
 
                     <Card>
                         <CardHeader>

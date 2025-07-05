@@ -126,6 +126,17 @@ export const auth = betterAuth.betterAuth({
           console.log(`Organization invitation sent to ${data.email} for organization ${data.organization.name}`);
         },
         organizationCreation: {
+          beforeCreate: async ({ organization, user }, request) => {
+            // Set default metadata for new organizations
+            return {
+              data: {
+                ...organization,
+                metadata: {
+                  defaultTimezone: "America/Los_Angeles"
+                }
+              }
+            };
+          },
           afterCreate: async ({ organization, member, user }) => {
             console.log(`Organization "${organization.name}" created by user ${user.email}`);
           },

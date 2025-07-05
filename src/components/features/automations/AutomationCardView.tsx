@@ -13,13 +13,20 @@ import {
   Activity,
   Calendar,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Clock,
+  CalendarDays,
+  Settings,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
+import { Switch } from '@/components/ui/switch';
 
 // UI Components
 import { 
@@ -288,6 +295,55 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
     );
   }
 
+  // Helper function to format time-of-day filter display
+  const formatTimeOfDayFilter = (timeOfDayFilter: any) => {
+    if (!timeOfDayFilter) return null;
+    
+    switch (timeOfDayFilter.type) {
+      case 'any_time':
+        return null; // Don't show anything for "any time"
+      
+      case 'during_day':
+        return (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Sun className="h-3 w-3 text-yellow-500" />
+            <span>Daylight hours</span>
+          </div>
+        );
+      
+      case 'at_night':
+        return (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Moon className="h-3 w-3 text-blue-400" />
+            <span>Nighttime hours</span>
+          </div>
+        );
+      
+      case 'specific_times':
+        const ranges = timeOfDayFilter.timeRanges || [];
+        if (ranges.length === 0) return null;
+        
+        if (ranges.length === 1) {
+          return (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="h-3 w-3 text-green-500" />
+              <span>{ranges[0].startTime} - {ranges[0].endTime}</span>
+            </div>
+          );
+        } else {
+          return (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="h-3 w-3 text-green-500" />
+              <span>{ranges.length} time ranges</span>
+            </div>
+          );
+        }
+      
+      default:
+        return null;
+    }
+  };
+
   return (
     <TooltipProvider>
       <ScrollArea className="h-full">
@@ -330,6 +386,54 @@ interface AutomationCardProps {
 }
 
 function AutomationCard({ automation, refreshData, connectors, targetDevices, locations, areas, lastRun, onOpenExecutionDetails }: AutomationCardProps) {
+  // Helper function to format time-of-day filter display
+  const formatTimeOfDayFilter = (timeOfDayFilter: any) => {
+    if (!timeOfDayFilter) return null;
+    
+    switch (timeOfDayFilter.type) {
+      case 'any_time':
+        return null; // Don't show anything for "any time"
+      
+      case 'during_day':
+        return (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Sun className="h-3 w-3 text-yellow-500" />
+            <span>Daylight hours</span>
+          </div>
+        );
+      
+      case 'at_night':
+        return (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Moon className="h-3 w-3 text-blue-400" />
+            <span>Nighttime hours</span>
+          </div>
+        );
+      
+      case 'specific_times':
+        const ranges = timeOfDayFilter.timeRanges || [];
+        if (ranges.length === 0) return null;
+        
+        if (ranges.length === 1) {
+          return (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="h-3 w-3 text-green-500" />
+              <span>{ranges[0].startTime} - {ranges[0].endTime}</span>
+            </div>
+          );
+        } else {
+          return (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="h-3 w-3 text-green-500" />
+              <span>{ranges.length} time ranges</span>
+            </div>
+          );
+        }
+      
+      default:
+        return null;
+    }
+  };
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
@@ -560,6 +664,22 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
         </CardHeader>
         
         <CardContent className="p-4">
+          {/* Time-of-Day Filter Display */}
+          {(() => {
+            // Only show time-of-day filter for event-based automations
+            const timeOfDayFilterDisplay = automation.configJson?.trigger?.type === AutomationTriggerType.EVENT 
+              ? formatTimeOfDayFilter(automation.configJson.trigger.timeOfDayFilter) 
+              : null;
+            if (!timeOfDayFilterDisplay) return null;
+            
+            return (
+              <div className="mb-4 pb-3 border-b">
+                <h4 className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Time Filter</h4>
+                {timeOfDayFilterDisplay}
+              </div>
+            );
+          })()}
+          
           {/* Actions Section */}
           <div>
             {actions.length === 0 ? (

@@ -20,6 +20,7 @@ import { Layers2, CloudSun } from 'lucide-react';
 import { updateServiceEnabledStateAction } from '../../../../services/settings-services-actions';
 import { OpenWeatherConfigForm } from './openweather/openweather-config-form';
 import { OpenWeatherTestModal } from './openweather/openweather-test-modal';
+import { SunTimesUpdateTrigger } from './SunTimesUpdateTrigger';
 
 interface ServicesSettingsClientPageContentProps {
   initialPushoverConfig: PushoverConfig | null;
@@ -255,6 +256,11 @@ export function ServicesSettingsClientPageContent({
               />
             </CardContent>
           </Card>
+          
+          {/* Sun Times Update Trigger - only show if OpenWeather is configured */}
+          {initialOpenWeatherConfig?.apiKey && (
+            <SunTimesUpdateTrigger />
+          )}
         </TabsContent>
       </Tabs>
     </div>

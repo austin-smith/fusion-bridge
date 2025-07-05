@@ -206,6 +206,9 @@ export const locations = sqliteTable("locations", {
   latitude: text("latitude"),
   longitude: text("longitude"),
   activeArmingScheduleId: text("active_arming_schedule_id").references(() => armingSchedules.id, { onDelete: 'set null' }),
+  sunriseTime: text("sunrise_time"), // "HH:mm" format in local timezone
+  sunsetTime: text("sunset_time"),   // "HH:mm" format in local timezone
+  sunTimesUpdatedAt: integer("sun_times_updated_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
