@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import type { PushoverConfig } from "@/data/repositories/service-configurations";
 import type { PushcutConfig } from "@/types/pushcut-types";
+import type { OpenWeatherConfig } from "@/types/openweather-types";
 import { ServiceConfigForm } from "@/components/features/settings/services/service-config-form";
 import { PushoverTestModal } from "@/components/features/settings/services/pushover/pushover-test-modal";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,12 +16,15 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { TbBrandPushover } from "react-icons/tb";
-import { Layers2 } from 'lucide-react';
+import { Layers2, CloudSun } from 'lucide-react';
 import { updateServiceEnabledStateAction } from '../../../../services/settings-services-actions';
+import { OpenWeatherConfigForm } from './openweather/openweather-config-form';
+import { OpenWeatherTestModal } from './openweather/openweather-test-modal';
 
 interface ServicesSettingsClientPageContentProps {
   initialPushoverConfig: PushoverConfig | null;
   initialPushcutConfig: PushcutConfig | null;
+  initialOpenWeatherConfig: OpenWeatherConfig | null;
 }
 
 // ClientServiceTab component definition (kept within this file for now)
@@ -69,7 +73,7 @@ function ClientServiceTab({
   // Memoized callback for when the config form successfully saves
   const handleConfigFormSaveSuccess = useCallback((savedIsEnabled: boolean, savedConfigId?: string, savedApiKey?: string) => {
     setIsEnabled(savedIsEnabled);
-    setConfig((prevConfig: PushoverConfig | PushcutConfig | null | undefined): PushoverConfig | PushcutConfig | null => {
+    setConfig((prevConfig: PushoverConfig | PushcutConfig | OpenWeatherConfig | null | undefined): PushoverConfig | PushcutConfig | OpenWeatherConfig | null => {
       const serviceType = serviceName.toLowerCase();
 
       if (!savedConfigId && !prevConfig?.id) {
@@ -101,8 +105,14 @@ function ClientServiceTab({
           type: 'pushcut',
           apiKey: savedApiKey || (prevConfig as PushcutConfig)?.apiKey || '',
         } as PushcutConfig;
+      } else if (serviceType === 'openweather') {
+        return {
+          ...baseConfig,
+          type: 'openweather',
+          apiKey: savedApiKey || (prevConfig as OpenWeatherConfig)?.apiKey || '',
+        } as OpenWeatherConfig;
       }
-      return null; // Should be unreachable if serviceName is always pushover or pushcut
+      return null; // Should be unreachable if serviceName is always pushover, pushcut, or openweather
     });
   }, [serviceName]);
 
@@ -124,8 +134,8 @@ function ClientServiceTab({
           <Button 
             variant="outline" 
             onClick={() => setIsTestModalOpen(true)} 
-            disabled={!config || !config.id || (serviceName === 'Pushover' && !config.apiToken) || (serviceName === 'Pushcut' && !config.apiKey) }>
-            Send Test Notification
+            disabled={!config || !config.id || (serviceName === 'Pushover' && !config.apiToken) || (serviceName === 'Pushcut' && !config.apiKey) || (serviceName === 'OpenWeather' && !config.apiKey) }>
+            {serviceName === 'OpenWeather' ? 'Test Geocoding' : 'Send Test Notification'}
           </Button>
         )}
       </div>
@@ -142,6 +152,7 @@ function ClientServiceTab({
           // Pass the correct config prop based on serviceName
           {...(serviceName === 'Pushover' ? { pushoverConfig: config } : {})}
           {...(serviceName === 'Pushcut' ? { pushcutConfig: config } : {})}
+          {...(serviceName === 'OpenWeather' ? { openWeatherConfig: config } : {})}
         />
       )}
     </>
@@ -151,6 +162,7 @@ function ClientServiceTab({
 export function ServicesSettingsClientPageContent({
   initialPushoverConfig,
   initialPushcutConfig,
+  initialOpenWeatherConfig,
 }: ServicesSettingsClientPageContentProps) {
 
   useEffect(() => {
@@ -163,6 +175,7 @@ export function ServicesSettingsClientPageContent({
         <TabsList>
           <TabsTrigger value="pushover">Pushover</TabsTrigger>
           <TabsTrigger value="pushcut">Pushcut</TabsTrigger>
+          <TabsTrigger value="openweather">OpenWeather</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pushover">
@@ -212,6 +225,32 @@ export function ServicesSettingsClientPageContent({
                 initialIsEnabledState={initialPushcutConfig?.isEnabled ?? false}
                 TestModalComponent={PushcutTestModal}
                 ConfigFormComponent={PushcutConfigForm}
+                updateServiceEnabledAction={updateServiceEnabledStateAction}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="openweather">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                  <CloudSun className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+                </div>
+                <CardTitle>OpenWeather Configuration</CardTitle>
+              </div>
+              <CardDescription>
+                Configure <a href="https://openweathermap.org" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">OpenWeather</a> for geocoding locations.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ClientServiceTab
+                serviceName="OpenWeather"
+                initialConfigData={initialOpenWeatherConfig}
+                initialIsEnabledState={initialOpenWeatherConfig?.isEnabled ?? false}
+                TestModalComponent={OpenWeatherTestModal}
+                ConfigFormComponent={OpenWeatherConfigForm}
                 updateServiceEnabledAction={updateServiceEnabledStateAction}
               />
             </CardContent>

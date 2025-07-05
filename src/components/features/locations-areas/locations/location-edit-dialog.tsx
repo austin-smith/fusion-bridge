@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TimezoneSelector } from '@/components/common/timezone-selector';
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, MapPin, RotateCcw, Map } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Popover,
@@ -49,8 +49,10 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import states, { type State as UsState } from 'states-us';
 import { format, parse } from 'date-fns';
+import { toast } from 'sonner';
 
 // --- Form Schema --- 
 const locationFormSchema = z.object({
@@ -64,6 +66,22 @@ const locationFormSchema = z.object({
   addressPostalCode: z.string().min(1, { message: "Postal code cannot be empty." }),
   notes: z.string().nullable().optional(),
   activeArmingScheduleId: z.string().nullable().optional(), // Add support for arming schedule
+  latitude: z.string()
+    .nullable()
+    .optional()
+    .refine((val) => {
+      if (!val) return true; // Allow empty
+      const num = parseFloat(val);
+      return !isNaN(num) && num >= -90 && num <= 90;
+    }, { message: "Latitude must be a number between -90 and 90" }),
+  longitude: z.string()
+    .nullable()
+    .optional()
+    .refine((val) => {
+      if (!val) return true; // Allow empty
+      const num = parseFloat(val);
+      return !isNaN(num) && num >= -180 && num <= 180;
+    }, { message: "Longitude must be a number between -180 and 180" }),
 });
 
 type LocationFormData = z.infer<typeof locationFormSchema>;
@@ -89,6 +107,7 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [timezonePopoverOpen, setTimezonePopoverOpen] = useState(false);
   const [statePopoverOpen, setStatePopoverOpen] = useState(false);
+  const [isRefreshingCoordinates, setIsRefreshingCoordinates] = useState(false);
   const form = useForm<LocationFormData>({
     resolver: zodResolver(locationFormSchema),
     defaultValues: {
@@ -102,8 +121,26 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
       addressPostalCode: '',
       notes: null,
       activeArmingScheduleId: null, // Add default for activeArmingScheduleId
+      latitude: null,
+      longitude: null,
     },
   });
+
+  // Watch form fields for address validation
+  const addressStreet = form.watch('addressStreet');
+  const addressCity = form.watch('addressCity');
+  const addressState = form.watch('addressState');
+  const addressPostalCode = form.watch('addressPostalCode');
+  
+  // Watch coordinate fields for map validation
+  const latitude = form.watch('latitude');
+  const longitude = form.watch('longitude');
+  
+  // Memoized check for whether all address fields are filled
+  const allAddressFieldsFilled = useMemo(() => {
+    return [addressStreet, addressCity, addressState, addressPostalCode]
+      .every(field => field && field.trim() !== '');
+  }, [addressStreet, addressCity, addressState, addressPostalCode]);
 
   const isEditing = !!locationToEdit;
   const dialogTitle = isEditing ? "Edit Location" : "Add New Location";
@@ -125,6 +162,8 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
         addressPostalCode: locationToEdit?.addressPostalCode || '',
         notes: locationToEdit?.notes || null,
         activeArmingScheduleId: locationToEdit?.activeArmingScheduleId || null, // Reset activeArmingScheduleId
+        latitude: locationToEdit?.latitude || null,
+        longitude: locationToEdit?.longitude || null,
       });
       setIsSubmitting(false);
     } 
@@ -169,15 +208,106 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
     }
   };
 
+  // Helper function to generate Google Maps URL with address + coordinates
+  const generateGoogleMapsUrl = (latitude: string, longitude: string): string => {
+    // Get current address values
+    const street = form.getValues('addressStreet');
+    const city = form.getValues('addressCity');
+    const state = form.getValues('addressState');
+    const postal = form.getValues('addressPostalCode');
+    
+    // If we have a complete address, use it with coordinates for better accuracy
+    if (street && city && state && postal) {
+      const address = `${street}, ${city}, ${state} ${postal}`;
+      const encodedAddress = encodeURIComponent(address);
+      return `https://maps.google.com/maps?q=${encodedAddress}+@${latitude},${longitude}`;
+    }
+    
+    // Fallback to just coordinates
+    return `https://maps.google.com/maps?q=${latitude},${longitude}`;
+  };
+
+  // Check if coordinates are valid for map viewing
+  const hasValidCoordinates = useMemo(() => {
+    if (!latitude || !longitude) return false;
+    
+    const latNum = parseFloat(latitude);
+    const lngNum = parseFloat(longitude);
+    return !isNaN(latNum) && !isNaN(lngNum) && 
+           latNum >= -90 && latNum <= 90 && 
+           lngNum >= -180 && lngNum <= 180;
+  }, [latitude, longitude]);
+
+  // Handle opening coordinates in Google Maps
+  const handleViewOnMap = () => {
+    if (!hasValidCoordinates || !latitude || !longitude) return;
+    
+    const mapUrl = generateGoogleMapsUrl(latitude, longitude);
+    window.open(mapUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  // Handle refreshing coordinates manually
+  const handleRefreshCoordinates = async () => {
+    // Get current form values for address fields
+    const currentAddressValues = form.getValues();
+    const addressData = {
+      addressStreet: currentAddressValues.addressStreet,
+      addressCity: currentAddressValues.addressCity,
+      addressState: currentAddressValues.addressState,
+      addressPostalCode: currentAddressValues.addressPostalCode,
+    };
+
+    // Validate that we have address data before attempting geocoding
+    if (!allAddressFieldsFilled) {
+      toast.error('Please fill in all address fields before refreshing coordinates');
+      return;
+    }
+
+    setIsRefreshingCoordinates(true);
+    try {
+      if (locationToEdit?.id) {
+        // For existing locations, use the geocode endpoint
+        const response = await fetch(`/api/locations/${locationToEdit.id}/geocode`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(addressData),
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          // Update form with new coordinates
+          form.setValue('latitude', result.data.latitude.toString());
+          form.setValue('longitude', result.data.longitude.toString());
+          toast.success('Coordinates refreshed successfully');
+        } else {
+          toast.error(result.error || 'Failed to refresh coordinates');
+        }
+      } else {
+        // For new locations, we'll need a different approach or endpoint
+        // For now, show a helpful message
+        toast.error('Please save the location first, then refresh coordinates');
+      }
+    } catch (error) {
+      console.error('Error refreshing coordinates:', error);
+      toast.error('Failed to refresh coordinates');
+    } finally {
+      setIsRefreshingCoordinates(false);
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[650px]">
+      <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-hidden">
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
           <DialogDescription>{dialogDescription}</DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-0">
+            <div className="overflow-y-auto max-h-[calc(90vh-14rem)] px-1 py-2 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -352,6 +482,110 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
               </CardContent>
             </Card>
 
+            {/* Coordinates Section */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-md flex items-center gap-2">
+                    <MapPin className="h-4 w-4" />
+                    Geographic Coordinates
+                  </CardTitle>
+                  <div className="flex gap-2">
+                    {hasValidCoordinates && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={handleViewOnMap}
+                              disabled={isSubmitting}
+                            >
+                              <Map className="h-3 w-3" />
+                              <span className="sr-only">Open in Google Maps</span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Open in Google Maps
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                    {locationToEdit?.id && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={handleRefreshCoordinates}
+                              disabled={
+                                isSubmitting || 
+                                isRefreshingCoordinates || 
+                                !allAddressFieldsFilled
+                              }
+                            >
+                              <RotateCcw className={cn("h-3 w-3", isRefreshingCoordinates && "animate-spin")} />
+                              <span className="sr-only">Refresh Coordinates</span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Refresh Coordinates
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="latitude"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Latitude</FormLabel>
+                        <FormControl>
+                          <Input 
+                            {...field} 
+                            value={field.value ?? ''} 
+                            placeholder="Enter latitude"
+                            disabled={isSubmitting}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="longitude"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Longitude</FormLabel>
+                        <FormControl>
+                          <Input 
+                            {...field} 
+                            value={field.value ?? ''} 
+                            placeholder="Enter longitude"
+                            disabled={isSubmitting}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Coordinates are automatically determined from the address when creating or updating locations. 
+                  You can also enter them manually or use the refresh button to re-geocode the current address.
+                </p>
+              </CardContent>
+            </Card>
+
             {/* Arming Schedule Section */}
             {armingSchedules?.length > 0 && (
               <Card>
@@ -426,8 +660,9 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
                 </FormItem>
               )}
             />
+            </div>
             
-            <DialogFooter>
+            <DialogFooter className="mt-6 pt-4 border-t bg-background">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
                 Cancel
               </Button>

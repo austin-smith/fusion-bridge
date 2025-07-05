@@ -12,6 +12,10 @@ import { PushcutApiKeySchema } from '@/types/pushcut-types';
 import { upsertPushcutConfiguration } from '@/data/repositories/service-configurations';
 import type { SavePushcutConfigFormState } from '@/components/features/settings/services/pushcut/pushcut-config-form';
 
+// Import OpenWeather specific items
+import { OpenWeatherConfigSchema } from '@/types/openweather-types';
+import { upsertOpenWeatherConfiguration } from '@/data/repositories/service-configurations';
+
 // Schema for form validation
 const PushoverConfigSchema = z.object({
   apiToken: z.string().min(1, 'API Token is required.').length(30, 'Pushover API tokens are 30 characters long.'),
@@ -129,6 +133,73 @@ export async function savePushcutConfigurationAction(
   } catch (error) {
     console.error('[Action savePushcutConfigurationAction] Unexpected error:', error);
     formState.message = 'An unexpected error occurred while saving Pushcut configuration.';
+    if (error instanceof Error) {
+        formState.message = error.message;
+    }
+    formState.errors = { _form: [formState.message] };
+  }
+  
+  return formState;
+}
+
+// --- OpenWeather Configuration Action ---
+export interface SaveOpenWeatherConfigFormState {
+  success: boolean;
+  message?: string;
+  savedIsEnabled?: boolean;
+  savedConfigId?: string;
+  savedApiKey?: string;
+  errors?: {
+    apiKey?: string[];
+    _form?: string[];
+  };
+}
+
+export async function saveOpenWeatherConfigurationAction(
+  prevState: SaveOpenWeatherConfigFormState,
+  formData: FormData
+): Promise<SaveOpenWeatherConfigFormState> {
+  console.log('[Action saveOpenWeatherConfigurationAction] Received form data');
+  const formState: SaveOpenWeatherConfigFormState = { success: false };
+
+  const apiKey = formData.get('apiKey') as string;
+  const isEnabledString = formData.get('isEnabled') as string;
+  const isEnabled = isEnabledString === 'true';
+
+  // Validate with Zod schema
+  const validationResult = OpenWeatherConfigSchema.safeParse({ apiKey, isEnabled });
+
+  if (!validationResult.success) {
+    formState.message = 'Invalid API Key.';
+    formState.errors = {
+      apiKey: validationResult.error.flatten().fieldErrors.apiKey,
+    };
+    console.warn('[Action saveOpenWeatherConfigurationAction] Validation failed:', formState.errors);
+    return formState;
+  }
+
+  const validatedApiKey = validationResult.data.apiKey;
+
+  try {
+    console.log(`[Action saveOpenWeatherConfigurationAction] Upserting OpenWeather config. Enabled: ${isEnabled}`);
+    const result = await upsertOpenWeatherConfiguration(validatedApiKey, isEnabled);
+
+    if (result.success) {
+      formState.success = true;
+      formState.message = 'OpenWeather configuration saved successfully.';
+      formState.savedIsEnabled = isEnabled;
+      formState.savedConfigId = result.id;
+      formState.savedApiKey = validatedApiKey;
+      console.log('[Action saveOpenWeatherConfigurationAction] OpenWeather config saved. ID:', result.id);
+      revalidatePath('/settings/services');
+    } else {
+      formState.message = result.message || 'Failed to save OpenWeather configuration.';
+      formState.errors = { _form: [formState.message] };
+      console.error('[Action saveOpenWeatherConfigurationAction] Upsert failed:', result.message);
+    }
+  } catch (error) {
+    console.error('[Action saveOpenWeatherConfigurationAction] Unexpected error:', error);
+    formState.message = 'An unexpected error occurred while saving OpenWeather configuration.';
     if (error instanceof Error) {
         formState.message = error.message;
     }

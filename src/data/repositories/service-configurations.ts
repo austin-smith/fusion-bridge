@@ -4,6 +4,7 @@ import { db } from '@/data/db';
 import { serviceConfigurations } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import type { PushcutConfig, PushcutStoredConfig } from '@/types/pushcut-types';
+import type { OpenWeatherConfig } from '@/types/openweather-types';
 
 export interface BaseServiceConfig {
   id: string;
@@ -18,7 +19,7 @@ export interface PushoverConfig extends BaseServiceConfig {
 }
 
 // Union type for all possible service configurations
-export type AnyServiceConfig = PushoverConfig | PushcutConfig;
+export type AnyServiceConfig = PushoverConfig | PushcutConfig | OpenWeatherConfig;
 
 // Interface for the data stored *inside* the configEnc blob for Pushover
 interface PushoverStoredConfig {
@@ -224,6 +225,106 @@ export async function upsertPushcutConfiguration(
     }
   } catch (error) {
     console.error("[ServiceConfigRepo] Error upserting Pushcut configuration:", error);
+    return { success: false, message: 'Database operation failed.' };
+  }
+}
+
+// Interface for the data stored *inside* the configEnc blob for OpenWeather
+interface OpenWeatherStoredConfig {
+  apiKey: string;
+}
+
+/**
+ * Fetches the OpenWeather service configuration.
+ * @returns The OpenWeather configuration object or null if not found.
+ */
+export async function getOpenWeatherConfiguration(): Promise<OpenWeatherConfig | null> {
+  try {
+    const configRecord = await db
+      .select({
+        id: serviceConfigurations.id,
+        configEnc: serviceConfigurations.configEnc,
+        isEnabled: serviceConfigurations.isEnabled,
+      })
+      .from(serviceConfigurations)
+      .where(eq(serviceConfigurations.type, 'OPENWEATHER'))
+      .limit(1)
+      .then(res => res[0]);
+
+    if (configRecord) {
+      const storedConfig = JSON.parse(configRecord.configEnc) as OpenWeatherStoredConfig;
+      
+      const fullConfig: OpenWeatherConfig = {
+        id: configRecord.id,
+        type: 'openweather',
+        isEnabled: configRecord.isEnabled,
+        apiKey: storedConfig.apiKey,
+      };
+      return fullConfig;
+    }
+    return null;
+  } catch (error) {
+    console.error("[ServiceConfigRepo] Error fetching OpenWeather configuration:", error);
+    return null;
+  }
+}
+
+/**
+ * Creates or updates the OpenWeather service configuration.
+ * @param apiKey The OpenWeather API Key.
+ * @param isEnabled Whether the service is enabled.
+ * @returns An object indicating success or failure.
+ */
+export async function upsertOpenWeatherConfiguration(
+  apiKey: string,
+  isEnabled: boolean
+): Promise<{ success: boolean; message?: string; id?: string }> {
+  if (!apiKey) {
+    return { success: false, message: 'API Key is required.' };
+  }
+
+  const configToStore: OpenWeatherStoredConfig = {
+    apiKey,
+  };
+
+  const configEnc = JSON.stringify(configToStore);
+
+  try {
+    const existingConfig = await db
+      .select({ id: serviceConfigurations.id })
+      .from(serviceConfigurations)
+      .where(eq(serviceConfigurations.type, 'OPENWEATHER'))
+      .limit(1)
+      .then(res => res[0]);
+
+    if (existingConfig) {
+      // Update existing configuration
+      await db
+        .update(serviceConfigurations)
+        .set({
+          configEnc: configEnc,
+          isEnabled: isEnabled,
+          updatedAt: new Date(),
+        })
+        .where(eq(serviceConfigurations.id, existingConfig.id));
+      console.log("[ServiceConfigRepo] Updated OpenWeather configuration:", existingConfig.id);
+      return { success: true, id: existingConfig.id };
+    } else {
+      // Insert new configuration
+      const newConfig = await db
+        .insert(serviceConfigurations)
+        .values({
+          type: 'OPENWEATHER',
+          configEnc: configEnc,
+          isEnabled: isEnabled,
+        })
+        .returning({ id: serviceConfigurations.id });
+      const newId = newConfig[0]?.id;
+      console.log("[ServiceConfigRepo] Created new OpenWeather configuration:", newId);
+      return { success: true, id: newId };
+    }
+  } catch (error) {
+    console.error("[ServiceConfigRepo] Error upserting OpenWeather configuration:", error);
     return { success: false, message: 'Database operation failed.' };
   }
 } 

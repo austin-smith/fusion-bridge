@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import type { Location } from '@/types/index';
-import { createLocationSchema } from '@/lib/schemas/api-schemas';
+import { geocodeAddress, type CensusAddressComponents } from '@/services/drivers/census-geocoding';
 
 // Fetch all locations for the active organization
 export const GET = withOrganizationAuth(async (req: NextRequest, authContext: OrganizationAuthContext) => {
@@ -28,13 +28,37 @@ export const GET = withOrganizationAuth(async (req: NextRequest, authContext: Or
 export const POST = withOrganizationAuth(async (req: NextRequest, authContext: OrganizationAuthContext) => {
   try {
     const body = await req.json();
-    const { name, parentId, timeZone, addressStreet, addressCity, addressState, addressPostalCode, notes, externalId } = body;
+    const { name, parentId, timeZone, addressStreet, addressCity, addressState, addressPostalCode, notes, externalId, latitude, longitude } = body;
 
     if (!name || !timeZone || !addressStreet || !addressCity || !addressState || !addressPostalCode) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
         { status: 400 }
       );
+    }
+
+    // Attempt to geocode the address if coordinates weren't provided manually
+    let finalLatitude = latitude;
+    let finalLongitude = longitude;
+    
+    if (!latitude || !longitude) {
+      try {
+        const addressComponents: CensusAddressComponents = {
+          street: addressStreet,
+          city: addressCity,
+          state: addressState,
+          zip: addressPostalCode,
+        };
+        
+        const geocodingResult = await geocodeAddress(addressComponents);
+        
+        if (geocodingResult) {
+          finalLatitude = geocodingResult.latitude.toString();
+          finalLongitude = geocodingResult.longitude.toString();
+        }
+      } catch (geocodingError) {
+        console.warn('Geocoding error (continuing without coordinates):', geocodingError);
+      }
     }
 
     // Clean organization-scoped database - organization automatically injected
@@ -49,6 +73,8 @@ export const POST = withOrganizationAuth(async (req: NextRequest, authContext: O
       addressPostalCode,
       notes,
       externalId,
+      latitude: finalLatitude || null,
+      longitude: finalLongitude || null,
       path: parentId ? `${parentId}/${name}` : name // Simplified path logic
     });
 

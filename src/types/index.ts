@@ -98,6 +98,8 @@ export interface Location {
   addressState: string; // Updated: State/Province (now required)
   addressPostalCode: string; // Updated: Postal/Zip code (now required)
   notes?: string | null; // Added: Optional notes
+  latitude?: string | null;
+  longitude?: string | null;
   createdAt: Date;
   updatedAt: Date;
   activeArmingScheduleId?: string | null;

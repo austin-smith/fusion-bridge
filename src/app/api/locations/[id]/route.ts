@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
+import { geocodeAddress, type CensusAddressComponents } from '@/services/drivers/census-geocoding';
 
 // Remove unused RouteParams interface
 // interface RouteParams {
@@ -23,6 +24,8 @@ const updateLocationSchema = z.object({
   addressState: z.string().min(1, "State cannot be empty").optional(),
   addressPostalCode: z.string().min(1, "Postal code cannot be empty").optional(),
   notes: z.string().nullable().optional(),
+  latitude: z.string().nullable().optional(),
+  longitude: z.string().nullable().optional(),
 });
 
 // Fetch a specific location by ID within the active organization
@@ -59,7 +62,7 @@ export const PUT = withOrganizationAuth(async (req: NextRequest, authContext: Or
   try {
     const { id } = await context.params;
     const body = await req.json();
-    const { name, parentId, timeZone, addressStreet, addressCity, addressState, addressPostalCode, notes, externalId } = body;
+    const { name, parentId, timeZone, addressStreet, addressCity, addressState, addressPostalCode, notes, externalId, latitude, longitude } = body;
 
     // Clean organization-scoped database with explicit joins
     const orgDb = createOrgScopedDb(authContext.organizationId);
@@ -70,6 +73,31 @@ export const PUT = withOrganizationAuth(async (req: NextRequest, authContext: Or
         { success: false, error: 'Location not found' },
         { status: 404 }
       );
+    }
+
+    // Attempt to geocode if address fields changed and coordinates weren't provided manually
+    let finalLatitude = latitude;
+    let finalLongitude = longitude;
+    
+    // Only geocode if we have address data and no coordinates were provided
+    if (addressStreet && addressCity && addressState && addressPostalCode && (!latitude || !longitude)) {
+      try {
+        const addressComponents: CensusAddressComponents = {
+          street: addressStreet,
+          city: addressCity,
+          state: addressState,
+          zip: addressPostalCode,
+        };
+        
+        const geocodingResult = await geocodeAddress(addressComponents);
+        
+        if (geocodingResult) {
+          finalLatitude = geocodingResult.latitude.toString();
+          finalLongitude = geocodingResult.longitude.toString();
+        }
+      } catch (geocodingError) {
+        console.warn('Geocoding error during update (continuing):', geocodingError);
+      }
     }
 
     // Update location - organization filtering enforced by WHERE clause
@@ -83,6 +111,8 @@ export const PUT = withOrganizationAuth(async (req: NextRequest, authContext: Or
       addressPostalCode,
       notes,
       externalId,
+      latitude: finalLatitude || null,
+      longitude: finalLongitude || null,
       path: name // Simplified path for demo
     });
 

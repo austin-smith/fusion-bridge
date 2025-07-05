@@ -94,6 +94,8 @@ const locationSchema = z.object({
   addressCity: z.string().nullable().describe('City'),
   addressState: z.string().nullable().describe('State'),
   addressPostalCode: z.string().nullable().describe('Postal code'),
+  latitude: z.string().nullable().describe('Latitude coordinate as string'),
+  longitude: z.string().nullable().describe('Longitude coordinate as string'),
   notes: z.string().nullable().describe('Notes'),
   createdAt: z.string().describe('Creation timestamp (ISO string)'),
   updatedAt: z.string().describe('Last update timestamp (ISO string)'),

@@ -22,11 +22,13 @@ const systemSettingsTabs = [
 interface SystemSettingsContentProps {
   initialPushoverConfig: any;
   initialPushcutConfig: any;
+  initialOpenWeatherConfig: any;
 }
 
 export function SystemSettingsContent({ 
   initialPushoverConfig, 
-  initialPushcutConfig 
+  initialPushcutConfig,
+  initialOpenWeatherConfig 
 }: SystemSettingsContentProps) {
   const [activeTab, setActiveTab] = useState('services');
 
@@ -37,6 +39,7 @@ export function SystemSettingsContent({
           <ServicesSettingsClientPageContent
             initialPushoverConfig={initialPushoverConfig}
             initialPushcutConfig={initialPushcutConfig}
+            initialOpenWeatherConfig={initialOpenWeatherConfig}
           />
         );
       case 'api-keys':
@@ -46,6 +49,7 @@ export function SystemSettingsContent({
           <ServicesSettingsClientPageContent
             initialPushoverConfig={initialPushoverConfig}
             initialPushcutConfig={initialPushcutConfig}
+            initialOpenWeatherConfig={initialOpenWeatherConfig}
           />
         );
     }

@@ -203,6 +203,8 @@ export const locations = sqliteTable("locations", {
   addressState: text("address_state").notNull(),
   addressPostalCode: text("address_postal_code").notNull(),
   notes: text("notes"), 
+  latitude: text("latitude"),
+  longitude: text("longitude"),
   activeArmingScheduleId: text("active_arming_schedule_id").references(() => armingSchedules.id, { onDelete: 'set null' }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
