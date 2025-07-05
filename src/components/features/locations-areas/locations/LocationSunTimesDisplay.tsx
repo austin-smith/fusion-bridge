@@ -29,12 +29,12 @@ export function LocationSunTimesDisplay({ location }: LocationSunTimesDisplayPro
           <div className="flex items-center gap-3">
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1">
                   <Sunrise className="h-3.5 w-3.5 text-amber-500" />
                   <span className="text-sm font-medium">
                     {format(parse(location.sunriseTime, 'HH:mm', new Date()), 'h:mm a')}
                   </span>
-                </div>
+            </div>
               </TooltipTrigger>
               <TooltipContent>
                 <div className="text-xs space-y-1">
@@ -44,7 +44,7 @@ export function LocationSunTimesDisplay({ location }: LocationSunTimesDisplayPro
                       Updated {formatDistanceToNow(location.sunTimesUpdatedAt, { addSuffix: true })}
                     </p>
                   )}
-                </div>
+            </div>
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -62,7 +62,7 @@ export function LocationSunTimesDisplay({ location }: LocationSunTimesDisplayPro
                   {location.sunTimesUpdatedAt && (
                     <p className="text-muted-foreground">
                       Updated {formatDistanceToNow(location.sunTimesUpdatedAt, { addSuffix: true })}
-                    </p>
+                </p>
                   )}
                 </div>
               </TooltipContent>

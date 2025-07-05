@@ -95,7 +95,7 @@ export function ScheduleBuilder({
     const parsedCron = useMemo(() => {
         if (cronExpression && scheduleType === 'fixed_time') {
             return parseCronExpression(cronExpression);
-        }
+                }
         return null;
     }, [cronExpression, scheduleType]);
 
@@ -115,7 +115,7 @@ export function ScheduleBuilder({
             
             if (time) {
                 const newCron = buildCronExpression(time, days);
-                onCronExpressionChange(newCron);
+        onCronExpressionChange(newCron);
             }
         }
     }, [scheduleType, selectedTime, selectedDays, onCronExpressionChange]);
@@ -206,40 +206,40 @@ export function ScheduleBuilder({
                     {scheduleType === 'fixed_time' && (
                         <div className="space-y-4">
                             {/* Time Selection - Simplified */}
-                            <div>
+            <div>
                                 <Label className="text-xs mb-2 block">Time of Day</Label>
-                                <Input
-                                    type="time"
-                                    value={selectedTime}
-                                    onChange={handleTimeInputChange}
-                                    disabled={disabled}
+                            <Input 
+                                type="time"
+                                value={selectedTime}
+                                onChange={handleTimeInputChange}
+                                disabled={disabled}
                                     className="w-[180px]"
-                                />
-                            </div>
+                            />
+            </div>
 
                             {/* Days Selection */}
-                            <div>
-                                <Label className="text-xs mb-2 block">Day(s) of Week</Label>
-                                <ToggleGroup
-                                    type="multiple"
-                                    variant="outline"
-                                    value={selectedDays} 
+            <div>
+                <Label className="text-xs mb-2 block">Day(s) of Week</Label>
+                <ToggleGroup
+                    type="multiple"
+                    variant="outline"
+                    value={selectedDays} 
                                     onValueChange={handleDaysChange}
-                                    className="flex flex-wrap gap-1 justify-start"
-                                    disabled={disabled}
-                                >
-                                    {DAYS_OF_WEEK.map(day => (
-                                        <ToggleGroupItem 
-                                            key={day.id} 
-                                            value={day.id} 
-                                            aria-label={day.label}
-                                            className="px-3 py-1.5 h-auto text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-                                        >
-                                            {day.label}
-                                        </ToggleGroupItem>
-                                    ))}
-                                </ToggleGroup>
-                                {selectedDays.length === 0 && (
+                    className="flex flex-wrap gap-1 justify-start"
+                    disabled={disabled}
+                >
+                    {DAYS_OF_WEEK.map(day => (
+                        <ToggleGroupItem 
+                            key={day.id} 
+                            value={day.id} 
+                            aria-label={day.label}
+                            className="px-3 py-1.5 h-auto text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                        >
+                            {day.label}
+                        </ToggleGroupItem>
+                    ))}
+                </ToggleGroup>
+                {selectedDays.length === 0 && (
                                     <p className="text-xs text-muted-foreground mt-1">
                                         No days selected - will run every day.
                                     </p>
@@ -261,7 +261,7 @@ export function ScheduleBuilder({
                                     Time Offset
                                 </Label>
                                 <div className="relative">
-                                    <Input
+                                <Input
                                         type="text"
                                         value={`${formatOffset(offsetMinutes)} ${scheduleType}`}
                                         readOnly
@@ -310,8 +310,8 @@ export function ScheduleBuilder({
                                         <span>Requires location scope to be set for accurate sun times</span>
                                     </div>
                                 </div>
-                            )}
-                        </div>
+                )}
+            </div>
                     )}
                 </CardContent>
             </Card>

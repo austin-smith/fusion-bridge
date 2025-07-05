@@ -353,4 +353,4 @@ export async function evaluateAutomationTimeFilter(
 export function clearTimeEvaluatorCaches(): void {
   timezoneContextCache.clear();
   sunTimesCache.clear();
-}
+} 

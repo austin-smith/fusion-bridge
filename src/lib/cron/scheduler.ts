@@ -154,7 +154,7 @@ export function initializeCronJobs(): void {
     const automationsTask = createJobWrapper(
       'scheduled-automations',
       async () => {
-        const currentTime = new Date();
+      const currentTime = new Date();
         await processScheduledAutomations(currentTime);
       },
       automationsConfig.retryConfig
@@ -214,8 +214,8 @@ export function stopCronJobs(): void {
         config.task = null;
         stoppedCount++;
       }
-    }
-    
+  }
+  
     if (stoppedCount > 0) {
       logger.info('CRON jobs shutdown completed', {
         stoppedJobs: stoppedCount,

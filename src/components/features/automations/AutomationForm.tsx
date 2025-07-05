@@ -246,6 +246,7 @@ export default function AutomationForm({
         const defaultEventConfig = {
             type: AutomationTriggerType.EVENT as const,
             conditions: addInternalIds(getClonedInitialConditions(undefined)),
+            timeOfDayFilter: { type: 'any_time' as const }
         };
 
         if (parsedSourceTrigger) {
@@ -281,6 +282,8 @@ export default function AutomationForm({
                 triggerConfigForDefaultValues = {
                     type: AutomationTriggerType.EVENT,
                     conditions: addInternalIds(getClonedInitialConditions(parsedSourceTrigger.conditions)),
+                    // Include timeOfDayFilter from source, with fallback to default
+                    timeOfDayFilter: parsedSourceTrigger.timeOfDayFilter || { type: 'any_time' }
                 };
             } else {
                 // console.warn("[GetInitialValues] Parsed sourceTrigger.type is unknown or not part of enum, defaulting to EVENT. Parsed type:", (parsedSourceTrigger as any).type);
@@ -291,6 +294,7 @@ export default function AutomationForm({
             triggerConfigForDefaultValues = {
                type: AutomationTriggerType.EVENT,
                conditions: addInternalIds(getClonedInitialConditions((rawConfigJson as any).conditions)),
+               timeOfDayFilter: { type: 'any_time' as const }
             };
         } else {
             // if (data.id !== 'new') {
