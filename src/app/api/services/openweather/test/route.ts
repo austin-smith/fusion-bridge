@@ -12,12 +12,12 @@ export const POST = withApiRouteAuth(async (req: NextRequest, authContext: ApiRo
     const parseResult = OpenWeatherTestSchema.safeParse(body);
     if (!parseResult.success) {
       return NextResponse.json(
-        { success: false, error: 'Invalid request format' },
+        { success: false, error: 'Invalid request format. Latitude and longitude are required.' },
         { status: 400 }
       );
     }
 
-    const { address } = parseResult.data;
+    const { latitude, longitude } = parseResult.data;
 
     // Get OpenWeather configuration
     const openWeatherConfig = await getOpenWeatherConfiguration();
@@ -43,8 +43,8 @@ export const POST = withApiRouteAuth(async (req: NextRequest, authContext: ApiRo
       );
     }
 
-    // Test the API key with the provided address
-    const testResult = await testApiKey(openWeatherConfig.apiKey, address);
+    // Test the API key with user-provided coordinates
+    const testResult = await testApiKey(openWeatherConfig.apiKey, latitude, longitude);
 
     if (testResult.success) {
       return NextResponse.json({

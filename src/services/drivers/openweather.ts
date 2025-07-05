@@ -1,47 +1,49 @@
 import { z } from 'zod';
 import { 
-  OpenWeatherGeocodingResponseSchema, 
-  type OpenWeatherGeocodingResult, 
-  type OpenWeatherAddressComponents 
+  OpenWeatherOneCallResponseSchema,
+  type SunriseSunsetData,
 } from '@/types/openweather-types';
 
-// Base URL for OpenWeather Geocoding API
-const OPENWEATHER_GEOCODING_URL = 'http://api.openweathermap.org/geo/1.0';
+// Base URL for OpenWeather One Call API 3.0
+const OPENWEATHER_ONECALL_URL = 'https://api.openweathermap.org/data/3.0/onecall';
 
 /**
- * Geocodes an address using OpenWeather's Direct Geocoding API
+ * Gets current weather data including sunrise/sunset using OpenWeather's One Call API 3.0
  * 
  * @param apiKey OpenWeather API key
- * @param address Address components to geocode
- * @returns Promise resolving to geocoding result or null if failed
+ * @param latitude Latitude coordinate
+ * @param longitude Longitude coordinate
+ * @returns Promise resolving to sunrise/sunset data or null if failed
  */
-export async function geocodeAddress(
+export async function getCurrentWeatherData(
   apiKey: string,
-  address: OpenWeatherAddressComponents
-): Promise<OpenWeatherGeocodingResult | null> {
-  const logPrefix = '[OpenWeather Geocoding]';
+  latitude: number,
+  longitude: number
+): Promise<SunriseSunsetData | null> {
+  const logPrefix = '[OpenWeather One Call API]';
   
   if (!apiKey) {
     console.error(`${logPrefix} API key is required`);
     return null;
   }
 
-  // Build query string: "street, city, state, country"
-  const queryParts = [
-    address.street,
-    address.city,
-    address.state,
-    address.country || 'US'
-  ].filter(Boolean);
-  
-  const query = queryParts.join(', ');
-  
-  const url = new URL(`${OPENWEATHER_GEOCODING_URL}/direct`);
-  url.searchParams.set('q', query);
-  url.searchParams.set('limit', '1'); // We only want the best match
+  if (latitude < -90 || latitude > 90) {
+    console.error(`${logPrefix} Invalid latitude: ${latitude}. Must be between -90 and 90`);
+    return null;
+  }
+
+  if (longitude < -180 || longitude > 180) {
+    console.error(`${logPrefix} Invalid longitude: ${longitude}. Must be between -180 and 180`);
+    return null;
+  }
+
+  const url = new URL(OPENWEATHER_ONECALL_URL);
+  url.searchParams.set('lat', latitude.toString());
+  url.searchParams.set('lon', longitude.toString());
+  url.searchParams.set('exclude', 'minutely,hourly,daily'); // Only get current data with sunrise/sunset
   url.searchParams.set('appid', apiKey);
 
-  console.log(`${logPrefix} Geocoding address: ${query}`);
+  console.log(`${logPrefix} Getting weather data for: ${latitude}, ${longitude}`);
   console.log(`${logPrefix} Request URL: ${url.toString().replace(apiKey, 'API_KEY_HIDDEN')}`);
 
   try {
@@ -62,41 +64,30 @@ export async function geocodeAddress(
     console.log(`${logPrefix} Raw OpenWeather API response:`, JSON.stringify(data, null, 2));
 
     // Validate response structure
-    const parseResult = OpenWeatherGeocodingResponseSchema.safeParse(data);
+    const parseResult = OpenWeatherOneCallResponseSchema.safeParse(data);
     if (!parseResult.success) {
       console.error(`${logPrefix} Invalid response format:`, parseResult.error.flatten());
       console.error(`${logPrefix} Raw data that failed validation:`, data);
       return null;
     }
 
-    const locations = parseResult.data;
-    
-    if (locations.length === 0) {
-      console.log(`${logPrefix} No locations found for query: ${query}`);
-      return null;
-    }
+    const weatherData = parseResult.data;
 
-    const location = locations[0]; // Take the first (best) result
-    
-    // Build formatted address
-    const addressParts = [
-      location.name,
-      location.state,
-      location.country
-    ].filter(Boolean);
-    
-    const formattedAddress = addressParts.join(', ');
-
-    const result: OpenWeatherGeocodingResult = {
-      latitude: location.lat,
-      longitude: location.lon,
-      formattedAddress,
-      country: location.country,
-      state: location.state,
+    // Convert Unix timestamps to Date objects
+    const result: SunriseSunsetData = {
+      latitude: weatherData.lat,
+      longitude: weatherData.lon,
+      timezone: weatherData.timezone,
+      timezoneOffset: weatherData.timezone_offset,
+      currentTime: new Date(weatherData.current.dt * 1000),
+      sunrise: new Date(weatherData.current.sunrise * 1000),
+      sunset: new Date(weatherData.current.sunset * 1000),
     };
 
-    console.log(`${logPrefix} Successfully geocoded to: ${result.latitude}, ${result.longitude}`);
-    console.log(`${logPrefix} Formatted address: ${result.formattedAddress}`);
+    console.log(`${logPrefix} Successfully processed weather data:`);
+    console.log(`${logPrefix} Timezone: ${result.timezone}`);
+    console.log(`${logPrefix} Sunrise: ${result.sunrise.toISOString()}`);
+    console.log(`${logPrefix} Sunset: ${result.sunset.toISOString()}`);
 
     return result;
 
@@ -107,18 +98,21 @@ export async function geocodeAddress(
 }
 
 /**
- * Tests the OpenWeather API key by geocoding a known address
+ * Tests the OpenWeather API key by getting weather data for the specified location
  * 
  * @param apiKey OpenWeather API key to test
+ * @param latitude Latitude coordinate to test with
+ * @param longitude Longitude coordinate to test with
  * @returns Promise resolving to test result
  */
 export async function testApiKey(
   apiKey: string,
-  testAddress?: string
+  latitude: number,
+  longitude: number
 ): Promise<{
   success: boolean;
   message: string;
-  result?: OpenWeatherGeocodingResult;
+  result?: SunriseSunsetData;
 }> {
   const logPrefix = '[OpenWeather API Test]';
   
@@ -129,43 +123,21 @@ export async function testApiKey(
     };
   }
 
-  // Use provided test address or default to White House
-  const defaultAddress = '1600 Pennsylvania Avenue, Washington, DC, US';
-  const addressToTest = testAddress || defaultAddress;
-
-  console.log(`${logPrefix} Testing API key with address: ${addressToTest}`);
+  console.log(`${logPrefix} Testing API key with coordinates: ${latitude}, ${longitude}`);
 
   try {
-    // For testing, we'll parse the address string into components
-    // This is a simple parser - for production use we might want something more robust
-    const parts = addressToTest.split(',').map(part => part.trim());
-    
-    if (parts.length < 3) {
-      return {
-        success: false,
-        message: 'Test address must be in format: "Street, City, State, Country"'
-      };
-    }
-
-    const addressComponents: OpenWeatherAddressComponents = {
-      street: parts[0],
-      city: parts[1],
-      state: parts[2],
-      country: parts[3] || 'US'
-    };
-
-    const result = await geocodeAddress(apiKey, addressComponents);
+    const result = await getCurrentWeatherData(apiKey, latitude, longitude);
 
     if (result) {
       return {
         success: true,
-        message: `API key is valid. Test address geocoded successfully.`,
+        message: `Successfully retrieved data from OpenWeather!`,
         result
       };
     } else {
       return {
         success: false,
-        message: 'API key may be invalid or the test address could not be geocoded. Check your API key and try again.'
+        message: 'API key may be invalid or the weather service is temporarily unavailable. Check your API key and try again.'
       };
     }
 

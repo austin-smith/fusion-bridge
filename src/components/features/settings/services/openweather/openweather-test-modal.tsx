@@ -17,12 +17,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { Loader2, Send, MapPin, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Loader2, Send, Sun, RotateCcw, AlertTriangle } from 'lucide-react';
 import type { OpenWeatherConfig } from '@/types/openweather-types';
 
 // Form schema
 const formSchema = z.object({
-  address: z.string().min(1, 'Address is required'),
+  latitude: z.preprocess((val) => parseFloat(String(val)), z.number().min(-90).max(90)),
+  longitude: z.preprocess((val) => parseFloat(String(val)), z.number().min(-180).max(180)),
 });
 
 type TestFormValues = z.infer<typeof formSchema>;
@@ -41,16 +42,19 @@ export function OpenWeatherTestModal({ isOpen, onOpenChange, openWeatherConfig }
     result?: {
       latitude: number;
       longitude: number;
-      formattedAddress: string;
-      country: string;
-      state?: string;
+      timezone: string;
+      timezoneOffset: number;
+      currentTime: string;
+      sunrise: string;
+      sunset: string;
     };
   } | null>(null);
 
   const form = useForm<TestFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      address: '1600 Pennsylvania Avenue, Washington, DC, US',
+      latitude: 40.7128, // New York City - reasonable default for testing
+      longitude: -74.0060,
     },
   });
 
@@ -81,45 +85,49 @@ export function OpenWeatherTestModal({ isOpen, onOpenChange, openWeatherConfig }
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          address: values.address,
+          latitude: values.latitude,
+          longitude: values.longitude,
         }),
       });
 
       const data = await response.json();
 
       if (response.ok && data.success) {
+        // Format the dates for display
+        const result = data.result ? {
+          ...data.result,
+          currentTime: new Date(data.result.currentTime).toLocaleString(),
+          sunrise: new Date(data.result.sunrise).toLocaleString(),
+          sunset: new Date(data.result.sunset).toLocaleString(),
+        } : undefined;
+
         setTestResult({
           success: true,
-          message: data.message || 'Test geocoding completed successfully!',
-          result: data.result,
+          message: data.message || 'Weather data retrieved successfully!',
+          result,
         });
-        toast.success('Geocoding test successful!', {
-          description: `Address geocoded to: ${data.result?.latitude}, ${data.result?.longitude}`,
+        toast.success('Weather API test successful!', {
+          description: `Retrieved sunrise/sunset data for ${values.latitude}, ${values.longitude}`,
         });
       } else {
         setTestResult({
           success: false,
-          message: data.error || 'Failed to test geocoding',
+          message: data.error || 'Failed to test weather API',
         });
-        toast.error('Geocoding test failed', {
+        toast.error('Weather API test failed', {
           description: data.error || 'See console for more details',
         });
       }
     } catch (error) {
-      console.error('Error testing OpenWeather geocoding:', error);
+      console.error('Error testing OpenWeather API:', error);
       setTestResult({
         success: false,
-        message: 'Network error while testing geocoding',
+        message: 'Network error while testing weather API',
       });
-      toast.error('Network error while testing geocoding');
+      toast.error('Network error while testing weather API');
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const resetToDefault = () => {
-    form.setValue('address', '1600 Pennsylvania Avenue, Washington, DC, US');
-    setTestResult(null);
   };
 
   return (
@@ -128,7 +136,7 @@ export function OpenWeatherTestModal({ isOpen, onOpenChange, openWeatherConfig }
         <DialogHeader>
           <DialogTitle>Test OpenWeather API</DialogTitle>
           <DialogDescription>
-            Test your OpenWeather API key.
+            Test your OpenWeather API key by retrieving data from latitude and longitude coordinates.
           </DialogDescription>
         </DialogHeader>
 
@@ -142,39 +150,52 @@ export function OpenWeatherTestModal({ isOpen, onOpenChange, openWeatherConfig }
         )}
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" id="openweather-test-form">
-            <FormField
-              control={form.control}
-              name="address"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Test Address</FormLabel>
-                  <div className="flex gap-2">
+          <form onSubmit={form.handleSubmit(onSubmit)} id="openweather-test-form">
+            <div className="grid grid-cols-2 gap-4 mb-2">
+              <FormField
+                control={form.control}
+                name="latitude"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Latitude</FormLabel>
                     <FormControl>
                       <Input 
                         {...field} 
-                        placeholder="1600 Pennsylvania Avenue, Washington, DC, US"
+                        placeholder="45.5152"
                         disabled={isSubmitting || !openWeatherConfig?.apiKey}
+                        type="number"
+                        step="any"
                       />
                     </FormControl>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={resetToDefault}
-                      disabled={isSubmitting || !openWeatherConfig?.apiKey}
-                      title="Reset to default address"
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <FormDescription className="text-xs">
-                    Enter a full address including street, city, state, and country.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="longitude"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Longitude</FormLabel>
+                    <FormControl>
+                      <Input 
+                        {...field} 
+                        placeholder="-122.6784"
+                        disabled={isSubmitting || !openWeatherConfig?.apiKey}
+                        type="number"
+                        step="any"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            
+            <FormDescription className="text-xs mb-4">
+              Enter latitude and longitude coordinates.
+            </FormDescription>
 
             {testResult && (
               <div className={`p-3 rounded-md border ${
@@ -183,17 +204,16 @@ export function OpenWeatherTestModal({ isOpen, onOpenChange, openWeatherConfig }
                   : 'bg-red-50 border-red-200 text-red-700 dark:bg-red-900/30 dark:border-red-700/50 dark:text-red-300'
               }`}>
                 <div className="flex items-start">
-                  <MapPin className="h-5 w-5 mr-2 flex-shrink-0" />
+                  <Sun className="h-5 w-5 mr-2 flex-shrink-0" />
                   <div className="space-y-1">
                     <p className="text-sm font-medium">{testResult.message}</p>
                     {testResult.result && (
                       <div className="text-xs space-y-1">
-                        <p><strong>Coordinates:</strong> {testResult.result.latitude}, {testResult.result.longitude}</p>
-                        <p><strong>Formatted Address:</strong> {testResult.result.formattedAddress}</p>
-                        <p><strong>Country:</strong> {testResult.result.country}</p>
-                        {testResult.result.state && (
-                          <p><strong>State:</strong> {testResult.result.state}</p>
-                        )}
+                        <p><strong>Location:</strong> {testResult.result.latitude}, {testResult.result.longitude}</p>
+                        <p><strong>Timezone:</strong> {testResult.result.timezone}</p>
+                        <p><strong>Current Time:</strong> {testResult.result.currentTime}</p>
+                        <p><strong>Sunrise:</strong> {testResult.result.sunrise}</p>
+                        <p><strong>Sunset:</strong> {testResult.result.sunset}</p>
                       </div>
                     )}
                   </div>

@@ -83,7 +83,7 @@ export function OpenWeatherConfigForm({ initialConfig, isEnabled, onSaveSuccess 
             Your OpenWeather API Key can be found in your account on{' '}
             <a href="https://openweathermap.org/api" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">
               OpenWeatherMap.org
-            </a>. The free tier includes 1,000 API calls per day.
+            </a>.
           </p>
         </div>
       </div>

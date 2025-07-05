@@ -135,7 +135,7 @@ function ClientServiceTab({
             variant="outline" 
             onClick={() => setIsTestModalOpen(true)} 
             disabled={!config || !config.id || (serviceName === 'Pushover' && !config.apiToken) || (serviceName === 'Pushcut' && !config.apiKey) || (serviceName === 'OpenWeather' && !config.apiKey) }>
-            {serviceName === 'OpenWeather' ? 'Test Geocoding' : 'Send Test Notification'}
+            {serviceName === 'OpenWeather' ? 'Test Weather API' : 'Send Test Notification'}
           </Button>
         )}
       </div>
@@ -241,7 +241,7 @@ export function ServicesSettingsClientPageContent({
                 <CardTitle>OpenWeather Configuration</CardTitle>
               </div>
               <CardDescription>
-                Configure <a href="https://openweathermap.org" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">OpenWeather</a> for geocoding locations.
+                Configure <a href="https://openweathermap.org" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">OpenWeather</a> for sunrise/sunset data and weather information.
               </CardDescription>
             </CardHeader>
             <CardContent>
