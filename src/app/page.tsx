@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Button } from '@/components/ui/button';
 import { PlusCircle, Trash2 } from 'lucide-react';
@@ -33,7 +33,8 @@ const ConnectorCardSkeleton = () => {
 };
 
 export default function Home() {
-  const { connectors, isLoading, error, setConnectors, deleteConnector, setAddConnectorOpen, setLoading, setError } = useFusionStore();
+  const { connectors, isLoading, error, setConnectors, deleteConnector, setAddConnectorOpen, setLoading, setError, fetchOpenAiStatus } = useFusionStore();
+  const hasInitialized = useRef(false);
 
   // Set page title
   useEffect(() => {
@@ -62,6 +63,14 @@ export default function Home() {
 
     fetchConnectors();
   }, [setConnectors, setLoading, setError]);
+
+  // Fetch OpenAI status once on mount using ref guard
+  useEffect(() => {
+    if (!hasInitialized.current) {
+      hasInitialized.current = true;
+      fetchOpenAiStatus();
+    }
+  }, [fetchOpenAiStatus]); // Include the dependency but guard with ref
 
   const handleDelete = async (id: string) => {
     try {

@@ -407,6 +407,15 @@
     max-width: 100%;
     overflow-x: hidden;
   }
+
+  /* AI Assistant Gradient Classes */
+  .ai-gradient {
+    @apply bg-gradient-to-br from-blue-600 to-purple-600 text-white;
+  }
+  
+  .ai-gradient-hover {
+    @apply hover:from-blue-700 hover:to-purple-700 transition-all duration-300;
+  }
 }
 
 /* Modern React Grid Layout Styles */

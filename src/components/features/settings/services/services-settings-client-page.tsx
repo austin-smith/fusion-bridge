@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import type { PushoverConfig } from "@/data/repositories/service-configurations";
 import type { PushcutConfig } from "@/types/pushcut-types";
 import type { OpenWeatherConfig } from "@/types/openweather-types";
-import type { OpenAIConfig } from "@/types/openai-service-types";
+import type { OpenAIConfig } from "@/types/ai/openai-service-types";
 import { ServiceConfigForm } from "@/components/features/settings/services/service-config-form";
 import { PushoverTestModal } from "@/components/features/settings/services/pushover/pushover-test-modal";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import { OpenWeatherTestModal } from './openweather/openweather-test-modal';
 import { OpenAIConfigForm } from './openai/openai-config-form';
 import { OpenAITestModal } from './openai/openai-test-modal';
 import { SunTimesUpdateTrigger } from './SunTimesUpdateTrigger';
+import { useFusionStore } from '@/stores/store';
 
 interface ServicesSettingsClientPageContentProps {
   initialPushoverConfig: PushoverConfig | null;
@@ -34,11 +35,21 @@ export function ServicesSettingsClientPageContent({
   initialOpenAIConfig,
 }: ServicesSettingsClientPageContentProps) {
 
+  // Get store functions for updating OpenAI status - use selector to prevent re-renders
+  const fetchOpenAiStatus = useFusionStore((state) => state.fetchOpenAiStatus);
+
   // Add state for all test modals
   const [isPushoverTestModalOpen, setIsPushoverTestModalOpen] = useState(false);
   const [isPushcutTestModalOpen, setIsPushcutTestModalOpen] = useState(false);
   const [isOpenWeatherTestModalOpen, setIsOpenWeatherTestModalOpen] = useState(false);
   const [isOpenAITestModalOpen, setIsOpenAITestModalOpen] = useState(false);
+
+  // Stabilize the callback to prevent re-render loops
+  const handleOpenAiSaveSuccess = useCallback((savedIsEnabled: boolean, savedConfigId?: string, savedApiKey?: string) => {
+    // Update the store's OpenAI status when settings are saved
+    console.log('[Settings] OpenAI config saved, refreshing store status...');
+    fetchOpenAiStatus();
+  }, [fetchOpenAiStatus]);
 
   useEffect(() => {
     document.title = 'Settings // Fusion';
@@ -209,9 +220,7 @@ export function ServicesSettingsClientPageContent({
               <OpenAIConfigForm
                 initialConfig={initialOpenAIConfig} 
                 isEnabled={initialOpenAIConfig?.isEnabled ?? false}
-                onSaveSuccess={(savedIsEnabled: boolean, savedConfigId?: string, savedApiKey?: string) => {
-                  // Handle success but no longer need to manage separate toggle state
-                }} 
+                onSaveSuccess={handleOpenAiSaveSuccess}
               />
             </CardContent>
           </Card>

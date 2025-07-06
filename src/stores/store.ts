@@ -202,6 +202,11 @@ interface FusionState {
   isLoadingAutomations: boolean;
   errorAutomations: string | null;
   
+  // --- NEW: OpenAI Service State ---
+  openAiEnabled: boolean;
+  isLoadingOpenAi: boolean;
+  errorOpenAi: string | null;
+  
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
   addConnector: (connector: ConnectorWithConfig) => void;
@@ -329,6 +334,9 @@ interface FusionState {
   updateAutomation: (id: string, data: Partial<NewAutomationData>) => Promise<Automation | null>;
   deleteAutomation: (id: string) => Promise<boolean>;
   cloneAutomation: (id: string) => Promise<Automation | null>;
+  
+  // --- NEW: OpenAI Service Actions ---
+  fetchOpenAiStatus: () => Promise<void>;
 }
 
 // Initial state for MQTT (default)
@@ -435,6 +443,11 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   automations: [],
   isLoadingAutomations: false,
   errorAutomations: null,
+  
+  // --- NEW: OpenAI Service State ---
+  openAiEnabled: false,
+  isLoadingOpenAi: false,
+  errorOpenAi: null,
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -1921,6 +1934,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         isLoadingMembers: false,
         isLoadingInvitations: false,
         isLoadingAutomations: false, // NEW: Reset automations loading
+        isLoadingOpenAi: false, // NEW: Reset OpenAI loading
         // Clear errors
         error: null,
         errorLocations: null,
@@ -1931,6 +1945,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         errorMembers: null,
         errorInvitations: null,
         errorAutomations: null, // NEW: Clear automations error
+        errorOpenAi: null, // NEW: Clear OpenAI error
+        // Reset OpenAI state
+        openAiEnabled: false, // NEW: Reset OpenAI enabled state
       });
       
       // Auto-refetch data for new organization if we have one
@@ -1944,6 +1961,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         get().fetchArmingSchedules();
         get().fetchDashboardEvents();
         get().fetchAutomations(); // NEW: Fetch automations
+        get().fetchOpenAiStatus(); // NEW: Fetch OpenAI status
       }
     } else {
       // Same organization, just update the ID (shouldn't happen but safe)
@@ -2071,6 +2089,27 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       return null;
     } finally {
       toast.dismiss(loadingToastId);
+    }
+  },
+
+  // --- NEW: OpenAI Service Actions ---
+  fetchOpenAiStatus: async () => {
+    set({ isLoadingOpenAi: true, errorOpenAi: null });
+    try {
+      const response = await fetch('/api/services/openai/status');
+      const data: ApiResponse<{ enabled: boolean }> = await response.json();
+      
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch OpenAI status');
+      }
+      
+      const enabled = data.data?.enabled || false;
+      set({ openAiEnabled: enabled, isLoadingOpenAi: false });
+      console.log('[FusionStore] OpenAI status updated - enabled:', enabled);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error('[FusionStore] Error fetching OpenAI status:', message);
+      set({ isLoadingOpenAi: false, errorOpenAi: message, openAiEnabled: false });
     }
   },
 

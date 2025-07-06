@@ -10,8 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CheckCircle2, AlertCircle, Loader2, Eye, EyeOff } from 'lucide-react';
 import { saveOpenAIConfigurationAction } from '@/services/settings-services-actions';
-import type { OpenAIConfig, SaveOpenAIConfigFormState } from '@/types/openai-service-types';
-import { OpenAIModel, OPENAI_MODEL_DISPLAY_NAMES } from '@/types/openai-service-types';
+import type { OpenAIConfig, SaveOpenAIConfigFormState } from '@/types/ai/openai-service-types';
+import { OpenAIModel, OPENAI_MODEL_DISPLAY_NAMES } from '@/types/ai/openai-service-types';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 

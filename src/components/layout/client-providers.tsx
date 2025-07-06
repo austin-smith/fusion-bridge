@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/common/theme-provider";
 import { ToasterProvider } from '@/components/common/toaster-provider';
 import { ServerInit } from '@/components/layout/server-init';
 import { SidebarProvider } from '@/components/ui/sidebar';
+import { ChatAIAssistant } from '@/components/features/ai-assistant/ChatAIAssistant';
 
 // Component to handle global state effects like toasts
 function GlobalStateEffects() {
@@ -44,6 +45,7 @@ export function ClientProviders({ children, initialSidebarOpen = true, initialUs
       <AuthContext.Provider value={{ initialUserRole }}>
         <SidebarProvider defaultOpen={initialSidebarOpen}>
           {children}
+          <ChatAIAssistant />
         </SidebarProvider>
       </AuthContext.Provider>
     </ThemeProvider>

@@ -4,7 +4,16 @@ import {
   type OpenAIGenerationRequest,
   type OpenAIGenerationResponse,
   type OpenAITestResponse,
-} from '@/types/openai-service-types';
+} from '@/types/ai/openai-service-types';
+import type {
+  QueryContext,
+  InterpretedQuery,
+  QueryInterpretationResponse,
+  QueryFilters,
+  TimeRange
+} from '@/types/ai/natural-language-query-types';
+import { QueryType } from '@/types/ai/natural-language-query-types';
+import { EventCategory, EventType, EventSubtype } from '@/lib/mappings/definitions';
 
 // OpenAI API Base URL
 const OPENAI_API_BASE_URL = 'https://api.openai.com/v1';
@@ -342,4 +351,284 @@ Respond in a helpful, structured way that makes it easy for users to understand 
       errorMessage: `Failed to analyze automation rule: ${errorMessage}`
     };
   }
+}
+
+/**
+ * Interprets natural language queries about security events using OpenAI
+ * 
+ * @param apiKey OpenAI API key
+ * @param userQuery Natural language query from user
+ * @param context Organization context (devices, locations, etc.)
+ * @param model OpenAI model to use
+ * @param maxTokens Maximum tokens to generate
+ * @param temperature Temperature parameter
+ * @param topP Top-p parameter
+ * @returns Promise resolving to query interpretation response
+ */
+export async function interpretEventQuery(
+  apiKey: string,
+  userQuery: string,
+  context: QueryContext,
+  model: OpenAIModel = OpenAIModel.GPT_4O,
+  maxTokens: number = 1500,
+  temperature: number = 0.2,
+  topP: number = 0.9
+): Promise<QueryInterpretationResponse> {
+  const logPrefix = '[OpenAI Query Interpretation]';
+
+  if (!apiKey) {
+    return {
+      success: false,
+      error: {
+        type: 'interpretation_failed',
+        message: 'OpenAI API key is required'
+      }
+    };
+  }
+
+  if (!userQuery || userQuery.trim().length === 0) {
+    return {
+      success: false,
+      error: {
+        type: 'interpretation_failed',
+        message: 'Query text is required'
+      }
+    };
+  }
+
+  console.log(`${logPrefix} Interpreting query: "${userQuery.substring(0, 100)}..."`);
+
+  try {
+    // Build comprehensive system prompt with context
+    const systemPrompt = buildQueryInterpretationPrompt(context);
+    
+    const messages = [
+      {
+        role: 'system' as const,
+        content: systemPrompt
+      },
+      {
+        role: 'user' as const,
+        content: `Please interpret this security system query: "${userQuery}"`
+      }
+    ];
+
+    const result = await createChatCompletion(
+      apiKey,
+      model,
+      messages,
+      maxTokens,
+      temperature,
+      topP
+    );
+
+    if (result && result.choices && result.choices.length > 0) {
+      const responseContent = result.choices[0].message.content;
+      
+      try {
+        console.log(`${logPrefix} Raw OpenAI response content:`, responseContent);
+        
+        // Try to extract JSON from the response - OpenAI sometimes adds extra text
+        let jsonContent = responseContent.trim();
+        
+        // Look for JSON object boundaries
+        const jsonStart = jsonContent.indexOf('{');
+        const jsonEnd = jsonContent.lastIndexOf('}');
+        
+        if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+          jsonContent = jsonContent.substring(jsonStart, jsonEnd + 1);
+        }
+        
+        console.log(`${logPrefix} Extracted JSON content:`, jsonContent);
+        
+        // Parse the JSON response from OpenAI
+        const parsedResponse = JSON.parse(jsonContent);
+        
+        // Validate and transform the response
+        const interpretedQuery = validateAndTransformInterpretation(parsedResponse, context);
+        
+        return {
+          success: true,
+          interpretedQuery,
+          usage: {
+            promptTokens: result.usage.prompt_tokens,
+            completionTokens: result.usage.completion_tokens,
+            totalTokens: result.usage.total_tokens,
+          }
+        };
+      } catch (parseError) {
+        console.error(`${logPrefix} Failed to parse OpenAI response:`, parseError);
+        console.error(`${logPrefix} Raw response:`, responseContent);
+        console.error(`${logPrefix} Parse error details:`, parseError);
+        
+        // If JSON parsing fails, try to provide a helpful fallback response
+        const fallbackInterpretation: InterpretedQuery = {
+          interpretation: `I understood your query: "${userQuery}", but had trouble formatting the response. Let me try to help anyway.`,
+          queryType: QueryType.EVENTS, // Default to events for most queries
+          confidence: 0.3,
+          ambiguities: ['AI response parsing failed'],
+          suggestions: ['Try rephrasing your query with more specific terms'],
+          filters: {}
+        };
+        
+        return {
+          success: true,
+          interpretedQuery: fallbackInterpretation,
+          usage: {
+            promptTokens: result.usage.prompt_tokens,
+            completionTokens: result.usage.completion_tokens,
+            totalTokens: result.usage.total_tokens,
+          }
+        };
+      }
+    } else {
+      return {
+        success: false,
+        error: {
+          type: 'interpretation_failed',
+          message: 'No response generated from OpenAI'
+        }
+      };
+    }
+
+  } catch (error) {
+    console.error(`${logPrefix} Error during query interpretation:`, error);
+    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    
+    return {
+      success: false,
+      error: {
+        type: 'interpretation_failed',
+        message: `Failed to interpret query: ${errorMessage}`,
+        details: error
+      }
+    };
+  }
+}
+
+/**
+ * Builds the system prompt for query interpretation with organization context
+ */
+function buildQueryInterpretationPrompt(context: QueryContext): string {
+  const devicesList = context.devices.map(d => `${d.name} (${d.type}, ${d.connectorCategory})`).join(', ');
+  const locationsList = context.locations.map(l => `${l.name} (${l.path})`).join(', ');
+  const areasList = context.areas.map(a => `${a.name}${a.locationName ? ` in ${a.locationName}` : ''}`).join(', ');
+  
+  return `You are an expert AI assistant for a security monitoring system. Your job is to interpret natural language queries about security events, device status, and system analytics.
+
+ORGANIZATION CONTEXT:
+Current time: ${context.currentTime.toISOString()}
+Organization ID: ${context.organizationId}
+
+Available devices: ${devicesList}
+Available locations: ${locationsList}
+Available areas: ${areasList}
+Available event types: ${context.eventTypes.join(', ')}
+Available event categories: ${context.eventCategories.join(', ')}
+
+QUERY TYPES:
+1. "events" - User wants to see specific events (e.g., "show door events", "what happened last night")
+2. "status" - User wants current device/system status (e.g., "are sensors working", "what's offline")  
+3. "analytics" - User wants aggregated data (e.g., "how many events", "busiest time of day")
+
+RESPONSE FORMAT:
+You MUST respond with ONLY a valid JSON object (no additional text, explanations, or markdown). Use this exact structure:
+{
+  "interpretation": "Human-readable summary of what you understood",
+  "queryType": "events|status|analytics",
+  "filters": {
+    "deviceTypes": ["array of device types if mentioned"],
+    "deviceNames": ["array of specific device names if mentioned"],
+    "deviceIds": ["array of device IDs if you can match names to IDs"],
+    "locationNames": ["array of location names if mentioned"], 
+    "locationIds": ["array of location IDs if you can match names to IDs"],
+    "areaNames": ["array of area names if mentioned"],
+    "areaIds": ["array of area IDs if you can match names to IDs"],
+    "eventTypes": ["array of event types if mentioned"],
+    "eventCategories": ["array of event categories if mentioned"]
+  },
+  "timeRange": {
+    "start": "ISO date string",
+    "end": "ISO date string", 
+    "description": "human readable time description"
+  },
+  "aggregation": {
+    "type": "count|timeline|groupBy",
+    "field": "what to group by or count"
+  },
+  "confidence": 0.95,
+  "ambiguities": ["any unclear parts"],
+  "suggestions": ["alternative interpretations"]
+}
+
+IMPORTANT RULES:
+- Only include fields that are relevant to the query
+- Match device/location names to IDs when possible using the provided context
+- Use reasonable time ranges - if user says "today" use current date, "last week" use 7 days ago to now
+- Be conservative with confidence scores - only use >0.9 when very certain
+- Include timeRange for event queries, omit for status queries unless specifically time-based
+- For ambiguous queries, include alternatives in suggestions array
+
+Examples:
+- "show door events from building A yesterday" -> events query with device type filter and time range
+- "what sensors are offline" -> status query with device type filter  
+- "how many alerts last month" -> analytics query with time range and count aggregation`;
+}
+
+/**
+ * Validates and transforms the OpenAI response into a proper InterpretedQuery
+ */
+function validateAndTransformInterpretation(
+  response: any, 
+  context: QueryContext
+): InterpretedQuery {
+  // Basic validation
+  if (!response || typeof response !== 'object') {
+    throw new Error('Invalid response format');
+  }
+
+  // Validate required fields
+  if (!response.interpretation || !response.queryType) {
+    throw new Error('Missing required fields: interpretation or queryType');
+  }
+
+  // Validate queryType
+  if (!['events', 'status', 'analytics'].includes(response.queryType)) {
+    throw new Error(`Invalid queryType: ${response.queryType}`);
+  }
+
+  // Transform time range strings to Date objects
+  let timeRange: TimeRange | undefined;
+  if (response.timeRange) {
+    timeRange = {
+      start: new Date(response.timeRange.start),
+      end: new Date(response.timeRange.end),
+      description: response.timeRange.description || 'Custom range'
+    };
+  }
+
+  // Ensure filters object exists
+  const filters: QueryFilters = response.filters || {};
+
+  // Transform the response into our InterpretedQuery format
+  const interpretedQuery: InterpretedQuery = {
+    interpretation: response.interpretation,
+    queryType: response.queryType,
+    filters,
+    timeRange,
+    confidence: Math.min(Math.max(response.confidence || 0.5, 0), 1), // Clamp between 0-1
+    ambiguities: Array.isArray(response.ambiguities) ? response.ambiguities : [],
+    suggestions: Array.isArray(response.suggestions) ? response.suggestions : []
+  };
+
+  // Add aggregation if present
+  if (response.aggregation) {
+    interpretedQuery.aggregation = {
+      type: response.aggregation.type || 'count',
+      field: response.aggregation.field
+    };
+  }
+
+  return interpretedQuery;
 } 

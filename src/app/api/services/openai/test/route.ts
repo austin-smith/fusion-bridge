@@ -3,7 +3,7 @@ import { withApiRouteAuth, type ApiRouteAuthContext } from '@/lib/auth/withApiRo
 import { z } from 'zod';
 import { getOpenAIConfiguration } from '@/data/repositories/service-configurations';
 import { testApiKey } from '@/services/drivers/openai';
-import { OpenAIModel } from '@/types/openai-service-types';
+import { OpenAIModel } from '@/types/ai/openai-service-types';
 
 // Request body schema for OpenAI test
 const OpenAITestRequestSchema = z.object({

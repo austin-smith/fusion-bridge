@@ -5,7 +5,7 @@ import { serviceConfigurations } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import type { PushcutConfig, PushcutStoredConfig } from '@/types/pushcut-types';
 import type { OpenWeatherConfig } from '@/types/openweather-types';
-import type { OpenAIConfig, OpenAIModel } from '@/types/openai-service-types';
+import type { OpenAIConfig, OpenAIModel } from '@/types/ai/openai-service-types';
 
 export interface BaseServiceConfig {
   id: string;

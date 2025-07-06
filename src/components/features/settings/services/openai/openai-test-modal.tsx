@@ -4,8 +4,8 @@ import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
-import type { OpenAIConfig, OpenAITestResponse } from '@/types/openai-service-types';
-import { OPENAI_MODEL_DISPLAY_NAMES } from '@/types/openai-service-types';
+import type { OpenAIConfig, OpenAITestResponse } from '@/types/ai/openai-service-types';
+import { OPENAI_MODEL_DISPLAY_NAMES } from '@/types/ai/openai-service-types';
 
 interface OpenAITestModalProps {
   isOpen: boolean;

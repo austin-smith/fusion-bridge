@@ -17,7 +17,7 @@ import { OpenWeatherConfigSchema } from '@/types/openweather-types';
 import { upsertOpenWeatherConfiguration } from '@/data/repositories/service-configurations';
 
 // Import OpenAI specific items
-import { OpenAIConfigSchema, type SaveOpenAIConfigFormState } from '@/types/openai-service-types';
+import { OpenAIConfigSchema, type SaveOpenAIConfigFormState } from '@/types/ai/openai-service-types';
 import { upsertOpenAIConfiguration } from '@/data/repositories/service-configurations';
 
 // Schema for form validation

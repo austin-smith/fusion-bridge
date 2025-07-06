@@ -89,6 +89,8 @@ import { EventsTableView } from '@/components/features/events/EventsTableView';
 import type { EnrichedEvent } from '@/types/events';
 import { EventCardView } from '@/components/features/events/EventCardView';
 import { EventCardViewSkeleton } from '@/components/features/events/event-card-view-skeleton';
+import type { QueryResults } from '@/types/ai/natural-language-query-types';
+
 
 // --- Interface for Pagination Metadata from API ---
 interface PaginationMetadata {
@@ -202,6 +204,23 @@ export default function EventsPage() {
       setViewMode(storedPreference);
     }
   }, []); // Empty dependency array ensures this runs only once on mount
+
+  // Handler for natural language query results
+  const handleNaturalLanguageResults = useCallback((results: QueryResults) => {
+    console.log('[EventsPage] Natural language query results received:', results);
+    
+    // For now, just show a success message
+    // TODO: Integrate results with existing event display
+    if (results.queryType === 'events' && results.events) {
+      toast.success(`Found ${results.events.length} events from AI query`);
+    } else if (results.queryType === 'status') {
+      toast.success(`Found ${results.totalResults} device status results`);
+    } else if (results.queryType === 'analytics') {
+      if (results.analytics?.count !== undefined) {
+        toast.success(`Analytics result: ${results.analytics.count} events found`);
+      }
+    }
+  }, []);
 
   const [isCardViewFullScreen, setIsCardViewFullScreen] = useState(false);
   const cardViewContainerRef = useRef<HTMLDivElement>(null);
@@ -1131,6 +1150,8 @@ export default function EventsPage() {
           icon={<Activity className="h-6 w-6" />}
           actions={pageActions}
         />
+
+
 
         <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
           <DialogContent className="max-w-3xl max-h-[90vh]">
