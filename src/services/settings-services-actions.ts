@@ -16,6 +16,10 @@ import type { SavePushcutConfigFormState } from '@/components/features/settings/
 import { OpenWeatherConfigSchema } from '@/types/openweather-types';
 import { upsertOpenWeatherConfiguration } from '@/data/repositories/service-configurations';
 
+// Import OpenAI specific items
+import { OpenAIConfigSchema, type SaveOpenAIConfigFormState } from '@/types/openai-service-types';
+import { upsertOpenAIConfiguration } from '@/data/repositories/service-configurations';
+
 // Schema for form validation
 const PushoverConfigSchema = z.object({
   apiToken: z.string().min(1, 'API Token is required.').length(30, 'Pushover API tokens are 30 characters long.'),
@@ -200,6 +204,80 @@ export async function saveOpenWeatherConfigurationAction(
   } catch (error) {
     console.error('[Action saveOpenWeatherConfigurationAction] Unexpected error:', error);
     formState.message = 'An unexpected error occurred while saving OpenWeather configuration.';
+    if (error instanceof Error) {
+        formState.message = error.message;
+    }
+    formState.errors = { _form: [formState.message] };
+  }
+  
+  return formState;
+}
+
+// --- OpenAI Configuration Action ---
+export async function saveOpenAIConfigurationAction(
+  prevState: SaveOpenAIConfigFormState,
+  formData: FormData
+): Promise<SaveOpenAIConfigFormState> {
+  console.log('[Action saveOpenAIConfigurationAction] Received form data');
+  const formState: SaveOpenAIConfigFormState = { success: false };
+
+  const rawFormData = {
+    apiKey: formData.get('apiKey') as string,
+    model: formData.get('model') as string,
+    maxTokens: parseInt(formData.get('maxTokens') as string) || 2000,
+    temperature: parseFloat(formData.get('temperature') as string) || 0.7,
+    topP: parseFloat(formData.get('topP') as string) || 1.0,
+    isEnabled: (formData.get('isEnabled') as string) === 'true',
+  };
+
+  // Validate with Zod schema
+  const validationResult = OpenAIConfigSchema.safeParse(rawFormData);
+
+  if (!validationResult.success) {
+    const fieldErrors = validationResult.error.flatten().fieldErrors;
+    formState.message = 'Validation failed. Please check your inputs.';
+    formState.errors = {
+      apiKey: fieldErrors.apiKey,
+      model: fieldErrors.model,
+      maxTokens: fieldErrors.maxTokens,
+      temperature: fieldErrors.temperature,
+      topP: fieldErrors.topP,
+
+    };
+    console.warn('[Action saveOpenAIConfigurationAction] Validation failed:', formState.errors);
+    return formState;
+  }
+
+  const { apiKey, model, maxTokens, temperature, topP, isEnabled } = validationResult.data;
+
+  try {
+    console.log(`[Action saveOpenAIConfigurationAction] Upserting OpenAI config. Enabled: ${isEnabled}`);
+    const result = await upsertOpenAIConfiguration(
+      apiKey,
+      model,
+      maxTokens,
+      temperature,
+      topP,
+      isEnabled
+    );
+
+    if (result.success) {
+      formState.success = true;
+      formState.message = 'OpenAI configuration saved successfully.';
+      formState.savedIsEnabled = isEnabled;
+      formState.savedConfigId = result.id;
+      formState.savedApiKey = apiKey;
+      formState.savedModel = model;
+      console.log('[Action saveOpenAIConfigurationAction] OpenAI config saved. ID:', result.id);
+      revalidatePath('/settings/services');
+    } else {
+      formState.message = result.message || 'Failed to save OpenAI configuration.';
+      formState.errors = { _form: [formState.message] };
+      console.error('[Action saveOpenAIConfigurationAction] Upsert failed:', result.message);
+    }
+  } catch (error) {
+    console.error('[Action saveOpenAIConfigurationAction] Unexpected error:', error);
+    formState.message = 'An unexpected error occurred while saving OpenAI configuration.';
     if (error instanceof Error) {
         formState.message = error.message;
     }

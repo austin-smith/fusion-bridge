@@ -24,6 +24,7 @@ import type { PushoverGroupInfo, PushoverGroupUser } from '@/types/pushover-type
 import { AddPushoverUserModal } from './pushover/add-pushover-user-modal';
 import { toast } from 'sonner';
 import { Eye, EyeOff, Users, RefreshCw, UserPlus, Loader2, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,7 +40,6 @@ interface ServiceConfigFormProps {
   initialConfig: PushoverConfig | null;
   onTestClick?: () => void;
   isEnabled: boolean;
-  onEnabledChange: (enabled: boolean) => void;
   onSaveSuccess: (savedIsEnabled: boolean) => void;
 }
 
@@ -53,11 +53,14 @@ function SubmitButton() {
   );
 }
 
-export function ServiceConfigForm({ initialConfig, onTestClick, isEnabled, onEnabledChange, onSaveSuccess }: ServiceConfigFormProps) {
+export function ServiceConfigForm({ initialConfig, onTestClick, isEnabled, onSaveSuccess }: ServiceConfigFormProps) {
   const initialState: SavePushoverConfigFormState = { success: false };
   const [formState, formAction] = useActionState(savePushoverConfigurationAction, initialState);
   const [showApiToken, setShowApiToken] = useState(false);
   const [showGroupKey, setShowGroupKey] = useState(false);
+  
+  // Local state for enable toggle
+  const [localIsEnabled, setLocalIsEnabled] = useState(isEnabled);
   
   // Group users state
   const [isLoadingGroupInfo, setIsLoadingGroupInfo] = useState(false);
@@ -72,6 +75,11 @@ export function ServiceConfigForm({ initialConfig, onTestClick, isEnabled, onEna
   const [isRemovingUser, setIsRemovingUser] = useState(false);
   const [userToRemove, setUserToRemove] = useState<PushoverGroupUser | null>(null);
   const [isRemoveConfirmOpen, setIsRemoveConfirmOpen] = useState(false);
+
+  // Update local enabled state when external prop changes
+  useEffect(() => {
+    setLocalIsEnabled(isEnabled);
+  }, [isEnabled]);
 
   useEffect(() => {
     if (formState.success && formState.savedIsEnabled !== undefined) {
@@ -168,7 +176,19 @@ export function ServiceConfigForm({ initialConfig, onTestClick, isEnabled, onEna
 
   return (
     <form action={formAction} className="space-y-6">
-      <input type="hidden" name="isEnabled" value={String(isEnabled)} />
+      <input type="hidden" name="isEnabled" value={String(localIsEnabled)} />
+
+      {/* Enable/Disable Toggle */}
+      <div className="flex items-center space-x-2">
+        <Switch
+          id="pushover-enabled"
+          checked={localIsEnabled}
+          onCheckedChange={setLocalIsEnabled}
+        />
+        <Label htmlFor="pushover-enabled">
+          Enable Pushover Service
+        </Label>
+      </div>
 
       <div className="grid gap-4">
         <div className="grid gap-2">

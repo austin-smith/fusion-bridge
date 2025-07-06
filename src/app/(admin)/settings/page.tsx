@@ -1,6 +1,7 @@
 import { getPushoverConfiguration } from "@/data/repositories/service-configurations";
 import { getPushcutConfiguration } from "@/data/repositories/service-configurations";
 import { getOpenWeatherConfiguration } from "@/data/repositories/service-configurations";
+import { getOpenAIConfiguration } from "@/data/repositories/service-configurations";
 import { PageHeader } from "@/components/layout/page-header"; 
 import { Settings } from 'lucide-react';
 import { SystemSettingsContent } from '../../../components/features/settings/services/system-settings-content'; // New unified client component
@@ -22,6 +23,7 @@ export default async function SystemSettingsPage() {
   const pushoverConfig = await getPushoverConfiguration();
   const pushcutConfig = await getPushcutConfiguration();
   const openWeatherConfig = await getOpenWeatherConfiguration();
+  const openAIConfig = await getOpenAIConfiguration();
 
   return (
     <div className="container py-6">
@@ -35,6 +37,7 @@ export default async function SystemSettingsPage() {
         initialPushoverConfig={pushoverConfig}
         initialPushcutConfig={pushcutConfig}
         initialOpenWeatherConfig={openWeatherConfig}
+        initialOpenAIConfig={openAIConfig}
       />
     </div>
   );

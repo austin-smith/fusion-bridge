@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import type { OpenWeatherConfig } from '@/types/openweather-types';
 
 // Import the action from settings-services-actions
@@ -22,7 +23,7 @@ interface OpenWeatherConfigFormProps {
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending} className="w-24">
+    <Button type="submit" disabled={pending}>
       {pending ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Save'}
     </Button>
   );
@@ -32,6 +33,14 @@ export function OpenWeatherConfigForm({ initialConfig, isEnabled, onSaveSuccess 
   const initialState: SaveOpenWeatherConfigFormState = { success: false };
   const [formState, formAction] = useActionState(saveOpenWeatherConfigurationAction, initialState);
   const [showApiKey, setShowApiKey] = useState(false);
+  
+  // Local state for enable toggle
+  const [localIsEnabled, setLocalIsEnabled] = useState(isEnabled);
+
+  // Update local enabled state when external prop changes
+  useEffect(() => {
+    setLocalIsEnabled(isEnabled);
+  }, [isEnabled]);
 
   useEffect(() => {
     if (formState.success && formState.savedIsEnabled !== undefined) {
@@ -47,7 +56,19 @@ export function OpenWeatherConfigForm({ initialConfig, isEnabled, onSaveSuccess 
   return (
     <form action={formAction} className="space-y-6">
       {/* Hidden input to pass the current isEnabled state to the server action */}
-      <input type="hidden" name="isEnabled" value={String(isEnabled)} />
+      <input type="hidden" name="isEnabled" value={String(localIsEnabled)} />
+
+      {/* Enable/Disable Toggle */}
+      <div className="flex items-center space-x-2">
+        <Switch
+          id="openweather-enabled"
+          checked={localIsEnabled}
+          onCheckedChange={setLocalIsEnabled}
+        />
+        <Label htmlFor="openweather-enabled">
+          Enable OpenWeather Service
+        </Label>
+      </div>
 
       <div className="grid gap-4">
         <div className="grid gap-2">

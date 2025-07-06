@@ -23,12 +23,14 @@ interface SystemSettingsContentProps {
   initialPushoverConfig: any;
   initialPushcutConfig: any;
   initialOpenWeatherConfig: any;
+  initialOpenAIConfig: any;
 }
 
 export function SystemSettingsContent({ 
   initialPushoverConfig, 
   initialPushcutConfig,
-  initialOpenWeatherConfig 
+  initialOpenWeatherConfig,
+  initialOpenAIConfig 
 }: SystemSettingsContentProps) {
   const [activeTab, setActiveTab] = useState('services');
 
@@ -40,6 +42,7 @@ export function SystemSettingsContent({
             initialPushoverConfig={initialPushoverConfig}
             initialPushcutConfig={initialPushcutConfig}
             initialOpenWeatherConfig={initialOpenWeatherConfig}
+            initialOpenAIConfig={initialOpenAIConfig}
           />
         );
       case 'api-keys':
@@ -50,6 +53,7 @@ export function SystemSettingsContent({
             initialPushoverConfig={initialPushoverConfig}
             initialPushcutConfig={initialPushcutConfig}
             initialOpenWeatherConfig={initialOpenWeatherConfig}
+            initialOpenAIConfig={initialOpenAIConfig}
           />
         );
     }

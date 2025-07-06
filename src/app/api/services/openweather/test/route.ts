@@ -31,7 +31,7 @@ export const POST = withApiRouteAuth(async (req: NextRequest, authContext: ApiRo
 
     if (!openWeatherConfig.isEnabled) {
       return NextResponse.json(
-        { success: false, error: 'OpenWeather is disabled' },
+        { success: false, error: 'OpenWeather service is disabled. Enable the service first to test it.' },
         { status: 400 }
       );
     }
