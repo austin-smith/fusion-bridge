@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MessagesSquare, X, Maximize2, Minimize2 } from 'lucide-react';
+import { MessagesSquare, X, Maximize2, Minimize2, Calendar, Cpu, ShieldCheck, BarChart3, Activity, Cctv } from 'lucide-react';
 import { Chat } from '@/components/ui/chat/chat';
 import { type Message } from '@/components/ui/chat/chat-message';
 import type { ChatResponse } from '@/types/ai/chat-types';
@@ -17,12 +17,32 @@ interface ChatAIAssistantProps {
   onResults?: (results: any) => void;
 }
 
-// Suggestions for empty chat state
+// Suggestions for empty chat state - these map directly to available AI functions
 const DEFAULT_SUGGESTIONS = [
-  "Door events today",
-  "Sensor status",
-  "This week's events",
-  "Security issues"
+  {
+    text: "How many events happened today?",
+    icon: Calendar
+  },
+  {
+    text: "Show me the status of every device",
+    icon: Cpu
+  },
+  {
+    text: "Are all areas armed?",
+    icon: ShieldCheck
+  },
+  {
+    text: "Give a system overview",
+    icon: BarChart3
+  },
+  {
+    text: "Show me recent motion events",
+    icon: Activity
+  },
+  {
+    text: "How many cameras are offline?",
+    icon: Cctv
+  }
 ];
 
 export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
@@ -131,13 +151,90 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
     setInput(e.target.value);
   }, []);
 
-  const handleAppend = useCallback((message: { role: "user"; content: string }) => {
-    setInput(message.content);
-    // Trigger form submission
-    setTimeout(() => {
-      handleSubmit();
-    }, 0);
-  }, [handleSubmit]);
+  const handleAppend = useCallback(async (message: { role: "user"; content: string }) => {
+    if (!message.content.trim() || isGenerating) return;
+
+    const userMessage: Message = {
+      id: generateId(),
+      role: 'user',
+      content: message.content.trim(),
+      createdAt: new Date(),
+    };
+
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+    setInput(''); // Clear input
+    setIsGenerating(true);
+
+    // Create abort controller for this request
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: userMessage.content,
+          userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          conversationHistory: messages.map(msg => ({
+            role: msg.role as 'user' | 'assistant',
+            content: msg.content
+          })),
+        }),
+        signal: abortControllerRef.current.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result: ChatResponse = await response.json();
+
+      let assistantContent = '';
+      
+      if (result.success && result.response) {
+        // Use the natural language response from OpenAI
+        assistantContent = result.response;
+
+        // Call the onResults callback if we have data to display
+        if (result.data && onResults) {
+          onResults(result.data);
+        }
+      } else {
+        assistantContent = result.error || 'I had trouble processing your request.';
+      }
+
+      const assistantMessage: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: assistantContent,
+        createdAt: new Date(),
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        // Request was cancelled, don't add error message
+        return;
+      }
+
+      console.error('Error processing query:', error);
+      
+      const errorMessage: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: 'Sorry, I encountered an error processing your request. Please try again.',
+        createdAt: new Date(),
+      };
+
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsGenerating(false);
+      abortControllerRef.current = null;
+    }
+  }, [isGenerating, messages, onResults]);
 
   const handleStop = useCallback(() => {
     if (abortControllerRef.current) {

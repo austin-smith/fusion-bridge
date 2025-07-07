@@ -5,7 +5,7 @@ import {
   useState,
   type ReactElement,
 } from "react"
-import { ArrowDown, ThumbsDown, ThumbsUp } from "lucide-react"
+import { ArrowDown, ThumbsDown, ThumbsUp, type LucideIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { useAutoScroll } from "@/hooks/use-auto-scroll"
@@ -15,6 +15,11 @@ import { CopyButton } from "@/components/ui/copy-button"
 import { MessageInput } from "./message-input"
 import { MessageList } from "./message-list"
 import { PromptSuggestions } from "./prompt-suggestions"
+
+type Suggestion = string | {
+  text: string
+  icon?: LucideIcon
+}
 
 interface ChatPropsBase {
   handleSubmit: (
@@ -42,7 +47,7 @@ interface ChatPropsWithoutSuggestions extends ChatPropsBase {
 
 interface ChatPropsWithSuggestions extends ChatPropsBase {
   append: (message: { role: "user"; content: string }) => void
-  suggestions: string[]
+  suggestions: Suggestion[]
 }
 
 type ChatProps = ChatPropsWithoutSuggestions | ChatPropsWithSuggestions
