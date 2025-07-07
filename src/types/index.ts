@@ -7,6 +7,10 @@ import { DisplayState } from '@/lib/mappings/definitions'; // <-- Import Display
 import { YoLinkConfig } from '@/services/drivers/yolink'; // Example config type
 // import { NetboxConfig } from '@/services/drivers/netbox'; // <-- Removed potentially incorrect import
 
+// ====================================
+// LEGACY TYPES (Phase 1 Compatible)
+// ====================================
+
 // Connector type for the database entities
 export interface Connector {
   id: string;
@@ -143,4 +147,15 @@ export interface ArmingSchedule {
   updatedAt: Date;
 }
 
-// You can add other shared types here as needed 
+// ====================================
+// RE-EXPORTS FOR CONVENIENCE
+// ====================================
+
+// Re-export commonly used types from definitions
+export type { TypedDeviceInfo, ArmedState, DisplayState } from '@/lib/mappings/definitions';
+
+// Re-export from existing type files
+export * from './events';
+export * from './automation-thumbnails';
+export * from './ai/openai-service-types';
+export * from './ai/chat-types'; 

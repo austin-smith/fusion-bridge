@@ -3,7 +3,7 @@ import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/w
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { db } from '@/data/db';
 import { connectors, devices, events, areaDevices, areas, locations } from '@/data/db/schema';
-import { eq, sql, and, desc } from 'drizzle-orm';
+import { eq, sql, and, desc, count, gte, lte, inArray } from 'drizzle-orm';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { TypedDeviceInfo, DisplayState, DeviceType, EventCategory, EventSubtype } from '@/lib/mappings/definitions';
 import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
@@ -70,6 +70,72 @@ interface ApiEnrichedEvent {
     objectTrackId: string;
     cameraId: string;
   };
+}
+
+// Function to count events with filters (organization-scoped, database-level counting)
+async function getEventsCount(
+  organizationId: string, 
+  filters: any, 
+  timeStart?: string,
+  timeEnd?: string,
+  deviceNames?: string[]
+): Promise<number> {
+  try {
+    // Build WHERE conditions
+    const conditions = [eq(connectors.organizationId, organizationId)];
+    
+    // Time range filtering
+    if (timeStart && timeEnd) {
+      conditions.push(gte(events.timestamp, new Date(timeStart)));
+      conditions.push(lte(events.timestamp, new Date(timeEnd)));
+    }
+    
+    // Event category filtering
+    if (filters.eventCategories?.length) {
+      conditions.push(inArray(events.standardizedEventCategory, filters.eventCategories));
+    }
+    
+    // Connector category filtering
+    if (filters.connectorCategory && filters.connectorCategory.toLowerCase() !== 'all') {
+      conditions.push(eq(connectors.category, filters.connectorCategory));
+    }
+    
+    // Device name filtering (requires join to devices table)
+    let needsDeviceJoin = false;
+    if (deviceNames?.length) {
+      needsDeviceJoin = true;
+    }
+    
+    // Build the count query
+    let query = db
+      .select({ count: count() })
+      .from(events)
+      .innerJoin(connectors, eq(connectors.id, events.connectorId));
+    
+    // Add device join if needed for device name filtering
+    if (needsDeviceJoin) {
+      query = query.leftJoin(devices, and(
+        eq(devices.connectorId, events.connectorId),
+        eq(devices.deviceId, events.deviceId)
+      ));
+      
+      if (deviceNames?.length) {
+        conditions.push(inArray(devices.name, deviceNames));
+      }
+    }
+    
+    // Location filtering (requires more complex joins, skip for now)
+    if (filters.locationId && filters.locationId.toLowerCase() !== 'all') {
+      console.warn('Location filtering in count not yet implemented');
+    }
+    
+    const result = await query.where(and(...conditions));
+    
+    return result[0]?.count || 0;
+  } catch (error) {
+    console.error('Error counting events:', error);
+    return 0;
+  }
 }
 
 // Function to get a single event by UUID (organization-scoped)
@@ -200,15 +266,21 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
       return NextResponse.json({ success: true, data: event });
     }
 
-    // Otherwise, fetch list of events with pagination and filters
+    // Parse common parameters
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const offset = (page - 1) * limit;
+    const countOnly = searchParams.get('count') === 'true';
+    
+    // Parse time range parameters
+    const timeStart = searchParams.get('timeStart');
+    const timeEnd = searchParams.get('timeEnd');
 
     // Read and prepare filters from query parameters
     const eventCategoriesRaw = searchParams.get('eventCategories');
     const connectorCategory = searchParams.get('connectorCategory') || undefined;
     const locationId = searchParams.get('locationId') || undefined;
+    const deviceNames = searchParams.get('deviceNames')?.split(',').map(n => n.trim()).filter(n => n.length > 0);
 
     let eventCategories: string[] | undefined = undefined;
     if (eventCategoriesRaw) {
@@ -223,6 +295,15 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
       connectorCategory: connectorCategory,
       locationId: locationId
     };
+
+    // If count is requested, return count only
+    if (countOnly) {
+      const eventCount = await getEventsCount(authContext.organizationId, filters, timeStart || undefined, timeEnd || undefined, deviceNames);
+      return NextResponse.json({
+        success: true,
+        count: eventCount
+      });
+    }
 
     // Use organization-scoped event query
     const recentEnrichedEvents: OrgEnrichedEvent[] = await orgDb.events.findRecent(limit, offset, filters);

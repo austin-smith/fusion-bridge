@@ -6,14 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MessagesSquare, X, Maximize2, Minimize2 } from 'lucide-react';
 import { Chat } from '@/components/ui/chat/chat';
 import { type Message } from '@/components/ui/chat/chat-message';
-import type { QueryResults } from '@/types/ai/natural-language-query-types';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import type { ChatResponse } from '@/types/ai/chat-types';
+
 import { cn } from '@/lib/utils';
+import { useFusionStore } from '@/stores/store';
 // Simple UUID generation function
 const generateId = () => Math.random().toString(36).substring(2) + Date.now().toString(36);
 
 interface ChatAIAssistantProps {
-  onResults?: (results: QueryResults) => void;
+  onResults?: (results: any) => void;
 }
 
 // Suggestions for empty chat state
@@ -33,6 +34,9 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   
   const abortControllerRef = useRef<AbortController | null>(null);
+  
+  // Get OpenAI enabled status from store
+  const { openAiEnabled } = useFusionStore();
 
   const handleSubmit = useCallback(async (event?: { preventDefault?: () => void }) => {
     if (event?.preventDefault) {
@@ -56,13 +60,14 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch('/api/events/natural-query', {
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           query: userMessage.content,
+          userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
         signal: abortControllerRef.current.signal,
       });
@@ -71,60 +76,20 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result = await response.json();
+      const result: ChatResponse = await response.json();
 
       let assistantContent = '';
       
-      if (result.success && result.data) {
-        const interpretation = result.data;
-        
-        // Create a helpful response based on the query type and results
-        if (interpretation.queryType === 'events' && interpretation.results?.events) {
-          const eventCount = interpretation.results.events.length;
-          assistantContent = `Found ${eventCount} event${eventCount !== 1 ? 's' : ''} matching your query.\n\n`;
-          assistantContent += `**Query interpretation:** ${interpretation.interpretation}\n\n`;
-          
-                      if (eventCount > 0) {
-              assistantContent += `**Recent events:**\n`;
-              interpretation.results.events.slice(0, 5).forEach((event: any, index: number) => {
-              const time = new Date(event.timestamp).toLocaleString();
-              assistantContent += `${index + 1}. **${event.deviceName || event.deviceId}** - ${event.eventType} at ${time}\n`;
-            });
-            
-            if (eventCount > 5) {
-              assistantContent += `\n...and ${eventCount - 5} more events. Check the events page to see all results.`;
-            }
-          }
-        } else if (interpretation.queryType === 'status' && interpretation.results?.devices) {
-          const deviceCount = interpretation.results.devices.length;
-          assistantContent = `Found status information for ${deviceCount} device${deviceCount !== 1 ? 's' : ''}.\n\n`;
-          assistantContent += `**Query interpretation:** ${interpretation.interpretation}\n\n`;
-          
-          if (deviceCount > 0) {
-            assistantContent += `**Device status:**\n`;
-            interpretation.results.devices.slice(0, 5).forEach((device: any, index: number) => {
-              assistantContent += `${index + 1}. **${device.deviceName || device.deviceId}** - ${device.status || 'Unknown'}\n`;
-            });
-            
-            if (deviceCount > 5) {
-              assistantContent += `\n...and ${deviceCount - 5} more devices.`;
-            }
-          }
-        } else if (interpretation.queryType === 'analytics' && interpretation.results?.summary) {
-          assistantContent = `Here's your analytics summary:\n\n`;
-          assistantContent += `**Query interpretation:** ${interpretation.interpretation}\n\n`;
-          assistantContent += `**Results:** ${interpretation.results.summary}`;
-        } else {
-          assistantContent = `I understood your query: "${interpretation.interpretation}"\n\n`;
-          assistantContent += `However, I wasn't able to find specific results. You might want to try rephrasing your question or check the events page directly.`;
-        }
+      if (result.success && result.response) {
+        // Use the natural language response from OpenAI
+        assistantContent = result.response;
 
-        // Call the onResults callback if provided
-        if (result.data.results && onResults) {
-          onResults(result.data.results);
+        // Call the onResults callback if we have data to display
+        if (result.data && onResults) {
+          onResults(result.data);
         }
       } else {
-        assistantContent = result.error || 'Sorry, I encountered an error processing your request. Please try again.';
+        assistantContent = result.error || 'I had trouble processing your request.';
       }
 
       const assistantMessage: Message = {
@@ -186,44 +151,68 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
 
 
 
-  // Handle escape key to close chat
+  // Handle keyboard shortcuts
   useEffect(() => {
-    const handleEscape = (event: KeyboardEvent) => {
+    const handleKeydown = (event: KeyboardEvent) => {
+      // Handle Escape key to close chat
       if (event.key === 'Escape' && isOpen) {
         handleClose();
+        return;
+      }
+
+      // Handle Ctrl/Cmd + K to toggle chat
+      if (event.key === 'k' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        if (isOpen) {
+          handleClose();
+        } else {
+          setIsOpen(true);
+        }
+        return;
       }
     };
 
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape);
-    }
+    document.addEventListener('keydown', handleKeydown);
 
     return () => {
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('keydown', handleKeydown);
     };
   }, [isOpen, handleClose]);
+
+  // Auto-focus the chat input when the chat opens
+  useEffect(() => {
+    if (isOpen && !isClosing) {
+      // Use a timeout to ensure the DOM has updated
+      const timer = setTimeout(() => {
+        const textarea = document.querySelector<HTMLTextAreaElement>(
+          '.fixed.bottom-6.right-6 textarea[aria-label="Write your prompt here"]'
+        );
+        if (textarea) {
+          textarea.focus();
+        }
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, isClosing]);
+
+  // Don't show anything if OpenAI is not enabled
+  if (!openAiEnabled) {
+    return null;
+  }
 
   // Floating button when closed
   if (!isOpen) {
     return (
       <div className="fixed bottom-6 right-6 z-50">
-        <TooltipProvider delayDuration={100}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button 
-                onClick={() => setIsOpen(true)}
-                size="lg"
-                className="h-14 w-14 min-w-14 rounded-full shadow-lg hover:shadow-2xl transition-all duration-300 ai-gradient ai-gradient-hover border-0 ring-2 ring-white/10 hover:ring-white/20 hover:scale-105 active:scale-95 p-0 flex items-center justify-center"
-              >
-                <MessagesSquare className="!h-6 !w-6 text-white drop-shadow-sm" />
-                <span className="sr-only">AI Assistant</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="left">
-              AI Assistant
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Button 
+          onClick={() => setIsOpen(true)}
+          size="lg"
+          className="h-14 w-14 min-w-14 rounded-full shadow-lg hover:shadow-2xl transition-all duration-300 ai-gradient ai-gradient-hover border-0 ring-2 ring-white/10 hover:ring-white/20 hover:scale-105 active:scale-95 p-0 flex items-center justify-center"
+        >
+          <MessagesSquare className="!h-6 !w-6 text-white drop-shadow-sm" />
+          <span className="sr-only">AI Assistant</span>
+        </Button>
       </div>
     );
   }

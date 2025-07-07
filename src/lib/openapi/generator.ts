@@ -49,10 +49,22 @@ const eventsQuerySchema = z.object({
   eventUuid: z.string().uuid().optional().describe('Get specific event by UUID'),
   page: z.string().regex(/^\d+$/).optional().describe('Page number (default: 1)'),
   limit: z.string().regex(/^\d+$/).optional().describe('Items per page (default: 50)'),
+  count: z.enum(['true', 'false']).optional().describe('Return count only instead of data (OData style)'),
   eventCategories: z.string().optional().describe('Comma-separated event categories to filter by'),
   connectorCategory: z.string().optional().describe('Filter by connector category'),
   locationId: z.string().uuid().optional().describe('Filter by location UUID'),
+  deviceNames: z.string().optional().describe('Comma-separated device names to filter by'),
+  timeStart: z.string().optional().describe('Start time for filtering (ISO date string)'),
+  timeEnd: z.string().optional().describe('End time for filtering (ISO date string)'),
 }).openapi('EventsQuery');
+
+const devicesQuerySchema = z.object({
+  deviceId: z.string().optional().describe('Get specific device by external device ID'),
+  count: z.enum(['true', 'false']).optional().describe('Return count only instead of data (OData style)'),
+  connectorCategory: z.string().optional().describe('Filter by connector category (e.g., piko, yolink, genea)'),
+  deviceType: z.string().optional().describe('Filter by device type'),
+  status: z.string().optional().describe('Filter by device status'),
+}).openapi('DevicesQuery');
 
 // Define param schemas
 const areaIdParamsSchema = z.object({
@@ -211,6 +223,22 @@ const sseStatsResponseSchema = z.object({
   }),
 }).openapi('SSEStatsResponse');
 
+// Count response schemas for OData-style counting
+const eventsCountResponseSchema = z.object({
+  success: z.literal(true),
+  count: z.number().describe('Total number of events matching the criteria'),
+}).openapi('EventsCountResponse');
+
+const devicesCountResponseSchema = z.object({
+  success: z.literal(true),
+  count: z.number().describe('Total number of devices matching the criteria'),
+  filters: z.object({
+    connectorCategory: z.string().optional().describe('Applied connector category filter'),
+    deviceType: z.string().optional().describe('Applied device type filter'),
+    status: z.string().optional().describe('Applied status filter'),
+  }).describe('Applied filters'),
+}).openapi('DevicesCountResponse');
+
 const sseStreamResponseSchema = z.string().describe('Server-Sent Events stream in text/event-stream format. Includes connection events, real-time events, heartbeat messages, system notifications, error messages, and arming state changes. Events may include Piko thumbnail data when includeThumbnails=true.').openapi('SSEStreamResponse', {
   example: `event: connection
 data: {"type":"connection","organizationId":"org-123","timestamp":"2024-01-01T00:00:00.000Z"}
@@ -270,6 +298,10 @@ export function generateOpenApiSpec() {
   registry.register('SSEStreamQuery', sseStreamQuerySchema);
   registry.register('SSEStatsResponse', sseStatsResponseSchema);
   registry.register('SSEStreamResponse', sseStreamResponseSchema);
+
+  // Count response schemas
+  registry.register('EventsCountResponse', eventsCountResponseSchema);
+  registry.register('DevicesCountResponse', devicesCountResponseSchema);
 
   // Register response schemas
   const areasSuccessResponse = successResponseSchema(z.array(areaSchema));
@@ -582,20 +614,21 @@ export function generateOpenApiSpec() {
     method: 'get',
     path: '/api/events',
     summary: 'Get events',
-    description: 'Retrieve events with optional filtering and pagination. Can fetch a single event by UUID or a paginated list with filters.',
+    description: 'Retrieve events with optional filtering and pagination. Can fetch a single event by UUID, a paginated list with filters, or just a count. Use count=true for OData-style counting.',
     tags: ['Events'],
     request: {
       query: eventsQuerySchema,
     },
     responses: {
       200: {
-        description: 'Events data - single event or paginated list',
+        description: 'Events data - single event, paginated list, or count only',
         content: {
           'application/json': {
             schema: {
               oneOf: [
                 { $ref: '#/components/schemas/EventSuccessResponse' },
                 { $ref: '#/components/schemas/EventsPagedResponse' },
+                { $ref: '#/components/schemas/EventsCountResponse' },
               ],
             },
           },
@@ -949,15 +982,31 @@ export function generateOpenApiSpec() {
   registry.registerPath({
     method: 'get',
     path: '/api/devices',
-    summary: 'Get all devices',
-    description: 'Retrieves all devices from all connectors',
+    summary: 'Get devices',
+    description: 'Retrieve devices with optional filtering. Can fetch all devices, a specific device by deviceId, or just a count. Use count=true for OData-style counting.',
     tags: ['Devices'],
+    request: {
+      query: devicesQuerySchema,
+    },
     responses: {
       200: {
-        description: 'List of devices',
+        description: 'Device data - single device, device list, or count only',
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/DevicesSuccessResponse' },
+            schema: {
+              oneOf: [
+                { $ref: '#/components/schemas/DevicesSuccessResponse' },
+                { $ref: '#/components/schemas/DevicesCountResponse' },
+              ],
+            },
+          },
+        },
+      },
+      404: {
+        description: 'Device not found (when deviceId provided)',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
           },
         },
       },

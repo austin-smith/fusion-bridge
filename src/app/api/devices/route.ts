@@ -86,7 +86,6 @@ interface DeviceWithConnectorInfo {
   name: string | null;
   type: string;
   lastStateUpdate: Date | null;
-  isOnline: boolean;
   createdAt: Date;
   updatedAt: Date;
   connectorName: string;
@@ -100,7 +99,6 @@ interface DeviceResponse {
   name: string | null;
   type: string;
   lastStateUpdate: string | null;
-  isOnline: boolean;
   createdAt: string;
   updatedAt: string;
   connectorName: string;
@@ -120,7 +118,6 @@ function formatDevice(device: DeviceWithConnectorInfo): DeviceResponse {
     name: device.name,
     type: device.type,
     lastStateUpdate: device.lastStateUpdate ? device.lastStateUpdate.toISOString() : null,
-    isOnline: device.isOnline,
     createdAt: device.createdAt.toISOString(),
     updatedAt: device.updatedAt.toISOString(),
     connectorName: device.connectorName,
@@ -128,13 +125,78 @@ function formatDevice(device: DeviceWithConnectorInfo): DeviceResponse {
   };
 }
 
+// Function to count devices with filters (organization-scoped, database-level counting)
+async function getDevicesCount(
+  organizationId: string,
+  connectorCategory?: string,
+  deviceType?: string,
+  status?: string
+): Promise<number> {
+  try {
+    // Build WHERE conditions
+    const conditions = [eq(connectors.organizationId, organizationId)];
+    
+    // Connector category filtering
+    if (connectorCategory && connectorCategory.toLowerCase() !== 'all') {
+      conditions.push(eq(connectors.category, connectorCategory.toLowerCase()));
+    }
+    
+    // Device type filtering
+    if (deviceType && deviceType.toLowerCase() !== 'all') {
+      conditions.push(eq(devices.type, deviceType));
+    }
+    
+    // Status filtering
+    if (status && status.toLowerCase() !== 'all') {
+      conditions.push(eq(devices.status, status));
+    }
+    
+    // Build the count query
+    const result = await db
+      .select({ count: count() })
+      .from(devices)
+      .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+      .where(and(...conditions));
+    
+    return result[0]?.count || 0;
+  } catch (error) {
+    console.error('Error counting devices:', error);
+    return 0;
+  }
+}
+
 // GET /api/devices – returns devices with connector information and association count
-// Optionally filters by deviceId query parameter
+// Optionally filters by deviceId query parameter or returns count with count=true
 export const GET = withOrganizationAuth(async (request, authContext: OrganizationAuthContext) => {
   try {
     const orgDb = createOrgScopedDb(authContext.organizationId);
     const { searchParams } = new URL(request.url);
     const requestedDeviceId = searchParams.get('deviceId');
+    const countOnly = searchParams.get('count') === 'true';
+    
+    // Parse filter parameters
+    const connectorCategory = searchParams.get('connectorCategory');
+    const deviceType = searchParams.get('deviceType');
+    const status = searchParams.get('status');
+
+    // If count is requested, return count only
+    if (countOnly) {
+      const deviceCount = await getDevicesCount(
+        authContext.organizationId,
+        connectorCategory || undefined,
+        deviceType || undefined,
+        status || undefined
+      );
+      return NextResponse.json({
+        success: true,
+        count: deviceCount,
+        filters: {
+          connectorCategory,
+          deviceType,
+          status
+        }
+      });
+    }
 
     if (requestedDeviceId) {
       // Fetch single device by external deviceId

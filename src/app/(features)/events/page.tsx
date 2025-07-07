@@ -89,7 +89,6 @@ import { EventsTableView } from '@/components/features/events/EventsTableView';
 import type { EnrichedEvent } from '@/types/events';
 import { EventCardView } from '@/components/features/events/EventCardView';
 import { EventCardViewSkeleton } from '@/components/features/events/event-card-view-skeleton';
-import type { QueryResults } from '@/types/ai/natural-language-query-types';
 
 
 // --- Interface for Pagination Metadata from API ---
@@ -206,19 +205,16 @@ export default function EventsPage() {
   }, []); // Empty dependency array ensures this runs only once on mount
 
   // Handler for natural language query results
-  const handleNaturalLanguageResults = useCallback((results: QueryResults) => {
+  const handleNaturalLanguageResults = useCallback((results: any) => {
     console.log('[EventsPage] Natural language query results received:', results);
     
-    // For now, just show a success message
-    // TODO: Integrate results with existing event display
-    if (results.queryType === 'events' && results.events) {
-      toast.success(`Found ${results.events.length} events from AI query`);
-    } else if (results.queryType === 'status') {
-      toast.success(`Found ${results.totalResults} device status results`);
-    } else if (results.queryType === 'analytics') {
-      if (results.analytics?.count !== undefined) {
-        toast.success(`Analytics result: ${results.analytics.count} events found`);
-      }
+    // The AI chat now returns data directly
+    if (results) {
+      // Display a simple success message since the AI response is shown in the chat
+      toast.success('Query processed successfully');
+      
+      // Results are now handled in the chat UI itself
+      // This callback is just for any additional UI updates if needed
     }
   }, []);
 

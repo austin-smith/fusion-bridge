@@ -5,17 +5,16 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Brain } from 'lucide-react';
 import { NaturalLanguageSearch } from './NaturalLanguageSearch';
-import type { QueryResults } from '@/types/ai/natural-language-query-types';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface NaturalLanguageSearchDialogProps {
-  onResults?: (results: QueryResults) => void;
+  onResults?: (results: any) => void;
 }
 
 export function NaturalLanguageSearchDialog({ onResults }: NaturalLanguageSearchDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
 
-  const handleResults = (results: QueryResults) => {
+  const handleResults = (results: any) => {
     onResults?.(results);
     // Keep dialog open so user can see results and try more queries
   };
