@@ -19,7 +19,7 @@ export const POST = withOrganizationAuth(async (
   try {
     // Parse request
     const body: ChatRequest = await request.json();
-    const { query, userTimezone } = body;
+    const { query, userTimezone, conversationHistory = [] } = body;
 
     // Simple validation
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
@@ -33,6 +33,7 @@ export const POST = withOrganizationAuth(async (
     }
 
     console.log(`[Chat API] Processing query for org ${organizationId}: "${query.substring(0, 100)}..."`);
+    console.log(`[Chat API] Conversation history length: ${conversationHistory.length}`);
 
     // Get OpenAI configuration
     const openaiConfig = await getOpenAIConfiguration();
@@ -46,20 +47,11 @@ export const POST = withOrganizationAuth(async (
       );
     }
 
-    // Make OpenAI request with function calling
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiConfig.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: openaiConfig.model,
-        messages: [
-          {
-            role: 'system',
-            content: `You are a helpful security system assistant for Fusion Bridge. 
-            
+    // Build messages array with conversation history
+    const systemMessage = {
+      role: 'system' as const,
+      content: `You are a helpful security system assistant for Fusion Bridge. 
+      
 Current context:
 - Organization: ${organizationId}
 - Server time: ${new Date().toISOString()}
@@ -69,6 +61,8 @@ When users ask about time periods like "today", "yesterday", etc:
 1. Calculate the start and end times in the user's timezone
 2. Convert those times to UTC ISO strings
 3. Pass the UTC times as timeStart and timeEnd parameters
+
+IMPORTANT: When users ask follow-up questions that are refinements or filters of previous queries (e.g., "narrow it down to X", "what about Y events", "filter by Z"), maintain the same time context from the previous query unless they explicitly specify a different time period. Look at the conversation history to understand the temporal context.
 
 For example, if user asks "events today" and user timezone is "America/New_York":
 - Calculate today's start: beginning of today in America/New_York
@@ -81,14 +75,32 @@ When users ask questions:
 3. If no data is found, explain clearly
 4. Format counts and statistics in a friendly way
 5. Use natural language, not technical jargon
+6. For follow-up queries, consider the conversation context to maintain temporal consistency
 
 Be helpful but brief. Don't over-explain unless asked.`
-          },
-          {
-            role: 'user',
-            content: query
-          }
-        ],
+    };
+
+    const messages = [
+      systemMessage,
+      ...conversationHistory,
+      {
+        role: 'user' as const,
+        content: query
+      }
+    ];
+
+
+
+    // Make OpenAI request with function calling
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${openaiConfig.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: openaiConfig.model,
+        messages,
         functions: openAIFunctions,
         function_call: 'auto',
         temperature: 0.3,
@@ -143,41 +155,15 @@ Be helpful but brief. Don't over-explain unless asked.`
         body: JSON.stringify({
           model: openaiConfig.model,
           messages: [
+            systemMessage,
+            ...conversationHistory,
             {
-              role: 'system',
-              content: `You are a helpful security system assistant for Fusion Bridge. 
-            
-Current context:
-- Organization: ${organizationId}
-- Server time: ${new Date().toISOString()}
-- User timezone: ${userTimezone || 'UTC'}
-
-When users ask about time periods like "today", "yesterday", etc:
-1. Calculate the start and end times in the user's timezone
-2. Convert those times to UTC ISO strings
-3. Pass the UTC times as timeStart and timeEnd parameters
-
-For example, if user asks "events today" and user timezone is "America/New_York":
-- Calculate today's start: beginning of today in America/New_York
-- Calculate today's end: end of today in America/New_York  
-- Convert both to UTC ISO strings for the API
-
-When users ask questions:
-1. Use the available functions to get the data you need
-2. Provide clear, concise, and helpful responses
-3. If no data is found, explain clearly
-4. Format counts and statistics in a friendly way
-5. Use natural language, not technical jargon
-
-Be helpful but brief. Don't over-explain unless asked.`
-            },
-            {
-              role: 'user',
+              role: 'user' as const,
               content: query
             },
             message,
             {
-              role: 'function',
+              role: 'function' as const,
               name: functionName,
               content: JSON.stringify(functionResult)
             }

@@ -52,7 +52,8 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
       createdAt: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
     setInput('');
     setIsGenerating(true);
 
@@ -68,6 +69,10 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
         body: JSON.stringify({
           query: userMessage.content,
           userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          conversationHistory: messages.map(msg => ({
+            role: msg.role as 'user' | 'assistant',
+            content: msg.content
+          })),
         }),
         signal: abortControllerRef.current.signal,
       });

@@ -3,9 +3,16 @@
  * No complex hierarchies, just what we need
  */
 
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'function';
+  content: string;
+  name?: string; // For function calls
+}
+
 export interface ChatRequest {
   query: string;
   userTimezone?: string; // User's timezone for calculating "today", "yesterday", etc.
+  conversationHistory?: ChatMessage[]; // Previous messages for context
   context?: {
     conversationId?: string;
     previousResults?: any;
