@@ -6,13 +6,14 @@
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { ArmedState, ActionableState, DisplayState, ON, OFF } from '@/lib/mappings/definitions';
 import { actionHandlers } from '@/lib/device-actions';
-import type { ChatAction, DeviceActionMetadata, AreaActionMetadata, ActionableResponse } from '@/types/ai/chat-actions';
+import type { ChatAction, DeviceActionMetadata, AreaActionMetadata } from '@/types/ai/chat-actions';
+import type { FunctionExecutionResult, AiFunctionResult } from '@/types/ai/chat-types';
 
 // OpenAI function definitions
 export const openAIFunctions = [
   {
     name: "count_events",
-    description: "Count events matching criteria. Use this for questions about how many events occurred. For relative time queries like 'today', 'yesterday', calculate the exact time range in the user's timezone first, then convert to UTC.",
+    description: "Count events matching criteria. REQUIRED for ALL event counting questions including follow-up questions in conversations about events. ALWAYS use this function for any quantity questions about events. For relative time queries like 'today', 'yesterday', calculate the exact time range in the user's timezone first, then convert to UTC.",
     parameters: {
       type: "object",
       properties: {
@@ -162,6 +163,120 @@ export const openAIFunctions = [
       type: "object",
       properties: {}
     }
+  },
+  // Dedicated bulk operation functions for consistent bulk actions
+  {
+    name: "arm_all_areas",
+    description: "Arm all areas in the organization. Use this when user says 'arm all areas', 'arm everything', 'set all areas to armed', etc. Always returns bulk arm action regardless of current state.",
+    parameters: {
+      type: "object",
+      properties: {
+        areaFilter: {
+          type: "object",
+          properties: {
+            locations: { type: "array", items: { type: "string" }, description: "Optional: filter to specific locations" },
+            excludeNames: { type: "array", items: { type: "string" }, description: "Optional: exclude specific area names" }
+          }
+        }
+      }
+    }
+  },
+  {
+    name: "disarm_all_areas",
+    description: "Disarm all areas in the organization. Use this when user says 'disarm all areas', 'disarm everything', 'set all areas to disarmed', etc. Always returns bulk disarm action regardless of current state.",
+    parameters: {
+      type: "object",
+      properties: {
+        areaFilter: {
+          type: "object",
+          properties: {
+            locations: { type: "array", items: { type: "string" }, description: "Optional: filter to specific locations" },
+            excludeNames: { type: "array", items: { type: "string" }, description: "Optional: exclude specific area names" }
+          }
+        }
+      }
+    }
+  },
+  {
+    name: "turn_on_all_devices",
+    description: "Turn on all controllable devices. Use this when user says 'turn on all devices', 'turn everything on', 'power on all switches', etc. Always returns bulk turn-on action regardless of current state.",
+    parameters: {
+      type: "object",
+      properties: {
+        deviceFilter: {
+          type: "object",
+          properties: {
+            types: { type: "array", items: { type: "string" }, description: "Optional: filter to specific device types" },
+            connectorCategories: { type: "array", items: { type: "string" }, description: "Optional: filter by connector categories" },
+            locations: { type: "array", items: { type: "string" }, description: "Optional: filter to specific locations" },
+            excludeNames: { type: "array", items: { type: "string" }, description: "Optional: exclude specific device names" }
+          }
+        }
+      }
+    }
+  },
+  {
+    name: "turn_off_all_devices",
+    description: "Turn off all controllable devices. Use this when user says 'turn off all devices', 'turn everything off', 'power off all switches', etc. Always returns bulk turn-off action regardless of current state.",
+    parameters: {
+      type: "object",
+      properties: {
+        deviceFilter: {
+          type: "object",
+          properties: {
+            types: { type: "array", items: { type: "string" }, description: "Optional: filter to specific device types" },
+            connectorCategories: { type: "array", items: { type: "string" }, description: "Optional: filter by connector categories" },
+            locations: { type: "array", items: { type: "string" }, description: "Optional: filter to specific locations" },
+            excludeNames: { type: "array", items: { type: "string" }, description: "Optional: exclude specific device names" }
+          }
+        }
+      }
+    }
+  },
+  // Individual action functions for specific areas/devices
+  {
+    name: "arm_area",
+    description: "Arm a specific area by name. Use this when user says 'arm [area name]', 'arm the kitchen', 'arm front door', etc. for individual areas.",
+    parameters: {
+      type: "object",
+      properties: {
+        areaName: { type: "string", description: "Name of the specific area to arm" }
+      },
+      required: ["areaName"]
+    }
+  },
+  {
+    name: "disarm_area", 
+    description: "Disarm a specific area by name. Use this when user says 'disarm [area name]', 'disarm the kitchen', 'disarm front door', etc. for individual areas.",
+    parameters: {
+      type: "object",
+      properties: {
+        areaName: { type: "string", description: "Name of the specific area to disarm" }
+      },
+      required: ["areaName"]
+    }
+  },
+  {
+    name: "turn_on_device",
+    description: "Turn on a specific device by name. Use this when user says 'turn on [device name]', 'turn on the kitchen light', 'power on switch', etc. for individual devices.",
+    parameters: {
+      type: "object", 
+      properties: {
+        deviceName: { type: "string", description: "Name of the specific device to turn on" }
+      },
+      required: ["deviceName"]
+    }
+  },
+  {
+    name: "turn_off_device",
+    description: "Turn off a specific device by name. Use this when user says 'turn off [device name]', 'turn off the kitchen light', 'power off switch', etc. for individual devices.",
+    parameters: {
+      type: "object",
+      properties: {
+        deviceName: { type: "string", description: "Name of the specific device to turn off" }
+      },
+      required: ["deviceName"]
+    }
   }
 ];
 
@@ -170,7 +285,7 @@ export async function executeFunction(
   name: string, 
   args: any, 
   organizationId: string
-): Promise<any> {
+): Promise<FunctionExecutionResult> {
   const orgDb = createOrgScopedDb(organizationId);
   
   switch (name) {
@@ -195,13 +310,39 @@ export async function executeFunction(
     case 'get_system_overview':
       return getSystemOverview(orgDb);
       
+    // Dedicated bulk operation functions
+    case 'arm_all_areas':
+      return armAllAreas(orgDb, args);
+      
+    case 'disarm_all_areas':
+      return disarmAllAreas(orgDb, args);
+      
+    case 'turn_on_all_devices':
+      return turnOnAllDevices(orgDb, args);
+      
+    case 'turn_off_all_devices':
+      return turnOffAllDevices(orgDb, args);
+      
+    // Individual action functions
+    case 'arm_area':
+      return armArea(orgDb, args);
+      
+    case 'disarm_area':
+      return disarmArea(orgDb, args);
+      
+    case 'turn_on_device':
+      return turnOnDevice(orgDb, args);
+      
+    case 'turn_off_device':
+      return turnOffDevice(orgDb, args);
+      
     default:
       throw new Error(`Unknown function: ${name}`);
   }
 }
 
 // Count events using direct database query (proper database counting)
-async function countEvents(args: any, organizationId: string) {
+async function countEvents(args: any, organizationId: string): Promise<FunctionExecutionResult> {
   const { timeStart, timeEnd, deviceNames, eventTypes } = args;
   
   try {
@@ -245,26 +386,31 @@ async function countEvents(args: any, organizationId: string) {
     const result = await query.where(and(...conditions));
     const eventCount = result[0]?.count || 0;
     
+    // Return separated AI and UI data
     return {
+      aiData: {
       count: eventCount,
+        timeRange: timeStart && timeEnd ? { start: timeStart, end: timeEnd } : undefined,
       filters: {
-        timeStart,
-        timeEnd,
         deviceNames,
         eventTypes
       }
+      }
+      // No UI actions for count operations
     };
   } catch (error) {
     console.error('Error counting events:', error);
     return {
+      aiData: {
       error: error instanceof Error ? error.message : 'Failed to count events',
       count: 0
+      }
     };
   }
 }
 
 // Count devices using the same counting logic as the API (consistent approach)
-async function countDevices(args: any, organizationId: string) {
+async function countDevices(args: any, organizationId: string): Promise<FunctionExecutionResult> {
   const { connectorCategories, deviceTypes, statuses } = args;
   
   try {
@@ -304,25 +450,31 @@ async function countDevices(args: any, organizationId: string) {
     
     const deviceCount = result[0]?.count || 0;
     
+    // Return separated AI and UI data
     return {
+      aiData: {
       count: deviceCount,
       filters: {
         connectorCategories,
         deviceTypes,
         statuses
       }
+      }
+      // No UI actions for count operations
     };
   } catch (error) {
     console.error('Error counting devices:', error);
     return {
+      aiData: {
       error: error instanceof Error ? error.message : 'Failed to count devices',
       count: 0
+      }
     };
   }
 }
 
 // Query events with optional filtering and aggregation
-async function queryEvents(orgDb: any, args: any) {
+async function queryEvents(orgDb: any, args: any): Promise<FunctionExecutionResult> {
   const { timeRange, filters, aggregation, limit = 100 } = args;
   
   // If this is just a count request, use the API directly
@@ -352,8 +504,10 @@ async function queryEvents(orgDb: any, args: any) {
       
       if (data.success) {
         return {
+          aiData: {
           count: data.count,
           timeRange: data.timeRange
+          }
         };
       } else {
         throw new Error(data.error || 'Failed to count events');
@@ -414,13 +568,18 @@ async function queryEvents(orgDb: any, args: any) {
     });
     
     return {
+      aiData: {
       totalCount: filteredEvents.length,
-      groups: Array.from(groups.entries()).map(([name, count]) => ({ name, count }))
+        metrics: {
+          byType: Array.from(groups.entries()).map(([name, count]) => ({ type: name, count }))
+        }
+      }
     };
   }
   
   // Return simple event list
   return {
+    aiData: {
     count: filteredEvents.length,
     events: filteredEvents.map((e: any) => ({
       id: e.eventUuid,
@@ -430,11 +589,12 @@ async function queryEvents(orgDb: any, args: any) {
       area: e.areaName,
       location: e.locationName
     }))
+    }
   };
 }
 
 // Check device status
-async function checkDeviceStatus(orgDb: any, args: any): Promise<ActionableResponse> {
+async function checkDeviceStatus(orgDb: any, args: any): Promise<FunctionExecutionResult> {
   const { deviceFilter, includeMetrics } = args;
   
   // Get all devices
@@ -504,13 +664,13 @@ async function checkDeviceStatus(orgDb: any, args: any): Promise<ActionableRespo
           // Fix: Handle undefined displayState properly
           const currentState = device.displayState as DisplayState | undefined;
           
-          // Only add actions that would change the current state
+          // Only add actions that would change the current state (original logic)
           if (canTurnOn && currentState !== ON) {
             actions.push({
               id: `device-${device.id}-on`,
               type: 'device',
               label: `Turn On ${device.name}`,
-              icon: 'Power', // Use proper lucide-react icon name
+              icon: 'Power',
               metadata: {
                 internalDeviceId: device.id,
                 deviceName: device.name,
@@ -527,7 +687,7 @@ async function checkDeviceStatus(orgDb: any, args: any): Promise<ActionableRespo
               id: `device-${device.id}-off`,
               type: 'device',
               label: `Turn Off ${device.name}`,
-              icon: 'PowerOff', // Use proper lucide-react icon name
+              icon: 'PowerOff',
               metadata: {
                 internalDeviceId: device.id,
                 deviceName: device.name,
@@ -547,22 +707,6 @@ async function checkDeviceStatus(orgDb: any, args: any): Promise<ActionableRespo
   }
   
   // Return device status with actions
-  const results: ActionableResponse = {
-    totalCount: filteredDevices.length,
-    devices: filteredDevices.map((d: any) => ({
-      id: d.id,
-      name: d.name,
-      type: d.type,
-      connectorCategory: d.connector?.category,
-      status: d.status || 'unknown',
-      area: d.areaId,
-      location: d.locationId,
-      displayState: d.displayState
-    })),
-    actions: actions.length > 0 ? actions : undefined
-  };
-  
-  if (includeMetrics) {
     const statusCounts = new Map<string, number>();
     const connectorCategoryCounts = new Map<string, number>();
     
@@ -574,17 +718,34 @@ async function checkDeviceStatus(orgDb: any, args: any): Promise<ActionableRespo
       connectorCategoryCounts.set(category, (connectorCategoryCounts.get(category) || 0) + 1);
     });
     
-    results.metrics = {
+  return {
+    aiData: {
+      totalCount: filteredDevices.length,
+      devices: filteredDevices.map((d: any) => ({
+        id: d.id,
+        name: d.name,
+        type: d.type,
+        connectorCategory: d.connector?.category,
+        status: d.status || 'unknown',
+        area: d.areaId,
+        location: d.locationId,
+        displayState: d.displayState
+      })),
+      ...(includeMetrics && {
+        metrics: {
       byStatus: Array.from(statusCounts.entries()).map(([status, count]) => ({ status, count })),
       byConnectorCategory: Array.from(connectorCategoryCounts.entries()).map(([category, count]) => ({ category, count }))
-    };
-  }
-  
-  return results;
+        }
+      })
+    },
+    uiData: {
+      actions: actions.length > 0 ? actions : undefined
+    }
+  };
 }
 
 // Find controllable devices
-async function findControllableDevices(orgDb: any, args: any): Promise<ActionableResponse> {
+async function findControllableDevices(orgDb: any, args: any): Promise<FunctionExecutionResult> {
   const { deviceFilter, actionIntent = "list_all" } = args;
   
   // Get all devices
@@ -650,7 +811,7 @@ async function findControllableDevices(orgDb: any, args: any): Promise<Actionabl
           
           const currentState = device.displayState as DisplayState | undefined;
           
-          // Add actions based on intent
+          // Add actions based on intent (original state-aware logic)
           const shouldShowTurnOn = (actionIntent === "list_all" || actionIntent === "turn_on") && 
                                   canTurnOn && currentState !== ON;
           const shouldShowTurnOff = (actionIntent === "list_all" || actionIntent === "turn_off") && 
@@ -699,6 +860,7 @@ async function findControllableDevices(orgDb: any, args: any): Promise<Actionabl
   
   // Return only controllable devices with their actions
   return {
+    aiData: {
     totalCount: controllableDevices.length,
     devices: controllableDevices.map((d: any) => ({
       id: d.id,
@@ -710,12 +872,15 @@ async function findControllableDevices(orgDb: any, args: any): Promise<Actionabl
       location: d.locationId,
       displayState: d.displayState
     })),
+    },
+    uiData: {
     actions: actions.length > 0 ? actions : undefined
+    }
   };
 }
 
 // Check area status
-async function checkAreaStatus(orgDb: any, args: any): Promise<ActionableResponse> {
+async function checkAreaStatus(orgDb: any, args: any): Promise<FunctionExecutionResult> {
   const { areaFilter } = args;
   
   // Get all areas
@@ -751,7 +916,7 @@ async function checkAreaStatus(orgDb: any, args: any): Promise<ActionableRespons
 
       const currentState = area.armedState || ArmedState.DISARMED;
       
-      // Improved armed state logic - handle all possible states
+      // Only add actions that would change the current state
       const isArmed = currentState === ArmedState.ARMED_AWAY || 
                      currentState === ArmedState.ARMED_STAY || 
                      currentState === ArmedState.TRIGGERED;
@@ -762,7 +927,7 @@ async function checkAreaStatus(orgDb: any, args: any): Promise<ActionableRespons
           id: `area-${area.id}-arm`,
           type: 'area',
           label: `Arm ${area.name}`,
-          icon: 'ShieldCheck', // Use proper lucide-react icon name
+          icon: 'ShieldCheck',
           metadata: {
             areaId: area.id,
             areaName: area.name,
@@ -778,7 +943,7 @@ async function checkAreaStatus(orgDb: any, args: any): Promise<ActionableRespons
           id: `area-${area.id}-disarm`,
           type: 'area',
           label: `Disarm ${area.name}`,
-          icon: 'ShieldOff', // Use proper lucide-react icon name
+          icon: 'ShieldOff',
           metadata: {
             areaId: area.id,
             areaName: area.name,
@@ -795,19 +960,23 @@ async function checkAreaStatus(orgDb: any, args: any): Promise<ActionableRespons
   
   // Return area status with actions
   return {
+    aiData: {
     totalCount: filteredAreas.length,
     areas: filteredAreas.map((a: any) => ({
       id: a.id,
       name: a.name,
       armedState: a.armedState || ArmedState.DISARMED,
       location: a.locationId
-    })),
+      }))
+    },
+    uiData: {
     actions: actions.length > 0 ? actions : undefined
+    }
   };
 }
 
 // Get system overview
-async function getSystemOverview(orgDb: any): Promise<ActionableResponse> {
+async function getSystemOverview(orgDb: any): Promise<FunctionExecutionResult> {
   const [devices, areas, locations] = await Promise.all([
     orgDb.devices.findAll(),
     orgDb.areas.findAll(),
@@ -829,10 +998,623 @@ async function getSystemOverview(orgDb: any): Promise<ActionableResponse> {
   // a future phase with batch operations.
   
   return {
+    aiData: {
     deviceCount: devices.length,
     areaCount: areas.length,
     locationCount: locations.length,
-    armedStates: Array.from(armedStateCounts.entries()).map(([state, count]) => ({ state, count })),
+      armedStates: Array.from(armedStateCounts.entries()).map(([state, count]) => ({ state, count }))
+    },
+    uiData: {
     actions: actions.length > 0 ? actions : undefined
+    }
   };
+}
+
+// Dedicated bulk operation functions for consistent bulk actions
+
+// Generic bulk operation helper to reduce code duplication
+interface BulkOperationConfig {
+  entityType: 'areas' | 'devices';
+  actionType: 'arm' | 'disarm' | 'turn_on' | 'turn_off';
+  actionLabel: string;
+  icon: string;
+  targetState?: ArmedState | ActionableState;
+  requiresControllabilityCheck?: boolean;
+}
+
+async function createBulkOperation(
+  orgDb: any, 
+  args: any, 
+  config: BulkOperationConfig
+): Promise<FunctionExecutionResult> {
+  const { areaFilter, deviceFilter } = args;
+  const filter = config.entityType === 'areas' ? (areaFilter || {}) : (deviceFilter || {});
+  
+  try {
+    // Get all entities
+    let entities = await orgDb[config.entityType].findAll();
+    
+    // Apply common filters
+    if (filter.locations?.length) {
+      const locationSet = new Set(filter.locations);
+      entities = entities.filter((e: any) => e.locationId && locationSet.has(e.locationId));
+    }
+    
+    if (filter.excludeNames?.length) {
+      const excludeSet = new Set(filter.excludeNames.map((n: string) => n.toLowerCase()));
+      entities = entities.filter((e: any) => !e.name || !excludeSet.has(e.name.toLowerCase()));
+    }
+    
+    // Apply device-specific filters
+    if (config.entityType === 'devices') {
+      if (filter.types?.length) {
+        const typeSet = new Set(filter.types.map((t: string) => t.toLowerCase()));
+        entities = entities.filter((d: any) => d.type && typeSet.has(d.type.toLowerCase()));
+      }
+      
+      if (filter.connectorCategories?.length) {
+        const categorySet = new Set(filter.connectorCategories.map((c: string) => c.toLowerCase()));
+        entities = entities.filter((d: any) => d.connector?.category && categorySet.has(d.connector.category.toLowerCase()));
+      }
+    }
+    
+    // Filter for controllable devices if needed
+    const validEntities: any[] = [];
+    const actions: ChatAction[] = [];
+    
+    if (config.entityType === 'devices' && config.requiresControllabilityCheck) {
+      entities.forEach((device: any) => {
+        if (!device?.id || !device?.name || !device?.connector?.category) {
+          return;
+        }
+
+        const supportedHandler = actionHandlers.find(handler => 
+          handler.category === device.connector.category
+        );
+        
+        if (supportedHandler) {
+          const deviceContext = {
+            id: device.id,
+            deviceId: device.deviceId,
+            type: device.type,
+            connectorId: device.connectorId,
+            rawDeviceData: device.rawDeviceData
+          };
+          
+          const canPerformAction = supportedHandler.canHandle(deviceContext, config.targetState as ActionableState);
+          
+          if (canPerformAction) {
+            validEntities.push(device);
+            
+            actions.push({
+              id: `device-${device.id}-${config.actionType}`,
+              type: 'device' as const,
+              label: `${config.actionLabel} ${device.name}`,
+              icon: config.icon,
+              metadata: {
+                internalDeviceId: device.id,
+                deviceName: device.name,
+                action: config.targetState as ActionableState,
+                currentState: device.displayState,
+                connectorCategory: device.connector.category,
+                deviceType: device.type
+              } as DeviceActionMetadata
+            });
+          }
+        }
+      });
+    } else {
+      // For areas or non-controllability-checked entities
+      validEntities.push(...entities);
+      
+      entities.forEach((entity: any) => {
+        if (config.entityType === 'areas') {
+          actions.push({
+            id: `area-${entity.id}-${config.actionType}`,
+            type: 'area' as const,
+            label: `${config.actionLabel} ${entity.name}`,
+            icon: config.icon,
+            metadata: {
+              areaId: entity.id,
+              areaName: entity.name,
+              targetState: config.targetState as ArmedState,
+              currentState: entity.armedState || ArmedState.DISARMED
+            } as AreaActionMetadata
+          });
+        }
+      });
+    }
+    
+    // Build response data
+    const entityData = validEntities.map((e: any) => {
+      if (config.entityType === 'areas') {
+        return {
+          id: e.id,
+          name: e.name,
+          armedState: e.armedState || ArmedState.DISARMED,
+          location: e.locationId
+        };
+      } else {
+        return {
+          id: e.id,
+          name: e.name,
+          type: e.type,
+          connectorCategory: e.connector?.category,
+          status: e.status || 'unknown',
+          area: e.areaId,
+          location: e.locationId,
+          displayState: e.displayState
+        };
+      }
+    });
+    
+    return {
+      aiData: {
+        totalCount: validEntities.length,
+        summary: `Found ${validEntities.length} ${config.entityType} available for ${config.actionType.replace('_', ' ')}`,
+        [config.entityType]: entityData
+      },
+      uiData: {
+        actions: actions
+      }
+    };
+  } catch (error) {
+    console.error(`[${config.actionType}] Error:`, error);
+    return {
+      aiData: {
+        error: error instanceof Error ? error.message : `Failed to prepare bulk ${config.actionType.replace('_', ' ')} operation`,
+        totalCount: 0
+      }
+    };
+  }
+}
+
+// Simplified bulk operation functions using the helper
+async function armAllAreas(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+  return createBulkOperation(orgDb, args, {
+    entityType: 'areas',
+    actionType: 'arm',
+    actionLabel: 'Arm',
+    icon: 'ShieldCheck',
+    targetState: ArmedState.ARMED_AWAY
+  });
+}
+
+async function disarmAllAreas(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+  return createBulkOperation(orgDb, args, {
+    entityType: 'areas',
+    actionType: 'disarm',
+    actionLabel: 'Disarm',
+    icon: 'ShieldOff',
+    targetState: ArmedState.DISARMED
+  });
+}
+
+async function turnOnAllDevices(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+  return createBulkOperation(orgDb, args, {
+    entityType: 'devices',
+    actionType: 'turn_on',
+    actionLabel: 'Turn On',
+    icon: 'Power',
+    targetState: ActionableState.SET_ON,
+    requiresControllabilityCheck: true
+  });
+}
+
+async function turnOffAllDevices(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+  return createBulkOperation(orgDb, args, {
+    entityType: 'devices',
+    actionType: 'turn_off',
+    actionLabel: 'Turn Off',
+    icon: 'PowerOff',
+    targetState: ActionableState.SET_OFF,
+    requiresControllabilityCheck: true
+  });
+}
+
+// Individual action functions for specific areas/devices
+
+async function armArea(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+  const { areaName } = args;
+  
+  try {
+    // Get all areas
+    const areas = await orgDb.areas.findAll();
+    
+    // Find the specific area by name (case-insensitive)
+    const targetArea = areas.find((area: any) => 
+      area.name && area.name.toLowerCase() === areaName.toLowerCase()
+    );
+    
+    if (!targetArea) {
+      return {
+        aiData: {
+          error: `Area '${areaName}' not found`,
+          areaName,
+          totalCount: 0
+        }
+      };
+    }
+    
+    const currentState = targetArea.armedState || ArmedState.DISARMED;
+    const actions: ChatAction[] = [];
+    
+    // Only add ARM action if area is not already armed
+    const isArmed = currentState === ArmedState.ARMED_AWAY || 
+                   currentState === ArmedState.ARMED_STAY || 
+                   currentState === ArmedState.TRIGGERED;
+    
+    if (!isArmed) {
+      actions.push({
+        id: `area-${targetArea.id}-arm`,
+        type: 'area',
+        label: `Arm ${targetArea.name}`,
+        icon: 'ShieldCheck',
+        metadata: {
+          areaId: targetArea.id,
+          areaName: targetArea.name,
+          targetState: ArmedState.ARMED_AWAY,
+          currentState: currentState
+        } as AreaActionMetadata
+      });
+    }
+    
+    return {
+      aiData: {
+        areaName: targetArea.name,
+        currentState,
+        totalCount: 1,
+        canPerformAction: !isArmed,
+        actionReason: isArmed ? `${targetArea.name} is already armed (${currentState})` : undefined,
+        areas: [{
+          id: targetArea.id,
+          name: targetArea.name,
+          armedState: currentState,
+          location: targetArea.locationId
+        }]
+      },
+      uiData: {
+        actions: actions.length > 0 ? actions : undefined
+      }
+    };
+  } catch (error) {
+    console.error('[armArea] Error:', error);
+    return {
+      aiData: {
+        error: error instanceof Error ? error.message : 'Failed to arm area',
+        areaName,
+        totalCount: 0
+      }
+    };
+  }
+}
+
+async function disarmArea(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+  const { areaName } = args;
+  
+  console.log(`[disarmArea] Called with areaName: "${areaName}"`);
+  
+  try {
+    // Get all areas
+    const areas = await orgDb.areas.findAll();
+    console.log(`[disarmArea] Found ${areas.length} total areas:`, areas.map((a: any) => `"${a.name}" (${a.armedState})`));
+    
+    // Find the specific area by name (case-insensitive)
+    const targetArea = areas.find((area: any) => 
+      area.name && area.name.toLowerCase() === areaName.toLowerCase()
+    );
+    
+    console.log(`[disarmArea] Target area lookup result:`, targetArea ? `Found "${targetArea.name}" with state: ${targetArea.armedState}` : 'NOT FOUND');
+    
+    if (!targetArea) {
+      return {
+        aiData: {
+          error: `Area '${areaName}' not found`,
+          areaName,
+          totalCount: 0
+        }
+      };
+    }
+    
+    const currentState = targetArea.armedState || ArmedState.DISARMED;
+    const actions: ChatAction[] = [];
+    
+    console.log(`[disarmArea] Current state: "${currentState}", DISARMED constant: "${ArmedState.DISARMED}"`);
+    console.log(`[disarmArea] Should create action: ${currentState !== ArmedState.DISARMED}`);
+    
+    // Only add DISARM action if area is not already disarmed
+    if (currentState !== ArmedState.DISARMED) {
+      const action: ChatAction = {
+        id: `area-${targetArea.id}-disarm`,
+        type: 'area',
+        label: `Disarm ${targetArea.name}`,
+        icon: 'ShieldOff',
+        metadata: {
+          areaId: targetArea.id,
+          areaName: targetArea.name,
+          targetState: ArmedState.DISARMED,
+          currentState: currentState
+        } as AreaActionMetadata
+      };
+      actions.push(action);
+      console.log(`[disarmArea] Created action:`, action);
+    } else {
+      console.log(`[disarmArea] No action created - area already disarmed`);
+    }
+    
+    const result = {
+      aiData: {
+        areaName: targetArea.name,
+        currentState,
+        totalCount: 1,
+        canPerformAction: currentState !== ArmedState.DISARMED,
+        actionReason: currentState === ArmedState.DISARMED ? `${targetArea.name} is already disarmed` : undefined,
+        areas: [{
+          id: targetArea.id,
+          name: targetArea.name,
+          armedState: currentState,
+          location: targetArea.locationId
+        }]
+      },
+      uiData: {
+        actions: actions.length > 0 ? actions : undefined
+      }
+    };
+    
+    console.log(`[disarmArea] Final result:`, JSON.stringify(result, null, 2));
+    return result;
+  } catch (error) {
+    console.error('[disarmArea] Error:', error);
+    return {
+      aiData: {
+        error: error instanceof Error ? error.message : 'Failed to disarm area',
+        areaName,
+        totalCount: 0
+      }
+    };
+  }
+}
+
+async function turnOnDevice(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+  const { deviceName } = args;
+  
+  try {
+    // Get all devices
+    const devices = await orgDb.devices.findAll();
+    
+    // Find the specific device by name (case-insensitive)
+    const targetDevice = devices.find((device: any) => 
+      device.name && device.name.toLowerCase() === deviceName.toLowerCase()
+    );
+    
+    if (!targetDevice) {
+      return {
+        aiData: {
+          error: `Device '${deviceName}' not found`,
+          deviceName,
+          totalCount: 0
+        }
+      };
+    }
+    
+    // Check if device is controllable
+    if (!targetDevice.id || !targetDevice.name || !targetDevice.connector?.category) {
+      return {
+        aiData: {
+          error: `Device '${deviceName}' is missing required data and cannot be controlled`,
+          deviceName,
+          totalCount: 0
+        }
+      };
+    }
+
+    const supportedHandler = actionHandlers.find(handler => 
+      handler.category === targetDevice.connector.category
+    );
+    
+    if (!supportedHandler) {
+      return {
+        aiData: {
+          error: `Device '${deviceName}' is not controllable (no handler for ${targetDevice.connector.category})`,
+          deviceName,
+          totalCount: 0
+        }
+      };
+    }
+    
+    const deviceContext = {
+      id: targetDevice.id,
+      deviceId: targetDevice.deviceId,
+      type: targetDevice.type,
+      connectorId: targetDevice.connectorId,
+      rawDeviceData: targetDevice.rawDeviceData
+    };
+    
+    const canTurnOn = supportedHandler.canHandle(deviceContext, ActionableState.SET_ON);
+    
+    if (!canTurnOn) {
+      return {
+        aiData: {
+          error: `Device '${deviceName}' does not support turn on operation`,
+          deviceName,
+          totalCount: 0
+        }
+      };
+    }
+    
+    const currentState = targetDevice.displayState as DisplayState | undefined;
+    const actions: ChatAction[] = [];
+    
+    // Only add turn on action if device is not already on
+    if (currentState !== ON) {
+      actions.push({
+        id: `device-${targetDevice.id}-on`,
+        type: 'device',
+        label: `Turn On ${targetDevice.name}`,
+        icon: 'Power',
+        metadata: {
+          internalDeviceId: targetDevice.id,
+          deviceName: targetDevice.name,
+          action: ActionableState.SET_ON,
+          currentState: currentState,
+          connectorCategory: targetDevice.connector.category,
+          deviceType: targetDevice.type
+        } as DeviceActionMetadata
+      });
+    }
+    
+    return {
+      aiData: {
+        deviceName: targetDevice.name,
+        currentState,
+        totalCount: 1,
+        canPerformAction: currentState !== ON,
+        actionReason: currentState === ON ? `${targetDevice.name} is already on` : undefined,
+        devices: [{
+          id: targetDevice.id,
+          name: targetDevice.name,
+          type: targetDevice.type,
+          connectorCategory: targetDevice.connector.category,
+          status: targetDevice.status || 'unknown',
+          area: targetDevice.areaId,
+          location: targetDevice.locationId,
+          displayState: currentState
+        }]
+      },
+      uiData: {
+        actions: actions.length > 0 ? actions : undefined
+      }
+    };
+  } catch (error) {
+    console.error('[turnOnDevice] Error:', error);
+    return {
+      aiData: {
+        error: error instanceof Error ? error.message : 'Failed to turn on device',
+        deviceName,
+        totalCount: 0
+      }
+    };
+  }
+}
+
+async function turnOffDevice(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+  const { deviceName } = args;
+  
+  try {
+    // Get all devices
+    const devices = await orgDb.devices.findAll();
+    
+    // Find the specific device by name (case-insensitive)
+    const targetDevice = devices.find((device: any) => 
+      device.name && device.name.toLowerCase() === deviceName.toLowerCase()
+    );
+    
+    if (!targetDevice) {
+      return {
+        aiData: {
+          error: `Device '${deviceName}' not found`,
+          deviceName,
+          totalCount: 0
+        }
+      };
+    }
+    
+    // Check if device is controllable
+    if (!targetDevice.id || !targetDevice.name || !targetDevice.connector?.category) {
+      return {
+        aiData: {
+          error: `Device '${deviceName}' is missing required data and cannot be controlled`,
+          deviceName,
+          totalCount: 0
+        }
+      };
+    }
+
+    const supportedHandler = actionHandlers.find(handler => 
+      handler.category === targetDevice.connector.category
+    );
+    
+    if (!supportedHandler) {
+      return {
+        aiData: {
+          error: `Device '${deviceName}' is not controllable (no handler for ${targetDevice.connector.category})`,
+          deviceName,
+          totalCount: 0
+        }
+      };
+    }
+    
+    const deviceContext = {
+      id: targetDevice.id,
+      deviceId: targetDevice.deviceId,
+      type: targetDevice.type,
+      connectorId: targetDevice.connectorId,
+      rawDeviceData: targetDevice.rawDeviceData
+    };
+    
+    const canTurnOff = supportedHandler.canHandle(deviceContext, ActionableState.SET_OFF);
+    
+    if (!canTurnOff) {
+      return {
+        aiData: {
+          error: `Device '${deviceName}' does not support turn off operation`,
+          deviceName,
+          totalCount: 0
+        }
+      };
+    }
+    
+    const currentState = targetDevice.displayState as DisplayState | undefined;
+    const actions: ChatAction[] = [];
+    
+    // Only add turn off action if device is not already off
+    if (currentState !== OFF) {
+      actions.push({
+        id: `device-${targetDevice.id}-off`,
+        type: 'device',
+        label: `Turn Off ${targetDevice.name}`,
+        icon: 'PowerOff',
+        metadata: {
+          internalDeviceId: targetDevice.id,
+          deviceName: targetDevice.name,
+          action: ActionableState.SET_OFF,
+          currentState: currentState,
+          connectorCategory: targetDevice.connector.category,
+          deviceType: targetDevice.type
+        } as DeviceActionMetadata
+      });
+    }
+    
+    return {
+      aiData: {
+        deviceName: targetDevice.name,
+        currentState,
+        totalCount: 1,
+        canPerformAction: currentState !== OFF,
+        actionReason: currentState === OFF ? `${targetDevice.name} is already off` : undefined,
+        devices: [{
+          id: targetDevice.id,
+          name: targetDevice.name,
+          type: targetDevice.type,
+          connectorCategory: targetDevice.connector.category,
+          status: targetDevice.status || 'unknown',
+          area: targetDevice.areaId,
+          location: targetDevice.locationId,
+          displayState: currentState
+        }]
+      },
+      uiData: {
+        actions: actions.length > 0 ? actions : undefined
+      }
+    };
+  } catch (error) {
+    console.error('[turnOffDevice] Error:', error);
+    return {
+      aiData: {
+        error: error instanceof Error ? error.message : 'Failed to turn off device',
+        deviceName,
+        totalCount: 0
+      }
+    };
+  }
 } 

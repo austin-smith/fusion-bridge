@@ -40,14 +40,6 @@ export interface AreaActionMetadata {
 }
 
 /**
- * Container for actions returned by AI functions
- */
-export interface ActionableResponse {
-  actions?: ChatAction[];
-  [key: string]: any; // Allow other response data
-}
-
-/**
  * Helper type guards
  */
 export function isDeviceAction(action: ChatAction): action is ChatAction & { metadata: DeviceActionMetadata } {

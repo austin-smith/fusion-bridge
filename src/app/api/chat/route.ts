@@ -4,7 +4,7 @@ import { getOpenAIConfiguration } from '@/data/repositories/service-configuratio
 import { openAIFunctions, executeFunction } from '@/lib/ai/functions';
 import { chatWithFunctions, type OpenAIMessage, type OpenAIFunction } from '@/services/drivers/openai';
 import { OpenAIModel } from '@/types/ai/openai-service-types';
-import type { ChatRequest, ChatResponse } from '@/types/ai/chat-types';
+import type { ChatRequest, ChatResponse, FunctionExecutionResult } from '@/types/ai/chat-types';
 
 /**
  * POST /api/chat
@@ -52,39 +52,32 @@ export const POST = withOrganizationAuth(async (
     // Build messages array with conversation history
     const systemMessage: OpenAIMessage = {
       role: 'system',
-      content: `You are a helpful security system assistant for Fusion. 
+      content: `You are a security system assistant for Fusion Bridge.
 
-Current context:
-- Organization: ${organizationId}
-- Server time: ${new Date().toISOString()}
-- User timezone: ${userTimezone || 'UTC'}
+Context: Organization ${organizationId}, Server time: ${new Date().toISOString()}, User timezone: ${userTimezone || 'UTC'}
 
-When users ask about time periods like "today", "yesterday", etc:
-1. Calculate the start and end times in the user's timezone
-2. Convert those times to UTC ISO strings
-3. Pass the UTC times as timeStart and timeEnd parameters
+CORE ROLE: Provide information and analysis only. You do NOT execute actions - users must click buttons to perform actions.
 
-IMPORTANT: When users ask follow-up questions that are refinements or filters of previous queries (e.g., "narrow it down to X", "what about Y events", "filter by Z"), maintain the same time context from the previous query unless they explicitly specify a different time period. Look at the conversation history to understand the temporal context.
+TIME HANDLING:
+- For relative times ("today", "yesterday"), calculate start/end in user timezone, convert to UTC ISO strings
+- For follow-up queries, maintain temporal context from conversation history unless user specifies different time
 
-For example, if user asks "events today" and user timezone is "America/New_York":
-- Calculate today's start: beginning of today in America/New_York
-- Calculate today's end: end of today in America/New_York  
-- Convert both to UTC ISO strings for the API
+LANGUAGE RULES:
+- Never say "I will [action]" or "I am [action]ing"
+- Check function results before mentioning buttons:
+  * If actions are available → "You can [action] using the button below"
+  * If no actions available → explain why (e.g., "The Front Door is already disarmed")
+- Explain what you found based on actual data, don't assume buttons exist
+- No hyperlinks, markdown links, or clickable elements in responses
 
-When users ask questions about devices or areas:
-1. Use the appropriate function to get current status (check_device_status, check_area_status, get_system_overview)
-2. Explain what you found and provide action buttons for controllable items
-3. Be specific about current states vs desired states
+FUNCTION USAGE:
+- Device/area status questions → use check_device_status, check_area_status, get_system_overview
+- Event queries → use count_events, query_events
+- Controllable device questions → use find_controllable_devices
+- Any request to control devices/areas (individual or bulk) → use appropriate functions
+- Always call functions to get current data before responding
 
-When users ask questions:
-1. Use the available functions to get the data you need
-2. Provide clear, concise, and helpful responses
-3. If no data is found, explain clearly
-4. Format counts and statistics in a friendly way
-5. Use natural language, not technical jargon
-6. For follow-up queries, consider the conversation context to maintain temporal consistency
-
-Be helpful but brief. Don't over-explain unless asked.`
+Be concise and helpful. You provide information - users execute actions.`
     };
 
     const messages: OpenAIMessage[] = [
@@ -96,6 +89,14 @@ Be helpful but brief. Don't over-explain unless asked.`
       }
     ];
 
+    console.log(`[Chat API] Full conversation being sent to OpenAI:`);
+    console.log(`[Chat API] System message: ${systemMessage.content.substring(0, 100)}...`);
+    console.log(`[Chat API] History messages: ${conversationHistory.length}`);
+    conversationHistory.forEach((msg, i) => {
+      console.log(`[Chat API] History[${i}] ${msg.role}: ${msg.content?.substring(0, 100)}...`);
+    });
+    console.log(`[Chat API] Current query: ${query}`);
+
     // Convert OpenAI functions to driver format
     const functions: OpenAIFunction[] = openAIFunctions.map(fn => ({
       name: fn.name,
@@ -103,10 +104,19 @@ Be helpful but brief. Don't over-explain unless asked.`
       parameters: fn.parameters
     }));
 
-    // Function executor for the driver
+    // Variable to store UI data from function execution
+    let lastUiData: any = null;
+
+    // Function executor that handles data separation
     const functionExecutor = async (name: string, args: Record<string, any>) => {
       console.log(`[Chat API] Executing function: ${name}`);
-      return await executeFunction(name, args, organizationId);
+      const result: FunctionExecutionResult = await executeFunction(name, args, organizationId);
+      
+      // Store UI data for final response
+      lastUiData = result.uiData;
+      
+      // Return ONLY AI data to OpenAI (clean data without UI metadata)
+      return result.aiData;
     };
 
     // Use the OpenAI driver for chat with functions
@@ -118,7 +128,8 @@ Be helpful but brief. Don't over-explain unless asked.`
       functionExecutor,
       {
         maxTokens: openaiConfig.maxTokens || 1000,
-        temperature: 0.3,
+        temperature: openaiConfig.temperature || 0.3,
+        topP: openaiConfig.topP || 1.0,
       }
     );
 
@@ -133,10 +144,16 @@ Be helpful but brief. Don't over-explain unless asked.`
       );
     }
 
+    // Combine AI response with UI data
+    const responseData = {
+      ...(lastUiData || {}),
+      // Add any AI-specific response data if needed
+    };
+
     return NextResponse.json<ChatResponse>({
       success: true,
       response: result.content,
-      data: result.functionResult, // Include function result data if UI wants to render it specially
+      data: Object.keys(responseData).length > 0 ? responseData : undefined,
       usage: {
         promptTokens: result.usage.promptTokens,
         completionTokens: result.usage.completionTokens,
