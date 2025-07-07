@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/collapsible"
 import { FilePreview } from "./file-preview"
 import { MarkdownRenderer } from "./markdown-renderer"
+import { MessageActions } from "./message-actions"
 
 const chatBubbleVariants = cva(
   "group/message relative break-words rounded-lg p-3 text-sm sm:max-w-[70%]",
@@ -128,12 +129,14 @@ export interface Message {
   experimental_attachments?: Attachment[]
   toolInvocations?: ToolInvocation[]
   parts?: MessagePart[]
+  chatActions?: import('@/types/ai/chat-actions').ChatAction[] // AI-generated actions
 }
 
 export interface ChatMessageProps extends Message {
   showTimeStamp?: boolean
   animation?: Animation
-  actions?: React.ReactNode
+  actions?: React.ReactNode // Legacy support for custom actions
+  addMessage?: (content: string, role?: 'user' | 'assistant') => void
 }
 
 export const ChatMessage: React.FC<ChatMessageProps> = ({
@@ -146,6 +149,8 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
   experimental_attachments,
   toolInvocations,
   parts,
+  chatActions,
+  addMessage,
 }) => {
   const files = useMemo(() => {
     return experimental_attachments?.map((attachment) => {
@@ -163,6 +168,19 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
     hour: "2-digit",
     minute: "2-digit",
   })
+
+  // Render chat actions (device/area actions) - always visible
+  const renderChatActions = () => {
+    if (chatActions && chatActions.length > 0) {
+      return <MessageActions actions={chatActions} addMessage={addMessage} />
+    }
+    return null
+  }
+
+  // Render message options (copy/rating buttons) - hover only
+  const renderMessageOptions = () => {
+    return actions
+  }
 
   if (isUser) {
     return (
@@ -207,14 +225,23 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
             )}
             key={`text-${index}`}
           >
-            <div className={cn(chatBubbleVariants({ isUser, animation }))}>
-              <MarkdownRenderer>{part.text}</MarkdownRenderer>
-              {actions ? (
-                <div className="absolute -bottom-4 right-2 flex space-x-1 rounded-lg border bg-background p-1 text-foreground opacity-0 transition-opacity group-hover/message:opacity-100">
-                  {actions}
-                </div>
-              ) : null}
+                    <div className={cn(chatBubbleVariants({ isUser, animation }))}>
+          <MarkdownRenderer>{part.text}</MarkdownRenderer>
+          
+          {/* Always visible chat actions (device/area controls) */}
+          {chatActions?.length && (
+            <div className="mt-3 pt-3 border-t border-border/30">
+              {renderChatActions()}
             </div>
+          )}
+          
+          {/* Hover-only message options (copy/rating buttons) */}
+          {actions && (
+            <div className="absolute -bottom-4 right-2 flex space-x-1 rounded-lg border bg-background p-1 text-foreground opacity-0 transition-opacity group-hover/message:opacity-100">
+              {renderMessageOptions()}
+            </div>
+          )}
+        </div>
 
             {showTimeStamp && createdAt ? (
               <time
@@ -251,11 +278,20 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
     <div className={cn("flex flex-col", isUser ? "items-end" : "items-start")}>
       <div className={cn(chatBubbleVariants({ isUser, animation }))}>
         <MarkdownRenderer>{content}</MarkdownRenderer>
-        {actions ? (
-          <div className="absolute -bottom-4 right-2 flex space-x-1 rounded-lg border bg-background p-1 text-foreground opacity-0 transition-opacity group-hover/message:opacity-100">
-            {actions}
+        
+        {/* Always visible chat actions (device/area controls) */}
+        {chatActions?.length && (
+          <div className="mt-3 pt-3 border-t border-border/30">
+            {renderChatActions()}
           </div>
-        ) : null}
+        )}
+        
+        {/* Hover-only message options (copy/rating buttons) */}
+        {actions && (
+          <div className="absolute -bottom-4 right-2 flex space-x-1 rounded-lg border bg-background p-1 text-foreground opacity-0 transition-opacity group-hover/message:opacity-100">
+            {renderMessageOptions()}
+          </div>
+        )}
       </div>
 
       {showTimeStamp && createdAt ? (

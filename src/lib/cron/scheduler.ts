@@ -82,8 +82,6 @@ async function executeWithRetry<T>(
   throw lastError!;
 }
 
-
-
 // Enhanced job wrapper
 function createJobWrapper(jobName: string, taskFn: () => Promise<void>, retryConfig?: { maxRetries: number; retryDelay: number }) {
   return async () => {
@@ -118,6 +116,42 @@ function registerJob(config: Omit<CronJobConfig, 'task'>): void {
 }
 
 /**
+ * Validates cron schedule and timezone before attempting to schedule
+ */
+function validateCronConfig(schedule: string, timezone?: string): { isValid: boolean; error?: string } {
+  // Basic cron schedule validation
+  const cronParts = schedule.trim().split(/\s+/);
+  if (cronParts.length !== 5) {
+    return { isValid: false, error: `Invalid cron schedule format: ${schedule}` };
+  }
+
+  // Validate timezone if provided
+  if (timezone) {
+    try {
+      // Test if timezone is valid by creating a date formatter
+      new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+    } catch (error) {
+      return { isValid: false, error: `Invalid timezone: ${timezone}` };
+    }
+  }
+
+  // Test if current date can be formatted (catches "Invalid time value" issues)
+  try {
+    const testDate = new Date();
+    if (timezone) {
+      new Intl.DateTimeFormat('en-US', { timeZone: timezone }).formatToParts(testDate);
+    } else {
+      // Test with UTC as fallback
+      new Intl.DateTimeFormat('en-US', { timeZone: 'UTC' }).formatToParts(testDate);
+    }
+  } catch (error) {
+    return { isValid: false, error: `Date formatting validation failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+  }
+
+  return { isValid: true };
+}
+
+/**
  * Initializes and starts all CRON jobs with enhanced monitoring and error handling.
  * - Main job runs every minute for scheduled automations
  * - Sun times job runs daily at 9 AM UTC (~2 AM Pacific) for sunrise/sunset updates
@@ -134,10 +168,11 @@ export function initializeCronJobs(): void {
   logger.info('Initializing CRON jobs system...');
   
   try {
-    // Register scheduled automations job
+    // Register scheduled automations job with explicit UTC timezone to avoid system timezone issues
     registerJob({
       name: 'scheduled-automations',
       schedule: '* * * * *', // Every minute
+      timezone: 'UTC', // Explicit timezone to prevent "Invalid time value" errors
       retryConfig: { maxRetries: 1, retryDelay: 500 } // Quick retry for time-sensitive tasks
     });
     
@@ -151,6 +186,13 @@ export function initializeCronJobs(): void {
     
     // Initialize scheduled automations job
     const automationsConfig = jobRegistry.get('scheduled-automations')!;
+    
+    // Validate configuration before scheduling
+    const automationsValidation = validateCronConfig(automationsConfig.schedule, automationsConfig.timezone);
+    if (!automationsValidation.isValid) {
+      throw new Error(`Invalid scheduled-automations configuration: ${automationsValidation.error}`);
+    }
+    
     const automationsTask = createJobWrapper(
       'scheduled-automations',
       async () => {
@@ -160,14 +202,26 @@ export function initializeCronJobs(): void {
       automationsConfig.retryConfig
     );
     
-    automationsConfig.task = cron.schedule(automationsConfig.schedule, automationsTask);
+    automationsConfig.task = cron.schedule(
+      automationsConfig.schedule, 
+      automationsTask,
+      { timezone: automationsConfig.timezone }
+    );
     logger.info('Scheduled automations job initialized', {
       schedule: automationsConfig.schedule,
+      timezone: automationsConfig.timezone,
       retryConfig: automationsConfig.retryConfig
     });
 
     // Initialize sun times update job
     const sunTimesConfig = jobRegistry.get('sun-times-update')!;
+    
+    // Validate configuration before scheduling
+    const sunTimesValidation = validateCronConfig(sunTimesConfig.schedule, sunTimesConfig.timezone);
+    if (!sunTimesValidation.isValid) {
+      throw new Error(`Invalid sun-times-update configuration: ${sunTimesValidation.error}`);
+    }
+    
     const sunTimesTask = createJobWrapper(
       'sun-times-update',
       async () => {
@@ -230,8 +284,6 @@ export function stopCronJobs(): void {
     throw error;
   }
 }
-
-
 
 // Enhanced graceful shutdown handling
 const handleShutdown = (signal: string) => {

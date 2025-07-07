@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MessagesSquare, X, Maximize2, Minimize2, Calendar, Cpu, ShieldCheck, BarChart3, Activity, Cctv } from 'lucide-react';
+import { MessagesSquare, X, Maximize2, Minimize2, Calendar, Cpu, ShieldCheck, BarChart3, Activity, Cctv, PowerOff } from 'lucide-react';
 import { Chat } from '@/components/ui/chat/chat';
 import { type Message } from '@/components/ui/chat/chat-message';
 import type { ChatResponse } from '@/types/ai/chat-types';
@@ -42,6 +42,14 @@ const DEFAULT_SUGGESTIONS = [
   {
     text: "How many cameras are offline?",
     icon: Cctv
+  },
+  {
+    text: "Arm all areas",
+    icon: ShieldCheck
+  },
+  {
+    text: "Turn off all switches",
+    icon: PowerOff
   }
 ];
 
@@ -57,6 +65,17 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
   
   // Get OpenAI enabled status from store
   const { openAiEnabled } = useFusionStore();
+
+  // Function to add a new message to the chat
+  const addMessage = useCallback((content: string, role: 'user' | 'assistant' = 'assistant') => {
+    const newMessage: Message = {
+      id: generateId(),
+      role,
+      content,
+      createdAt: new Date(),
+    };
+    setMessages(prev => [...prev, newMessage]);
+  }, []);
 
   const handleSubmit = useCallback(async (event?: { preventDefault?: () => void }) => {
     if (event?.preventDefault) {
@@ -122,6 +141,7 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
         role: 'assistant',
         content: assistantContent,
         createdAt: new Date(),
+        chatActions: result.data?.actions || undefined,
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -145,7 +165,7 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
       setIsGenerating(false);
       abortControllerRef.current = null;
     }
-  }, [input, isGenerating, onResults]);
+  }, [input, isGenerating, messages, onResults]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -211,6 +231,7 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
         role: 'assistant',
         content: assistantContent,
         createdAt: new Date(),
+        chatActions: result.data?.actions || undefined,
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -374,6 +395,7 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
               append={handleAppend}
               suggestions={DEFAULT_SUGGESTIONS}
               className="h-full p-2"
+              addMessage={addMessage}
             />
           </div>
         </CardContent>

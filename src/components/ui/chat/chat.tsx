@@ -38,6 +38,7 @@ interface ChatPropsBase {
   ) => void
   setMessages?: (messages: any[]) => void
   transcribeAudio?: (blob: Blob) => Promise<string>
+  addMessage?: (content: string, role?: 'user' | 'assistant') => void
 }
 
 interface ChatPropsWithoutSuggestions extends ChatPropsBase {
@@ -65,6 +66,7 @@ export function Chat({
   onRateResponse,
   setMessages,
   transcribeAudio,
+  addMessage,
 }: ChatProps) {
   const lastMessage = messages.at(-1)
   const isEmpty = messages.length === 0
@@ -210,6 +212,7 @@ export function Chat({
             messages={messages}
             isTyping={isTyping}
             messageOptions={messageOptions}
+            addMessage={addMessage}
           />
         </ChatMessages>
       ) : null}
@@ -223,9 +226,7 @@ export function Chat({
           <MessageInput
             value={input}
             onChange={handleInputChange}
-            allowAttachments
-            files={files}
-            setFiles={setFiles}
+            allowAttachments={false}
             stop={handleStop}
             isGenerating={isGenerating}
             transcribeAudio={transcribeAudio}

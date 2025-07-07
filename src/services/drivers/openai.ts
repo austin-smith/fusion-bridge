@@ -13,12 +13,29 @@ const OPENAI_API_BASE_URL = 'https://api.openai.com/v1';
 const OpenAICompletionRequestSchema = z.object({
   model: z.string(),
   messages: z.array(z.object({
-    role: z.enum(['system', 'user', 'assistant']),
+    role: z.enum(['system', 'user', 'assistant', 'function']),
     content: z.string(),
+    name: z.string().optional(), // For function responses
   })),
   max_tokens: z.number().optional(),
   temperature: z.number().optional(),
   top_p: z.number().optional(),
+  functions: z.array(z.object({
+    name: z.string(),
+    description: z.string(),
+    parameters: z.record(z.any()),
+  })).optional(),
+  function_call: z.union([
+    z.literal('auto'),
+    z.literal('none'),
+    z.object({ name: z.string() })
+  ]).optional(),
+});
+
+// OpenAI Function Call Schema
+const OpenAIFunctionCallSchema = z.object({
+  name: z.string(),
+  arguments: z.string(),
 });
 
 // OpenAI Chat Completion Response Schema
@@ -31,7 +48,8 @@ const OpenAICompletionResponseSchema = z.object({
     index: z.number(),
     message: z.object({
       role: z.enum(['assistant']),
-      content: z.string(),
+      content: z.string().nullable(),
+      function_call: OpenAIFunctionCallSchema.optional(),
     }),
     finish_reason: z.string().nullable(),
   })),
@@ -44,24 +62,57 @@ const OpenAICompletionResponseSchema = z.object({
 
 type OpenAICompletionResponse = z.infer<typeof OpenAICompletionResponseSchema>;
 
+// Function calling types
+export interface OpenAIFunction {
+  name: string;
+  description: string;
+  parameters: Record<string, any>;
+}
+
+export interface OpenAIMessage {
+  role: 'system' | 'user' | 'assistant' | 'function';
+  content: string;
+  name?: string; // For function responses
+}
+
+export interface OpenAIChatSuccessResponse {
+  success: true;
+  content: string;
+  functionResult?: any; // Function result data for UI use
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+}
+
+export interface OpenAIChatErrorResponse {
+  success: false;
+  errorMessage: string;
+}
+
+export type OpenAIChatResponse = OpenAIChatSuccessResponse | OpenAIChatErrorResponse;
+
 /**
- * Makes a chat completion request to OpenAI
+ * Makes a chat completion request to OpenAI with optional function calling support
  * 
  * @param apiKey OpenAI API key
  * @param model OpenAI model to use
  * @param messages Chat messages array
- * @param maxTokens Maximum tokens to generate (optional)
- * @param temperature Temperature parameter (optional)
- * @param topP Top-p parameter (optional)
+ * @param options Optional parameters including functions, maxTokens, temperature, etc.
  * @returns Promise resolving to completion response or null if failed
  */
 export async function createChatCompletion(
   apiKey: string,
   model: OpenAIModel,
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-  maxTokens?: number,
-  temperature?: number,
-  topP?: number
+  messages: OpenAIMessage[],
+  options?: {
+    maxTokens?: number;
+    temperature?: number;
+    topP?: number;
+    functions?: OpenAIFunction[];
+    functionCall?: 'auto' | 'none' | { name: string };
+  }
 ): Promise<OpenAICompletionResponse | null> {
   const logPrefix = '[OpenAI Chat Completion]';
   
@@ -78,9 +129,11 @@ export async function createChatCompletion(
   const requestBody = {
     model,
     messages,
-    ...(maxTokens && { max_tokens: maxTokens }),
-    ...(temperature !== undefined && { temperature }),
-    ...(topP !== undefined && { top_p: topP }),
+    ...(options?.maxTokens && { max_tokens: options.maxTokens }),
+    ...(options?.temperature !== undefined && { temperature: options.temperature }),
+    ...(options?.topP !== undefined && { top_p: options.topP }),
+    ...(options?.functions && { functions: options.functions }),
+    ...(options?.functionCall && { function_call: options.functionCall }),
   };
 
   // Validate request structure
@@ -92,6 +145,9 @@ export async function createChatCompletion(
 
   console.log(`${logPrefix} Making chat completion request with model: ${model}`);
   console.log(`${logPrefix} Messages count: ${messages.length}`);
+  if (options?.functions) {
+    console.log(`${logPrefix} Functions available: ${options.functions.length}`);
+  }
 
   try {
     const response = await fetch(`${OPENAI_API_BASE_URL}/chat/completions`, {
@@ -133,6 +189,148 @@ export async function createChatCompletion(
     console.error(`${logPrefix} Network or parsing error:`, error);
     return null;
   }
+}
+
+/**
+ * High-level chat completion with function calling support
+ * Handles the complete flow: initial request -> function call -> function result -> final response
+ * 
+ * @param apiKey OpenAI API key
+ * @param model OpenAI model to use
+ * @param messages Chat messages array
+ * @param functions Available functions for the AI to call
+ * @param functionExecutor Function to execute when AI calls a function
+ * @param options Optional parameters like maxTokens, temperature, etc.
+ * @returns Promise resolving to chat response
+ */
+export async function chatWithFunctions(
+  apiKey: string,
+  model: OpenAIModel,
+  messages: OpenAIMessage[],
+  functions: OpenAIFunction[],
+  functionExecutor: (name: string, args: Record<string, any>) => Promise<any>,
+  options?: {
+    maxTokens?: number;
+    temperature?: number;
+    topP?: number;
+  }
+): Promise<OpenAIChatResponse> {
+  const logPrefix = '[OpenAI Chat with Functions]';
+
+  // First, make the initial request with function calling enabled
+  const initialResult = await createChatCompletion(apiKey, model, messages, {
+    ...options,
+    functions,
+    functionCall: 'auto',
+  });
+
+  if (!initialResult) {
+    return {
+      success: false,
+      errorMessage: 'Failed to get initial response from OpenAI'
+    };
+  }
+
+  const message = initialResult.choices[0].message;
+
+  // Check if AI wants to call a function
+  if (message.function_call) {
+    const functionName = message.function_call.name;
+    const functionArgs = message.function_call.arguments;
+
+    console.log(`${logPrefix} AI wants to call function: ${functionName}`);
+
+    try {
+      // Parse function arguments
+      const parsedArgs = JSON.parse(functionArgs);
+      
+      // Execute the function
+      const functionResult = await functionExecutor(functionName, parsedArgs);
+      
+      // Prepare messages for final completion
+      const finalMessages: OpenAIMessage[] = [
+        ...messages,
+        {
+          role: 'assistant',
+          content: message.content ?? '',
+          // Note: We don't include function_call in the message object here as it's not part of our schema
+        },
+        {
+          role: 'function',
+          name: functionName,
+          content: JSON.stringify(functionResult),
+        }
+      ];
+
+      // Get final response
+      const finalResult = await createChatCompletion(apiKey, model, finalMessages, {
+        maxTokens: options?.maxTokens || 500,
+        temperature: options?.temperature || 0.7,
+      });
+
+      if (!finalResult) {
+        return {
+          success: false,
+          errorMessage: 'Failed to get final response from OpenAI'
+        };
+      }
+
+      return {
+        success: true,
+        content: finalResult.choices[0].message.content ?? '',
+        functionResult: functionResult, // Include function result data for UI
+        usage: {
+          promptTokens: initialResult.usage.prompt_tokens + finalResult.usage.prompt_tokens,
+          completionTokens: initialResult.usage.completion_tokens + finalResult.usage.completion_tokens,
+          totalTokens: initialResult.usage.total_tokens + finalResult.usage.total_tokens,
+        }
+      };
+
+    } catch (error) {
+      console.error(`${logPrefix} Function execution error:`, error);
+      return {
+        success: false,
+        errorMessage: `Function execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
+  // Direct response without function call
+        return {
+        success: true,
+        content: message.content ?? '',
+        usage: {
+          promptTokens: initialResult.usage.prompt_tokens,
+          completionTokens: initialResult.usage.completion_tokens,
+          totalTokens: initialResult.usage.total_tokens,
+        }
+      };
+}
+
+/**
+ * Simple chat completion without function calling (backward compatibility)
+ * 
+ * @param apiKey OpenAI API key
+ * @param model OpenAI model to use
+ * @param messages Chat messages array (simple format)
+ * @param maxTokens Maximum tokens to generate (optional)
+ * @param temperature Temperature parameter (optional)
+ * @param topP Top-p parameter (optional)
+ * @returns Promise resolving to completion response or null if failed
+ */
+export async function createSimpleChatCompletion(
+  apiKey: string,
+  model: OpenAIModel,
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  maxTokens?: number,
+  temperature?: number,
+  topP?: number
+): Promise<OpenAICompletionResponse | null> {
+  return createChatCompletion(apiKey, model, messages, {
+    maxTokens,
+    temperature,
+    topP,
+  });
 }
 
 /**
@@ -182,9 +380,11 @@ export async function testApiKey(
       apiKey,
       model,
       testMessages,
-      maxTokens,
-      temperature,
-      topP
+      {
+        maxTokens,
+        temperature,
+        topP,
+      }
     );
 
     const responseTime = Date.now() - startTime;
@@ -307,13 +507,15 @@ Respond in a helpful, structured way that makes it easy for users to understand 
       apiKey,
       model,
       messages,
-      maxTokens,
-      temperature,
-      topP
+      {
+        maxTokens,
+        temperature,
+        topP,
+      }
     );
 
     if (result && result.choices && result.choices.length > 0) {
-      const content = result.choices[0].message.content;
+      const content = result.choices[0].message.content ?? '';
       
       return {
         success: true,

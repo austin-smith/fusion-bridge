@@ -4,7 +4,9 @@
  */
 
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
-import { ArmedState } from '@/lib/mappings/definitions';
+import { ArmedState, ActionableState, DisplayState, ON, OFF } from '@/lib/mappings/definitions';
+import { actionHandlers } from '@/lib/device-actions';
+import type { ChatAction, DeviceActionMetadata, AreaActionMetadata, ActionableResponse } from '@/types/ai/chat-actions';
 
 // OpenAI function definitions
 export const openAIFunctions = [
@@ -115,6 +117,28 @@ export const openAIFunctions = [
     }
   },
   {
+    name: "find_controllable_devices",
+    description: "Find devices that can be controlled (turned on/off, activated/deactivated). Use this when users want to control devices, turn devices on/off, or ask about controllable devices.",
+    parameters: {
+      type: "object",
+      properties: {
+        deviceFilter: {
+          type: "object",
+          properties: {
+            names: { type: "array", items: { type: "string" } },
+            types: { type: "array", items: { type: "string" } },
+            connectorCategories: { type: "array", items: { type: "string" }, description: "Filter by connector categories like 'piko', 'yolink', 'genea', etc." }
+          }
+        },
+        actionIntent: {
+          type: "string",
+          enum: ["turn_on", "turn_off", "list_all"],
+          description: "Specific action intent: 'turn_on' for turn on requests, 'turn_off' for turn off requests, 'list_all' to show all available actions"
+        }
+      }
+    }
+  },
+  {
     name: "check_area_status",
     description: "Get current armed state and status of areas",
     parameters: {
@@ -161,6 +185,9 @@ export async function executeFunction(
     
     case 'check_device_status':
       return checkDeviceStatus(orgDb, args);
+    
+    case 'find_controllable_devices':
+      return findControllableDevices(orgDb, args);
     
     case 'check_area_status':
       return checkAreaStatus(orgDb, args);
@@ -407,7 +434,7 @@ async function queryEvents(orgDb: any, args: any) {
 }
 
 // Check device status
-async function checkDeviceStatus(orgDb: any, args: any) {
+async function checkDeviceStatus(orgDb: any, args: any): Promise<ActionableResponse> {
   const { deviceFilter, includeMetrics } = args;
   
   // Get all devices
@@ -444,8 +471,83 @@ async function checkDeviceStatus(orgDb: any, args: any) {
     );
   }
   
-  // Return device status
-  const results: any = {
+  // Generate actions for controllable devices
+  const actions: ChatAction[] = [];
+  
+  try {
+    filteredDevices.forEach((device: any) => {
+      // Input validation - skip devices with missing required data
+      if (!device?.id || !device?.name || !device?.connector?.category) {
+        console.warn('[checkDeviceStatus] Skipping device with missing required data:', device?.id);
+        return;
+      }
+
+      // Check if any action handler can control this device
+      const supportedHandler = actionHandlers.find(handler => 
+        handler.category === device.connector.category
+      );
+      
+      if (supportedHandler) {
+        const deviceContext = {
+          id: device.id,
+          deviceId: device.deviceId,
+          type: device.type,
+          connectorId: device.connectorId,
+          rawDeviceData: device.rawDeviceData
+        };
+        
+        // Check if device supports ON/OFF actions
+        const canTurnOn = supportedHandler.canHandle(deviceContext, ActionableState.SET_ON);
+        const canTurnOff = supportedHandler.canHandle(deviceContext, ActionableState.SET_OFF);
+        
+        if (canTurnOn || canTurnOff) {
+          // Fix: Handle undefined displayState properly
+          const currentState = device.displayState as DisplayState | undefined;
+          
+          // Only add actions that would change the current state
+          if (canTurnOn && currentState !== ON) {
+            actions.push({
+              id: `device-${device.id}-on`,
+              type: 'device',
+              label: `Turn On ${device.name}`,
+              icon: 'Power', // Use proper lucide-react icon name
+              metadata: {
+                internalDeviceId: device.id,
+                deviceName: device.name,
+                action: ActionableState.SET_ON,
+                currentState: currentState,
+                connectorCategory: device.connector.category,
+                deviceType: device.type
+              } as DeviceActionMetadata
+            });
+          }
+          
+          if (canTurnOff && currentState !== OFF) {
+            actions.push({
+              id: `device-${device.id}-off`,
+              type: 'device',
+              label: `Turn Off ${device.name}`,
+              icon: 'PowerOff', // Use proper lucide-react icon name
+              metadata: {
+                internalDeviceId: device.id,
+                deviceName: device.name,
+                action: ActionableState.SET_OFF,
+                currentState: currentState,
+                connectorCategory: device.connector.category,
+                deviceType: device.type
+              } as DeviceActionMetadata
+            });
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('[checkDeviceStatus] Error generating device actions:', error);
+    // Continue execution - don't let action generation errors break the whole response
+  }
+  
+  // Return device status with actions
+  const results: ActionableResponse = {
     totalCount: filteredDevices.length,
     devices: filteredDevices.map((d: any) => ({
       id: d.id,
@@ -454,8 +556,10 @@ async function checkDeviceStatus(orgDb: any, args: any) {
       connectorCategory: d.connector?.category,
       status: d.status || 'unknown',
       area: d.areaId,
-      location: d.locationId
-    }))
+      location: d.locationId,
+      displayState: d.displayState
+    })),
+    actions: actions.length > 0 ? actions : undefined
   };
   
   if (includeMetrics) {
@@ -479,8 +583,139 @@ async function checkDeviceStatus(orgDb: any, args: any) {
   return results;
 }
 
+// Find controllable devices
+async function findControllableDevices(orgDb: any, args: any): Promise<ActionableResponse> {
+  const { deviceFilter, actionIntent = "list_all" } = args;
+  
+  // Get all devices
+  const devices = await orgDb.devices.findAll();
+  
+  // Apply filters
+  let filteredDevices = devices;
+  
+  if (deviceFilter?.names?.length) {
+    const nameSet = new Set(deviceFilter.names.map((n: string) => n.toLowerCase()));
+    filteredDevices = filteredDevices.filter((d: any) => 
+      d.name && nameSet.has(d.name.toLowerCase())
+    );
+  }
+  
+  if (deviceFilter?.types?.length) {
+    const typeSet = new Set(deviceFilter.types.map((t: string) => t.toLowerCase()));
+    filteredDevices = filteredDevices.filter((d: any) => 
+      d.type && typeSet.has(d.type.toLowerCase())
+    );
+  }
+  
+  if (deviceFilter?.connectorCategories?.length) {
+    const categorySet = new Set(deviceFilter.connectorCategories.map((c: string) => c.toLowerCase()));
+    filteredDevices = filteredDevices.filter((d: any) => 
+      d.connector?.category && categorySet.has(d.connector.category.toLowerCase())
+    );
+  }
+  
+  // Filter to ONLY controllable devices
+  const controllableDevices: any[] = [];
+  const actions: ChatAction[] = [];
+  
+  try {
+    filteredDevices.forEach((device: any) => {
+      // Input validation - skip devices with missing required data
+      if (!device?.id || !device?.name || !device?.connector?.category) {
+        console.warn('[findControllableDevices] Skipping device with missing required data:', device?.id);
+        return;
+      }
+
+      // Check if any action handler can control this device
+      const supportedHandler = actionHandlers.find(handler => 
+        handler.category === device.connector.category
+      );
+      
+      if (supportedHandler) {
+        const deviceContext = {
+          id: device.id,
+          deviceId: device.deviceId,
+          type: device.type,
+          connectorId: device.connectorId,
+          rawDeviceData: device.rawDeviceData
+        };
+        
+        // Check if device supports ON/OFF actions
+        const canTurnOn = supportedHandler.canHandle(deviceContext, ActionableState.SET_ON);
+        const canTurnOff = supportedHandler.canHandle(deviceContext, ActionableState.SET_OFF);
+        
+        if (canTurnOn || canTurnOff) {
+          // This device is controllable - add to list
+          controllableDevices.push(device);
+          
+          const currentState = device.displayState as DisplayState | undefined;
+          
+          // Add actions based on intent
+          const shouldShowTurnOn = (actionIntent === "list_all" || actionIntent === "turn_on") && 
+                                  canTurnOn && currentState !== ON;
+          const shouldShowTurnOff = (actionIntent === "list_all" || actionIntent === "turn_off") && 
+                                  canTurnOff && currentState !== OFF;
+          
+          if (shouldShowTurnOn) {
+            actions.push({
+              id: `device-${device.id}-on`,
+              type: 'device',
+              label: `Turn On ${device.name}`,
+              icon: 'Power',
+              metadata: {
+                internalDeviceId: device.id,
+                deviceName: device.name,
+                action: ActionableState.SET_ON,
+                currentState: currentState,
+                connectorCategory: device.connector.category,
+                deviceType: device.type
+              } as DeviceActionMetadata
+            });
+          }
+           
+          if (shouldShowTurnOff) {
+            actions.push({
+              id: `device-${device.id}-off`,
+              type: 'device',
+              label: `Turn Off ${device.name}`,
+              icon: 'PowerOff',
+              metadata: {
+                internalDeviceId: device.id,
+                deviceName: device.name,
+                action: ActionableState.SET_OFF,
+                currentState: currentState,
+                connectorCategory: device.connector.category,
+                deviceType: device.type
+              } as DeviceActionMetadata
+            });
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('[findControllableDevices] Error processing devices:', error);
+    // Continue execution - don't let errors break the whole response
+  }
+  
+  // Return only controllable devices with their actions
+  return {
+    totalCount: controllableDevices.length,
+    devices: controllableDevices.map((d: any) => ({
+      id: d.id,
+      name: d.name,
+      type: d.type,
+      connectorCategory: d.connector?.category,
+      status: d.status || 'unknown',
+      area: d.areaId,
+      location: d.locationId,
+      displayState: d.displayState
+    })),
+    actions: actions.length > 0 ? actions : undefined
+  };
+}
+
 // Check area status
-async function checkAreaStatus(orgDb: any, args: any) {
+async function checkAreaStatus(orgDb: any, args: any): Promise<ActionableResponse> {
   const { areaFilter } = args;
   
   // Get all areas
@@ -503,7 +738,62 @@ async function checkAreaStatus(orgDb: any, args: any) {
     );
   }
   
-  // Return area status
+  // Generate actions for areas
+  const actions: ChatAction[] = [];
+  
+  try {
+    filteredAreas.forEach((area: any) => {
+      // Input validation - skip areas with missing required data
+      if (!area?.id || !area?.name) {
+        console.warn('[checkAreaStatus] Skipping area with missing required data:', area?.id);
+        return;
+      }
+
+      const currentState = area.armedState || ArmedState.DISARMED;
+      
+      // Improved armed state logic - handle all possible states
+      const isArmed = currentState === ArmedState.ARMED_AWAY || 
+                     currentState === ArmedState.ARMED_STAY || 
+                     currentState === ArmedState.TRIGGERED;
+      
+      // Only add ARM action if area is not already armed (and not triggered)
+      if (!isArmed) {
+        actions.push({
+          id: `area-${area.id}-arm`,
+          type: 'area',
+          label: `Arm ${area.name}`,
+          icon: 'ShieldCheck', // Use proper lucide-react icon name
+          metadata: {
+            areaId: area.id,
+            areaName: area.name,
+            targetState: ArmedState.ARMED_AWAY,
+            currentState: currentState
+          } as AreaActionMetadata
+        });
+      }
+      
+      // Only add DISARM action if area is not already disarmed
+      if (currentState !== ArmedState.DISARMED) {
+        actions.push({
+          id: `area-${area.id}-disarm`,
+          type: 'area',
+          label: `Disarm ${area.name}`,
+          icon: 'ShieldOff', // Use proper lucide-react icon name
+          metadata: {
+            areaId: area.id,
+            areaName: area.name,
+            targetState: ArmedState.DISARMED,
+            currentState: currentState
+          } as AreaActionMetadata
+        });
+      }
+    });
+  } catch (error) {
+    console.error('[checkAreaStatus] Error generating area actions:', error);
+    // Continue execution - don't let action generation errors break the whole response
+  }
+  
+  // Return area status with actions
   return {
     totalCount: filteredAreas.length,
     areas: filteredAreas.map((a: any) => ({
@@ -511,12 +801,13 @@ async function checkAreaStatus(orgDb: any, args: any) {
       name: a.name,
       armedState: a.armedState || ArmedState.DISARMED,
       location: a.locationId
-    }))
+    })),
+    actions: actions.length > 0 ? actions : undefined
   };
 }
 
 // Get system overview
-async function getSystemOverview(orgDb: any) {
+async function getSystemOverview(orgDb: any): Promise<ActionableResponse> {
   const [devices, areas, locations] = await Promise.all([
     orgDb.devices.findAll(),
     orgDb.areas.findAll(),
@@ -530,10 +821,18 @@ async function getSystemOverview(orgDb: any) {
     armedStateCounts.set(state, (armedStateCounts.get(state) || 0) + 1);
   });
   
+  // Generate quick actions for system overview
+  const actions: ChatAction[] = [];
+  
+  // Note: Removed broken "arm all"/"disarm all" actions as they require 
+  // individual API calls per area. This will be implemented properly in 
+  // a future phase with batch operations.
+  
   return {
     deviceCount: devices.length,
     areaCount: areas.length,
     locationCount: locations.length,
-    armedStates: Array.from(armedStateCounts.entries()).map(([state, count]) => ({ state, count }))
+    armedStates: Array.from(armedStateCounts.entries()).map(([state, count]) => ({ state, count })),
+    actions: actions.length > 0 ? actions : undefined
   };
 } 

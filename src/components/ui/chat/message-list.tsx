@@ -14,6 +14,7 @@ interface MessageListProps {
   messageOptions?:
     | AdditionalMessageOptions
     | ((message: Message) => AdditionalMessageOptions)
+  addMessage?: (content: string, role?: 'user' | 'assistant') => void
 }
 
 export function MessageList({
@@ -21,6 +22,7 @@ export function MessageList({
   showTimeStamps = true,
   isTyping = false,
   messageOptions,
+  addMessage,
 }: MessageListProps) {
   return (
     <div className="space-y-4 overflow-visible">
@@ -36,6 +38,7 @@ export function MessageList({
             showTimeStamp={showTimeStamps}
             {...message}
             {...additionalOptions}
+            addMessage={addMessage}
           />
         )
       })}

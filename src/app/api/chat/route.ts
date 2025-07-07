@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import { getOpenAIConfiguration } from '@/data/repositories/service-configurations';
 import { openAIFunctions, executeFunction } from '@/lib/ai/functions';
+import { chatWithFunctions, type OpenAIMessage, type OpenAIFunction } from '@/services/drivers/openai';
+import { OpenAIModel } from '@/types/ai/openai-service-types';
 import type { ChatRequest, ChatResponse } from '@/types/ai/chat-types';
 
 /**
@@ -48,10 +50,10 @@ export const POST = withOrganizationAuth(async (
     }
 
     // Build messages array with conversation history
-    const systemMessage = {
-      role: 'system' as const,
-      content: `You are a helpful security system assistant for Fusion Bridge. 
-      
+    const systemMessage: OpenAIMessage = {
+      role: 'system',
+      content: `You are a helpful security system assistant for Fusion. 
+
 Current context:
 - Organization: ${organizationId}
 - Server time: ${new Date().toISOString()}
@@ -69,6 +71,11 @@ For example, if user asks "events today" and user timezone is "America/New_York"
 - Calculate today's end: end of today in America/New_York  
 - Convert both to UTC ISO strings for the API
 
+When users ask questions about devices or areas:
+1. Use the appropriate function to get current status (check_device_status, check_area_status, get_system_overview)
+2. Explain what you found and provide action buttons for controllable items
+3. Be specific about current states vs desired states
+
 When users ask questions:
 1. Use the available functions to get the data you need
 2. Provide clear, concise, and helpful responses
@@ -80,133 +87,60 @@ When users ask questions:
 Be helpful but brief. Don't over-explain unless asked.`
     };
 
-    const messages = [
+    const messages: OpenAIMessage[] = [
       systemMessage,
       ...conversationHistory,
       {
-        role: 'user' as const,
+        role: 'user',
         content: query
       }
     ];
 
+    // Convert OpenAI functions to driver format
+    const functions: OpenAIFunction[] = openAIFunctions.map(fn => ({
+      name: fn.name,
+      description: fn.description,
+      parameters: fn.parameters
+    }));
 
+    // Function executor for the driver
+    const functionExecutor = async (name: string, args: Record<string, any>) => {
+      console.log(`[Chat API] Executing function: ${name}`);
+      return await executeFunction(name, args, organizationId);
+    };
 
-    // Make OpenAI request with function calling
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiConfig.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: openaiConfig.model,
-        messages,
-        functions: openAIFunctions,
-        function_call: 'auto',
+    // Use the OpenAI driver for chat with functions
+    const result = await chatWithFunctions(
+      openaiConfig.apiKey,
+      openaiConfig.model as OpenAIModel,
+      messages,
+      functions,
+      functionExecutor,
+      {
+        maxTokens: openaiConfig.maxTokens || 1000,
         temperature: 0.3,
-        max_tokens: openaiConfig.maxTokens || 1000
-      })
-    });
+      }
+    );
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error('[Chat API] OpenAI error:', error);
+    if (!result.success) {
+      console.error('[Chat API] OpenAI driver error:', result.errorMessage);
       return NextResponse.json<ChatResponse>(
         { 
           success: false, 
-          error: 'Failed to process query with AI service'
+          error: result.errorMessage
         },
         { status: 500 }
       );
     }
 
-    const completion = await response.json();
-    const message = completion.choices[0].message;
-
-    // Check if OpenAI wants to call a function
-    if (message.function_call) {
-      const functionName = message.function_call.name;
-      const functionArgs = JSON.parse(message.function_call.arguments);
-      
-      console.log(`[Chat API] Calling function: ${functionName}`);
-      
-      // Execute the function
-      let functionResult;
-      try {
-        functionResult = await executeFunction(
-          functionName, 
-          functionArgs, 
-          organizationId
-        );
-      } catch (error) {
-        console.error(`[Chat API] Function execution error:`, error);
-        functionResult = {
-          error: `Failed to ${functionName}: ${error instanceof Error ? error.message : 'Unknown error'}`
-        };
-      }
-      
-      // Get final response from OpenAI with function result
-      const finalResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openaiConfig.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: openaiConfig.model,
-          messages: [
-            systemMessage,
-            ...conversationHistory,
-            {
-              role: 'user' as const,
-              content: query
-            },
-            message,
-            {
-              role: 'function' as const,
-              name: functionName,
-              content: JSON.stringify(functionResult)
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 500
-        })
-      });
-
-      if (!finalResponse.ok) {
-        const error = await finalResponse.text();
-        console.error('[Chat API] OpenAI final response error:', error);
-        return NextResponse.json<ChatResponse>(
-          { 
-            success: false, 
-            error: 'Failed to generate response'
-          },
-          { status: 500 }
-        );
-      }
-
-      const finalCompletion = await finalResponse.json();
-      
-      return NextResponse.json<ChatResponse>({
-        success: true,
-        response: finalCompletion.choices[0].message.content,
-        data: functionResult, // Include raw data if UI wants to render it specially
-        usage: {
-          promptTokens: (completion.usage?.prompt_tokens || 0) + (finalCompletion.usage?.prompt_tokens || 0),
-          completionTokens: (completion.usage?.completion_tokens || 0) + (finalCompletion.usage?.completion_tokens || 0),
-          totalTokens: (completion.usage?.total_tokens || 0) + (finalCompletion.usage?.total_tokens || 0)
-        }
-      });
-    }
-    
-    // Direct response without function call
     return NextResponse.json<ChatResponse>({
       success: true,
-      response: message.content,
+      response: result.content,
+      data: result.functionResult, // Include function result data if UI wants to render it specially
       usage: {
-        promptTokens: completion.usage?.prompt_tokens || 0,
-        completionTokens: completion.usage?.completion_tokens || 0,
-        totalTokens: completion.usage?.total_tokens || 0
+        promptTokens: result.usage.promptTokens,
+        completionTokens: result.usage.completionTokens,
+        totalTokens: result.usage.totalTokens
       }
     });
 
