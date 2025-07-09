@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import { getOpenAIConfiguration } from '@/data/repositories/service-configurations';
 import { openAIFunctions, executeFunction } from '@/lib/ai/functions';
-import { chatWithFunctions, type OpenAIMessage, type OpenAIFunction } from '@/services/drivers/openai';
+import { chatWithFunctions } from '@/services/drivers/openai';
 import { OpenAIModel } from '@/types/ai/openai-service-types';
 import type { ChatRequest, ChatResponse, FunctionExecutionResult } from '@/types/ai/chat-types';
 
@@ -50,9 +50,9 @@ export const POST = withOrganizationAuth(async (
     }
 
     // Build messages array with conversation history
-    const systemMessage: OpenAIMessage = {
+    const systemMessage: { role: 'system' | 'user' | 'assistant' | 'function'; content: string; name?: string } = {
       role: 'system',
-      content: `You are a security system assistant for Fusion Bridge.
+      content: `You are an AI assistant for Fusion.
 
 Context: Organization ${organizationId}, Server time: ${new Date().toISOString()}, User timezone: ${userTimezone || 'UTC'}
 
@@ -80,7 +80,7 @@ FUNCTION USAGE:
 Be concise and helpful. You provide information - users execute actions.`
     };
 
-    const messages: OpenAIMessage[] = [
+    const messages: Array<{ role: 'system' | 'user' | 'assistant' | 'function'; content: string; name?: string }> = [
       systemMessage,
       ...conversationHistory,
       {
@@ -98,7 +98,7 @@ Be concise and helpful. You provide information - users execute actions.`
     console.log(`[Chat API] Current query: ${query}`);
 
     // Convert OpenAI functions to driver format
-    const functions: OpenAIFunction[] = openAIFunctions.map(fn => ({
+    const functions: Array<{ name: string; description: string; parameters: Record<string, any> }> = openAIFunctions.map(fn => ({
       name: fn.name,
       description: fn.description,
       parameters: fn.parameters
@@ -154,11 +154,11 @@ Be concise and helpful. You provide information - users execute actions.`
       success: true,
       response: result.content,
       data: Object.keys(responseData).length > 0 ? responseData : undefined,
-      usage: {
+      usage: result.usage ? {
         promptTokens: result.usage.promptTokens,
         completionTokens: result.usage.completionTokens,
         totalTokens: result.usage.totalTokens
-      }
+      } : undefined
     });
 
   } catch (error) {

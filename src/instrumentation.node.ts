@@ -52,27 +52,98 @@ function setupGracefulShutdown() {
   const gracefulShutdown = async (signal: string) => {
     console.log(`[Instrumentation Node] Received ${signal} - starting graceful shutdown...`);
     
+    // Set a hard timeout for shutdown to prevent hanging indefinitely
+    const shutdownTimeout = setTimeout(() => {
+      console.error('[Instrumentation Node] Graceful shutdown timed out, forcing exit');
+      process.exit(1);
+    }, 10000); // 10 second maximum shutdown time
+    
     try {
-      // Dynamically import the connection manager to avoid circular dependencies
-      const { sseConnectionManager } = await import('@/lib/redis/connection-manager');
-      
-      // Notify all SSE connections about the shutdown
-      await sseConnectionManager.notifyShutdown(5000); // 5 second reconnect delay
-      
-      console.log('[Instrumentation Node] SSE connections notified of shutdown');
-    } catch (error) {
-      console.error('[Instrumentation Node] Error during graceful shutdown:', error);
+      // Notify SSE clients
+      try {
+        const { sseConnectionManager } = await import('@/lib/redis/connection-manager');
+        await Promise.race([
+          sseConnectionManager.notifyShutdown(5000),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('SSE notification timeout')), 3000))
+        ]);
+      } catch (error) {
+        console.error('[Instrumentation Node] Error during SSE shutdown notification:', error);
+        // Continue with shutdown even if SSE notification fails
+      }
+
+      // Clean up connection services
+      try {
+        const [mqttModule, pikoModule] = await Promise.all([
+          import('@/services/mqtt-service'),
+          import('@/services/piko-websocket-service')
+        ]);
+        
+        await Promise.race([
+          Promise.allSettled([
+            mqttModule.cleanupAllMqttConnections(),
+            pikoModule.cleanupAllPikoConnections()
+          ]),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Connection cleanup timeout')), 5000))
+        ]);
+      } catch (error) {
+        console.error('[Instrumentation Node] Error during connection cleanup:', error);
+        // Continue with shutdown even if connection cleanup fails
+      }
+
+      // Stop CRON jobs
+      try {
+        const { stopCronJobs } = await import('@/lib/cron/scheduler');
+        await Promise.race([
+          Promise.resolve(stopCronJobs()),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('CRON stop timeout')), 2000))
+        ]);
+      } catch (error) {
+        console.error('[Instrumentation Node] Error stopping CRON jobs:', error);
+      }
+
+      // Close Redis connections
+      try {
+        const { closeRedisConnections } = await import('@/lib/redis/client');
+        await Promise.race([
+          closeRedisConnections(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Redis close timeout')), 3000))
+        ]);
+      } catch (error) {
+        console.error('[Instrumentation Node] Error closing Redis connections:', error);
+      }
+
+      // Close database connections
+      try {
+        const { closeDbConnection } = await import('@/data/db');
+        await Promise.race([
+          closeDbConnection(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Database close timeout')), 2000))
+        ]);
+      } catch (error) {
+        console.error('[Instrumentation Node] Error closing database connection:', error);
+      }
+
+    } catch (criticalError) {
+      console.error('[Instrumentation Node] Critical error during shutdown:', criticalError);
     }
     
-    // Give time for messages to be sent
+    // Clear the shutdown timeout since we're completing normally
+    clearTimeout(shutdownTimeout);
+    
+    console.log('[Instrumentation Node] Graceful shutdown complete');
+    
+    // Small delay to ensure logs are flushed before exit
     setTimeout(() => {
-      console.log('[Instrumentation Node] Graceful shutdown complete');
       process.exit(0);
-    }, 1000);
+    }, 100);
   };
   
-  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-  
-  console.log('[Instrumentation Node] Graceful shutdown handlers registered');
+  // Ensure we only register shutdown handlers once
+  let handlersRegistered = false;
+  if (!handlersRegistered) {
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    handlersRegistered = true;
+    console.log('[Instrumentation Node] Graceful shutdown handlers registered');
+  }
 } 

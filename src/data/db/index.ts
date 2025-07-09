@@ -94,15 +94,3 @@ export const db: DrizzleInstance = getDbInstance();
 
 // Re-export schema for convenience
 export * from './schema';
-
-// --- Graceful Shutdown ---
-process.on('SIGINT', async () => {
-  console.log('SIGINT received, attempting to close DB connection...');
-  await closeDbConnection();
-  process.exit(0);
-});
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, attempting to close DB connection...');
-  await closeDbConnection();
-  process.exit(0);
-}); 

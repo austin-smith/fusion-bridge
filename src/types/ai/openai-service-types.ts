@@ -83,13 +83,6 @@ export interface OpenAITestResponse {
   };
 }
 
-// Rate Limiting Types
-export interface OpenAIRateLimit {
-  requestsRemaining: number;
-  resetTime: Date;
-  totalRequests: number;
-}
-
 // Configuration Form State
 export interface SaveOpenAIConfigFormState {
   success: boolean;

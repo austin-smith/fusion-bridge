@@ -36,12 +36,18 @@ import { processAndPersistEvent } from '@/lib/events/eventProcessor';
 import { StandardizedEvent } from '@/types/events';
 import { ConnectorCategory, EventCategory, EventType } from '@/lib/mappings/definitions';
 
-// Define connection timeout (e.g., 30 seconds) - Applies to client.connect timeout
-const CONNECTION_TIMEOUT_MS = 30000; 
-// Define device refresh interval (e.g., 12 hours)
-const DEVICE_REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000; 
-// Restore Max redirects constant - NEEDED AGAIN
-const MAX_REDIRECTS = 5; 
+// === Constants ===
+const CONNECTION_TIMEOUT_MS = 15000;
+const DEVICE_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
+const MAX_REDIRECTS = 3;
+
+// Reconnection timing constants
+const RECONNECT_BASE_DELAY_MS = 5000; // Base delay for exponential backoff
+const RECONNECT_MAX_DELAY_MS = 60000; // Maximum delay cap
+const RECONNECT_BACKOFF_FACTOR = 2; // Exponential backoff multiplier
+
+// Cleanup timeout constants
+const CLEANUP_TIMEOUT_MS = 2000; // Timeout for graceful cleanup operations
 
 // --- Piko WebSocket Connection State ---
 
@@ -60,6 +66,8 @@ interface PikoWebSocketConnection {
     connectionError: string | null;
     reconnectAttempts: number;
     periodicRefreshTimerId: NodeJS.Timeout | null; 
+    // Add timeout tracking for proper cleanup
+    reconnectTimeoutId: NodeJS.Timeout | null;
     disabled: boolean; 
     lastActivity: Date | null; 
     lastStandardizedPayload: Record<string, any> | null;
@@ -205,6 +213,7 @@ const initialPikoConnectionState: Omit<PikoWebSocketConnection, 'connectorId'> =
     connection: null, client: null, config: null, systemId: null, 
     tokenInfo: null, deviceGuidMap: null, 
     connectionError: null, reconnectAttempts: 0, periodicRefreshTimerId: null, 
+    reconnectTimeoutId: null, 
     disabled: true, lastActivity: null, lastStandardizedPayload: null,
     isAttemptingConnection: false
 };
@@ -702,7 +711,7 @@ async function _handlePikoMessage(connectorId: string, message: Message): Promis
     }
 }
 
-// --- Adjusted scheduleReconnect ---
+// --- Adjusted scheduleReconnect with proper timeout cleanup ---
 function scheduleReconnect(connectorId: string): void {
      const state = connections.get(connectorId);
      // Check isAttemptingConnection flag instead of isConnecting
@@ -714,14 +723,25 @@ function scheduleReconnect(connectorId: string): void {
          return;
      }
 
+    // Clear any existing reconnect timeout to prevent accumulation
+    if (state.reconnectTimeoutId) {
+        clearTimeout(state.reconnectTimeoutId);
+        state.reconnectTimeoutId = null;
+    }
+
     state.reconnectAttempts++;
-    const delay = Math.min(5000 * Math.pow(2, state.reconnectAttempts - 1), 60000); 
+    const delay = Math.min(RECONNECT_BASE_DELAY_MS * Math.pow(RECONNECT_BACKOFF_FACTOR, state.reconnectAttempts - 1), RECONNECT_MAX_DELAY_MS); 
     console.log(`[${connectorId}] Scheduling reconnection attempt ${state.reconnectAttempts} in ${delay}ms`);
     state.connectionError = `Connection lost. Reconnecting (attempt ${state.reconnectAttempts})...`;
-    connections.set(connectorId, state);
 
-    setTimeout(async () => {
+    // Store the timeout ID for proper cleanup
+    state.reconnectTimeoutId = setTimeout(async () => {
         const currentState = connections.get(connectorId);
+        // Clear the timeout ID since it's firing
+        if (currentState) {
+            currentState.reconnectTimeoutId = null;
+        }
+
         // Re-check conditions before attempting reconnect
         if (!currentState || currentState.disabled || currentState.connection?.connected || currentState.isAttemptingConnection || currentState.reconnectAttempts === 0) {
             console.log(`[scheduleReconnect][${connectorId}] Skipping reconnect attempt: State changed or reset.`);
@@ -750,13 +770,17 @@ function scheduleReconnect(connectorId: string): void {
              // Error handling within init should manage state
         }
     }, delay);
+
+    connections.set(connectorId, state);
 }
 
 // --- Adjusted disconnectPikoWebSocket ---
 export async function disconnectPikoWebSocket(connectorId: string): Promise<void> {
     // No need for promise wrapper anymore
     const state = connections.get(connectorId);
-    _stopPeriodicDeviceRefresh(state); // Stop timer first
+    if (state) {
+        _stopPeriodicDeviceRefresh(state); // Stop timer first
+    }
 
     if (!state) return; // No state to disconnect
 
@@ -788,10 +812,78 @@ export async function disconnectPikoWebSocket(connectorId: string): Promise<void
     state.reconnectAttempts = 0;
     state.connectionError = null;
     state.lastStandardizedPayload = null;
+    
+    // Clear any pending reconnect timeout to prevent memory leaks
+    if (state.reconnectTimeoutId) {
+        clearTimeout(state.reconnectTimeoutId);
+        state.reconnectTimeoutId = null;
+    }
+    
     connections.set(connectorId, state); 
 }
 
-// --- Control and Initialization (Adjusted) ---
+/**
+ * Force cleanup of all Piko WebSocket connections and their timers
+ * Called during graceful shutdown to prevent memory leaks
+ */
+export async function cleanupAllPikoConnections(): Promise<void> {
+    console.log('[cleanupAllPikoConnections] Starting cleanup of all Piko WebSocket connections...');
+    
+    if (connections.size === 0) {
+        console.log('[cleanupAllPikoConnections] No connections to clean up');
+        return;
+    }
+    
+    const cleanupPromises = Array.from(connections.entries()).map(async ([connectorId, state]) => {
+        try {
+            // Stop periodic refresh timer with defensive check
+            if (state.periodicRefreshTimerId) {
+                clearInterval(state.periodicRefreshTimerId);
+                state.periodicRefreshTimerId = null;
+            }
+            
+            // Clear reconnect timeout with defensive check
+            if (state.reconnectTimeoutId) {
+                clearTimeout(state.reconnectTimeoutId);
+                state.reconnectTimeoutId = null;
+            }
+            
+            // Close WebSocket connection gracefully
+            if (state.connection?.connected) {
+                try {
+                    state.connection.close();
+                } catch (closeError) {
+                    console.warn(`[cleanupAllPikoConnections] Error closing connection for ${connectorId}:`, closeError);
+                }
+            }
+            
+            // Remove event listeners and cleanup client
+            if (state.client) {
+                try {
+                    state.client.removeAllListeners();
+                    state.client.abort();
+                } catch (clientError) {
+                    console.warn(`[cleanupAllPikoConnections] Error cleaning up client for ${connectorId}:`, clientError);
+                }
+                state.client = null;
+            }
+            
+            // Clear connection references
+            state.connection = null;
+            state.isAttemptingConnection = false;
+            state.reconnectAttempts = 0;
+        } catch (error) {
+            console.error(`[cleanupAllPikoConnections] Error cleaning up connector ${connectorId}:`, error);
+        }
+    });
+    
+    await Promise.allSettled(cleanupPromises);
+    
+    // Clear the connections map
+    connections.clear();
+    
+    console.log('[cleanupAllPikoConnections] Cleanup completed');
+}
 
 /**
  * Disable the WebSocket connection for a specific CONNECTOR ID.
@@ -818,6 +910,7 @@ export async function disablePikoConnection(connectorId: string): Promise<void> 
                  connection: null, client: null, config: null, systemId: null, 
                  connectorId: connectorId, tokenInfo: null, deviceGuidMap: null, 
                  connectionError: null, reconnectAttempts: 0, periodicRefreshTimerId: null, 
+                 reconnectTimeoutId: null,
                  disabled: true, lastActivity: null, lastStandardizedPayload: null,
                  isAttemptingConnection: false
              };

@@ -15,6 +15,20 @@ import { Connector } from '@/types'; // Import Connector type
 import { initializePikoConnections } from './piko-websocket-service'; // Import Piko initializer
 import { updateConnectorConfig } from '@/data/repositories/connectors'; // <-- IMPORT ADDED
 
+// === Constants ===
+
+// Connection timeout constants
+const MQTT_CONNECTION_TIMEOUT_MS = 15000; // MQTT connection timeout
+const MQTT_CONNECT_TIMEOUT_MS = 10000; // mqtt.connect timeout option
+
+// Reconnection timing constants  
+const RECONNECT_BASE_DELAY_MS = 5000; // Base delay for exponential backoff
+const RECONNECT_MAX_DELAY_MS = 60000; // Maximum delay cap
+const RECONNECT_BACKOFF_FACTOR = 2; // Exponential backoff multiplier
+
+// Cleanup timeout constants
+const MQTT_GRACEFUL_CLOSE_TIMEOUT_MS = 2000; // Timeout for graceful MQTT client close
+
 // Define event type based on the example
 export interface YolinkEvent {
   event: string;
@@ -36,6 +50,8 @@ interface MqttConnection {
   lastEventData: { time: Date, count: number } | null;
   connectionError: string | null;
   reconnectAttempts: number;
+  // Add timeout tracking for proper cleanup
+  reconnectTimeoutId: NodeJS.Timeout | null;
   disabled: boolean; // Mirroring the connector's eventsEnabled state
   isConnected: boolean;
   lastStandardizedPayload: Record<string, any> | null; // <<< Renamed from lastEventPayload
@@ -213,7 +229,8 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
           connectionError: null,
           reconnectAttempts: 0,
           disabled: true, 
-          isConnected: false
+          isConnected: false,
+          reconnectTimeoutId: null
       };
       connection.connectorId = connectorId;
       // Ensure connection.config has the latest from parsedDbConfig (which might have new homeId or token from homeId fetch step)
@@ -324,14 +341,14 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
                       connections.set(currentHomeId, conn);
                   }
                   reject(new Error('Connection Timeout'));
-              }, 15000);
+              }, MQTT_CONNECTION_TIMEOUT_MS);
 
               connection.client = mqtt.connect('mqtt://api.yosmart.com:8003', {
                   clientId: `fusion-bridge-server-${currentHomeId}-${Math.random().toString(16).substring(2, 10)}`,
                   username: newAccessToken, 
                   password: '', 
                   reconnectPeriod: 0, 
-                  connectTimeout: 10000,
+                  connectTimeout: MQTT_CONNECT_TIMEOUT_MS,
               });
               connections.set(currentHomeId, connection);
               
@@ -465,6 +482,12 @@ function scheduleReconnect(homeId: string): void {
       return;
   }
 
+  // Clear any existing reconnect timeout to prevent accumulation
+  if (connection.reconnectTimeoutId) {
+      clearTimeout(connection.reconnectTimeoutId);
+      connection.reconnectTimeoutId = null;
+  }
+
   // Ensure attempts don't race
   connection.reconnectAttempts++;
   connections.set(homeId, connection); // Save increased attempt count immediately
@@ -491,15 +514,18 @@ function scheduleReconnect(homeId: string): void {
         return;
       }
             
-      // Exponential backoff (5s, 10s, 20s, 40s, max 60s)
-      const delay = Math.min(5000 * Math.pow(2, currentConnection.reconnectAttempts - 1), 60000);
+      // Exponential backoff using configurable constants
+      const delay = Math.min(RECONNECT_BASE_DELAY_MS * Math.pow(RECONNECT_BACKOFF_FACTOR, currentConnection.reconnectAttempts - 1), RECONNECT_MAX_DELAY_MS);
       console.log(`[${homeId}] Scheduling reconnection attempt ${currentConnection.reconnectAttempts} for connector ${connectorId} in ${delay}ms`);
       currentConnection.connectionError = `Connection lost. Reconnecting (attempt ${currentConnection.reconnectAttempts})...`;
-      connections.set(homeId, currentConnection); // Save error message
       
-      setTimeout(() => {
+      // Store the timeout ID for proper cleanup
+      currentConnection.reconnectTimeoutId = setTimeout(() => {
         if (!connections.has(homeId)) return; // Connection removed
         const checkConnection = connections.get(homeId)!;
+
+        // Clear the timeout ID since it's firing
+        checkConnection.reconnectTimeoutId = null;
 
         if (checkConnection.disabled || checkConnection.isConnected || checkConnection.reconnectAttempts === 0) { // Check again before attempting
           // console.log(`[scheduleReconnect][${homeId}] Skipping reconnect attempt: Disabled=${checkConnection.disabled}, Connected=${checkConnection.isConnected}, Attempts=${checkConnection.reconnectAttempts}`);
@@ -514,6 +540,8 @@ function scheduleReconnect(homeId: string): void {
           // Don't reset attempts here, let the error/close handler trigger the *next* scheduleReconnect
         });
       }, delay);
+      
+      connections.set(homeId, currentConnection); // Save error message and timeout ID
     }).catch(err => {
       console.error(`[${homeId}][${connectorId}] CRITICAL: Failed to check DB state for reconnection:`, err); 
       // Reset attempts on DB error to allow future triggers
@@ -532,6 +560,13 @@ export async function disconnectMqtt(homeId: string): Promise<void> {
     connection.reconnectAttempts = 0; // Stop any reconnection attempts
     connection.connectionError = null;
     connection.isConnected = false;
+    
+    // Clear any pending reconnect timeout to prevent memory leaks
+    if (connection.reconnectTimeoutId) {
+        clearTimeout(connection.reconnectTimeoutId);
+        connection.reconnectTimeoutId = null;
+    }
+    
     // Keep connection.disabled as is
     const client = connection.client;
     connection.client = null; // Set client to null immediately
@@ -602,6 +637,13 @@ export async function disableMqttConnection(connectorId: string): Promise<void> 
             // Update the state map immediately
             connection.disabled = true;
             connection.isConnected = false; // Also mark as not connected
+            
+            // Clear any pending reconnect timeout to prevent memory leaks
+            if (connection.reconnectTimeoutId) {
+                clearTimeout(connection.reconnectTimeoutId);
+                connection.reconnectTimeoutId = null;
+            }
+            
             connections.set(homeId, connection); // Save the updated state
             await disconnectMqtt(homeId); // This also updates the connection state map (disabled, isConnected=false, etc.) // <<< COMMENT IS INCORRECT
         } else {
@@ -677,6 +719,78 @@ export async function initializeYoLinkConnections(): Promise<void> {
   } catch (err) {
     console.error('[initializeYoLinkConnections] Error during scan:', err);
   }
+}
+
+/**
+ * Force cleanup of all MQTT connections and their timers
+ * Called during graceful shutdown to prevent memory leaks
+ */
+export async function cleanupAllMqttConnections(): Promise<void> {
+    console.log('[cleanupAllMqttConnections] Starting cleanup of all MQTT connections...');
+    
+    if (connections.size === 0) {
+        console.log('[cleanupAllMqttConnections] No connections to clean up');
+        return;
+    }
+    
+    const cleanupPromises = Array.from(connections.entries()).map(async ([homeId, connection]) => {
+        try {
+            // Clear reconnect timeout with defensive check
+            if (connection.reconnectTimeoutId) {
+                clearTimeout(connection.reconnectTimeoutId);
+                connection.reconnectTimeoutId = null;
+            }
+            
+            // Disconnect MQTT client gracefully
+            if (connection.client) {
+                // Set flags to prevent reconnection
+                connection.reconnectAttempts = 0;
+                connection.disabled = true;
+                connection.isConnected = false;
+                
+                const client = connection.client;
+                connection.client = null;
+                
+                // Try graceful disconnect with timeout fallback
+                await new Promise<void>((resolve) => {
+                    const timeout = setTimeout(() => {
+                        console.warn(`[cleanupAllMqttConnections] Force closing MQTT client for ${homeId} due to timeout`);
+                        try {
+                            client.end(true);
+                        } catch (forceError) {
+                            console.warn(`[cleanupAllMqttConnections] Error force closing MQTT client for ${homeId}:`, forceError);
+                        }
+                        resolve();
+                    }, MQTT_GRACEFUL_CLOSE_TIMEOUT_MS); // Timeout for graceful close
+                    
+                    try {
+                        client.end(false, {}, () => {
+                            clearTimeout(timeout);
+                            resolve();
+                        });
+                    } catch (endError) {
+                        clearTimeout(timeout);
+                        console.warn(`[cleanupAllMqttConnections] Error during graceful close for ${homeId}:`, endError);
+                        try {
+                            client.end(true);
+                        } catch (forceError) {
+                            console.warn(`[cleanupAllMqttConnections] Error during force close for ${homeId}:`, forceError);
+                        }
+                        resolve();
+                    }
+                });
+            }
+        } catch (error) {
+            console.error(`[cleanupAllMqttConnections] Error cleaning up home ${homeId}:`, error);
+        }
+    });
+    
+    await Promise.allSettled(cleanupPromises);
+    
+    // Clear the connections map
+    connections.clear();
+    
+    console.log('[cleanupAllMqttConnections] Cleanup completed');
 }
 
 // --- Initialization Coordinator ---

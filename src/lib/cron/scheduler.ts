@@ -285,21 +285,5 @@ export function stopCronJobs(): void {
   }
 }
 
-// Enhanced graceful shutdown handling
-const handleShutdown = (signal: string) => {
-  const logger = createLogger('SYSTEM');
-  logger.info(`Received ${signal}, initiating graceful CRON jobs shutdown...`);
-  
-  try {
-    stopCronJobs();
-    logger.info('CRON jobs shutdown completed, exiting process');
-    process.exit(0);
-  } catch (error) {
-    logger.error('Error during graceful shutdown', error instanceof Error ? error : new Error(String(error)));
-    process.exit(1);
-  }
-};
-
-// Register shutdown handlers
-process.on('SIGINT', () => handleShutdown('SIGINT'));
-process.on('SIGTERM', () => handleShutdown('SIGTERM')); 
+// NOTE: Graceful shutdown is handled centrally in instrumentation.node.ts
+// to prevent process event listener accumulation and memory leaks 

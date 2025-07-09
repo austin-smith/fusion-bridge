@@ -311,8 +311,9 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
     if (isOpen && !isClosing) {
       // Use a timeout to ensure the DOM has updated
       const timer = setTimeout(() => {
+        // Use a more reliable selector that doesn't depend on specific positioning classes
         const textarea = document.querySelector<HTMLTextAreaElement>(
-          '.fixed.bottom-6.right-6 textarea[aria-label="Write your prompt here"]'
+          'textarea[aria-label="Write your prompt here"]'
         );
         if (textarea) {
           textarea.focus();
@@ -346,13 +347,21 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
 
   // Chat interface when open
   return (
-    <div className="fixed bottom-6 right-6 z-50 max-w-[calc(100vw-3rem)] max-h-[calc(100vh-3rem)]">
+    <div className={cn(
+      "fixed z-50",
+      // Mobile: small margin on all sides
+      "inset-3",
+      // Desktop: reset inset and use original bottom-right positioning
+      "md:inset-auto md:bottom-6 md:right-6 md:max-w-[calc(100vw-3rem)] md:max-h-[calc(100vh-3rem)]"
+    )}>
       <Card 
         className={cn(
           "border-0 transition-all duration-300 ease-in-out flex flex-col shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5),0_25px_50px_-10px_rgba(0,0,0,0.3),0_10px_30px_rgba(0,0,0,0.2)]",
-          isExpanded 
-            ? "w-[min(600px,calc(100vw-3rem))] h-[min(750px,calc(100vh-3rem))]" 
-            : "w-[min(480px,calc(100vw-3rem))] h-[min(600px,calc(100vh-3rem))]",
+          // Mobile: always fullscreen
+          "w-full h-full",
+          // Desktop: responsive based on expand state
+          "md:w-[min(480px,calc(100vw-3rem))] md:h-[min(600px,calc(100vh-3rem))]",
+          isExpanded && "md:w-[min(600px,calc(100vw-3rem))] md:h-[min(750px,calc(100vh-3rem))]",
           isClosing 
             ? "animate-out fade-out-0 zoom-out-95 slide-out-to-bottom-1 duration-200"
             : "animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-1 duration-200"
@@ -367,7 +376,7 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
             <Button 
               variant="ghost" 
               size="icon" 
-              className="h-8 w-8 text-white hover:bg-white/20"
+              className="hidden md:flex h-8 w-8 text-white hover:bg-white/20"
               onClick={() => setIsExpanded(!isExpanded)}
             >
               {isExpanded ? (

@@ -116,14 +116,3 @@ export async function closeRedisConnections(): Promise<void> {
   await Promise.all(closePromises);
   console.log('[Redis] All connections closed');
 }
-
-// Graceful shutdown handling
-if (typeof process !== 'undefined') {
-  process.on('SIGTERM', async () => {
-    await closeRedisConnections();
-  });
-  
-  process.on('SIGINT', async () => {
-    await closeRedisConnections();
-  });
-} 
