@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { cn } from '@/lib/utils';
 import { User, Shield, Palette, Building2 } from 'lucide-react';
@@ -36,6 +36,19 @@ const settingsTabs = [
 function SettingsPage() {
   const { data: session } = useSession();
   const [activeTab, setActiveTab] = useState('profile');
+
+  // Check for tab parameter in URL on mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab');
+    if (tabParam && settingsTabs.some(tab => tab.id === tabParam)) {
+      setActiveTab(tabParam);
+      // Clean up URL by removing the tab parameter
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('tab');
+      window.history.replaceState({}, '', newUrl.pathname);
+    }
+  }, []);
 
   if (!session?.user) {
     return <div>Loading...</div>;

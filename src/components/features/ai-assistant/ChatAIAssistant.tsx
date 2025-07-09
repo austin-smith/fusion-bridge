@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MessagesSquare, X, Maximize2, Minimize2, Calendar, Cpu, ShieldCheck, BarChart3, Activity, Cctv, PowerOff } from 'lucide-react';
+import { MessagesSquare, X, Maximize2, Minimize2, Calendar, Cpu, ShieldCheck, BarChart3, Activity, Cctv, PowerOff, BookOpen } from 'lucide-react';
 import { Chat } from '@/components/ui/chat/chat';
 import { type Message } from '@/components/ui/chat/chat-message';
 import type { ChatResponse } from '@/types/ai/chat-types';
@@ -50,6 +50,10 @@ const DEFAULT_SUGGESTIONS = [
   {
     text: "Turn off all switches",
     icon: PowerOff
+  },
+  {
+    text: "How do I use the API?",
+    icon: BookOpen
   }
 ];
 

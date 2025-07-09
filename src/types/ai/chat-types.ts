@@ -54,7 +54,7 @@ export interface DeviceFilters {
 export interface AggregationOptions {
   groupBy?: 'device' | 'type' | 'location' | 'area' | 'time';
   timeBucket?: 'hour' | 'day' | 'week' | 'month';
-}
+} 
 
 /**
  * Clean data structure for AI natural language generation

@@ -115,11 +115,17 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
   const executeAction = async (action: ChatAction): Promise<void> => {
     try {
       if (action.type === 'device') {
+        const metadata = action.metadata as DeviceActionMetadata;
+        
         await handleDeviceAction(action);
         
-        // Add success message to chat for individual device actions
-        if (addMessage) {
-          const metadata = action.metadata as DeviceActionMetadata;
+        // Only add success message for actual device control actions (not special actions)
+        const isExternalLink = !!metadata.externalUrl;
+        const isSettingsNavigation = !!metadata.settingsTab;
+        const isAccountSettingsNavigation = !!(metadata as any).accountSettingsTab;
+        
+        if (addMessage && !isExternalLink && !isSettingsNavigation && !isAccountSettingsNavigation &&
+            (metadata.action === ActionableState.SET_ON || metadata.action === ActionableState.SET_OFF)) {
           const actionWord = metadata.action === ActionableState.SET_ON ? 'turned on' : 'turned off';
           const confirmationMessage = `✅ Successfully ${actionWord} ${metadata.deviceName}`;
           addMessage(confirmationMessage);
@@ -156,8 +162,29 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
   const handleDeviceAction = async (action: ChatAction): Promise<void> => {
     const metadata = action.metadata as DeviceActionMetadata;
     
+    // Handle special external link actions
+    if ((metadata as any).externalUrl) {
+      window.open((metadata as any).externalUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    
+    // Handle special navigation actions
+    if ((metadata as any).settingsTab) {
+      // Navigate to admin settings page
+      window.location.href = '/settings';
+      return;
+    }
+    
+    // Handle account settings navigation
+    if ((metadata as any).accountSettingsTab) {
+      // Open account settings page with specific tab in new window/tab
+      const tab = (metadata as any).accountSettingsTab;
+      window.open(`/account/settings?tab=${tab}`, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    
     // Use existing store method for device actions
-    await storeExecuteDeviceAction(metadata.internalDeviceId, metadata.action);
+    await storeExecuteDeviceAction(metadata.internalDeviceId, metadata.action as ActionableState);
   };
 
   const handleAreaAction = async (action: ChatAction): Promise<void> => {

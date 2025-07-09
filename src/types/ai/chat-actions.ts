@@ -18,15 +18,19 @@ export interface ChatAction {
 }
 
 /**
- * Metadata for device actions (turn on/off)
+ * Metadata for device actions (turn on/off) and special actions
  */
 export interface DeviceActionMetadata {
   internalDeviceId: string;
   deviceName: string;
-  action: ActionableState;
+  action: ActionableState | string; // Allow string for special actions
   currentState?: DisplayState;
   connectorCategory: string;
   deviceType: string;
+  // Special action properties
+  externalUrl?: string; // For opening external links
+  settingsTab?: string; // For navigating to specific admin settings tabs
+  accountSettingsTab?: string; // For navigating to specific account settings tabs
 }
 
 /**
