@@ -311,7 +311,7 @@ export async function analyzeAutomationRule(
       contextBuilder.push(`Available connectors: ${request.context.availableConnectors.map(c => `${c.name} (${c.category})`).join(', ')}`);
     }
 
-    const systemPrompt = `You are an expert automation assistant for a security and smart home platform called Fusion Bridge. 
+    const systemPrompt = `You are an expert automation assistant for a security and smart home platform called Fusion. 
 
 Your task is to analyze natural language descriptions and suggest structured automation rules.
 

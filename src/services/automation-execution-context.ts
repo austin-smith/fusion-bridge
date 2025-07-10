@@ -767,13 +767,13 @@ export class OrganizationAutomationContext {
       'device.status': deviceRecord?.status,
       'device.batteryPercentage': deviceRecord?.batteryPercentage,
       
-      // Area facts - now available for trigger conditions
+      // Area facts
       'area.id': areaRecord?.id,
       'area.name': areaRecord?.name,
       'area.armedState': areaRecord?.armedState,
       'area.locationId': areaRecord?.locationId,
       
-      // Location facts - now available for trigger conditions  
+      // Location facts
       'location.id': locationRecord?.id,
       'location.name': locationRecord?.name,
       'location.timeZone': locationRecord?.timeZone,
@@ -796,10 +796,10 @@ export class OrganizationAutomationContext {
       deviceInfo: event.deviceInfo || {}
     };
     
-    // Remove undefined values to avoid json-rules-engine issues
+    // Convert undefined to null
     Object.keys(facts).forEach(key => {
       if (facts[key] === undefined) {
-        delete facts[key];
+        facts[key] = null;
       }
     });
 
