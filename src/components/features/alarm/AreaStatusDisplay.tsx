@@ -32,7 +32,7 @@ const AreaStatusDisplay: React.FC<AreaStatusDisplayProps> = ({ area, compact = f
   const nextTransitionTimeISO = useMemo(() => {
     if (area.armedState === ArmedState.DISARMED || area.armedState === ArmedState.TRIGGERED) {
       return area.nextScheduledArmTime;
-    } else if (area.armedState === ArmedState.ARMED_AWAY || area.armedState === ArmedState.ARMED_STAY) {
+    } else if (area.armedState === ArmedState.ARMED) {
       return area.nextScheduledDisarmTime;
     }
     return null;
@@ -90,15 +90,14 @@ const AreaStatusDisplay: React.FC<AreaStatusDisplayProps> = ({ area, compact = f
   };
 
   const canArm = area.armedState === ArmedState.DISARMED || area.armedState === ArmedState.TRIGGERED;
-  const canDisarm = area.armedState === ArmedState.ARMED_AWAY || area.armedState === ArmedState.ARMED_STAY || area.armedState === ArmedState.TRIGGERED;
+  const canDisarm = area.armedState === ArmedState.ARMED || area.armedState === ArmedState.TRIGGERED;
   const canSkip = area.armedState === ArmedState.DISARMED && !!area.nextScheduledArmTime && new Date(area.nextScheduledArmTime) > new Date();
   
   const isSkipped = area.isArmingSkippedUntil && new Date(area.isArmingSkippedUntil) > new Date();
 
   const getStatusBadgeVariant = (): "default" | "destructive" | "outline" | "secondary" => {
     switch (area.armedState) {
-      case ArmedState.ARMED_AWAY:
-      case ArmedState.ARMED_STAY:
+      case ArmedState.ARMED:
         return 'default';
       case ArmedState.DISARMED:
         return 'secondary';
@@ -111,8 +110,7 @@ const AreaStatusDisplay: React.FC<AreaStatusDisplayProps> = ({ area, compact = f
 
   const StatusIcon = () => {
     switch (area.armedState) {
-      case ArmedState.ARMED_AWAY:
-      case ArmedState.ARMED_STAY:
+      case ArmedState.ARMED:
         return <Shield className="h-5 w-5 text-green-500" />;
       case ArmedState.DISARMED:
         return <ShieldOff className="h-5 w-5 text-gray-500" />;

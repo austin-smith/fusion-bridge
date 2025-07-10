@@ -1081,9 +1081,8 @@ async function listAreas(orgDb: any, args: any): Promise<FunctionExecutionResult
       const currentState = area.armedState || ArmedState.DISARMED;
       
       // Only add actions that would change the current state
-      const isArmed = currentState === ArmedState.ARMED_AWAY || 
-                     currentState === ArmedState.ARMED_STAY || 
-                     currentState === ArmedState.TRIGGERED;
+      const isArmed = currentState === ArmedState.ARMED || 
+                   currentState === ArmedState.TRIGGERED;
       
       // Only add ARM action if area is not already armed (and not triggered)
       if (!isArmed) {
@@ -1095,7 +1094,7 @@ async function listAreas(orgDb: any, args: any): Promise<FunctionExecutionResult
           metadata: {
             areaId: area.id,
             areaName: area.name,
-            targetState: ArmedState.ARMED_AWAY,
+            targetState: ArmedState.ARMED,
             currentState: currentState
           } as AreaActionMetadata
         });
@@ -1319,7 +1318,7 @@ async function createBulkOperation(
         [config.entityType]: entityData
       },
       uiData: {
-        actions: actions
+        actions
       }
     };
   } catch (error) {
@@ -1340,7 +1339,7 @@ async function armAllAreas(orgDb: any, args: any): Promise<FunctionExecutionResu
     actionType: 'arm',
     actionLabel: 'Arm',
     icon: 'ShieldCheck',
-    targetState: ArmedState.ARMED_AWAY
+    targetState: ArmedState.ARMED
   });
 }
 
@@ -1404,8 +1403,7 @@ async function armArea(orgDb: any, args: any): Promise<FunctionExecutionResult> 
     const actions: ChatAction[] = [];
     
     // Only add ARM action if area is not already armed
-    const isArmed = currentState === ArmedState.ARMED_AWAY || 
-                   currentState === ArmedState.ARMED_STAY || 
+    const isArmed = currentState === ArmedState.ARMED || 
                    currentState === ArmedState.TRIGGERED;
     
     if (!isArmed) {
@@ -1417,7 +1415,7 @@ async function armArea(orgDb: any, args: any): Promise<FunctionExecutionResult> 
         metadata: {
           areaId: targetArea.id,
           areaName: targetArea.name,
-          targetState: ArmedState.ARMED_AWAY,
+          targetState: ArmedState.ARMED,
           currentState: currentState
         } as AreaActionMetadata
       });

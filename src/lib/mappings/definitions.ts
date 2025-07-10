@@ -42,8 +42,7 @@ export enum DeviceSubtype {
 // --- NEW: Armed State Enum ---
 export enum ArmedState {
   DISARMED = 'DISARMED',
-  ARMED_AWAY = 'ARMED_AWAY',
-  ARMED_STAY = 'ARMED_STAY',
+  ARMED = 'ARMED',
   TRIGGERED = 'TRIGGERED',
 }
 
@@ -329,8 +328,7 @@ export enum EventSubtype {
 // --- NEW: Armed State Display Name Mapping ---
 export const ArmedStateDisplayNames: Record<ArmedState, string> = {
   [ArmedState.DISARMED]: "Disarmed",
-  [ArmedState.ARMED_AWAY]: "Armed - Away",
-  [ArmedState.ARMED_STAY]: "Armed - Stay",
+  [ArmedState.ARMED]: "Armed",
   [ArmedState.TRIGGERED]: "Triggered",
 };
 

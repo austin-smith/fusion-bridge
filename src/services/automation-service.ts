@@ -397,7 +397,7 @@ async function executeActionWithRetry(
             }
             case AutomationActionType.ARM_AREA: {
                 const params = action.params as z.infer<typeof ArmAreaActionParamsSchema>;
-                const { scoping, targetAreaIds: specificAreaIds, armMode } = params;
+                const { scoping, targetAreaIds: specificAreaIds } = params;
                 let areasToProcess: string[] = [];
 
                 if (scoping === 'SPECIFIC_AREAS') {
@@ -429,21 +429,21 @@ async function executeActionWithRetry(
                     break;
                 }
 
-                console.log(`[Rule ${rule.id}][Action armArea] Attempting to arm ${areasToProcess.length} area(s) to mode ${armMode}. IDs: ${areasToProcess.join(', ')}`);
+                console.log(`[Rule ${rule.id}][Action armArea] Attempting to arm ${areasToProcess.length} area(s). IDs: ${areasToProcess.join(', ')}`);
                 for (const areaId of areasToProcess) {
                     try {
-                        const updatedArea = await internalSetAreaArmedState(areaId, armMode, {
+                        const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.ARMED, {
                             isArmingSkippedUntil: null,                  // Clear schedule fields
                             nextScheduledArmTime: null,
                             nextScheduledDisarmTime: null,
                         });
                         if (updatedArea) {
-                            console.log(`[Rule ${rule.id}][Action armArea] Successfully armed area ${areaId} to ${armMode}.`);
+                            console.log(`[Rule ${rule.id}][Action armArea] Successfully armed area ${areaId}.`);
                         } else {
-                            console.warn(`[Rule ${rule.id}][Action armArea] Failed to arm area ${areaId} to ${armMode} (area not found or no update occurred).`);
+                            console.warn(`[Rule ${rule.id}][Action armArea] Failed to arm area ${areaId} (area not found or no update occurred).`);
                         }
                     } catch (areaError) {
-                        console.error(`[Rule ${rule.id}][Action armArea] Error arming area ${areaId} to ${armMode}:`, areaError instanceof Error ? areaError.message : areaError);
+                        console.error(`[Rule ${rule.id}][Action armArea] Error arming area ${areaId}:`, areaError instanceof Error ? areaError.message : areaError);
                     }
                 }
                 break;

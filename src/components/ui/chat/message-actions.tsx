@@ -88,7 +88,7 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
   // Check if we have multiple area actions of the same type (bulk operation)
   const armActions = areaActions.filter(action => {
     const metadata = action.metadata as AreaActionMetadata;
-    return metadata.targetState === ArmedState.ARMED_AWAY;
+    return metadata.targetState === ArmedState.ARMED;
   });
   
   const disarmActions = areaActions.filter(action => {
@@ -136,7 +136,7 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
         // Add success message to chat for individual area actions
         if (addMessage) {
           const metadata = action.metadata as AreaActionMetadata;
-          const actionWord = metadata.targetState === ArmedState.ARMED_AWAY ? 'armed' : 'disarmed';
+          const actionWord = metadata.targetState === ArmedState.ARMED ? 'armed' : 'disarmed';
           const confirmationMessage = `✅ Successfully ${actionWord} ${metadata.areaName}`;
           addMessage(confirmationMessage);
         }
@@ -193,7 +193,7 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
     const success = await updateAreaArmedState(metadata.areaId, metadata.targetState);
     
     if (!success) {
-      throw new Error(`Failed to ${metadata.targetState === ArmedState.ARMED_AWAY ? 'arm' : 'disarm'} area`);
+      throw new Error(`Failed to ${metadata.targetState === ArmedState.ARMED ? 'arm' : 'disarm'} area`);
     }
   };
 
@@ -351,7 +351,7 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
            .filter(action => {
              if (action.type === 'area') {
                const metadata = action.metadata as AreaActionMetadata;
-               const isArmAction = metadata.targetState === ArmedState.ARMED_AWAY;
+               const isArmAction = metadata.targetState === ArmedState.ARMED;
                const isDisarmAction = metadata.targetState === ArmedState.DISARMED;
                
                // Hide individual buttons if we're showing bulk buttons for this type

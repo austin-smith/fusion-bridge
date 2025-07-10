@@ -545,8 +545,7 @@ export default function LocationsAreasPage() {
     if (success) {
       // Format state name for toast message
       let stateFormatted = "Unknown State";
-      if (state === ArmedState.ARMED_AWAY) stateFormatted = "Armed Away";
-      else if (state === ArmedState.ARMED_STAY) stateFormatted = "Armed Stay";
+      if (state === ArmedState.ARMED) stateFormatted = "Armed";
       else if (state === ArmedState.DISARMED) stateFormatted = "Disarmed";
       
       toast.success(`All areas in location set to ${stateFormatted}.`);
@@ -723,11 +722,8 @@ export default function LocationsAreasPage() {
                                                  </TooltipContent>
                                                </Tooltip>
                                                <DropdownMenuContent align="end">
-                                                 <DropdownMenuItem onClick={() => handleLocationArmAction(location.id, ArmedState.ARMED_AWAY)}>
-                                                   Arm Away
-                                                 </DropdownMenuItem>
-                                                 <DropdownMenuItem onClick={() => handleLocationArmAction(location.id, ArmedState.ARMED_STAY)}>
-                                                   Arm Stay
+                                                 <DropdownMenuItem onClick={() => handleLocationArmAction(location.id, ArmedState.ARMED)}>
+                                                   Arm
                                                  </DropdownMenuItem>
                                                </DropdownMenuContent>
                                              </DropdownMenu>

@@ -328,7 +328,7 @@ export async function processAreaArmingSchedules() {
           console.log(`CRON: Area ${currentAreaState.id} arming is skipped until ${currentAreaState.isArmingSkippedUntil.toISOString()}. Current time: ${nowUtc.toISOString()}`);
         } else {
           await db.update(areas).set({
-            armedState: ArmedState.ARMED_AWAY, 
+            armedState: ArmedState.ARMED, 
             isArmingSkippedUntil: null,
           }).where(eq(areas.id, currentAreaState.id));
           console.log(`CRON: Area ${currentAreaState.id} ARMED by schedule at ${nowUtc.toISOString()}.`);

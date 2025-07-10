@@ -93,7 +93,6 @@ export function ActionsSection({
                 type: AutomationActionType.ARM_AREA,
                 params: { 
                     scoping: 'ALL_AREAS_IN_SCOPE', // Sensible default
-                    armMode: ArmedState.ARMED_AWAY,  // Sensible default
                     targetAreaIds: [] // Explicitly empty for ALL_AREAS_IN_SCOPE or to be filled for SPECIFIC
                 }
             } as any; // Cast as any because AutomationAction is a union, and TS needs help here

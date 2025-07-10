@@ -347,7 +347,7 @@ async function executeAutomationAction(action: AutomationAction, context: Record
 
     case AutomationActionType.ARM_AREA: {
       const params = action.params as z.infer<typeof ArmAreaActionParamsSchema>;
-      const { scoping, targetAreaIds: specificAreaIds, armMode } = params;
+      const { scoping, targetAreaIds: specificAreaIds } = params;
       let areasToProcess: string[] = [];
 
       if (scoping === 'SPECIFIC_AREAS') {
@@ -366,22 +366,22 @@ async function executeAutomationAction(action: AutomationAction, context: Record
         }
       }
 
-      console.log(`[Automation Action Executor] Attempting to arm ${areasToProcess.length} area(s) to mode ${armMode}. IDs: ${areasToProcess.join(', ')}`);
+      console.log(`[Automation Action Executor] Attempting to arm ${areasToProcess.length} area(s). IDs: ${areasToProcess.join(', ')}`);
       for (const areaId of areasToProcess) {
         try {
-          const updatedArea = await internalSetAreaArmedState(areaId, armMode, {
+          const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.ARMED, {
             lastArmedStateChangeReason: 'automation_arm',
             isArmingSkippedUntil: null,
             nextScheduledArmTime: null,
             nextScheduledDisarmTime: null,
           });
           if (updatedArea) {
-            console.log(`[Automation Action Executor] Successfully armed area ${areaId} to ${armMode}.`);
+            console.log(`[Automation Action Executor] Successfully armed area ${areaId}.`);
           } else {
-            console.warn(`[Automation Action Executor] Failed to arm area ${areaId} to ${armMode} (area not found or no update occurred).`);
+            console.warn(`[Automation Action Executor] Failed to arm area ${areaId} (area not found or no update occurred).`);
           }
         } catch (areaError) {
-          console.error(`[Automation Action Executor] Error arming area ${areaId} to ${armMode}:`, areaError instanceof Error ? areaError.message : areaError);
+          console.error(`[Automation Action Executor] Error arming area ${areaId}:`, areaError instanceof Error ? areaError.message : areaError);
           throw areaError; // Re-throw to mark action as failed
         }
       }

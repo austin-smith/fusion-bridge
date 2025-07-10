@@ -172,7 +172,6 @@ export const AreaScopingSchema = z.enum([
 export const ArmAreaActionParamsSchema = z.object({
     scoping: AreaScopingSchema,
     targetAreaIds: z.array(z.string().uuid()).optional(), // UUIDs of areas
-    armMode: z.enum([ArmedState.ARMED_AWAY, ArmedState.ARMED_STAY]), // Required arm mode
 }).refine(data => {
     if (data.scoping === 'SPECIFIC_AREAS') {
         return Array.isArray(data.targetAreaIds) && data.targetAreaIds.length > 0;

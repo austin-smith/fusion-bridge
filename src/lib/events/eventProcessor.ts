@@ -358,7 +358,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
         if (areaDevice?.area) {
           const area = areaDevice.area;
           
-          if (area.armedState === ArmedState.ARMED_AWAY || area.armedState === ArmedState.ARMED_STAY) {
+          if (area.armedState === ArmedState.ARMED) {
             // Pass the Partial<Device> we fetched. isSecurityRiskEvent is designed to handle this.
             const isRisk = isSecurityRiskEvent(event, internalDeviceRecord as Partial<Device>); 
 

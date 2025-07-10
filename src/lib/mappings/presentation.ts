@@ -153,8 +153,7 @@ export function getDisplayStateIcon(state: DisplayState | undefined): LucideIcon
 // --- NEW: Armed State Icon Mapping ---
 const armedStateIconMap: Record<ArmedState, LucideIcon> = {
   [ArmedState.DISARMED]: ShieldOff,
-  [ArmedState.ARMED_AWAY]: ShieldCheck,
-  [ArmedState.ARMED_STAY]: ShieldCheck,
+  [ArmedState.ARMED]: ShieldCheck,
   [ArmedState.TRIGGERED]: ShieldAlert, // Using ShieldAlert for consistency
 };
 

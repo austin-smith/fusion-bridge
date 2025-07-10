@@ -77,7 +77,7 @@ export const AreaCard: React.FC<AreaCardProps> = ({
   const deviceCount = area.deviceIds?.length ?? 0;
 
   let badgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
-  if (state === ArmedState.ARMED_AWAY || state === ArmedState.ARMED_STAY) {
+  if (state === ArmedState.ARMED) {
     badgeVariant = "default";
   } else if (state === ArmedState.TRIGGERED) {
     badgeVariant = "destructive";
@@ -144,20 +144,12 @@ export const AreaCard: React.FC<AreaCardProps> = ({
                  </DropdownMenuTrigger>
                  <DropdownMenuContent align="end" className="w-48">
                    <DropdownMenuItem 
-                     key={`arm-away-${area.id}`}
-                     onClick={(e) => { e.stopPropagation(); onArmAction(area, ArmedState.ARMED_AWAY); }}
-                     disabled={state === ArmedState.ARMED_AWAY || locationArmLoading}
+                     key={`arm-${area.id}`}
+                     onClick={(e) => { e.stopPropagation(); onArmAction(area, ArmedState.ARMED); }}
+                     disabled={state === ArmedState.ARMED || locationArmLoading}
                    >
                      <ShieldCheck className="h-4 w-4 mr-2" />
-                     Arm Away
-                   </DropdownMenuItem>
-                   <DropdownMenuItem 
-                     key={`arm-stay-${area.id}`}
-                     onClick={(e) => { e.stopPropagation(); onArmAction(area, ArmedState.ARMED_STAY); }}
-                     disabled={state === ArmedState.ARMED_STAY || locationArmLoading}
-                   >
-                     <ShieldCheck className="h-4 w-4 mr-2" />
-                     Arm Stay
+                     Arm
                    </DropdownMenuItem>
                    <DropdownMenuSeparator />
                    <DropdownMenuItem 

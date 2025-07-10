@@ -13,8 +13,7 @@ This system provides an area-based security arming/disarming and alarm notificat
     *   Enabled/Disabled status.
 *   **Armed States**:
     *   `DISARMED`: The area is not actively monitored for security events.
-    *   `ARMED_AWAY`: The area is armed, and no one is expected to be present. Typically triggers on any security event.
-    *   `ARMED_STAY`: The area is armed, but occupants may be present (e.g., at night). May have different rules for triggering (e.g., perimeter sensors active, interior motion sensors bypassed).
+    *   `ARMED`: The area is armed and actively monitored for security events.
     *   `TRIGGERED`: A security event has occurred in an armed area, and an alarm condition is active.
 *   **Security Devices**: Devices (e.g., door/window contact sensors, motion sensors) can be flagged as relevant to security. Their state changes can influence the alarm system.
 
@@ -24,17 +23,17 @@ This system provides an area-based security arming/disarming and alarm notificat
     *   A CRON job runs every minute (`processAreaArmingSchedules` via `src/lib/cron/scheduler.ts` and `src/lib/actions/areaSecurityActions.ts`).
     *   It checks each area's applicable schedule (area override or location default).
     *   Calculates the next arm/disarm transition time based on the schedule and the area's location time zone.
-    *   Automatically updates the area's `armedState` to `ARMED_AWAY` (default for scheduled arming) or `DISARMED`.
+    *   Automatically updates the area's `armedState` to `ARMED` (default for scheduled arming) or `DISARMED`.
     *   Users can skip the next scheduled arming for an area.
 
 2.  **Manual Control**:
-    *   Users can manually arm (`ARMED_AWAY` or `ARMED_STAY`) or disarm areas irrespective of schedules via the UI.
+    *   Users can manually arm or disarm areas irrespective of schedules via the UI.
     *   These actions are handled by backend logic (`src/lib/actions/areaSecurityActions.ts`) and reflected in the Zustand store (`src/stores/store.ts`).
 
 3.  **Alarm Triggering**:
     *   Events from various connectors (YoLink, Piko, Netbox) are standardized by parsers (`src/lib/event-parsers/`).
     *   The central `processAndPersistEvent` function (`src/lib/events/eventProcessor.ts`) handles these standardized events.
-    *   If an event is identified as a security risk (`isSecurityRiskEvent` in `src/lib/security/alarmLogic.ts`) and occurs in an area that is currently `ARMED_AWAY` or `ARMED_STAY`:
+    *   If an event is identified as a security risk (`isSecurityRiskEvent` in `src/lib/security/alarmLogic.ts`) and occurs in an area that is currently `ARMED`:
         *   The area's `armedState` is set to `TRIGGERED`.
         *   The `lastArmedStateChangeReason` is updated (e.g., "security\_event\_trigger").
     *   *Note: Notification logic (e.g., email, push) upon an area entering `TRIGGERED` state is a planned extension and not fully implemented in this core logic yet.*

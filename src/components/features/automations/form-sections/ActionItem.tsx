@@ -51,11 +51,6 @@ const AREA_SCOPING_OPTIONS = [
     { value: 'SPECIFIC_AREAS', label: "Specific Areas" },
 ];
 
-const ARM_MODE_OPTIONS = [
-    { value: ArmedState.ARMED_AWAY, label: "Arm Away" },
-    { value: ArmedState.ARMED_STAY, label: "Arm Stay" },
-];
-
 // Action type groups for better organization
 const ACTION_GROUPS = [
     {
@@ -206,7 +201,6 @@ export function ActionItem({
     } else if (newType === AutomationActionType.ARM_AREA) {
         newActionParams = {
             scoping: 'ALL_AREAS_IN_SCOPE',
-            armMode: ArmedState.ARMED_AWAY,
             targetAreaIds: []
         } as z.infer<typeof ArmAreaActionParamsSchema>;
     } else if (newType === AutomationActionType.DISARM_AREA) {
@@ -795,35 +789,6 @@ export function ActionItem({
                                       )}
                                   />
                               )}
-
-                              <FormField
-                                  control={form.control}
-                                  name={`config.actions.${index}.params.armMode`}
-                                  render={({ field }) => (
-                                      <FormItem className="space-y-3">
-                                          <FormLabel>Arm Mode</FormLabel>
-                                          <FormControl>
-                                              <RadioGroup
-                                                  onValueChange={field.onChange}
-                                                  defaultValue={field.value}
-                                                  className="flex flex-col space-y-1"
-                                                  disabled={isLoading}
-                                              >
-                                                  {ARM_MODE_OPTIONS.map(option => (
-                                                      <FormItem key={option.value} className="flex items-center space-x-3 space-y-0">
-                                                          <FormControl>
-                                                              <RadioGroupItem value={option.value} />
-                                                          </FormControl>
-                                                          <FormLabel className="font-normal">
-                                                              {option.label}
-                                                          </FormLabel>
-                                                      </FormItem>
-                                                  ))}
-                                              </RadioGroup>
-                                          </FormControl>
-                                      </FormItem>
-                                  )}
-                              />
                           </>
                       )}
 

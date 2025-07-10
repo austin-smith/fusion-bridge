@@ -146,28 +146,8 @@ export const ACTION_TYPE_INFO: Record<AutomationActionType, ActionTypeInfo> = {
     borderColorClass: 'border-sky-200 dark:border-sky-800',
     formatter: (params, contextData) => {
       if (!params) return '→ (No parameters)';
-      const scoping = params.scoping;
-      const areaIds = params.targetAreaIds || [];
-      const armMode = params.armMode === 'ARMED_STAY' ? ' (Stay)' : ' (Away)';
-      const areas = contextData?.areas || [];
-      const ruleLocationScopeName = contextData?.ruleLocationScope?.name;
-
-      if (scoping === 'SPECIFIC_AREAS') {
-        if (areaIds.length === 0) return `→ Arm: No specific areas selected${armMode}`;
-        if (areaIds.length === 1) {
-          const area = areas.find(a => a.id === areaIds[0]);
-          return `→ Arm '${area?.name || areaIds[0].substring(0,6) + '...'}'${armMode}`;
-        }
-        return `→ Arm ${areaIds.length} selected areas${armMode}`;
-      }
-      if (scoping === 'ALL_AREAS_IN_SCOPE') {
-        if (ruleLocationScopeName) {
-          return `→ Arm all areas in '${ruleLocationScopeName}'${armMode}`;
-        } else {
-          return `→ Arm all areas in system${armMode}`;
-        }
-      }
-      return `→ Arm Area(s)${armMode}: Config pending`;
+      const scoping = params.scoping === 'ALL_AREAS_IN_SCOPE' ? 'all areas in scope' : `${params.targetAreaIds?.length || 0} specific areas`;
+      return `Arm ${scoping}`;
     }
   },
 
