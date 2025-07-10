@@ -16,7 +16,7 @@ export const deviceIdentifierMap: Partial<Record<ConnectorCategory, Record<strin
     'LeakSensor': { type: DeviceType.Sensor, subtype: DeviceSubtype.Leak },
     'Lock': { type: DeviceType.Lock },
     'LockV2': { type: DeviceType.Lock },
-    'Manipulator': { type: DeviceType.Unmapped },
+    'Manipulator': { type: DeviceType.WaterValveController },
     'MotionSensor': { type: DeviceType.Sensor, subtype: DeviceSubtype.Motion },
     'MultiOutlet': { type: DeviceType.Outlet, subtype: DeviceSubtype.Multi },
     'Outlet': { type: DeviceType.Outlet, subtype: DeviceSubtype.Single },

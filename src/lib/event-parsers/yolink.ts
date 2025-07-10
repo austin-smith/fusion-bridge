@@ -53,6 +53,7 @@ const yoLinkStateMap: YoLinkStateMap = {
   [DeviceType.Switch]: { [DeviceSubtype.Dimmer]: yoLinkBinaryStates, [DeviceSubtype.Toggle]: yoLinkBinaryStates },
   [DeviceType.Alarm]: { [DeviceSubtype.Siren]: yoLinkAlertStates },
   [DeviceType.GarageDoor]: { 'null': yoLinkContactStates },
+  [DeviceType.WaterValveController]: { 'null': yoLinkContactStates },
 };
 
 /** Helper to translate a raw YoLink state string to an IntermediateState enum. */

@@ -13,6 +13,7 @@ export enum DeviceType {
   Sprinkler = 'Sprinkler',
   Switch = 'Switch',
   Thermostat = 'Thermostat',
+  WaterValveController = 'Water Valve Controller',
   Unmapped = 'Unmapped',
 }
 
@@ -64,6 +65,7 @@ type SubtypeMap = {
   [DeviceType.Sprinkler]: never;
   [DeviceType.Switch]: DeviceSubtype.Dimmer | DeviceSubtype.Toggle;
   [DeviceType.Thermostat]: never;
+  [DeviceType.WaterValveController]: never;
   [DeviceType.Unmapped]: never;
 };
 
@@ -237,6 +239,9 @@ export const validDisplayStatesMap: ValidDisplayStatesMap = {
   [DeviceType.Switch]: {
     [DeviceSubtype.Dimmer]: [ON, OFF, ERROR],
     [DeviceSubtype.Toggle]: [ON, OFF, ERROR],
+  },
+  [DeviceType.WaterValveController]: {
+    'null': [OPEN, CLOSED, ERROR],
   },
   // Add mappings for other devices as needed
 };

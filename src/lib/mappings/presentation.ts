@@ -13,7 +13,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import {
     // Device type icons
-    Siren, Cctv, Warehouse, Combine, Router, Cable, Lock, Power, Radio, Droplets, ToggleLeft, Thermometer, HelpCircle, Gamepad,
+    Siren, Cctv, Warehouse, Combine, Router, Cable, Lock, Power, Radio, Droplets, ToggleLeft, Thermometer, HelpCircle, Gamepad, Waves,
     // State-specific icons
     Unlock, PowerOff, DoorOpen, DoorClosed, AlertTriangle, ShieldCheck, Activity, WifiOff, Wifi, Ban, Video,
     // Battery icons
@@ -47,6 +47,7 @@ export const deviceTypeIcons: Record<DeviceType, LucideIcon> = {
     [DeviceType.Sprinkler]: Droplets,
     [DeviceType.Switch]: ToggleLeft,
     [DeviceType.Thermostat]: Thermometer,
+    [DeviceType.WaterValveController]: Waves,
     [DeviceType.Unmapped]: HelpCircle,
 };
 
@@ -66,6 +67,7 @@ const deviceTypeToIconNameMap: Record<DeviceType, string> = {
     [DeviceType.Sprinkler]: 'Droplets',
     [DeviceType.Switch]: 'ToggleLeft',
     [DeviceType.Thermostat]: 'Thermometer',
+    [DeviceType.WaterValveController]: 'Waves',
     [DeviceType.Unmapped]: 'HelpCircle',
 };
 
@@ -96,6 +98,7 @@ const nameToIconComponentMap: Record<string, LucideIcon> = {
   Droplets: LucideIcons.Droplets,
   ToggleLeft: LucideIcons.ToggleLeft,
   Thermometer: LucideIcons.Thermometer,
+  Waves: LucideIcons.Waves,
   HelpCircle: LucideIcons.HelpCircle,
   WifiOff: LucideIcons.WifiOff,
   Wifi: LucideIcons.Wifi,

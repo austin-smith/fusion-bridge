@@ -598,7 +598,7 @@ async function syncYoLinkDevices(
                               } else if (rawStateString === 'closed' || rawStateString === 'off') {
                                   intermediateState = BinaryState.Off;
                               }
-                          } else if (stdTypeInfo.type === DeviceType.Sensor) {
+                          } else if (stdTypeInfo.type === DeviceType.Sensor || stdTypeInfo.type === DeviceType.WaterValveController) {
                               if (rawStateString === 'open') {
                                   intermediateState = ContactState.Open;
                               } else if (rawStateString === 'closed') {

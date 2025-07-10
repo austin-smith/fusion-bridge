@@ -3,7 +3,7 @@ import { ActionableState } from '@/lib/mappings/definitions';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import type { YoLinkConfig } from '@/services/drivers/yolink';
 
-const SUPPORTED_YOLINK_TYPES = ['Switch', 'Outlet', 'MultiOutlet'];
+const SUPPORTED_YOLINK_TYPES = ['Switch', 'Outlet', 'MultiOutlet', 'Manipulator'];
 const SUPPORTED_ACTIONS = [ActionableState.SET_ON, ActionableState.SET_OFF];
 
 export class YoLinkActionHandler implements IDeviceActionHandler {
