@@ -533,7 +533,10 @@ export class OrganizationAutomationContext {
       }
       
       // Evaluate triggers within organization context
-      const shouldExecute = await this.evaluateEventTriggers(config.trigger.conditions, event);
+      const shouldExecute = await this.evaluateEventTriggers(config.trigger.conditions, event, { 
+        id: automation.id, 
+        name: automation.name 
+      });
       
       if (!shouldExecute) {
         console.log(`[Automation Context][${this.organizationId}] Trigger conditions not met for: ${automation.name}`);
@@ -634,7 +637,42 @@ export class OrganizationAutomationContext {
   /**
    * Evaluate event-based trigger conditions using json-rules-engine
    */
-  private async evaluateEventTriggers(conditions: JsonRuleGroup, event: StandardizedEvent): Promise<boolean> {
+  private async evaluateEventTriggers(conditions: JsonRuleGroup, event: StandardizedEvent, automationContext?: { id: string, name: string }): Promise<boolean> {
+    // Create facts object with flattened structure for json-rules-engine
+    const facts: Record<string, any> = {
+      // Nested facts flattened with dot notation
+      'event.category': event.category,
+      'event.type': event.type,
+      'event.subtype': event.subtype,
+      'event.displayState': (event.payload as any)?.displayState,
+      'event.buttonNumber': this.getValidButtonNumber(event.payload),
+      'event.buttonPressType': this.getValidButtonPressType(event.payload),
+      
+      'device.id': event.deviceId,
+      'device.externalId': event.deviceId,
+      'device.type': event.deviceInfo?.type,
+      'device.subtype': event.deviceInfo?.subtype,
+      
+      'connector.id': event.connectorId,
+      
+      // Legacy flat structure for backward compatibility
+      eventType: event.type,
+      eventCategory: event.category,
+      eventSubtype: event.subtype,
+      deviceId: event.deviceId,
+      connectorId: event.connectorId,
+      timestamp: event.timestamp,
+      payload: event.payload || {},
+      deviceInfo: event.deviceInfo || {}
+    };
+    
+    // Remove undefined values to avoid json-rules-engine issues
+    Object.keys(facts).forEach(key => {
+      if (facts[key] === undefined) {
+        delete facts[key];
+      }
+    });
+
     try {
       const engine = new Engine();
       
@@ -646,46 +684,18 @@ export class OrganizationAutomationContext {
       
       engine.addRule(rule as any); // Type assertion to bypass complex type validation
       
-      // Create facts object with flattened structure for json-rules-engine
-      const facts: Record<string, any> = {
-        // Nested facts flattened with dot notation
-        'event.category': event.category,
-        'event.type': event.type,
-        'event.subtype': event.subtype,
-        'event.displayState': (event.payload as any)?.displayState,
-        'event.buttonNumber': this.getValidButtonNumber(event.payload),
-        'event.buttonPressType': this.getValidButtonPressType(event.payload),
-        
-        'device.id': event.deviceId,
-        'device.externalId': event.deviceId,
-        'device.type': event.deviceInfo?.type,
-        'device.subtype': event.deviceInfo?.subtype,
-        
-        'connector.id': event.connectorId,
-        
-        // Legacy flat structure for backward compatibility
-        eventType: event.type,
-        eventCategory: event.category,
-        eventSubtype: event.subtype,
-        deviceId: event.deviceId,
-        connectorId: event.connectorId,
-        timestamp: event.timestamp,
-        payload: event.payload || {},
-        deviceInfo: event.deviceInfo || {}
-      };
-      
-      // Remove undefined values to avoid json-rules-engine issues
-      Object.keys(facts).forEach(key => {
-        if (facts[key] === undefined) {
-          delete facts[key];
-        }
-      });
-      
       const results = await engine.run(facts);
       return results.events.length > 0;
       
     } catch (error) {
-      console.error(`[Automation Context][${this.organizationId}] Error evaluating trigger conditions:`, error);
+      const errorCode = (error as any)?.code || 'UNKNOWN';
+      const baseMessage = `AUTOMATION_CONDITION_ERROR [${errorCode}] Org: ${this.organizationId}`;
+      
+      if (automationContext) {
+        console.error(`${baseMessage} | Automation: "${automationContext.name}" (${automationContext.id}) | Event: ${event.type} from ${event.deviceId} | Facts: ${Object.keys(facts).join(', ')}`);
+      } else {
+        console.error(`${baseMessage} | Event: ${event.type} from ${event.deviceId} | Facts: ${Object.keys(facts).join(', ')}`, error);
+      }
       return false;
     }
   }

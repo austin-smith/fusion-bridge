@@ -120,7 +120,7 @@ class SSEConnectionManager {
         console.error(`[SSE Manager] Redis ${event}`);
       }
       this.hadRedisError = true;
-      this.broadcastSystemMessage('Redis connection lost');
+      this.broadcastSystemMessage('Redis connection lost - attempting reconnect...');
     }
   }
 

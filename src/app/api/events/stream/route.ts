@@ -67,6 +67,7 @@ export const GET = withOrganizationAuth(async (
   const encoder = new TextEncoder();
   let controller: ReadableStreamDefaultController;
   let cleanupCalled = false;
+  let heartbeatInterval: NodeJS.Timeout | null = null;
   
   const stream = new ReadableStream({
     async start(c) {
@@ -90,7 +91,7 @@ export const GET = withOrganizationAuth(async (
         includeThumbnails
       });
       
-      // Send initial connection message immediately (not in setTimeout)
+      // Send initial connection message immediately
       const connectionMessage: SSEConnectionMessage = {
         type: 'connection',
         organizationId,
@@ -102,6 +103,20 @@ export const GET = withOrganizationAuth(async (
       } catch (error) {
         console.error('[SSE] Failed to send connection message:', error);
       }
+
+      // Send heartbeat every 30 seconds
+      heartbeatInterval = setInterval(() => {
+        try {
+          const heartbeat: SSEHeartbeatMessage = {
+            type: 'heartbeat',
+            timestamp: new Date().toISOString()
+          };
+          controller.enqueue(encoder.encode(formatSSE(heartbeat, 'heartbeat')));
+        } catch (error) {
+          // Connection likely closed, cleanup will happen via abort signal
+          console.error(`[SSE] Heartbeat failed for connection ${connectionId}:`, error);
+        }
+      }, 30000);
     },
     cancel() {
       // Stream cancelled by client - trigger cleanup
@@ -112,23 +127,13 @@ export const GET = withOrganizationAuth(async (
     }
   });
 
-  // Send heartbeat every 30 seconds
-  const heartbeatInterval = setInterval(() => {
-    try {
-      const heartbeat: SSEHeartbeatMessage = {
-        type: 'heartbeat',
-        timestamp: new Date().toISOString()
-      };
-      controller.enqueue(encoder.encode(formatSSE(heartbeat, 'heartbeat')));
-    } catch (error) {
-      // Connection likely closed, cleanup will happen via abort signal
-      console.error(`[SSE] Heartbeat failed for connection ${connectionId}:`, error);
-    }
-  }, 30000);
-
   // Clean up on disconnect
   const cleanup = async () => {
-    clearInterval(heartbeatInterval);
+    // Clear heartbeat interval
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
     
     // Remove connection from the manager (this handles Redis unsubscription)
     await sseConnectionManager.removeConnection(connectionId);

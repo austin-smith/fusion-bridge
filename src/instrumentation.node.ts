@@ -52,93 +52,61 @@ function setupGracefulShutdown() {
   const gracefulShutdown = async (signal: string) => {
     console.log(`[Instrumentation Node] Received ${signal} - starting graceful shutdown...`);
     
-    // Set a hard timeout for shutdown to prevent hanging indefinitely
+    // Railway gives 30 seconds, use 25 seconds with 5 second buffer
     const shutdownTimeout = setTimeout(() => {
       console.error('[Instrumentation Node] Graceful shutdown timed out, forcing exit');
       process.exit(1);
-    }, 10000); // 10 second maximum shutdown time
+    }, 25000);
     
     try {
-      // Notify SSE clients
+      // Notify SSE clients (2 seconds max)
       try {
         const { sseConnectionManager } = await import('@/lib/redis/connection-manager');
         await Promise.race([
           sseConnectionManager.notifyShutdown(5000),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('SSE notification timeout')), 3000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('SSE timeout')), 2000))
         ]);
       } catch (error) {
-        console.error('[Instrumentation Node] Error during SSE shutdown notification:', error);
-        // Continue with shutdown even if SSE notification fails
+        console.error('[Instrumentation Node] SSE notification failed:', error);
       }
 
-      // Clean up connection services
+      // Clean up services in parallel (10 seconds max total)
       try {
-        const [mqttModule, pikoModule] = await Promise.all([
+        const [mqttModule, pikoModule, redisModule, dbModule] = await Promise.all([
           import('@/services/mqtt-service'),
-          import('@/services/piko-websocket-service')
+          import('@/services/piko-websocket-service'),
+          import('@/lib/redis/client'),
+          import('@/data/db')
         ]);
         
+        // Stop cron jobs immediately (sync)
+        const { stopCronJobs } = await import('@/lib/cron/scheduler');
+        stopCronJobs();
+        
+        // Cleanup async services in parallel
         await Promise.race([
           Promise.allSettled([
             mqttModule.cleanupAllMqttConnections(),
-            pikoModule.cleanupAllPikoConnections()
+            pikoModule.cleanupAllPikoConnections(),
+            redisModule.closeRedisConnections(),
+            dbModule.closeDbConnection()
           ]),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Connection cleanup timeout')), 5000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Cleanup timeout')), 10000))
         ]);
       } catch (error) {
-        console.error('[Instrumentation Node] Error during connection cleanup:', error);
-        // Continue with shutdown even if connection cleanup fails
-      }
-
-      // Stop CRON jobs
-      try {
-        const { stopCronJobs } = await import('@/lib/cron/scheduler');
-        await Promise.race([
-          Promise.resolve(stopCronJobs()),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('CRON stop timeout')), 2000))
-        ]);
-      } catch (error) {
-        console.error('[Instrumentation Node] Error stopping CRON jobs:', error);
-      }
-
-      // Close Redis connections
-      try {
-        const { closeRedisConnections } = await import('@/lib/redis/client');
-        await Promise.race([
-          closeRedisConnections(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Redis close timeout')), 3000))
-        ]);
-      } catch (error) {
-        console.error('[Instrumentation Node] Error closing Redis connections:', error);
-      }
-
-      // Close database connections
-      try {
-        const { closeDbConnection } = await import('@/data/db');
-        await Promise.race([
-          closeDbConnection(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Database close timeout')), 2000))
-        ]);
-      } catch (error) {
-        console.error('[Instrumentation Node] Error closing database connection:', error);
+        console.error('[Instrumentation Node] Service cleanup failed:', error);
       }
 
     } catch (criticalError) {
-      console.error('[Instrumentation Node] Critical error during shutdown:', criticalError);
+      console.error('[Instrumentation Node] Critical shutdown error:', criticalError);
     }
     
-    // Clear the shutdown timeout since we're completing normally
     clearTimeout(shutdownTimeout);
-    
     console.log('[Instrumentation Node] Graceful shutdown complete');
-    
-    // Small delay to ensure logs are flushed before exit
-    setTimeout(() => {
-      process.exit(0);
-    }, 100);
+    process.exit(0);
   };
   
-  // Ensure we only register shutdown handlers once
+  // Register handlers only once
   let handlersRegistered = false;
   if (!handlersRegistered) {
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

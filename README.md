@@ -62,9 +62,9 @@ pnpm dev
 
 The app will be available at [http://localhost:3000](http://localhost:3000).
 
-## Deployment (e.g., Vercel with Turso)
+## Deployment (e.g., Railway with Turso)
 
-To deploy the application using a persistent database like Turso, you need to configure environment variables in your hosting provider (e.g., Vercel):
+To deploy the application using a persistent database like Turso, you need to configure environment variables in your hosting provider (e.g., Railway):
 
 - `DB_DRIVER`: `turso`
 - `DATABASE_URL`: Your Turso database LibSQL URL (e.g., `libsql://your-db-name-org.turso.io`)

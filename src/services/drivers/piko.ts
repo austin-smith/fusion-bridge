@@ -626,7 +626,7 @@ class PikoFetchStrategy implements PikoHttpRequestStrategy {
         }
         const nextUrl = new URL(locationHeader, currentUrl); 
         currentUrl = nextUrl;
-        console.warn(`${logPrefix} Redirecting (${response.status}) to: ${currentUrl.toString()}`);
+        console.log(`${logPrefix} Redirecting (${response.status}) to: ${currentUrl.toString()}`);
         redirectCount++;
         continue; 
       }

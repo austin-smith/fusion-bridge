@@ -430,11 +430,11 @@ export async function initPikoWebSocket(
                          const locationMatch = errorMessage.match(/\nlocation: (https?:\/\/[^\n]+)/);
 
                          if (isRedirect && locationMatch && locationMatch[1]) {
-                             // Log minimal warning for expected redirect
-                             console.warn(`${logPrefix}[connectFailed] Handling expected 307 redirect.`);
+                             // Log redirect information for expected 307 redirect
+                             console.log(`${logPrefix}[connectFailed] Handling expected 307 redirect.`);
                              // Continue with redirect logic...
                              const httpsRedirectUrl = locationMatch[1].trim();
-                             console.warn(`${logPrefix}[connectFailed] Detected 307 redirect to: ${httpsRedirectUrl}`);
+                             console.log(`${logPrefix}[connectFailed] Detected 307 redirect to: ${httpsRedirectUrl}`);
                              
                              let wssRedirectUrl: string;
                              try {
