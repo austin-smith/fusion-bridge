@@ -6,7 +6,7 @@ import {
     DisplayState,
     CANONICAL_STATE_MAP,
     // Import state constants for icon mapping
-    LOCKED, UNLOCKED, ON, OFF, OPEN, CLOSED, LEAK_DETECTED, DRY, MOTION_DETECTED, NO_MOTION, VIBRATION_DETECTED, NO_VIBRATION, OFFLINE, ONLINE, RECORDING, UNAUTHORIZED,
+    LOCKED, UNLOCKED, ON, OFF, OPEN, CLOSED, LEAK_DETECTED, DRY, MOTION_DETECTED, NO_MOTION, VIBRATION_DETECTED, NO_VIBRATION, OFFLINE, ONLINE, RECORDING, UNAUTHORIZED, ERROR,
     EventCategory,
     ArmedState
 } from './definitions';
@@ -135,6 +135,7 @@ const displayStateIconMap: Partial<Record<DisplayState, LucideIcon>> = {
     [ONLINE]: Wifi,
     [RECORDING]: Video,
     [UNAUTHORIZED]: Ban,
+    [ERROR]: AlertTriangle,
 };
 
 // Helper function to get display state icon component
@@ -237,6 +238,7 @@ export const getDisplayStateColorClass = (state?: DisplayState): string => {
         case MOTION_DETECTED:
         case LEAK_DETECTED:
         case VIBRATION_DETECTED:
+        case ERROR:
             // Use a distinct but not overly bright color
             return 'text-gray-700 dark:text-gray-300'; 
 

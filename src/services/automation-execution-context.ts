@@ -635,12 +635,120 @@ export class OrganizationAutomationContext {
   }
 
   /**
+   * Fetch event context data including device, area, location, and connector information
+   * Uses organization-scoped database client for proper access control
+   */
+  private async fetchEventContextData(event: StandardizedEvent): Promise<{
+    deviceRecord: any,
+    areaRecord: any,
+    locationRecord: any,
+    connectorRecord: any
+  }> {
+    try {
+      // Use organization-scoped database client for security
+      const deviceResults = await this.orgDb.devices.findByExternalId(event.deviceId);
+      const deviceResult = deviceResults[0]; // findByExternalId returns array
+
+      if (!deviceResult) {
+        // Device not found in this organization
+        return {
+          deviceRecord: null,
+          areaRecord: null,
+          locationRecord: null,
+          connectorRecord: null
+        };
+      }
+
+      // Build structured objects from org-scoped query result
+      const deviceRecord = {
+        id: deviceResult.id,
+        name: deviceResult.name,
+        standardizedDeviceType: deviceResult.standardizedDeviceType,
+        standardizedDeviceSubtype: deviceResult.standardizedDeviceSubtype,
+        vendor: deviceResult.vendor,
+        model: deviceResult.model,
+        status: deviceResult.status,
+        batteryPercentage: deviceResult.batteryPercentage,
+      };
+
+             // Area and location data are included in the org-scoped device query
+       const areaRecord = deviceResult.areaId ? {
+         id: deviceResult.areaId,
+         name: undefined as string | undefined,
+         armedState: undefined as any,
+         locationId: deviceResult.locationId,
+       } : null;
+
+       const locationRecord = deviceResult.locationId ? {
+         id: deviceResult.locationId,
+         name: undefined as string | undefined,
+         timeZone: undefined as string | undefined,
+         addressCity: undefined as string | undefined,
+         addressState: undefined as string | undefined,
+       } : null;
+
+      // Connector data is included in the org-scoped device query
+      const connectorRecord = {
+        id: deviceResult.connector.id,
+        name: deviceResult.connector.name,
+        category: deviceResult.connector.category,
+      };
+
+      // If we need full area/location details, fetch them using org-scoped methods
+      if (areaRecord && deviceResult.areaId) {
+        try {
+          const areaResults = await this.orgDb.areas.findById(deviceResult.areaId);
+          const fullArea = areaResults[0];
+          if (fullArea) {
+            areaRecord.name = fullArea.name;
+            areaRecord.armedState = fullArea.armedState;
+            
+                         // Location details are included in area query
+             if (fullArea.location && locationRecord) {
+               locationRecord.name = fullArea.location.name;
+               
+               // Fetch complete location details for automation facts
+               try {
+                 const locationResults = await this.orgDb.locations.findById(fullArea.location.id);
+                 const fullLocation = locationResults[0];
+                 if (fullLocation) {
+                   locationRecord.timeZone = fullLocation.timeZone;
+                   locationRecord.addressCity = fullLocation.addressCity;
+                   locationRecord.addressState = fullLocation.addressState;
+                 }
+               } catch (locationError) {
+                 console.warn(`[Automation Context][${this.organizationId}] Failed to fetch location details:`, locationError);
+               }
+             }
+          }
+        } catch (areaError) {
+          console.warn(`[Automation Context][${this.organizationId}] Failed to fetch area details:`, areaError);
+        }
+      }
+
+      return { deviceRecord, areaRecord, locationRecord, connectorRecord };
+
+    } catch (contextError) {
+      console.warn(`[Automation Context][${this.organizationId}] Failed to fetch context data:`, contextError);
+      return {
+        deviceRecord: null,
+        areaRecord: null,
+        locationRecord: null,
+        connectorRecord: null
+      };
+    }
+  }
+
+  /**
    * Evaluate event-based trigger conditions using json-rules-engine
    */
   private async evaluateEventTriggers(conditions: JsonRuleGroup, event: StandardizedEvent, automationContext?: { id: string, name: string }): Promise<boolean> {
-    // Create facts object with flattened structure for json-rules-engine
+    // Fetch comprehensive context data
+    const { deviceRecord, areaRecord, locationRecord, connectorRecord } = await this.fetchEventContextData(event);
+
+    // Create comprehensive facts object with all available context
     const facts: Record<string, any> = {
-      // Nested facts flattened with dot notation
+      // Event facts
       'event.category': event.category,
       'event.type': event.type,
       'event.subtype': event.subtype,
@@ -648,12 +756,34 @@ export class OrganizationAutomationContext {
       'event.buttonNumber': this.getValidButtonNumber(event.payload),
       'event.buttonPressType': this.getValidButtonPressType(event.payload),
       
-      'device.id': event.deviceId,
+      // Device facts - enhanced with database data
+      'device.id': deviceRecord?.id || event.deviceId,
       'device.externalId': event.deviceId,
-      'device.type': event.deviceInfo?.type,
-      'device.subtype': event.deviceInfo?.subtype,
+      'device.name': deviceRecord?.name || event.deviceId,
+      'device.type': deviceRecord?.standardizedDeviceType || event.deviceInfo?.type,
+      'device.subtype': deviceRecord?.standardizedDeviceSubtype || event.deviceInfo?.subtype,
+      'device.vendor': deviceRecord?.vendor,
+      'device.model': deviceRecord?.model,
+      'device.status': deviceRecord?.status,
+      'device.batteryPercentage': deviceRecord?.batteryPercentage,
       
+      // Area facts - now available for trigger conditions
+      'area.id': areaRecord?.id,
+      'area.name': areaRecord?.name,
+      'area.armedState': areaRecord?.armedState,
+      'area.locationId': areaRecord?.locationId,
+      
+      // Location facts - now available for trigger conditions  
+      'location.id': locationRecord?.id,
+      'location.name': locationRecord?.name,
+      'location.timeZone': locationRecord?.timeZone,
+      'location.addressCity': locationRecord?.addressCity,
+      'location.addressState': locationRecord?.addressState,
+      
+      // Connector facts - enhanced with database data
       'connector.id': event.connectorId,
+      'connector.name': connectorRecord?.name,
+      'connector.category': connectorRecord?.category,
       
       // Legacy flat structure for backward compatibility
       eventType: event.type,
@@ -868,23 +998,8 @@ export class OrganizationAutomationContext {
     const thumbnailContext: ThumbnailContext = (event as any)._thumbnailContext || createEmptyThumbnailContext();
 
     try {
-      // Fetch device information
-      const deviceRecord = await db.query.devices.findFirst({
-        where: and(
-          eq(devices.connectorId, event.connectorId),
-          eq(devices.deviceId, event.deviceId)
-        ),
-        columns: {
-          id: true,
-          name: true,
-          standardizedDeviceType: true,
-          standardizedDeviceSubtype: true,
-          vendor: true,
-          model: true,
-          status: true,
-          batteryPercentage: true
-        }
-      });
+      // Use shared context fetching method
+      const { deviceRecord, areaRecord, locationRecord, connectorRecord } = await this.fetchEventContextData(event);
 
       if (deviceRecord) {
         context.device = {
@@ -898,37 +1013,6 @@ export class OrganizationAutomationContext {
           status: deviceRecord.status,
           batteryPercentage: deviceRecord.batteryPercentage
         };
-
-        // Fetch area and location information if device is associated
-        const areaAssociation = await db.query.areaDevices.findFirst({
-          where: eq(areaDevices.deviceId, deviceRecord.id),
-          with: {
-            area: {
-              with: {
-                location: true
-              }
-            }
-          }
-        });
-
-        if (areaAssociation?.area) {
-          context.area = {
-            id: areaAssociation.area.id,
-            name: areaAssociation.area.name,
-            armedState: areaAssociation.area.armedState,
-            locationId: areaAssociation.area.locationId
-          };
-
-          if (areaAssociation.area.location) {
-            context.location = {
-              id: areaAssociation.area.location.id,
-              name: areaAssociation.area.location.name,
-              timeZone: areaAssociation.area.location.timeZone,
-              addressCity: areaAssociation.area.location.addressCity,
-              addressState: areaAssociation.area.location.addressState
-            };
-          }
-        }
       } else {
         // Device not found in database, use event info as fallback
         context.device = {
@@ -944,16 +1028,28 @@ export class OrganizationAutomationContext {
         };
       }
 
-      // Fetch connector information
-      const connectorRecord = await db.query.connectors.findFirst({
-        where: eq(connectors.id, event.connectorId),
-        columns: {
-          id: true,
-          name: true,
-          category: true
-        }
-      });
+      // Build area context
+      if (areaRecord) {
+        context.area = {
+          id: areaRecord.id,
+          name: areaRecord.name,
+          armedState: areaRecord.armedState,
+          locationId: areaRecord.locationId
+        };
+      }
 
+      // Build location context
+      if (locationRecord) {
+        context.location = {
+          id: locationRecord.id,
+          name: locationRecord.name,
+          timeZone: locationRecord.timeZone,
+          addressCity: locationRecord.addressCity,
+          addressState: locationRecord.addressState
+        };
+      }
+
+      // Build connector context
       if (connectorRecord) {
         context.connector = {
           id: connectorRecord.id,
@@ -961,6 +1057,18 @@ export class OrganizationAutomationContext {
           category: connectorRecord.category
         };
       }
+
+    } catch (error) {
+      console.error(`[Automation Context][${this.organizationId}] Error building action context:`, error);
+      // Continue with minimal context on error
+      context.device = {
+        id: null,
+        externalId: event.deviceId,
+        name: event.deviceId,
+        type: event.deviceInfo?.type || null,
+        subtype: event.deviceInfo?.subtype || null
+      };
+    }
 
       // Add event context for easy access including thumbnail data
       context.event = {
@@ -993,21 +1101,6 @@ export class OrganizationAutomationContext {
 
       // Store thumbnail context separately for easy access in action execution
       context.thumbnailContext = thumbnailContext;
-
-    } catch (error) {
-      console.error(`[Automation Context][${this.organizationId}] Error building action context:`, error);
-      // Continue with minimal context on error
-      context.device = {
-        id: null,
-        externalId: event.deviceId,
-        name: event.deviceId,
-        type: event.deviceInfo?.type || null,
-        subtype: event.deviceInfo?.subtype || null
-      };
-      
-      // Still provide empty thumbnail context on error
-      context.thumbnailContext = createEmptyThumbnailContext();
-    }
 
     return context;
   }

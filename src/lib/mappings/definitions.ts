@@ -148,6 +148,9 @@ export const ONLINE = 'Online';
 export const RECORDING = 'Recording';
 export const UNAUTHORIZED = 'Unauthorized';
 
+// Error state string
+export const ERROR = 'Error';
+
 // --- Device State Types ---
 // Define types using the constants instead of re-writing string literals
 
@@ -161,10 +164,11 @@ export type OfflineStateType = typeof OFFLINE;
 export type OnlineStateType = typeof ONLINE;
 export type RecordingStateType = typeof RECORDING;
 export type UnauthorizedStateType = typeof UNAUTHORIZED;
+export type ErrorStateType = typeof ERROR;
 
 // Union of all possible display states
 // --- BEGIN Update DisplayState Union ---
-export type DisplayState = LockState | OnOffState | ContactSensorState | LeakSensorState | MotionSensorState | VibrationSensorState | OfflineStateType | OnlineStateType | RecordingStateType | UnauthorizedStateType;
+export type DisplayState = LockState | OnOffState | ContactSensorState | LeakSensorState | MotionSensorState | VibrationSensorState | OfflineStateType | OnlineStateType | RecordingStateType | UnauthorizedStateType | ErrorStateType;
 // --- END Update DisplayState Union ---
 
 // --- CANONICAL STATE MAPPINGS ---
@@ -210,24 +214,24 @@ export type ValidDisplayStatesMap = {
 
 export const validDisplayStatesMap: ValidDisplayStatesMap = {
   [DeviceType.Door]: {
-    'null': [OPEN, CLOSED],
+    'null': [OPEN, CLOSED, ERROR],
   },
   [DeviceType.Lock]: {
-    'null': [LOCKED, UNLOCKED],
+    'null': [LOCKED, UNLOCKED, ERROR],
   },
   [DeviceType.Outlet]: {
-    [DeviceSubtype.Multi]: [ON, OFF],
-    [DeviceSubtype.Single]: [ON, OFF],
+    [DeviceSubtype.Multi]: [ON, OFF, ERROR],
+    [DeviceSubtype.Single]: [ON, OFF, ERROR],
   },
   [DeviceType.Sensor]: {
-    [DeviceSubtype.Contact]: [OPEN, CLOSED],
-    [DeviceSubtype.Leak]: [DRY, LEAK_DETECTED],
-    [DeviceSubtype.Motion]: [NO_MOTION, MOTION_DETECTED],
-    [DeviceSubtype.Vibration]: [NO_VIBRATION, VIBRATION_DETECTED],
+    [DeviceSubtype.Contact]: [OPEN, CLOSED, ERROR],
+    [DeviceSubtype.Leak]: [DRY, LEAK_DETECTED, ERROR],
+    [DeviceSubtype.Motion]: [NO_MOTION, MOTION_DETECTED, ERROR],
+    [DeviceSubtype.Vibration]: [NO_VIBRATION, VIBRATION_DETECTED, ERROR],
   },
   [DeviceType.Switch]: {
-    [DeviceSubtype.Dimmer]: [ON, OFF],
-    [DeviceSubtype.Toggle]: [ON, OFF],
+    [DeviceSubtype.Dimmer]: [ON, OFF, ERROR],
+    [DeviceSubtype.Toggle]: [ON, OFF, ERROR],
   },
   // Add mappings for other devices as needed
 };

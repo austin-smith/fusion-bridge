@@ -6,7 +6,7 @@ import {
     DisplayState,
     // Import specific states/events for rule definitions
     OPEN, UNLOCKED, LEAK_DETECTED, MOTION_DETECTED, VIBRATION_DETECTED, ON, 
-    OFF, CLOSED, LOCKED, DRY, NO_MOTION, NO_VIBRATION
+    OFF, CLOSED, LOCKED, DRY, NO_MOTION, NO_VIBRATION, ERROR
 } from './definitions';
 
 // Define Severity Levels (Simplified)
@@ -25,6 +25,7 @@ const getSeverityFromState = (state: DisplayState | undefined): SeverityLevel =>
         case LEAK_DETECTED:
         case MOTION_DETECTED:
         case VIBRATION_DETECTED:
+        case ERROR:
             return SeverityLevel.WARNING;
         case ON: // Previously INFO, now DEFAULT
         case OFF:
