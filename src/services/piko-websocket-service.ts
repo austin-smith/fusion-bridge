@@ -395,7 +395,7 @@ export async function initPikoWebSocket(
 
                     let tlsOptions: any | undefined = undefined;
                     if (currentState.config?.type === 'local' && currentState.config?.ignoreTlsErrors) {
-                        console.warn(`[${connectorId}] Configuring WebSocket client to ignore TLS certificate validation for local connection.`);
+                        console.log(`[${connectorId}] Configuring WebSocket client to ignore TLS certificate validation for local connection.`);
                         tlsOptions = { rejectUnauthorized: false };
                     } else if (currentState.config?.type === 'cloud' && currentState.config?.ignoreTlsErrors) {
                         console.warn(`[${connectorId}] WARNING: ignoreTlsErrors is set to true for a cloud connection, but TLS validation will NOT be disabled.`);
@@ -473,7 +473,7 @@ export async function initPikoWebSocket(
                          
                          // Check for 401 Unauthorized and if it's not already an auth retry attempt
                          if (errorMessage.includes("401 Unauthorized") && !isAuthRetry) {
-                            console.warn(`${logPrefix}[connectFailed] WebSocket auth error (401). Attempting token refresh and connection retry...`);
+                            console.log(`${logPrefix}[connectFailed] WebSocket auth error (401). Attempting token refresh and connection retry...`);
                             cleanupAttempt('Auth Retry Attempt'); // Clean up current attempt artifacts
                             try {
                                 // Recursively call initPikoWebSocket with isAuthRetry set to true
@@ -1015,7 +1015,7 @@ export async function initializePikoConnections(): Promise<void> {
          // 2. Cleanup: Remove state for connectors deleted from DB
          for (const connectorId of currentConnectionsMap.keys()) { 
              if (!dbConnectorMap.has(connectorId)) {
-                 console.warn(`[initializePikoConnections] Connector ${connectorId} not found in DB. Disconnecting and removing state.`);
+                 console.log(`[initializePikoConnections] Connector ${connectorId} not found in DB. Disconnecting and removing state.`);
                  await disconnectPikoWebSocket(connectorId); // disconnect handles state cleanup
                  connections.delete(connectorId); 
              }

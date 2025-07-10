@@ -192,7 +192,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
       let configForTokenFetch: DriverYoLinkConfig = { ...parsedDbConfig }; // Start with DB config for token fetch
 
       if (!homeIdFromConfig) {
-          console.warn(`[initMqttService][${connectorId}] homeId missing from DB config. Fetching via getHomeInfo...`);
+          console.log(`[initMqttService][${connectorId}] homeId missing from DB config. Fetching via getHomeInfo...`);
           try {
               // First, ensure we have a valid token to call getHomeInfo
               const tokenDetailsForHomeIdFetch = await getRefreshedYoLinkToken(configForTokenFetch);
@@ -202,13 +202,13 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
               if (tokenDetailsForHomeIdFetch.updatedConfig.accessToken !== parsedDbConfig.accessToken || 
                   tokenDetailsForHomeIdFetch.updatedConfig.refreshToken !== parsedDbConfig.refreshToken || 
                   tokenDetailsForHomeIdFetch.updatedConfig.tokenExpiresAt !== parsedDbConfig.tokenExpiresAt) {
-                  console.warn(`[initMqttService][${connectorId}] Token updated during homeId fetch. DB UPDATE NEEDED for cfg_enc with:`, JSON.stringify(configForTokenFetch));
+                  console.log(`[initMqttService][${connectorId}] Token updated during homeId fetch. Saving updated config with tokens.`);
                   // await db.update(connectors).set({ cfg_enc: JSON.stringify(configForTokenFetch) }).where(eq(connectors.id, connectorId));
               }
 
               homeIdFromConfig = await getHomeInfo(connectorId, configForTokenFetch); // Use the config that has the valid token
               parsedDbConfig.homeId = homeIdFromConfig; // Add homeId to the object that might be saved back to DB
-              console.warn(`[initMqttService][${connectorId}] Fetched homeId: ${homeIdFromConfig}. DB UPDATE NEEDED for cfg_enc (to include homeId):`, JSON.stringify(parsedDbConfig));
+              console.log(`[initMqttService][${connectorId}] Fetched homeId: ${homeIdFromConfig}. Saving updated config with homeId.`);
               // await db.update(connectors).set({ cfg_enc: JSON.stringify(parsedDbConfig) }).where(eq(connectors.id, connectorId));
           } catch (homeIdError) {
               console.error(`[initMqttService][${connectorId}] Could not obtain homeId:`, homeIdError);
@@ -290,7 +290,7 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
         newYoLinkConfigFromRefresh.tokenExpiresAt !== originalConnectionConfig.tokenExpiresAt ||
         homeIdWasMissingOrChanged
       ) {
-        console.warn(`[initMqttService][${connectorId}] YoLink config (tokens or homeId) changed. Attempting to save updated configuration to DB.`);
+        console.log(`[initMqttService][${connectorId}] YoLink config (tokens or homeId) changed. Saving updated configuration to DB.`);
         try {
           await updateConnectorConfig(connectorId, finalConfigForDb);
           console.log(`[initMqttService][${connectorId}] Successfully saved updated config to DB via mqtt-service.`);
