@@ -12,7 +12,7 @@ import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import type { DeviceWithConnector, PikoServer, Connector } from '@/types';
 import { useFusionStore } from '@/stores/store';
 import type { TypedDeviceInfo, IntermediateState, DisplayState } from '@/lib/mappings/definitions';
-import { DeviceType, BinaryState, ContactState, ON, OFF, CANONICAL_STATE_MAP, OFFLINE, ONLINE, LockStatus, ERROR } from '@/lib/mappings/definitions';
+import { DeviceType, BinaryState, ContactState, ON, OFF, CANONICAL_STATE_MAP, OFFLINE, ONLINE, LockStatus, ErrorState } from '@/lib/mappings/definitions';
 import { z } from 'zod';
 import { deviceSyncSchema } from '@/lib/schemas/api-schemas';
 
@@ -586,13 +586,13 @@ async function syncYoLinkDevices(
                       // For online devices, extract state from the state data
                       const rawStateString = getRawStateStringFromYoLinkData(stdTypeInfo, stateData);
                       
-                      // Handle error state as a special case
-                      if (rawStateString === 'error') {
-                          calculatedDisplayState = ERROR;
-                          console.log(`[API Sync YoLink] Device ${device.deviceId} (${device.type}) is in error state.`);
-                      } else if (rawStateString) {
+                      if (rawStateString) {
                           // Map raw state to intermediate state using canonical mapping
-                          if (stdTypeInfo.type === DeviceType.Switch || stdTypeInfo.type === DeviceType.Outlet) {
+                          
+                          // Handle error state for any device type
+                          if (rawStateString === 'error') {
+                              intermediateState = ErrorState.Error;
+                          } else if (stdTypeInfo.type === DeviceType.Switch || stdTypeInfo.type === DeviceType.Outlet) {
                               if (rawStateString === 'open' || rawStateString === 'on') {
                                   intermediateState = BinaryState.On;
                               } else if (rawStateString === 'closed' || rawStateString === 'off') {

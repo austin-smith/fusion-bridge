@@ -7,6 +7,7 @@ import {
     ContactState,
     SensorAlertState,
     LockStatus,
+    ErrorState,
     DeviceSubtype, // Keep subtype for mapping keys
     EventCategory, // <-- Import from definitions
     EventType,      // <-- Import from definitions
@@ -40,10 +41,10 @@ type YoLinkStateMap = Partial<Record<
   }
 >>;
 
-const yoLinkLockStates: Record<string, LockStatus> = { 'locked': LockStatus.Locked, 'unlocked': LockStatus.Unlocked };
-const yoLinkBinaryStates: Record<string, BinaryState> = { 'open': BinaryState.On, 'closed': BinaryState.Off, 'on': BinaryState.On, 'off': BinaryState.Off };
-const yoLinkContactStates: Record<string, ContactState> = { 'open': ContactState.Open, 'closed': ContactState.Closed };
-const yoLinkAlertStates: Record<string, SensorAlertState> = { 'normal': SensorAlertState.Normal, 'alert': SensorAlertState.Alert };
+const yoLinkLockStates: Record<string, LockStatus | ErrorState> = { 'locked': LockStatus.Locked, 'unlocked': LockStatus.Unlocked, 'error': ErrorState.Error };
+const yoLinkBinaryStates: Record<string, BinaryState | ErrorState> = { 'open': BinaryState.On, 'closed': BinaryState.Off, 'on': BinaryState.On, 'off': BinaryState.Off, 'error': ErrorState.Error };
+const yoLinkContactStates: Record<string, ContactState | ErrorState> = { 'open': ContactState.Open, 'closed': ContactState.Closed, 'error': ErrorState.Error };
+const yoLinkAlertStates: Record<string, SensorAlertState | ErrorState> = { 'normal': SensorAlertState.Normal, 'alert': SensorAlertState.Alert, 'error': ErrorState.Error };
 
 const yoLinkStateMap: YoLinkStateMap = {
   [DeviceType.Lock]: { 'null': yoLinkLockStates },

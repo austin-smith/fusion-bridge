@@ -103,6 +103,10 @@ export enum LockStatus {
   Unlocked = 'UNLOCKED',
 }
 
+export enum ErrorState {
+  Error = 'ERROR',
+}
+
 // --- BEGIN Add ActionableState Enum ---
 // Represents desired abstract state changes, independent of vendor commands
 export enum ActionableState {
@@ -113,7 +117,7 @@ export enum ActionableState {
 // --- END Add ActionableState Enum ---
 
 // Union type for all possible intermediate states
-export type IntermediateState = BinaryState | ContactState | SensorAlertState | LockStatus;
+export type IntermediateState = BinaryState | ContactState | SensorAlertState | LockStatus | ErrorState;
 
 // --- STATE DISPLAY CONSTANTS ---
 // Define each display string EXACTLY ONCE as a constant
@@ -184,6 +188,7 @@ export const CANONICAL_STATE_MAP = {
     [LockStatus.Unlocked]: UNLOCKED,
     [ContactState.Open]: OPEN,
     [ContactState.Closed]: CLOSED,
+    [ErrorState.Error]: ERROR,
   },
   
   // Context-dependent mappings (require device subtype)
