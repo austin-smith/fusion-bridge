@@ -1,5 +1,5 @@
 import { db } from '@/data/db';
-import { locations, devices, connectors, events, pikoServers, automations, keypadPins, user, spaces, spaceDevices } from '@/data/db/schema';
+import { locations, devices, connectors, events, pikoServers, automations, keypadPins, user, spaces, spaceDevices, alarmZones, alarmZoneDevices } from '@/data/db/schema';
 import { eq, and, exists, getTableColumns, desc, count, inArray, ne, type SQL } from 'drizzle-orm';
 
 /**
@@ -162,6 +162,116 @@ export class OrgScopedDb {
         .innerJoin(locations, eq(spaces.locationId, locations.id))
         .where(and(
           eq(spaces.id, id),
+          eq(locations.organizationId, this.orgId)
+        ))
+        .limit(1);
+      return result.length > 0;
+    }
+  };
+  
+  // Alarm Zone methods (organization-scoped through locations)
+  readonly alarmZones = {
+    findAll: () =>
+      db.select({
+        ...getTableColumns(alarmZones),
+        location: {
+          id: locations.id,
+          name: locations.name,
+          path: locations.path
+        }
+      })
+      .from(alarmZones)
+      .innerJoin(locations, eq(alarmZones.locationId, locations.id))
+      .where(eq(locations.organizationId, this.orgId))
+      .orderBy(alarmZones.name),
+      
+    findById: (id: string) =>
+      db.select({
+        ...getTableColumns(alarmZones),
+        location: {
+          id: locations.id,
+          name: locations.name,
+          path: locations.path
+        }
+      })
+      .from(alarmZones)
+      .innerJoin(locations, eq(alarmZones.locationId, locations.id))
+      .where(and(
+        eq(alarmZones.id, id),
+        eq(locations.organizationId, this.orgId)
+      )),
+      
+    findByLocation: (locationId: string) =>
+      db.select({
+        ...getTableColumns(alarmZones),
+        location: {
+          id: locations.id,
+          name: locations.name,
+          path: locations.path
+        }
+      })
+      .from(alarmZones)
+      .innerJoin(locations, eq(alarmZones.locationId, locations.id))
+      .where(and(
+        eq(alarmZones.locationId, locationId),
+        eq(locations.organizationId, this.orgId)
+      )),
+      
+    create: async (data: any) => {
+      // Verify location belongs to organization first
+      const locationExists = await this.locations.exists(data.locationId);
+      if (!locationExists) {
+        throw new Error('Location not found or not accessible');
+      }
+      
+      return db.insert(alarmZones)
+        .values(data)
+        .returning();
+    },
+    
+    update: async (id: string, data: any) => {
+      // If locationId is being changed, verify new location belongs to org
+      if (data.locationId) {
+        const locationExists = await this.locations.exists(data.locationId);
+        if (!locationExists) {
+          throw new Error('Location not found or not accessible');
+        }
+      }
+      
+      return db.update(alarmZones)
+        .set(data)
+        .where(and(
+          eq(alarmZones.id, id),
+          exists(
+            db.select().from(locations)
+              .where(and(
+                eq(locations.id, alarmZones.locationId),
+                eq(locations.organizationId, this.orgId)
+              ))
+          )
+        ))
+        .returning();
+    },
+    
+    delete: (id: string) =>
+      db.delete(alarmZones)
+        .where(and(
+          eq(alarmZones.id, id),
+          exists(
+            db.select().from(locations)
+              .where(and(
+                eq(locations.id, alarmZones.locationId),
+                eq(locations.organizationId, this.orgId)
+              ))
+          )
+        )),
+    
+    exists: async (id: string): Promise<boolean> => {
+      const result = await db.select({ id: alarmZones.id })
+        .from(alarmZones)
+        .innerJoin(locations, eq(alarmZones.locationId, locations.id))
+        .where(and(
+          eq(alarmZones.id, id),
           eq(locations.organizationId, this.orgId)
         ))
         .limit(1);

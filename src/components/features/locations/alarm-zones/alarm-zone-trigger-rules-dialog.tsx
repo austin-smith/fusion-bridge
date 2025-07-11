@@ -29,6 +29,7 @@ const ALARM_EVENT_TYPES = [
   EventType.TAILGATING,
   EventType.LOITERING,
   EventType.OBJECT_REMOVED,
+  EventType.MOTION_DETECTED,
 ] as const;
 
 // Get human-readable names for event types
@@ -45,6 +46,7 @@ const EVENT_TYPE_NAMES: Record<EventType, string> = {
   [EventType.ANALYTICS_EVENT]: 'Analytics Event',
   [EventType.OBJECT_DETECTED]: 'Object Detected',
   [EventType.OBJECT_REMOVED]: 'Object Removed',
+  [EventType.MOTION_DETECTED]: 'Motion Detected',
   [EventType.LOITERING]: 'Loitering',
   [EventType.LINE_CROSSING]: 'Line Crossing',
   [EventType.ARMED_PERSON]: 'Armed Person',
@@ -70,6 +72,7 @@ const EVENT_TYPE_DESCRIPTIONS: Record<EventType, string> = {
   [EventType.ANALYTICS_EVENT]: 'General analytics event from video analysis',
   [EventType.OBJECT_DETECTED]: 'Object detected by analytics system',
   [EventType.OBJECT_REMOVED]: 'Protected item taken without authorization',
+  [EventType.MOTION_DETECTED]: 'Motion detected by camera analytics',
   [EventType.LOITERING]: 'Suspicious lingering in monitored zones',
   [EventType.LINE_CROSSING]: 'Unauthorized crossing of defined boundaries',
   [EventType.ARMED_PERSON]: 'Weapon or threat detected',

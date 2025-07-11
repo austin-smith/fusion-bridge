@@ -18,13 +18,13 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getTimezonesForCountry, type Timezone as LibTimezone } from 'countries-and-timezones'; // Use the library from location-edit-dialog
+import { getTimezonesForCountry, type Timezone as LibTimezone } from 'countries-and-timezones';
 
 // Interface for the options we derive for the selector
 interface TimezoneDisplayOption {
     name: string;                // IANA name, e.g., America/New_York
     displayName: string;         // e.g., "America/New York"
-    offsetLabel: string;         // e.g., "(UTC-05:00)"
+    offsetLabel: string;         // e.g., "(UTC-05:00)" - current offset accounting for DST
     sortLabel: string;           // Combined string for sorting: "America/New York (UTC-05:00)"
 }
 
@@ -33,6 +33,49 @@ interface TimezoneSelectorProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   placeholder?: string;
+}
+
+/**
+ * Determines if a timezone is currently observing daylight saving time
+ * by comparing current timezone offset with January offset (standard time)
+ */
+function isCurrentlyDST(timezoneName: string): boolean {
+  try {
+    const now = new Date();
+    const jan = new Date(now.getFullYear(), 0, 1); // January 1st (standard time)
+    
+    // Get timezone offset in minutes for current date and January
+    const getCurrentOffset = (date: Date) => {
+      const utc = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+      const local = new Date(date.toLocaleString('en-US', { timeZone: timezoneName }));
+      return (utc.getTime() - local.getTime()) / (1000 * 60); // Convert to minutes
+    };
+    
+    const currentOffset = getCurrentOffset(now);
+    const janOffset = getCurrentOffset(jan);
+    
+    // If current offset differs from January offset, we're in DST
+    return currentOffset !== janOffset;
+  } catch (error) {
+    console.warn(`Error checking DST for ${timezoneName}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Gets the current offset string for a timezone, accounting for DST
+ */
+function getCurrentOffsetString(timezone: LibTimezone): string {
+  // If the timezone doesn't observe DST, use the standard offset
+  if (timezone.utcOffset === timezone.dstOffset) {
+    return timezone.utcOffsetStr;
+  }
+  
+  // Check if we're currently in DST for this timezone
+  const isDST = isCurrentlyDST(timezone.name);
+  
+  // Return the appropriate offset
+  return isDST ? timezone.dstOffsetStr : timezone.utcOffsetStr;
 }
 
 export const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
@@ -47,11 +90,11 @@ export const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
     // Get US timezones, consistent with location-edit-dialog.tsx
     const usTimezones: LibTimezone[] = getTimezonesForCountry('US');
     
-    // Map to objects with separate parts so offset can be styled differently
+    // Map to objects with current offset accounting for DST
     return usTimezones
         .map((tz: LibTimezone) => {
             const displayName = tz.name.replace(/_/g, ' ');
-            const offsetLabel = `(UTC${tz.utcOffsetStr})`;
+            const offsetLabel = `(UTC${getCurrentOffsetString(tz)})`;
             return {
                 name: tz.name,
                 displayName,

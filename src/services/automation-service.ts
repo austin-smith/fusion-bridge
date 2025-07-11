@@ -158,7 +158,7 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
  * @param currentTime The current time to check schedules against.
  */
 export async function processScheduledAutomations(currentTime: Date): Promise<void> {
-    console.log(`[Automation Service] ENTERED processScheduledAutomations at ${currentTime.toISOString()}`);
+    console.log(`[Automation Service] Processing scheduled automations at ${currentTime.toISOString()} (UTC)`);
 
     try {
         // Get all organizations that have automations
@@ -178,20 +178,31 @@ export async function processScheduledAutomations(currentTime: Date): Promise<vo
         console.log(`[Automation Service] Processing scheduled automations for ${organizationsWithAutomations.length} organization(s)`);
 
         // Process scheduled automations for each organization in parallel
-        await Promise.allSettled(
+        const results = await Promise.allSettled(
             organizationsWithAutomations.map(async ({ organizationId }) => {
                 if (!organizationId) return;
                 
                 try {
-                    console.log(`[Automation Service] Processing scheduled automations for organization ${organizationId}`);
+                    console.log(`[Automation Service] Processing organization ${organizationId} at ${currentTime.toISOString()}`);
                     const orgDb = createOrgScopedDb(organizationId);
                     const automationContext = new OrganizationAutomationContext(organizationId, orgDb);
                     await automationContext.processScheduledAutomations(currentTime);
+                    console.log(`[Automation Service] Completed processing organization ${organizationId}`);
                 } catch (orgError) {
                     console.error(`[Automation Service] Error processing scheduled automations for organization ${organizationId}:`, orgError);
                 }
             })
         );
+
+        // Log results summary
+        const successful = results.filter(r => r.status === 'fulfilled').length;
+        const failed = results.filter(r => r.status === 'rejected').length;
+        
+        if (failed > 0) {
+            console.warn(`[Automation Service] Completed processing: ${successful} successful, ${failed} failed`);
+        } else {
+            console.log(`[Automation Service] Successfully processed all ${successful} organizations`);
+        }
 
     } catch (error) {
         console.error(`[Automation Service] Top-level error processing scheduled automations:`, error);

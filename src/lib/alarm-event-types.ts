@@ -15,6 +15,7 @@ export const SIMPLE_ALARM_EVENT_TYPES: EventType[] = [
   EventType.INTRUSION,
   EventType.ARMED_PERSON,
   EventType.LOITERING,
+  EventType.MOTION_DETECTED,
 ];
 
 /**

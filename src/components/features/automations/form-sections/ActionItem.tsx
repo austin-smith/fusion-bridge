@@ -144,7 +144,6 @@ export function ActionItem({
   const [isFetchingUsers, setIsFetchingUsers] = React.useState(false);
   const [fetchUsersError, setFetchUsersError] = React.useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
-  const [isSelectOpen, setIsSelectOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && isDropdownOpen && groupUsers.length === 0 && !isFetchingUsers) {
@@ -238,32 +237,45 @@ export function ActionItem({
           value={`action-${index}`}
           className={`${bgColor} border-2 ${borderColor} rounded-md shadow-sm`}
       >
-          <div className="relative">
+                    <div className="relative">
               <AccordionTrigger className="w-full p-0 hover:no-underline pr-6">
                   <div className="flex items-center w-full px-4 py-3 pr-14">
                       <div className="flex items-center flex-shrink-0">
-                          <Select
-                              value={actionType ?? availableActionTypes[0]}
-                              onValueChange={handleActionTypeChange}
-                              disabled={isLoading}
-                              open={isSelectOpen}
-                              onOpenChange={setIsSelectOpen}
-                          >
-                              <div 
-                                  className="text-sm font-semibold gap-1 flex items-center cursor-pointer"
-                                  onClick={(e) => {
-                                      e.stopPropagation();
-                                      setIsSelectOpen(!isSelectOpen);
-                                  }}
-                              >
-                                  {actionType && (
-                                      <div className="flex items-center gap-1">
-                                          <ActionIcon />
-                                          <span>{getActionTitle(actionType)}</span>
-                                      </div>
-                                  )}
-                              </div>
-                              <SelectContent>
+                          <div className="flex items-center gap-1">
+                              <ActionIcon />
+                              <span className="text-sm font-semibold">{getActionTitle(actionType)}</span>
+                          </div>
+                      </div>
+                      <div className="ml-2 overflow-hidden flex-1 min-w-0 flex items-center">
+                          <span className={`text-xs text-muted-foreground truncate inline-block w-full transition-opacity duration-200 ${isOpen ? 'opacity-0 invisible' : 'opacity-100 visible'}`}>
+                              {formatActionDetail(
+                                  actionType, 
+                                  actionParams, 
+                                  {
+                                      connectors: sortedPikoConnectors,
+                                      devices: sortedAvailableTargetDevices,
+                                      alarmZones: sortedAvailableZones || [],
+                                      ruleLocationScope: currentRuleLocationScope,
+                                  },
+                                  { includeType: false }
+                              )}
+                          </span>
+                      </div>
+                  </div>
+              </AccordionTrigger>
+              <div className="absolute left-4 top-[10px] z-20">
+                  <Select
+                      value={actionType ?? availableActionTypes[0]}
+                      onValueChange={handleActionTypeChange}
+                      disabled={isLoading}
+                  >
+                      <SelectTrigger className={`text-sm font-semibold gap-1 flex items-center cursor-pointer border-none shadow-none p-0 h-[24px] bg-transparent hover:bg-transparent focus:ring-0 ${!isOpen ? '[&>svg]:hidden' : ''}`}>
+                          <div className="flex items-center gap-1 opacity-0 pointer-events-none">
+                              <ActionIcon />
+                              <span>{getActionTitle(actionType)}</span>
+                          </div>
+                      </SelectTrigger>
+                      <SelectContent>
                               {availableActionTypes.length === 0 ? (
                                   <div className="px-2 py-1.5 text-sm text-muted-foreground text-center">
                                       No actions available for this trigger type.
@@ -298,24 +310,7 @@ export function ActionItem({
                               )}
                           </SelectContent>
                       </Select>
-                      </div>
-                      <div className="ml-2 overflow-hidden flex-1 min-w-0 flex items-center">
-                          <span className={`text-xs text-muted-foreground truncate inline-block w-full transition-opacity duration-200 ${isOpen ? 'opacity-0 invisible' : 'opacity-100 visible'}`}>
-                              {formatActionDetail(
-                                  actionType, 
-                                  actionParams, 
-                                  {
-                                      connectors: sortedPikoConnectors,
-                                      devices: sortedAvailableTargetDevices,
-                                      alarmZones: sortedAvailableZones || [],
-                                      ruleLocationScope: currentRuleLocationScope,
-                                  },
-                                  { includeType: false }
-                              )}
-                          </span>
-                      </div>
                   </div>
-              </AccordionTrigger>
               <Button 
                   type="button" 
                   variant="ghost" 

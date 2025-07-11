@@ -278,6 +278,7 @@ export enum EventType {
   ANALYTICS_EVENT = 'ANALYTICS_EVENT',       // General or unknown analytics event
   OBJECT_DETECTED = 'OBJECT_DETECTED',         // NEW: Generic object detection (Use EventSubtype for class)
   OBJECT_REMOVED = 'OBJECT_REMOVED',           // Object removal detection
+  MOTION_DETECTED = 'MOTION_DETECTED',         // Camera motion detection (analytics)
   LOITERING = 'LOITERING',
   LINE_CROSSING = 'LINE_CROSSING',
   ARMED_PERSON = 'ARMED_PERSON',
@@ -362,6 +363,7 @@ export const EVENT_SUBTYPE_DISPLAY_MAP: Record<EventSubtype, string> = {
 // Define display strings once
 export const OBJECT_DETECTED_DISPLAY = 'Object Detected';
 export const OBJECT_REMOVED_DISPLAY = 'Object Removed';
+export const MOTION_DETECTED_DISPLAY = 'Motion Detected';
 export const LOITERING_DISPLAY = 'Loitering';
 export const LINE_CROSSING_DISPLAY = 'Line Crossing';
 export const ARMED_PERSON_DISPLAY = 'Armed Person Detected';
@@ -397,6 +399,7 @@ export const EVENT_TYPE_DISPLAY_MAP = {
   [EventType.ANALYTICS_EVENT]: GENERIC_ANALYTICS_DISPLAY,
   [EventType.OBJECT_DETECTED]: OBJECT_DETECTED_DISPLAY,
   [EventType.OBJECT_REMOVED]: OBJECT_REMOVED_DISPLAY,
+  [EventType.MOTION_DETECTED]: MOTION_DETECTED_DISPLAY,
   [EventType.LOITERING]: LOITERING_DISPLAY,
   [EventType.LINE_CROSSING]: LINE_CROSSING_DISPLAY,
   [EventType.ARMED_PERSON]: ARMED_PERSON_DISPLAY,

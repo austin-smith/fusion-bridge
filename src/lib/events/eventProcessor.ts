@@ -47,8 +47,8 @@ async function createEnrichedRedisMessage(
   let alarmZoneId: string | undefined;
   let alarmZoneName: string | undefined;
 
-  if (deviceInfo?.spaceDevices?.[0]) {
-    const spaceDevice = deviceInfo.spaceDevices[0];
+  if (deviceInfo?.spaceDevices) {
+    const spaceDevice = deviceInfo.spaceDevices;
     if (spaceDevice.space) {
       spaceId = spaceDevice.space.id;
       spaceName = spaceDevice.space.name;
@@ -108,7 +108,7 @@ async function createEnrichedRedisMessage(
       subType: event.subtype ? (EVENT_SUBTYPE_DISPLAY_MAP[event.subtype] || event.subtype) : undefined,
     },
     rawEvent: event.originalEvent,
-    thumbnailData: thumbnailData || undefined
+    thumbnailUri: thumbnailData ? `data:${thumbnailData.contentType};base64,${thumbnailData.data}` : undefined
   };
 }
 
@@ -177,9 +177,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
     let thumbnailData: EventThumbnailData | null = null;
     
     // Get space cameras if event has a space association
-    const spaceDeviceAssociation = Array.isArray(internalDeviceRecord?.spaceDevices) 
-      ? internalDeviceRecord.spaceDevices[0] 
-      : internalDeviceRecord?.spaceDevices;
+    const spaceDeviceAssociation = internalDeviceRecord?.spaceDevices;
     const spaceId = spaceDeviceAssociation?.space?.id;
     let spaceCameras: any[] = [];
     
@@ -199,9 +197,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
         
         // Map to the format expected by shared service
         const devicesWithSpace = allDevices.map(device => {
-          const spaceAssociation = Array.isArray(device.spaceDevices) 
-            ? device.spaceDevices[0] 
-            : device.spaceDevices;
+          const spaceAssociation = device.spaceDevices;
           return {
             ...device,
             spaceId: spaceAssociation?.space?.id,

@@ -827,9 +827,31 @@ export class OrganizationAutomationContext {
         return false;
       }
 
-      // Get timezone - use trigger timezone, fall back to location timezone, then UTC
-      let timezone = scheduledTrigger.timeZone || 'UTC';
+      // Get timezone with proper fallback chain:
+      // 1. Manual timezone from trigger
+      // 2. Location timezone (if automation has location scope)
+      // 3. Error if no location scope and no manual timezone
+      let timezone = scheduledTrigger.timeZone;
       
+      if (!timezone) {
+        // Try location timezone if automation has location scope
+        if (automation.locationScopeId) {
+          const location = await db.query.locations.findFirst({
+            where: eq(locations.id, automation.locationScopeId),
+            columns: { timeZone: true }
+          });
+          if (location) {
+            timezone = location.timeZone;
+          }
+        }
+        
+        // If still no timezone, automation must specify one manually
+        if (!timezone) {
+          console.error(`${logPrefix} Automation ${automation.name} requires manual timezone specification when not location-scoped`);
+          return false;
+        }
+      }
+
       // For sunrise/sunset schedules, we need location data
       if (scheduledTrigger.scheduleType === 'sunrise' || scheduledTrigger.scheduleType === 'sunset') {
         // Get location ID for sun times lookup
@@ -839,7 +861,7 @@ export class OrganizationAutomationContext {
           return false;
         }
 
-        // Get location data for timezone and sun times
+        // Get location data for sun times
         const location = await db.query.locations.findFirst({
           where: eq(locations.id, locationId),
           columns: {
@@ -853,11 +875,6 @@ export class OrganizationAutomationContext {
         if (!location) {
           console.warn(`${logPrefix} Location ${locationId} not found for sunrise/sunset schedule: ${automation.name}`);
           return false;
-        }
-
-        // Use location timezone if not overridden
-        if (!scheduledTrigger.timeZone) {
-          timezone = location.timeZone;
         }
 
         // Check if sun times are available and fresh
@@ -882,13 +899,13 @@ export class OrganizationAutomationContext {
         );
       }
 
-      // Handle fixed_time schedule
+      // Handle fixed time schedules
       if (scheduledTrigger.scheduleType === 'fixed_time') {
         if (!scheduledTrigger.cronExpression) {
           console.error(`${logPrefix} Fixed time schedule missing CRON expression: ${automation.name}`);
           return false;
         }
-
+        
         return this.evaluateFixedTimeSchedule(
           scheduledTrigger.cronExpression,
           currentTime,
@@ -896,11 +913,10 @@ export class OrganizationAutomationContext {
         );
       }
 
-      console.error(`${logPrefix} Unknown schedule type: ${(scheduledTrigger as any).scheduleType}`);
+      console.error(`${logPrefix} Unknown schedule type: ${scheduledTrigger.scheduleType} for ${automation.name}`);
       return false;
-
     } catch (error) {
-      console.error(`${logPrefix} Error evaluating schedule trigger for ${automation.name}:`, error);
+      console.error(`${logPrefix} Error evaluating scheduled trigger for ${automation.name}:`, error);
       return false;
     }
   }
@@ -910,21 +926,24 @@ export class OrganizationAutomationContext {
    */
   private evaluateFixedTimeSchedule(cronExpression: string, currentTime: Date, timezone: string): boolean {
     try {
+      // Convert UTC time from cron job to the target timezone for evaluation
+      const currentTimeInTimezone = toZonedTime(currentTime, timezone);
+      
       const interval = CronExpressionParser.parse(cronExpression, { 
-        currentDate: currentTime,
-        tz: timezone 
+        currentDate: currentTimeInTimezone, // Time in target timezone
+        tz: timezone // Target timezone
       });
       
-      // Get the previous scheduled time
+      // Get the previous scheduled time (this will be in the target timezone)
       const prevTime = interval.prev();
       
       // Check if the previous scheduled time is within the last minute
-      // This handles the case where we run every minute and need to catch schedules
-      const timeDiff = currentTime.getTime() - prevTime.getTime();
+      // Both times are now in the same timezone
+      const timeDiff = currentTimeInTimezone.getTime() - prevTime.getTime();
       const shouldExecute = timeDiff >= 0 && timeDiff < 60000; // Within last minute
       
       if (shouldExecute) {
-        console.log(`[Schedule Evaluation] Fixed time schedule triggered: ${cronExpression} (prev: ${prevTime.toISOString()}, current: ${currentTime.toISOString()})`);
+        console.log(`[Schedule Evaluation] Fixed time schedule triggered: ${cronExpression} (prev: ${prevTime.toISOString()}, current: ${currentTimeInTimezone.toISOString()}, timezone: ${timezone})`);
       }
       
       return shouldExecute;
@@ -945,19 +964,25 @@ export class OrganizationAutomationContext {
     timezone: string
   ): boolean {
     try {
-      // Parse the sun time for today in the timezone
-      const todayStr = formatInTimeZone(currentTime, timezone, 'yyyy-MM-dd');
+      // Convert UTC time from cron job to the target timezone
+      const currentTimeInTimezone = toZonedTime(currentTime, timezone);
+      
+      // Get today's date in the target timezone
+      const todayStr = formatInTimeZone(currentTimeInTimezone, timezone, 'yyyy-MM-dd');
+      
+      // Parse the sun time for today in the target timezone
       const sunTimeToday = parse(`${todayStr} ${sunTimeStr}`, 'yyyy-MM-dd HH:mm', new Date());
       
-      // Apply offset
+      // Apply offset to get the actual scheduled time
       const scheduledTime = new Date(sunTimeToday.getTime() + (offsetMinutes * 60 * 1000));
       
       // Check if current time is within 1 minute of the scheduled time
-      const timeDiff = Math.abs(currentTime.getTime() - scheduledTime.getTime());
+      // Both times are now properly in the target timezone
+      const timeDiff = Math.abs(currentTimeInTimezone.getTime() - scheduledTime.getTime());
       const shouldExecute = timeDiff < 60000; // Within 1 minute
       
       if (shouldExecute) {
-        console.log(`[Schedule Evaluation] ${scheduleType} schedule triggered: ${sunTimeStr} + ${offsetMinutes}min = ${format(scheduledTime, 'HH:mm')} (current: ${formatInTimeZone(currentTime, timezone, 'HH:mm')})`);
+        console.log(`[Schedule Evaluation] ${scheduleType} schedule triggered: ${sunTimeStr} + ${offsetMinutes}min = ${format(scheduledTime, 'HH:mm')} (current: ${formatInTimeZone(currentTimeInTimezone, timezone, 'HH:mm')}, timezone: ${timezone})`);
       }
       
       return shouldExecute;

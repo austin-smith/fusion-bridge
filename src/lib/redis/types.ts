@@ -32,11 +32,7 @@ export interface RedisEventMessage {
     [key: string]: any; // For additional standardized event data like displayState, batteryPercentage, etc.
   };
   rawEvent?: any;
-  thumbnailData?: {
-    data: string;        // base64 encoded image
-    contentType: string; // e.g., 'image/jpeg'
-    size: number;        // size in bytes
-  };
+  thumbnailUri?: string; // data URI format: data:image/jpeg;base64,<base64data>
 }
 
 /**

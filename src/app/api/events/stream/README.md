@@ -136,6 +136,9 @@ x-api-key: your-api-key-here
   - Example: `?eventCategories=access,security,alarm`
 - `eventTypes` (optional): Comma-separated list of event types to filter
   - Example: `?eventTypes=STATE_CHANGED,MOTION_DETECTED`
+- `includeThumbnails` (optional): Set to `true` to receive thumbnail data URIs for supported events
+  - Example: `?includeThumbnails=true`
+  - Default: `false`
 
 ## Connection Limits
 
@@ -171,7 +174,24 @@ Events are sent as JSON in the SSE `data` field:
     "displayState": "Locked",
     "batteryPercentage": 85
   },
-  "rawEvent": { ... }
+  "rawEvent": { ... },
+  "thumbnailUri": "data:image/jpeg;base64,/9j/4AAQSkZJRgABA..."
+}
+```
+
+### Thumbnail Support
+
+The `thumbnailUri` field is included when:
+1. The client subscribes with `?includeThumbnails=true`
+2. The event supports thumbnail generation:
+   - **Analytics events** from Piko cameras with `objectTrackId` (best-shot thumbnails)
+   - **Any event** from devices in spaces that contain Piko cameras (space-based thumbnails)
+
+The thumbnail is provided as a data URI in the format:
+```
+data:image/jpeg;base64,<base64-encoded-image-data>
+```
+
 }
 ```
 
@@ -320,8 +340,11 @@ const url = '/api/events/stream?eventCategories=access,security';
 // Only receive state changes and motion events
 const url = '/api/events/stream?eventTypes=STATE_CHANGED,MOTION_DETECTED';
 
-// Combine filters
-const url = '/api/events/stream?eventCategories=security&eventTypes=MOTION_DETECTED,INTRUSION_DETECTED';
+// Include thumbnails for supported events
+const url = '/api/events/stream?includeThumbnails=true';
+
+// Combine filters with thumbnails
+const url = '/api/events/stream?eventCategories=security&eventTypes=MOTION_DETECTED,INTRUSION_DETECTED&includeThumbnails=true';
 ```
 
 ## Error Handling
