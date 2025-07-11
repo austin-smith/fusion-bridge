@@ -44,8 +44,8 @@ async function createEnrichedRedisMessage(
   let locationName: string | undefined;
   let spaceId: string | undefined;
   let spaceName: string | undefined;
-  let alarmZoneIds: string[] = [];
-  let alarmZoneNames: string[] = [];
+  let alarmZoneId: string | undefined;
+  let alarmZoneName: string | undefined;
 
   if (deviceInfo?.spaceDevices?.[0]) {
     const spaceDevice = deviceInfo.spaceDevices[0];
@@ -60,10 +60,10 @@ async function createEnrichedRedisMessage(
     }
   }
 
-  // Get alarm zones for this device if we have device info
+  // Get alarm zone for this device if we have device info (one zone per device)
   if (deviceInfo?.id) {
     try {
-      const deviceAlarmZones = await db.query.alarmZoneDevices.findMany({
+      const deviceAlarmZone = await db.query.alarmZoneDevices.findFirst({
         where: eq(alarmZoneDevicesTableSchema.deviceId, deviceInfo.id),
         with: {
           zone: {
@@ -75,10 +75,12 @@ async function createEnrichedRedisMessage(
         }
       });
       
-      alarmZoneIds = deviceAlarmZones.map(az => az.zone.id);
-      alarmZoneNames = deviceAlarmZones.map(az => az.zone.name);
+      if (deviceAlarmZone) {
+        alarmZoneId = deviceAlarmZone.zone.id;
+        alarmZoneName = deviceAlarmZone.zone.name;
+      }
     } catch (alarmZoneError) {
-      console.warn(`[EventProcessor] Failed to fetch alarm zones for device ${deviceInfo.id}:`, alarmZoneError);
+      console.warn(`[EventProcessor] Failed to fetch alarm zone for device ${deviceInfo.id}:`, alarmZoneError);
     }
   }
 
@@ -94,8 +96,8 @@ async function createEnrichedRedisMessage(
     locationName,
     spaceId,
     spaceName,
-    alarmZoneIds: alarmZoneIds.length > 0 ? alarmZoneIds : undefined,
-    alarmZoneNames: alarmZoneNames.length > 0 ? alarmZoneNames : undefined,
+    alarmZoneId,
+    alarmZoneName,
     event: {
       ...event.payload, // Spread the standardized payload data into the event object first
       categoryId: event.category,
@@ -396,7 +398,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
           const alarmZonesRepo = createAlarmZonesRepository(connector.organizationId);
           
           // Get the alarm zone for this device (one device per zone)
-          const deviceZone = await alarmZonesRepo.getDeviceZone(event.deviceId);
+          const deviceZone = await alarmZonesRepo.getDeviceZone(internalDeviceRecord.id);
           
           if (deviceZone) {
             // Only process alarm triggers for ARMED zones

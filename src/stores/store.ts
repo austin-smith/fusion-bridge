@@ -269,6 +269,10 @@ interface FusionState {
   updateAlarmZoneArmedState: (id: string, armedState: ArmedState) => Promise<AlarmZone | null>;
   assignDeviceToAlarmZone: (zoneId: string, deviceId: string) => Promise<boolean>;
   removeDeviceFromAlarmZone: (zoneId: string, deviceId: string) => Promise<boolean>;
+  
+  // --- Bulk Alarm Zone Device Assignment Actions ---
+  bulkAssignDevicesToAlarmZone: (zoneId: string, deviceIds: string[]) => Promise<boolean>;
+  bulkRemoveDevicesFromAlarmZone: (zoneId: string, deviceIds: string[]) => Promise<boolean>;
 
   // NEW: Fetch all devices 
   fetchAllDevices: () => Promise<void>;
@@ -991,6 +995,51 @@ export const useFusionStore = create<FusionState>((set, get) => ({
        console.error(`Error removing device ${deviceId} from alarm zone ${zoneId}:`, message);
        set({ errorAlarmZones: message });
        return false;
+    }
+  },
+  
+  // --- Bulk Alarm Zone Device Assignment Actions ---
+  bulkAssignDevicesToAlarmZone: async (zoneId: string, deviceIds: string[]) => {
+    try {
+      const response = await fetch(`/api/alarm-zones/${zoneId}/devices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceIds })
+      });
+      const data: ApiResponse<any> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to assign devices to alarm zone');
+      }
+      // Refresh alarm zones to update device assignments
+      await get().fetchAlarmZones();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error bulk assigning devices to alarm zone ${zoneId}:`, message);
+      set({ errorAlarmZones: message });
+      return false;
+    }
+  },
+  
+  bulkRemoveDevicesFromAlarmZone: async (zoneId: string, deviceIds: string[]) => {
+    try {
+      const response = await fetch(`/api/alarm-zones/${zoneId}/devices`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceIds })
+      });
+      const data: ApiResponse<any> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to remove devices from alarm zone');
+      }
+      // Refresh alarm zones to update device assignments
+      await get().fetchAlarmZones();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error bulk removing devices from alarm zone ${zoneId}:`, message);
+      set({ errorAlarmZones: message });
+      return false;
     }
   },
 

@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { db } from '@/data/db';
-import { devices, connectors, pikoServers, cameraAssociations, spaces, spaceDevices } from '@/data/db/schema';
+import { devices, connectors, pikoServers, spaces, spaceDevices } from '@/data/db/schema';
 import { eq, count, and, inArray, sql } from 'drizzle-orm';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import { getRawStateStringFromYoLinkData } from '@/services/drivers/yolink';
@@ -29,38 +29,7 @@ function isSecurityDevice(deviceTypeInfo: TypedDeviceInfo): boolean {
   return securityDeviceTypes.includes(deviceTypeInfo.type);
 }
 
-// Helper function to get association count (organization-scoped)
-async function getAssociationCount(
-  internalDeviceId: string, 
-  category: string,
-  orgDb: any
-): Promise<number | null> {
-  let result: { value: number }[];
 
-  if (category === 'piko') {
-    // If it's a Piko camera, count associated devices using its internal ID
-    result = await db.select({ value: count() })
-      .from(cameraAssociations)
-      .innerJoin(devices, eq(devices.id, cameraAssociations.deviceId))
-      .innerJoin(connectors, eq(devices.connectorId, connectors.id))
-      .where(and(
-        eq(cameraAssociations.pikoCameraId, internalDeviceId),
-        eq(connectors.organizationId, orgDb.organizationId)
-      ));
-  } else {
-    // For any other device category, count associated Piko cameras
-    result = await db.select({ value: count() })
-      .from(cameraAssociations)
-      .innerJoin(devices, eq(devices.id, cameraAssociations.pikoCameraId))
-      .innerJoin(connectors, eq(devices.connectorId, connectors.id))
-      .where(and(
-        eq(cameraAssociations.deviceId, internalDeviceId),
-        eq(connectors.organizationId, orgDb.organizationId)
-      ));
-  }
-  
-  return result?.[0]?.value ?? null;
-}
 
 // --- BEGIN Re-add Helper to map IntermediateState to DisplayState ---
 function mapIntermediateToDisplay(state: IntermediateState | undefined | null): DisplayState | undefined {
@@ -165,7 +134,7 @@ async function getDevicesCount(
   }
 }
 
-// GET /api/devices – returns devices with connector information and association count
+// GET /api/devices – returns devices with connector information
 // Optionally filters by deviceId query parameter or returns count with count=true
 export const GET = withOrganizationAuth(async (request, authContext: OrganizationAuthContext) => {
   try {
@@ -208,8 +177,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
 
       const deviceRow = deviceResult[0];
       
-      // Get additional details for this device
-      const associationCount = await getAssociationCount(deviceRow.id, deviceRow.connector?.category || 'unknown', orgDb);
+
       
       // Get Piko server details if applicable
       let pikoServerDetails: PikoServer | undefined = undefined;
@@ -242,7 +210,6 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
         connectorCategory: deviceRow.connector?.category ?? 'Unknown', 
         serverName: pikoServerDetails?.name,
         pikoServerDetails: pikoServerDetails,
-        associationCount: associationCount,
         deviceTypeInfo: deviceTypeInfo,
         displayState,
         locationId: deviceRow.locationId,
@@ -262,37 +229,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
       // Extract device IDs for batch queries
       const deviceIds = devicesResult.map(d => d.id);
 
-      // Batch fetch association counts
-      const pikoAssociations = await db.select({ 
-        deviceId: cameraAssociations.pikoCameraId, 
-        value: count() 
-      })
-        .from(cameraAssociations)
-        .innerJoin(devices, eq(devices.id, cameraAssociations.deviceId))
-        .innerJoin(connectors, eq(devices.connectorId, connectors.id))
-        .where(and(
-          inArray(cameraAssociations.pikoCameraId, deviceIds),
-          eq(connectors.organizationId, authContext.organizationId)
-        ))
-        .groupBy(cameraAssociations.pikoCameraId);
 
-      const deviceAssociations = await db.select({ 
-        deviceId: cameraAssociations.deviceId, 
-        value: count() 
-      })
-        .from(cameraAssociations)
-        .innerJoin(devices, eq(devices.id, cameraAssociations.pikoCameraId))
-        .innerJoin(connectors, eq(devices.connectorId, connectors.id))
-        .where(and(
-          inArray(cameraAssociations.deviceId, deviceIds),
-          eq(connectors.organizationId, authContext.organizationId)
-        ))
-        .groupBy(cameraAssociations.deviceId);
-
-      // Create association counts map
-      const associationCountsMap = new Map<string, number>();
-      pikoAssociations.forEach(assoc => associationCountsMap.set(assoc.deviceId, assoc.value));
-      deviceAssociations.forEach(assoc => associationCountsMap.set(assoc.deviceId, assoc.value));
 
       // Batch fetch Piko servers
       const serverIds = devicesResult
@@ -309,7 +246,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
       // Map results to DeviceWithConnector format
       const devicesWithDetails: DeviceWithConnector[] = devicesResult.map((deviceRow: any) => {
         const pikoServerDetails = deviceRow.serverId ? pikoServersMap.get(deviceRow.serverId) : undefined;
-        const associationCount = associationCountsMap.get(deviceRow.id) ?? null; 
+ 
         const deviceTypeInfo = getDeviceTypeInfo(deviceRow.connector?.category || 'unknown', deviceRow.type);
         const displayState = deviceRow.status as DisplayState | undefined;
 
@@ -331,7 +268,6 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
           connectorCategory: deviceRow.connector?.category ?? 'Unknown', 
           serverName: pikoServerDetails?.name,
           pikoServerDetails: pikoServerDetails,
-          associationCount: associationCount,
           deviceTypeInfo: deviceTypeInfo,
           displayState,
           locationId: deviceRow.locationId,
@@ -434,36 +370,7 @@ async function fetchDevicesForOrganization(orgDb: any): Promise<DeviceWithConnec
 
   const deviceIds = devicesResult.map((d: any) => d.id);
 
-  // Batch fetch association counts (organization-scoped)
-  const pikoAssociations = await db.select({ 
-    deviceId: cameraAssociations.pikoCameraId, 
-    value: count() 
-  })
-    .from(cameraAssociations)
-    .innerJoin(devices, eq(devices.id, cameraAssociations.deviceId))
-    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
-    .where(and(
-      inArray(cameraAssociations.pikoCameraId, deviceIds),
-      eq(connectors.organizationId, orgDb.organizationId)
-    ))
-    .groupBy(cameraAssociations.pikoCameraId);
 
-  const deviceAssociations = await db.select({ 
-    deviceId: cameraAssociations.deviceId, 
-    value: count() 
-  })
-    .from(cameraAssociations)
-    .innerJoin(devices, eq(devices.id, cameraAssociations.pikoCameraId))
-    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
-    .where(and(
-      inArray(cameraAssociations.deviceId, deviceIds),
-      eq(connectors.organizationId, orgDb.organizationId)
-    ))
-    .groupBy(cameraAssociations.deviceId);
-
-  const associationCountsMap = new Map<string, number>();
-  pikoAssociations.forEach(assoc => associationCountsMap.set(assoc.deviceId, assoc.value));
-  deviceAssociations.forEach(assoc => associationCountsMap.set(assoc.deviceId, assoc.value));
 
   // Batch fetch Piko servers
   const serverIds = devicesResult
@@ -480,7 +387,6 @@ async function fetchDevicesForOrganization(orgDb: any): Promise<DeviceWithConnec
   // Map results to DeviceWithConnector format
   return devicesResult.map((deviceRow: any) => {
     const pikoServerDetails = deviceRow.serverId ? pikoServersMap.get(deviceRow.serverId) : undefined;
-    const associationCount = associationCountsMap.get(deviceRow.id) ?? null;
     const deviceTypeInfo = getDeviceTypeInfo(deviceRow.connector?.category || 'unknown', deviceRow.type);
     const displayState = deviceRow.status as DisplayState | undefined;
 
@@ -502,7 +408,6 @@ async function fetchDevicesForOrganization(orgDb: any): Promise<DeviceWithConnec
       connectorCategory: deviceRow.connector?.category ?? 'Unknown',
       serverName: pikoServerDetails?.name,
       pikoServerDetails: pikoServerDetails,
-      associationCount: associationCount,
       deviceTypeInfo: deviceTypeInfo,
       displayState,
       locationId: deviceRow.locationId,

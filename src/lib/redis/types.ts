@@ -20,8 +20,8 @@ export interface RedisEventMessage {
   locationName?: string;
   spaceId?: string;
   spaceName?: string;
-  alarmZoneIds?: string[];
-  alarmZoneNames?: string[];
+  alarmZoneId?: string;
+  alarmZoneName?: string;
   event: {
     categoryId: string;
     category: string;

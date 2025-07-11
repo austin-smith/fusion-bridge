@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { db } from '@/data/db';
-import { alarmZones, alarmZoneDevices, automations, connectors, devices, cameraAssociations, locations, spaces, spaceDevices, automationExecutions, automationActionExecutions } from '@/data/db/schema';
+import { alarmZones, alarmZoneDevices, automations, connectors, devices, locations, spaces, spaceDevices, automationExecutions, automationActionExecutions } from '@/data/db/schema';
 import { eq, and, inArray, or, isNotNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
@@ -234,39 +234,49 @@ async function executeActionWithRetry(
     const runAction = async () => {
         switch (action.type) {
             case AutomationActionType.CREATE_EVENT: {
-                // This action inherently relies on a triggering event context for some fields like timestamp.
-                // If stdEvent is null (scheduled trigger), we might need to adjust behavior or disallow.
-                // For now, it will try to use stdEvent if present, or tokenFactContext.schedule.triggeredAtUTC...
                 const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext, thumbnailContext) as z.infer<typeof import('@/lib/automation-schemas').CreateEventActionParamsSchema>;
-                // Validation as before
-                // ...
-                // For pikoPayload.timestamp, use stdEvent.timestamp or fallback to context.schedule.triggeredAtUTC
                 const eventTimestamp = stdEvent?.timestamp.toISOString() ?? tokenFactContext.schedule?.triggeredAtUTC ?? new Date().toISOString();
 
-                // The rest of CREATE_EVENT logic needs careful review if stdEvent is null
-                // e.g., sourceDeviceInternalId for cameraAssociations
-                // For now, proceeding with existing logic, which might warn or skip if context is missing.
-                // ... (original CREATE_EVENT logic, ensuring stdEvent?.deviceId is handled if stdEvent is null)
-
-                // Simplified example for placeholder
                 const targetConnector = await db.query.connectors.findFirst({ where: eq(connectors.id, resolvedParams.targetConnectorId!) });
                 if (!targetConnector) throw new Error("Target connector not found for CREATE_EVENT");
                 console.log(`[Automation Service] Action CREATE_EVENT: Connector ${targetConnector.id}, Timestamp ${eventTimestamp}`);
-                // Actual piko.createPikoEvent call would be here
+                
                 if (targetConnector.category === 'piko') {
-                    const sourceDeviceInternalId = tokenFactContext.device?.id; // This would be null for scheduled unless set differently
+                    const sourceDeviceInternalId = tokenFactContext.device?.id;
                     let associatedPikoCameraExternalIds: string[] = [];
                     if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string') {
                          try {
-                            const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId }).from(cameraAssociations).where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
-                            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
-                            if (internalCameraIds.length > 0) {
-                                const cameraDevices = await db.select({ externalId: devices.deviceId }).from(devices).where(inArray(devices.id, internalCameraIds)); 
-                                associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
+                            // First, find the space ID of the source device
+                            const sourceDeviceSpace = await db
+                                .select({ spaceId: spaceDevices.spaceId })
+                                .from(spaceDevices)
+                                .where(eq(spaceDevices.deviceId, sourceDeviceInternalId))
+                                .limit(1);
+                                
+                            if (sourceDeviceSpace.length === 0) {
+                                console.warn(`[Rule ${rule.id}][Action createEvent] Source device ${sourceDeviceInternalId} is not assigned to any space.`);
+                            } else {
+                                const spaceId = sourceDeviceSpace[0].spaceId;
+                                
+                                // Find all Piko cameras in the same space
+                                const camerasInSameSpace = await db
+                                    .select({ externalId: devices.deviceId })
+                                    .from(devices)
+                                    .innerJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+                                    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+                                    .where(and(
+                                        eq(spaceDevices.spaceId, spaceId),
+                                        eq(connectors.category, 'piko'),
+                                        eq(devices.standardizedDeviceType, DeviceType.Camera)
+                                    ));
+                                associatedPikoCameraExternalIds = camerasInSameSpace.map(d => d.externalId);
+                                console.log(`[Rule ${rule.id}][Action createEvent] Found ${associatedPikoCameraExternalIds.length} Piko cameras in same space as source device.`);
                             }
-                        } catch (assocError) { console.error(`[Rule ${rule.id}][Action createEvent] Error fetching camera associations:`, assocError); }
-                    } else if (!stdEvent) { // only warn if no stdEvent and no sourceDeviceInternalId from facts
-                        console.warn(`[Rule ${rule.id}][Action createEvent (Scheduled)] No source device context to fetch camera associations.`);
+                        } catch (spaceError) { 
+                            console.error(`[Rule ${rule.id}][Action createEvent] Error fetching cameras in same space:`, spaceError); 
+                        }
+                    } else if (!stdEvent) {
+                        console.warn(`[Rule ${rule.id}][Action createEvent (Scheduled)] No source device context to fetch space-based cameras.`);
                     }
 
 
@@ -294,33 +304,55 @@ async function executeActionWithRetry(
                 // Actual piko.createPikoBookmark call
                  if (targetConnector.category === 'piko') {
                     let associatedPikoCameraExternalIds: string[] = [];
-                    const sourceDeviceInternalId = tokenFactContext.device?.id; // null for scheduled
+                    const sourceDeviceInternalId = tokenFactContext.device?.id;
                     if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string') {
                         try {
-                            const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId }).from(cameraAssociations).where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
-                            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
-                            if (internalCameraIds.length === 0) { console.warn(`[Rule ${rule.id}][Action createBookmark] No Piko cameras associated with source device ${sourceDeviceInternalId}. Skipping.`); break; }
-                            const cameraDevices = await db.select({ externalId: devices.deviceId }).from(devices).where(inArray(devices.id, internalCameraIds)); 
-                            associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
-                        } catch (assocError) { console.error(`[Rule ${rule.id}][Action createBookmark] Error fetching camera associations:`, assocError); throw new Error(`Failed to fetch camera associations: ${assocError instanceof Error ? assocError.message : String(assocError)}`); }
+                            // First, find the space ID of the source device
+                            const sourceDeviceSpace = await db
+                                .select({ spaceId: spaceDevices.spaceId })
+                                .from(spaceDevices)
+                                .where(eq(spaceDevices.deviceId, sourceDeviceInternalId))
+                                .limit(1);
+                                
+                            if (sourceDeviceSpace.length === 0) {
+                                console.warn(`[Rule ${rule.id}][Action createBookmark] Source device ${sourceDeviceInternalId} is not assigned to any space. Skipping.`);
+                                break;
+                            } else {
+                                const spaceId = sourceDeviceSpace[0].spaceId;
+                                
+                                // Find all Piko cameras in the same space
+                                const camerasInSameSpace = await db
+                                    .select({ externalId: devices.deviceId })
+                                    .from(devices)
+                                    .innerJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+                                    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+                                    .where(and(
+                                        eq(spaceDevices.spaceId, spaceId),
+                                        eq(connectors.category, 'piko'),
+                                        eq(devices.standardizedDeviceType, DeviceType.Camera)
+                                    ));
+                                associatedPikoCameraExternalIds = camerasInSameSpace.map(d => d.externalId);
+                                console.log(`[Rule ${rule.id}][Action createBookmark] Found ${associatedPikoCameraExternalIds.length} Piko cameras in same space as source device.`);
+                                
+                                if (associatedPikoCameraExternalIds.length === 0) {
+                                    console.warn(`[Rule ${rule.id}][Action createBookmark] No Piko cameras found in same space. Skipping.`);
+                                    break;
+                                }
+                            }
+                        } catch (spaceError) { 
+                            console.error(`[Rule ${rule.id}][Action createBookmark] Error fetching cameras in same space:`, spaceError); 
+                            throw new Error(`Failed to fetch cameras in same space: ${spaceError instanceof Error ? spaceError.message : String(spaceError)}`);
+                        }
                     } else if (!stdEvent) {
-                         console.warn(`[Rule ${rule.id}][Action createBookmark (Scheduled)] No source device context for camera associations. Bookmark will not be camera-specific.`);
-                         // If no associations, perhaps bookmark globally on the connector if supported, or skip?
-                         // For now, if no camera association, it seems it would attempt to create a bookmark without camera ID,
-                         // which piko.createPikoBookmark might not support or handle gracefully.
-                         // The original code requires associatedPikoCameraExternalIds.length > 0 for the loop.
-                         // If no cameras, then it effectively skips.
-                         if(associatedPikoCameraExternalIds.length === 0){
-                            console.warn(`[Rule ${rule.id}][Action createBookmark (Scheduled)] No camera associations, skipping bookmark creation as per current logic flow.`);
-                            break;
-                         }
+                         console.warn(`[Rule ${rule.id}][Action createBookmark (Scheduled)] No source device context for space-based cameras. Skipping bookmark creation.`);
+                         break;
                     }
                     let durationMs = 5000;
                     try { const parsedDuration = parseInt(resolvedParams.durationMsTemplate, 10); if (!isNaN(parsedDuration) && parsedDuration > 0) durationMs = parsedDuration; } catch {} 
                     let tags: string[] = [];
                     if (resolvedParams.tagsTemplate && resolvedParams.tagsTemplate.trim() !== '') { try { tags = resolvedParams.tagsTemplate.split(',').map(tag => tag.trim()).filter(tag => tag !== ''); } catch {} }
                     
-                    for (const pikoCameraDeviceId of associatedPikoCameraExternalIds) { // This loop won't run if no cameras found.
+                    for (const pikoCameraDeviceId of associatedPikoCameraExternalIds) {
                         const pikoPayload: PikoCreateBookmarkPayload = {
                             name: resolvedParams.nameTemplate,
                             description: resolvedParams.descriptionTemplate || undefined,

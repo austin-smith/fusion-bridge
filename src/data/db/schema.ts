@@ -99,10 +99,9 @@ export const devicesRelations = relations(devices, ({ one, many }) => ({
     fields: [devices.connectorId],
     references: [connectors.id],
   }),
-  cameraAssociationsSource: many(cameraAssociations, { relationName: 'sourceDevice' }), // Associations where this device is the source (e.g., YoLink)
-  cameraAssociationsTarget: many(cameraAssociations, { relationName: 'targetCamera' }), // Associations where this device is the target (e.g., Piko Camera)
+  
   spaceDevices: one(spaceDevices), // One device per space
-  alarmZoneDevices: many(alarmZoneDevices), // Many zones per device
+  alarmZoneDevice: one(alarmZoneDevices), // One zone per device
 }));
 
 // Table for storing Piko server information
@@ -131,32 +130,9 @@ export const pikoServersRelations = relations(pikoServers, ({ one, many }) => ({
   // No explicit relation to devices here anymore
 }));
 
-// Junction table for camera associations (renamed from deviceAssociations)
-export const cameraAssociations = sqliteTable('camera_associations', { // Renamed table
-  deviceId: text('device_id').references(() => devices.id, { onDelete: 'cascade' }).notNull(), // FK to our internal devices.id
-  pikoCameraId: text('piko_camera_id').references(() => devices.id, { onDelete: 'cascade' }).notNull(), // FK to our internal devices.id
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
-}, (table) => ({
-  // Updated primary key columns
-  pk: primaryKey({ columns: [table.deviceId, table.pikoCameraId] }),
-  // Indexes for individual foreign keys can be helpful
-  pikoCameraIdx: index("camera_assoc_piko_idx").on(table.pikoCameraId),
-  deviceIdx: index("camera_assoc_device_idx").on(table.deviceId),
-}));
 
-// Relations for the junction table linking back to the devices table twice
-export const cameraAssociationsRelations = relations(cameraAssociations, ({ one }) => ({
-  sourceDevice: one(devices, {
-    fields: [cameraAssociations.deviceId],
-    references: [devices.id],
-    relationName: 'sourceDevice', // Use for distinguishing the relations
-  }),
-  targetCamera: one(devices, {
-    fields: [cameraAssociations.pikoCameraId],
-    references: [devices.id],
-    relationName: 'targetCamera', // Use for distinguishing the relations
-  }),
-}));
+
+
 
 // Table for storing automation configurations (Connector-Agnostic)
 export const automations = sqliteTable("automations", {
@@ -341,11 +317,9 @@ export const alarmZonesRelations = relations(alarmZones, ({ one, many }) => ({
 // --- AlarmZoneDevices Junction Table (One device per zone constraint) ---
 export const alarmZoneDevices = sqliteTable('alarm_zone_devices', {
   zoneId: text('zone_id').references(() => alarmZones.id, { onDelete: 'cascade' }).notNull(),
-  deviceId: text('device_id').references(() => devices.id, { onDelete: 'cascade' }).notNull(),
+  deviceId: text('device_id').references(() => devices.id, { onDelete: 'cascade' }).notNull().primaryKey(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
-  // Use deviceId as primary key to ensure one device per zone
-  pk: primaryKey({ columns: [table.deviceId] }),
   // Index for zone lookups
   zoneIdx: index("alarm_zone_devices_zone_idx").on(table.zoneId),
 }));

@@ -7,6 +7,7 @@ import type { AlarmZone } from '@/types';
 // Define extended AlarmZone type for API response
 interface AlarmZoneWithDetails extends Omit<AlarmZone, 'createdAt' | 'updatedAt'> {
   locationName: string;
+  deviceIds: string[]; // Explicitly include deviceIds
   createdAt: string;
   updatedAt: string;
 }
@@ -24,9 +25,9 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
       if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(locationId)) {
         return NextResponse.json({ success: false, error: "Invalid locationId format" }, { status: 400 });
       }
-      zonesResult = await alarmZonesRepo.findByLocation(locationId);
+      zonesResult = await alarmZonesRepo.findByLocationWithDevices(locationId);
     } else {
-      zonesResult = await alarmZonesRepo.findAll();
+      zonesResult = await alarmZonesRepo.findAllWithDevices();
     }
 
     const zonesWithDetails: AlarmZoneWithDetails[] = zonesResult.map(zoneRow => ({
@@ -40,7 +41,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
       locationName: zoneRow.location.name,
       createdAt: new Date(zoneRow.createdAt).toISOString(),
       updatedAt: new Date(zoneRow.updatedAt).toISOString(),
-      deviceIds: [], // Will be populated separately if needed
+      deviceIds: zoneRow.deviceIds || [], // Now properly populated from repository
       devices: undefined,
       location: undefined,
       triggerOverrides: undefined,
@@ -84,7 +85,7 @@ export const POST = withOrganizationAuth(async (request, authContext: Organizati
       lastArmedStateChangeReason: newZone.lastArmedStateChangeReason,
       triggerBehavior: newZone.triggerBehavior as 'standard' | 'custom',
       locationName: newZone.location.name,
-      deviceIds: [],
+      deviceIds: [], // Empty for newly created zones
       createdAt: new Date(newZone.createdAt).toISOString(),
       updatedAt: new Date(newZone.updatedAt).toISOString(),
     };

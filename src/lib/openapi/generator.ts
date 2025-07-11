@@ -175,7 +175,6 @@ const deviceSchema = z.object({
   }).nullable().describe('Piko server details if applicable'),
   locationId: z.string().nullable().describe('Location UUID'),
   spaceId: z.string().nullable().describe('Space UUID'),
-  associationCount: z.number().nullable().describe('Number of associated devices'),
   deviceTypeInfo: z.object({
     type: z.string().describe('Standardized device type'),
     subtype: z.string().nullable().describe('Standardized device subtype'),
@@ -195,6 +194,8 @@ const eventSchema = z.object({
   locationName: z.string().optional().describe('Location name'),
   spaceId: z.string().optional().describe('Space UUID'),
   spaceName: z.string().optional().describe('Space name'),
+  alarmZoneId: z.string().optional().describe('Alarm zone UUID that this device belongs to'),
+  alarmZoneName: z.string().optional().describe('Alarm zone name that this device belongs to'),
   timestamp: z.number().describe('Event timestamp (epoch milliseconds)'),
   eventCategory: z.string().describe('Event category'),
   eventType: z.string().describe('Event type'),

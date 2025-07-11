@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Shield, MoreHorizontal, Link, Pencil, Trash2, ShieldCheck, ShieldOff, Settings, Loader2, FileText } from 'lucide-react';
+import { ChevronDown, ChevronRight, Shield, MoreHorizontal, Link, Pencil, Trash2, ShieldCheck, ShieldOff, Settings, Loader2, FileText, Cctv } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ArmedState, ArmedStateDisplayNames, DeviceType } from "@/lib/mappings/definitions";
 import type { AlarmZone, DeviceWithConnector } from '@/types/index';
@@ -25,6 +25,7 @@ interface AlarmZoneCardProps {
   onArmAction?: (zone: AlarmZone, state: ArmedState) => void;
   onManageTriggerRules: (zone: AlarmZone) => void; // Callback to manage trigger rules
   onViewAuditLog: (zone: AlarmZone) => void; // Callback to view audit log
+  onViewCameras: (zone: AlarmZone) => void; // Callback to open the camera wall
 }
 
 export const AlarmZoneCard: React.FC<AlarmZoneCardProps> = ({
@@ -41,6 +42,7 @@ export const AlarmZoneCard: React.FC<AlarmZoneCardProps> = ({
   onArmAction,
   onManageTriggerRules,
   onViewAuditLog,
+  onViewCameras,
 }) => {
 
   // Find devices assigned to this zone
@@ -48,6 +50,13 @@ export const AlarmZoneCard: React.FC<AlarmZoneCardProps> = ({
     const deviceIdsSet = new Set(zone.deviceIds || []);
     return allDevices.filter(device => deviceIdsSet.has(device.id));
   }, [zone.deviceIds, allDevices]);
+
+  // Identify cameras in this zone
+  const zoneCameras = useMemo(() => {
+    return zoneDevices.filter(device => 
+      device.deviceTypeInfo?.type === DeviceType.Camera && device.connectorCategory === 'piko'
+    );
+  }, [zoneDevices]);
 
   const state = zone.armedState;
   const deviceCount = zone.deviceIds?.length ?? 0;
@@ -177,6 +186,23 @@ export const AlarmZoneCard: React.FC<AlarmZoneCardProps> = ({
                   <Pencil className="h-4 w-4 mr-2" />
                   Edit Zone
                 </DropdownMenuItem>
+                {/* Camera Menu Item */}
+                {zoneCameras.length > 0 && <DropdownMenuSeparator />}
+                {zoneCameras.length > 0 && (
+                  <DropdownMenuItem
+                    key={`view-cameras-${zone.id}`}
+                    onClick={(e) => {
+                      e.stopPropagation(); 
+                      onViewCameras(zone);
+                    }}
+                  >
+                    <Cctv className="h-4 w-4 mr-2" />
+                    <span className="flex-1">Camera Wall</span>
+                    <Badge variant="secondary" className="h-5 px-1.5 text-xs ml-2">
+                      {zoneCameras.length}
+                    </Badge>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={(e) => {e.stopPropagation(); onManageTriggerRules(zone);}}>
                   <Settings className="h-4 w-4 mr-2" />

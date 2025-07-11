@@ -111,18 +111,18 @@ export const SpaceDevicesSubRow: React.FC<SpaceDevicesSubRowProps> = ({
 }) => {
   const assignedDeviceIds = useMemo(() => new Set(space.deviceIds || []), [space.deviceIds]);
 
-  const assignedDevice = useMemo(() => {
-    return allDevices.find(device => assignedDeviceIds.has(device.id));
+  const assignedDevices = useMemo(() => {
+    return allDevices.filter(device => assignedDeviceIds.has(device.id));
   }, [allDevices, assignedDeviceIds]);
 
-  if (!assignedDevice) {
+  if (assignedDevices.length === 0) {
     return (
       <div className="bg-muted/25 p-6 flex flex-col items-center justify-center text-center">
         <div className="rounded-full bg-muted p-3 mb-3 inline-flex">
           <Cpu className="h-5 w-5 text-muted-foreground" />
         </div>
         <p className="text-sm text-muted-foreground max-w-md mb-3">
-          No device assigned to this space. Assign a device to define this physical location.
+          No devices assigned to this space. Assign devices to define this physical location.
         </p>
         {onAssignDevice && (
           <Button 
@@ -131,7 +131,7 @@ export const SpaceDevicesSubRow: React.FC<SpaceDevicesSubRowProps> = ({
             onClick={() => onAssignDevice(space)} 
             className="gap-1"
           >
-            <Plus className="h-3.5 w-3.5" /> Assign Device
+            <Plus className="h-3.5 w-3.5" /> Assign Devices
           </Button>
         )}
       </div>
@@ -142,11 +142,13 @@ export const SpaceDevicesSubRow: React.FC<SpaceDevicesSubRowProps> = ({
     <div className="bg-muted/25 px-4 py-4">
       <h5 className="text-xs font-semibold uppercase text-muted-foreground mb-2 tracking-wide flex items-center gap-2">
         <Cpu className="h-3.5 w-3.5" />
-        <span className="flex-grow">Assigned Device</span>
+        <span className="flex-grow">Assigned Device{assignedDevices.length > 1 ? 's' : ''} ({assignedDevices.length})</span>
       </h5>
       <Separator className="my-2 mb-3" />
-      <div className="max-w-sm">
-        <DeviceItem device={assignedDevice} />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {assignedDevices.map(device => (
+          <DeviceItem key={device.id} device={device} />
+        ))}
       </div>
     </div>
   );

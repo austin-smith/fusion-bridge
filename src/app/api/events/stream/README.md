@@ -157,8 +157,10 @@ Events are sent as JSON in the SSE `data` field:
   "connectorName": "Building A Controller",
   "locationId": "loc_789",
   "locationName": "Main Building",
-  "areaId": "area_101",
-  "areaName": "Lobby",
+  "spaceId": "space_101",
+  "spaceName": "Lobby",
+  "alarmZoneId": "zone_201",
+  "alarmZoneName": "Perimeter Security",
   "event": {
     "category": "access",
     "categoryDisplayName": "Access Control",

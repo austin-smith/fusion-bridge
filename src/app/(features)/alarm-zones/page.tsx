@@ -3,12 +3,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Terminal, Loader2, Plus, Shield, Search } from 'lucide-react';
+import { Terminal, Loader2, Plus, Shield, Search, Building } from 'lucide-react';
 import { AlarmZoneEditDialog } from '@/components/features/locations/alarm-zones/alarm-zone-edit-dialog';
 import { AlarmZoneCard } from '@/components/features/locations/alarm-zones/AlarmZoneCard';
 import { AlarmZoneDeviceAssignmentDialog } from '@/components/features/locations/alarm-zones/alarm-zone-device-assignment-dialog';
 import { AlarmZoneTriggerRulesDialog } from '@/components/features/locations/alarm-zones/alarm-zone-trigger-rules-dialog';
 import { AlarmZoneAuditLogDialog } from '@/components/features/locations/alarm-zones/alarm-zone-audit-log-dialog';
+import { CameraWallDialog } from '@/components/features/common/camera-wall-dialog';
 import type { AlarmZone, Location, DeviceWithConnector } from "@/types/index";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
@@ -23,7 +24,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from 'sonner';
-import { ArmedState } from "@/lib/mappings/definitions";
+import { ArmedState, DeviceType } from "@/lib/mappings/definitions";
+import { getArmedStateIcon } from "@/lib/mappings/presentation";
 import { cn } from '@/lib/utils';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -58,6 +60,8 @@ export default function AlarmZonesPage() {
     updateAlarmZoneArmedState,
     assignDeviceToAlarmZone,
     removeDeviceFromAlarmZone,
+    bulkAssignDevicesToAlarmZone,
+    bulkRemoveDevicesFromAlarmZone,
     allDevices,
     isLoadingAllDevices,
     errorAllDevices,
@@ -78,6 +82,8 @@ export default function AlarmZonesPage() {
     updateAlarmZoneArmedState: state.updateAlarmZoneArmedState,
     assignDeviceToAlarmZone: state.assignDeviceToAlarmZone,
     removeDeviceFromAlarmZone: state.removeDeviceFromAlarmZone,
+    bulkAssignDevicesToAlarmZone: state.bulkAssignDevicesToAlarmZone,
+    bulkRemoveDevicesFromAlarmZone: state.bulkRemoveDevicesFromAlarmZone,
     allDevices: state.allDevices,
     isLoadingAllDevices: state.isLoadingAllDevices,
     errorAllDevices: state.errorAllDevices,
@@ -95,6 +101,8 @@ export default function AlarmZonesPage() {
   const [zoneToManageTriggerRules, setZoneToManageTriggerRules] = useState<AlarmZone | null>(null);
   const [isAuditLogDialogOpen, setIsAuditLogDialogOpen] = useState(false);
   const [zoneToViewAuditLog, setZoneToViewAuditLog] = useState<AlarmZone | null>(null);
+  const [isCameraWallDialogOpen, setIsCameraWallDialogOpen] = useState(false);
+  const [selectedZoneForCameraWall, setSelectedZoneForCameraWall] = useState<AlarmZone | null>(null);
   const [expandedZoneDevices, setExpandedZoneDevices] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [locationFilter, setLocationFilter] = useState<string>('all');
@@ -206,21 +214,70 @@ export default function AlarmZonesPage() {
     setIsAuditLogDialogOpen(true);
   };
 
-  const renderLoading = () => (
-    <div className="space-y-6">
-      {[...Array(3)].map((_, index) => (
-        <Card key={index}>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <Skeleton className="h-5 w-5 rounded" />
-              <Skeleton className="h-5 w-24 rounded" />
-            </div>
-            <Skeleton className="h-8 w-8 rounded" />
-          </CardHeader>
-        </Card>
-      ))}
-    </div>
-  );
+  const handleViewCameras = (zone: AlarmZone) => {
+    setSelectedZoneForCameraWall(zone);
+    setIsCameraWallDialogOpen(true);
+  };
+
+  const handleCameraWallDialogChange = (isOpen: boolean) => {
+    setIsCameraWallDialogOpen(isOpen);
+    if (!isOpen) {
+      setSelectedZoneForCameraWall(null);
+    }
+  };
+
+  // Skeleton Component for Alarm Zones Page - Matches Real AlarmZoneCard Structure
+  const AlarmZonesPageSkeleton = ({ locationCount = 2, zonesPerLocation = 2 }: { locationCount?: number; zonesPerLocation?: number }) => {
+    return (
+      <div className="space-y-6">
+        {[...Array(locationCount)].map((_, locationIndex) => (
+          <Card key={locationIndex} className="overflow-visible">
+            {/* Location Header Skeleton */}
+            <CardHeader className="flex flex-row items-center justify-between pb-3 bg-muted/25">
+              <div className="flex items-center gap-2 min-w-0">
+                <Skeleton className="h-5 w-5 rounded" />
+                <Skeleton className="h-6 w-32 rounded" />
+              </div>
+            </CardHeader>
+            
+            {/* Alarm Zones within Location Skeleton - Collapsed State */}
+            <CardContent className="pt-3 space-y-3">
+              {[...Array(zonesPerLocation)].map((_, zoneIndex) => (
+                <Card key={zoneIndex} className="border border-border/50">
+                  {/* Zone Card Header - matches real AlarmZoneCard header */}
+                  <CardHeader className="flex flex-row items-center justify-between py-3 px-4">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Skeleton className="h-4 w-4 rounded" /> {/* Chevron */}
+                      <Skeleton className="h-4 w-4 rounded" /> {/* Shield icon */}
+                      <Skeleton className="h-5 w-28 rounded" /> {/* Zone name */}
+                      <Skeleton className="h-5 w-16 rounded-full" /> {/* Device count badge */}
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Skeleton className="h-7 w-20 rounded-md" /> {/* Armed state dropdown */}
+                      <Skeleton className="h-7 w-7 rounded-md" /> {/* Actions dropdown */}
+                    </div>
+                  </CardHeader>
+                  
+                  {/* Trigger Behavior Info Section - matches real component */}
+                  <div className="px-4 py-2 border-t bg-muted/10 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-3 w-3 rounded" /> {/* Settings icon */}
+                      <Skeleton className="h-3 w-24 rounded" /> {/* "Trigger Behavior:" text */}
+                      <Skeleton className="h-3 w-16 rounded" /> {/* behavior value */}
+                    </div>
+                    <Skeleton className="h-6 w-16 rounded-md" /> {/* Configure button */}
+                  </div>
+                  {/* No expanded content shown - collapsed state */}
+                </Card>
+              ))}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  };
+
+  const renderLoading = () => <AlarmZonesPageSkeleton />;
 
   const renderError = (error: string | null, type: string) => (
      <Alert variant="destructive" className="mb-4">
@@ -316,9 +373,24 @@ export default function AlarmZonesPage() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Status</SelectItem>
-          <SelectItem value={ArmedState.DISARMED}>Disarmed</SelectItem>
-          <SelectItem value={ArmedState.ARMED}>Armed</SelectItem>
-          <SelectItem value={ArmedState.TRIGGERED}>Triggered</SelectItem>
+          <SelectItem value={ArmedState.ARMED}>
+            <div className="flex items-center gap-2">
+              {React.createElement(getArmedStateIcon(ArmedState.ARMED), { className: "h-4 w-4" })}
+              Armed
+            </div>
+          </SelectItem>
+          <SelectItem value={ArmedState.DISARMED}>
+            <div className="flex items-center gap-2">
+              {React.createElement(getArmedStateIcon(ArmedState.DISARMED), { className: "h-4 w-4" })}
+              Disarmed
+            </div>
+          </SelectItem>
+          <SelectItem value={ArmedState.TRIGGERED}>
+            <div className="flex items-center gap-2">
+              {React.createElement(getArmedStateIcon(ArmedState.TRIGGERED), { className: "h-4 w-4" })}
+              Triggered
+            </div>
+          </SelectItem>
         </SelectContent>
       </Select>
       {!isFilteredEmptyState && (
@@ -342,11 +414,21 @@ export default function AlarmZonesPage() {
 
       <ScrollArea className="flex-1"> 
         <div className="p-4 md:p-6">
-          {(isLoadingLocations || isLoadingAlarmZones) && renderLoading()}
-          {errorLocations && renderError(errorLocations, 'Locations')}
-          {errorAlarmZones && renderError(errorAlarmZones, 'Alarm Zones')}
+          {/* Show skeleton when loading OR in initial empty state */}
+          {(isLoadingLocations || isLoadingAlarmZones || 
+            (locations.length === 0 && alarmZones.length === 0 && !errorLocations && !errorAlarmZones)) && renderLoading()}
           
-          {!isLoadingLocations && !isLoadingAlarmZones && !errorLocations && !errorAlarmZones && (
+          {/* Show errors when not loading */}
+          {!(isLoadingLocations || isLoadingAlarmZones || (locations.length === 0 && alarmZones.length === 0 && !errorLocations && !errorAlarmZones)) && (
+            <>
+              {errorLocations && renderError(errorLocations, 'Locations')}
+              {errorAlarmZones && renderError(errorAlarmZones, 'Alarm Zones')}
+            </>
+          )}
+          
+          {/* Show content when data is loaded and no errors */}
+          {!(isLoadingLocations || isLoadingAlarmZones || (locations.length === 0 && alarmZones.length === 0 && !errorLocations && !errorAlarmZones)) && 
+           !errorLocations && !errorAlarmZones && (
             <div className="space-y-6">
               {filteredSortedLocations.map(location => {
                 const locationZones = zonesByLocation[location.id] || [];
@@ -366,7 +448,7 @@ export default function AlarmZonesPage() {
                   <Card key={location.id} className="overflow-visible">
                     <CardHeader className="flex flex-row items-center justify-between pb-3 bg-muted/25">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Shield className="h-5 w-5 flex-shrink-0" />
+                        <Building className="h-5 w-5 flex-shrink-0" />
                         <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
                       </div>
                     </CardHeader>
@@ -385,6 +467,7 @@ export default function AlarmZonesPage() {
                               onArmAction={handleArmAction}
                               onManageTriggerRules={handleManageTriggerRules}
                               onViewAuditLog={handleViewAuditLog}
+                              onViewCameras={handleViewCameras}
                             />
                           </div>
                         ))
@@ -426,6 +509,7 @@ export default function AlarmZonesPage() {
                           onArmAction={handleArmAction}
                           onManageTriggerRules={handleManageTriggerRules}
                           onViewAuditLog={handleViewAuditLog}
+                          onViewCameras={handleViewCameras}
                         />
                       </div>
                     ))}
@@ -478,6 +562,11 @@ export default function AlarmZonesPage() {
         onOpenChange={handleAssignDevicesDialogChange}
         zone={zoneToAssignDevices}
         allDevices={allDevices}
+        allZones={alarmZones}
+        assignDeviceAction={assignDeviceToAlarmZone}
+        removeDeviceAction={removeDeviceFromAlarmZone}
+        bulkAssignDevicesAction={bulkAssignDevicesToAlarmZone}
+        bulkRemoveDevicesAction={bulkRemoveDevicesFromAlarmZone}
       />
       
       <AlarmZoneTriggerRulesDialog
@@ -491,6 +580,19 @@ export default function AlarmZonesPage() {
         onOpenChange={setIsAuditLogDialogOpen}
         zone={zoneToViewAuditLog}
       />
+      
+      {/* Camera Wall Dialog */}
+      {selectedZoneForCameraWall && (
+        <CameraWallDialog
+          isOpen={isCameraWallDialogOpen}
+          onOpenChange={handleCameraWallDialogChange}
+          title={`Camera Wall: ${selectedZoneForCameraWall.name}`}
+          cameraDevices={allDevices.filter(device => 
+            selectedZoneForCameraWall.deviceIds?.includes(device.id) && 
+            device.deviceTypeInfo?.type === DeviceType.Camera
+          )}
+        />
+      )}
       
       <AlertDialog open={isZoneDeleteDialogOpen} onOpenChange={setIsZoneDeleteDialogOpen}>
         <AlertDialogContent>

@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { db } from '@/data/db';
-import { automations, automationExecutions, automationActionExecutions, connectors, devices, cameraAssociations, spaceDevices, spaces, locations } from '@/data/db/schema';
+import { automations, automationExecutions, automationActionExecutions, connectors, devices, spaceDevices, spaces, locations } from '@/data/db/schema';
 import { eq, inArray, and } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
 import type { OrgScopedDb } from '@/lib/db/org-scoped-db';
@@ -10,7 +10,7 @@ import { AutomationConfigSchema, SetDeviceStateActionParamsSchema, ArmAlarmZoneA
 import { AutomationTriggerType, AutomationActionType } from '@/lib/automation-types';
 import { Engine } from 'json-rules-engine';
 import type { JsonRuleGroup } from '@/lib/automation-schemas';
-import { ActionableState, ArmedState, EVENT_TYPE_DISPLAY_MAP, EVENT_CATEGORY_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP } from '@/lib/mappings/definitions';
+import { ActionableState, ArmedState, EVENT_TYPE_DISPLAY_MAP, EVENT_CATEGORY_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP, DeviceType } from '@/lib/mappings/definitions';
 import { requestDeviceStateChange } from '@/lib/device-actions';
 import { getPushoverConfiguration } from '@/data/repositories/service-configurations';
 import { sendPushoverNotification } from '@/services/drivers/pushover';
@@ -162,18 +162,34 @@ async function executeAutomationAction(action: AutomationAction, context: Record
         
         if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string') {
           try {
-            const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId })
-              .from(cameraAssociations)
-              .where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
-            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
-            if (internalCameraIds.length > 0) {
-              const cameraDevices = await db.select({ externalId: devices.deviceId })
+            // First, find the space ID of the source device
+            const sourceDeviceSpace = await db
+              .select({ spaceId: spaceDevices.spaceId })
+              .from(spaceDevices)
+              .where(eq(spaceDevices.deviceId, sourceDeviceInternalId))
+              .limit(1);
+              
+            if (sourceDeviceSpace.length === 0) {
+              console.warn(`[Automation Action Executor] Source device ${sourceDeviceInternalId} is not assigned to any space.`);
+            } else {
+              const spaceId = sourceDeviceSpace[0].spaceId;
+              
+              // Find all Piko cameras in the same space
+              const camerasInSameSpace = await db
+                .select({ externalId: devices.deviceId })
                 .from(devices)
-                .where(inArray(devices.id, internalCameraIds));
-              associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
+                .innerJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+                .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+                .where(and(
+                  eq(spaceDevices.spaceId, spaceId),
+                  eq(connectors.category, 'piko'),
+                  eq(devices.standardizedDeviceType, DeviceType.Camera)
+                ));
+              associatedPikoCameraExternalIds = camerasInSameSpace.map(d => d.externalId);
+              console.log(`[Automation Action Executor] Found ${associatedPikoCameraExternalIds.length} Piko cameras in same space as source device.`);
             }
-          } catch (assocError) {
-            console.error(`[Automation Action Executor] Error fetching camera associations:`, assocError);
+          } catch (spaceError) {
+            console.error(`[Automation Action Executor] Error fetching cameras in same space:`, spaceError);
           }
         }
 
@@ -208,27 +224,42 @@ async function executeAutomationAction(action: AutomationAction, context: Record
         
         if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string') {
           try {
-            const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId })
-              .from(cameraAssociations)
-              .where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
-            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
-            if (internalCameraIds.length === 0) {
-              console.warn(`[Automation Action Executor] No Piko cameras associated with source device ${sourceDeviceInternalId}. Skipping.`);
+            // First, find the space ID of the source device
+            const sourceDeviceSpace = await db
+              .select({ spaceId: spaceDevices.spaceId })
+              .from(spaceDevices)
+              .where(eq(spaceDevices.deviceId, sourceDeviceInternalId))
+              .limit(1);
+              
+            if (sourceDeviceSpace.length === 0) {
+              console.warn(`[Automation Action Executor] Source device ${sourceDeviceInternalId} is not assigned to any space. Skipping.`);
               break;
+            } else {
+              const spaceId = sourceDeviceSpace[0].spaceId;
+              
+              // Find all Piko cameras in the same space
+              const camerasInSameSpace = await db
+                .select({ externalId: devices.deviceId })
+                .from(devices)
+                .innerJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+                .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+                                 .where(and(
+                   eq(spaceDevices.spaceId, spaceId),
+                   eq(connectors.category, 'piko'),
+                   eq(devices.standardizedDeviceType, DeviceType.Camera)
+                 ));
+              associatedPikoCameraExternalIds = camerasInSameSpace.map(d => d.externalId);
+              console.log(`[Automation Action Executor] Found ${associatedPikoCameraExternalIds.length} Piko cameras in same space as source device.`);
+              
+              if (associatedPikoCameraExternalIds.length === 0) {
+                console.warn(`[Automation Action Executor] No Piko cameras found in same space. Skipping.`);
+                break;
+              }
             }
-            const cameraDevices = await db.select({ externalId: devices.deviceId })
-              .from(devices)
-              .where(inArray(devices.id, internalCameraIds));
-            associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
-          } catch (assocError) {
-            console.error(`[Automation Action Executor] Error fetching camera associations:`, assocError);
-            throw new Error(`Failed to fetch camera associations: ${assocError instanceof Error ? assocError.message : String(assocError)}`);
+          } catch (spaceError) {
+            console.error(`[Automation Action Executor] Error fetching cameras in same space:`, spaceError);
+            throw new Error(`Failed to fetch cameras in same space: ${spaceError instanceof Error ? spaceError.message : String(spaceError)}`);
           }
-        }
-        
-        if (associatedPikoCameraExternalIds.length === 0) {
-          console.warn(`[Automation Action Executor] No camera associations, skipping bookmark creation.`);
-          break;
         }
 
         let durationMs = 5000;

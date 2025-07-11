@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, MapPin, MoreHorizontal, Link, Pencil, Trash2, Cctv, Package } from 'lucide-react';
+import { ChevronDown, ChevronRight, MapPin, MoreHorizontal, Link, Pencil, Trash2, Cctv, Box } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DeviceType } from "@/lib/mappings/definitions";
 import type { Space, DeviceWithConnector } from '@/types/index';
@@ -36,21 +36,21 @@ export const SpaceCard: React.FC<SpaceCardProps> = ({
   onViewCameras,
 }) => {
 
-  // Find the device assigned to this space (one device per space)
-  const spaceDevice = useMemo(() => {
-    if (!space.deviceIds || space.deviceIds.length === 0) return null;
-    return allDevices.find(device => space.deviceIds!.includes(device.id));
+  // Find all devices assigned to this space
+  const spaceDevices = useMemo(() => {
+    if (!space.deviceIds || space.deviceIds.length === 0) return [];
+    return allDevices.filter(device => space.deviceIds!.includes(device.id));
   }, [space.deviceIds, allDevices]);
 
-  // Identify cameras in this space (should be max 1 since one device per space)
+  // Identify cameras in this space
   const spaceCameras = useMemo(() => {
-    if (!spaceDevice) return [];
-    return spaceDevice.deviceTypeInfo?.type === DeviceType.Camera && spaceDevice.connectorCategory === 'piko' 
-      ? [spaceDevice] 
-      : [];
-  }, [spaceDevice]);
+    return spaceDevices.filter(device => 
+      device.deviceTypeInfo?.type === DeviceType.Camera && device.connectorCategory === 'piko'
+    );
+  }, [spaceDevices]);
 
-  const hasDevice = !!spaceDevice;
+  const hasDevices = spaceDevices.length > 0;
+  const deviceCount = spaceDevices.length;
 
   return (
     <Card
@@ -73,10 +73,10 @@ export const SpaceCard: React.FC<SpaceCardProps> = ({
                <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" /> : 
                <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
            }
-          <Package className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <CardTitle className="text-base font-medium truncate" title={space.name}>{space.name}</CardTitle>
-          <Badge variant={hasDevice ? "default" : "outline"} className="font-normal px-1.5 py-0.5 text-xs ml-2 flex-shrink-0">
-            {hasDevice ? '1 Device' : 'No Device'}
+          <Badge variant={hasDevices ? "default" : "outline"} className="font-normal px-1.5 py-0.5 text-xs ml-2 flex-shrink-0">
+            {hasDevices ? `${deviceCount} Device${deviceCount !== 1 ? 's' : ''}` : 'No Devices'}
           </Badge>
          </div>
          
@@ -122,7 +122,10 @@ export const SpaceCard: React.FC<SpaceCardProps> = ({
                     }}
                   >
                     <Cctv className="h-4 w-4 mr-2" />
-                    <span>View Camera</span>
+                    <span className="flex-1">Camera Wall</span>
+                    <Badge variant="secondary" className="h-5 px-1.5 text-xs ml-2">
+                      {spaceCameras.length}
+                    </Badge>
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />

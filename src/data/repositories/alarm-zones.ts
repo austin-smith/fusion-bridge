@@ -38,6 +38,41 @@ export class AlarmZonesRepository {
   }
 
   /**
+   * Get all alarm zones with their device IDs for the organization
+   */
+  async findAllWithDevices() {
+    // First get all zones
+    const zonesResult = await this.findAll();
+    
+    // Get device IDs for all zones in one query
+    const zoneDevicesResult = await db.select({
+      zoneId: alarmZoneDevices.zoneId,
+      deviceId: alarmZoneDevices.deviceId,
+    })
+    .from(alarmZoneDevices)
+    .innerJoin(alarmZones, eq(alarmZoneDevices.zoneId, alarmZones.id))
+    .innerJoin(locations, eq(alarmZones.locationId, locations.id))
+    .innerJoin(devices, eq(alarmZoneDevices.deviceId, devices.id))
+    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+    .where(eq(locations.organizationId, this.orgId));
+
+    // Group device IDs by zone ID
+    const devicesByZone = zoneDevicesResult.reduce((acc, row) => {
+      if (!acc[row.zoneId]) {
+        acc[row.zoneId] = [];
+      }
+      acc[row.zoneId].push(row.deviceId);
+      return acc;
+    }, {} as Record<string, string[]>);
+
+    // Add device IDs to each zone
+    return zonesResult.map(zone => ({
+      ...zone,
+      deviceIds: devicesByZone[zone.id] || []
+    }));
+  }
+
+  /**
    * Get alarm zone by ID (org-scoped)
    */
   async findById(id: string) {
@@ -79,6 +114,44 @@ export class AlarmZonesRepository {
       eq(locations.organizationId, this.orgId)
     ))
     .orderBy(alarmZones.name);
+  }
+
+  /**
+   * Get alarm zones by location ID with their device IDs (org-scoped)
+   */
+  async findByLocationWithDevices(locationId: string) {
+    // First get zones for the location
+    const zonesResult = await this.findByLocation(locationId);
+    
+    // Get device IDs for these zones
+    const zoneDevicesResult = await db.select({
+      zoneId: alarmZoneDevices.zoneId,
+      deviceId: alarmZoneDevices.deviceId,
+    })
+    .from(alarmZoneDevices)
+    .innerJoin(alarmZones, eq(alarmZoneDevices.zoneId, alarmZones.id))
+    .innerJoin(locations, eq(alarmZones.locationId, locations.id))
+    .innerJoin(devices, eq(alarmZoneDevices.deviceId, devices.id))
+    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+    .where(and(
+      eq(alarmZones.locationId, locationId),
+      eq(locations.organizationId, this.orgId)
+    ));
+
+    // Group device IDs by zone ID
+    const devicesByZone = zoneDevicesResult.reduce((acc, row) => {
+      if (!acc[row.zoneId]) {
+        acc[row.zoneId] = [];
+      }
+      acc[row.zoneId].push(row.deviceId);
+      return acc;
+    }, {} as Record<string, string[]>);
+
+    // Add device IDs to each zone
+    return zonesResult.map(zone => ({
+      ...zone,
+      deviceIds: devicesByZone[zone.id] || []
+    }));
   }
 
   /**

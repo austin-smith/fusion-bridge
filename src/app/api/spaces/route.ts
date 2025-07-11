@@ -7,6 +7,7 @@ import type { Space } from '@/types';
 // Define extended Space type for API response
 interface SpaceWithDetails extends Omit<Space, 'createdAt' | 'updatedAt'> {
   locationName: string;
+  deviceIds: string[]; // Explicitly include deviceIds
   createdAt: string;
   updatedAt: string;
 }
@@ -24,9 +25,9 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
       if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(locationId)) {
         return NextResponse.json({ success: false, error: "Invalid locationId format" }, { status: 400 });
       }
-      spacesResult = await spacesRepo.findByLocation(locationId);
+      spacesResult = await spacesRepo.findByLocationWithDevices(locationId);
     } else {
-      spacesResult = await spacesRepo.findAll();
+      spacesResult = await spacesRepo.findAllWithDevices();
     }
 
     const spacesWithDetails: SpaceWithDetails[] = spacesResult.map(spaceRow => ({
@@ -38,7 +39,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
       locationName: spaceRow.location.name,
       createdAt: new Date(spaceRow.createdAt).toISOString(),
       updatedAt: new Date(spaceRow.updatedAt).toISOString(),
-      deviceIds: [], // Will be populated separately if needed
+      deviceIds: spaceRow.deviceIds || [], // Now properly populated from repository
       devices: undefined,
       location: undefined,
     }));
@@ -79,7 +80,7 @@ export const POST = withOrganizationAuth(async (request, authContext: Organizati
       description: newSpace.description,
       metadata: newSpace.metadata,
       locationName: newSpace.location.name,
-      deviceIds: [],
+      deviceIds: [], // Empty for newly created spaces
       createdAt: new Date(newSpace.createdAt).toISOString(),
       updatedAt: new Date(newSpace.updatedAt).toISOString(),
     };

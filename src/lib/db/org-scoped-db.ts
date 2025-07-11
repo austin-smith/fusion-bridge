@@ -1,5 +1,5 @@
 import { db } from '@/data/db';
-import { locations, devices, connectors, events, pikoServers, cameraAssociations, automations, keypadPins, user, spaces, spaceDevices } from '@/data/db/schema';
+import { locations, devices, connectors, events, pikoServers, automations, keypadPins, user, spaces, spaceDevices } from '@/data/db/schema';
 import { eq, and, exists, getTableColumns, desc, count, inArray, ne, type SQL } from 'drizzle-orm';
 
 /**
@@ -332,42 +332,7 @@ export class OrgScopedDb {
       return result.length > 0;
     },
     
-    // Device associations (organization-scoped)
-    findAssociations: async (deviceId: string, category: string) => {
-      // Verify device exists in organization first
-      const deviceExists = await this.devices.exists(deviceId);
-      if (!deviceExists) {
-        throw new Error('Device not found or not accessible');
-      }
-      
-      if (category === 'piko') {
-        // If it's a Piko camera, find devices associated TO it
-        return db.select({
-          deviceId: devices.deviceId,
-          deviceName: devices.name
-        })
-        .from(cameraAssociations)
-        .innerJoin(devices, eq(devices.id, cameraAssociations.deviceId))
-        .innerJoin(connectors, eq(devices.connectorId, connectors.id))
-        .where(and(
-          eq(cameraAssociations.pikoCameraId, deviceId),
-          eq(connectors.organizationId, this.orgId)
-        ));
-      } else {
-        // For other devices, find Piko cameras associated FROM it
-        return db.select({
-          deviceId: devices.deviceId,
-          deviceName: devices.name
-        })
-        .from(cameraAssociations)
-        .innerJoin(devices, eq(devices.id, cameraAssociations.pikoCameraId))
-        .innerJoin(connectors, eq(devices.connectorId, connectors.id))
-        .where(and(
-          eq(cameraAssociations.deviceId, deviceId),
-          eq(connectors.organizationId, this.orgId)
-        ));
-      }
-    }
+
   };
   
   // Event methods (organization-scoped through connectors)

@@ -217,9 +217,7 @@ export default function DevicesPage() {
   const [sorting, setSorting] = useState<SortingState>([ /* Default sort */ ]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [associatedDevices, setAssociatedDevices] = useState<{id: string, name: string}[]>([]);
-  const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
-  const [loadingAssociatedDevices, setLoadingAssociatedDevices] = useState(false);
+
   const [isSyncing, setIsSyncing] = useState(false);
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
@@ -281,7 +279,6 @@ export default function DevicesPage() {
                 deviceTypeInfo: state.deviceInfo, 
                 displayState: state.displayState, // Use from deviceStates for real-time updates
                 lastSeen: state.lastSeen, // Use from deviceStates
-                associationCount: fullDevice.associationCount ?? 0, 
                 type: rawDeviceType, 
                 url: url,
                 model: model,
@@ -354,26 +351,7 @@ export default function DevicesPage() {
     }
   }, []); 
 
-  // Re-add fetchAssociatedDevices definition
-  const fetchAssociatedDevices = useCallback(async (deviceId: string, category: string) => {
-    setLoadingAssociatedDevices(true);
-    setActiveDeviceId(deviceId);
-    try {
-      const response = await fetch(`/api/device-associations?deviceId=${deviceId}&category=${category}`);
-      const data = await response.json();
-      if (data.success) {
-        setAssociatedDevices(data.data);
-      } else {
-        console.error("Failed to fetch associated devices:", data.error);
-        setAssociatedDevices([]);
-      }
-    } catch (error) {
-      console.error("Error fetching associated devices:", error);
-      setAssociatedDevices([]);
-    } finally {
-      setLoadingAssociatedDevices(false);
-    }
-  }, []); // Keep empty dependency array for fetchAssociatedDevices itself
+
 
   // Define columns for TanStack Table
   const columns = useMemo<ColumnDef<DisplayedDevice>[]>(() => [
@@ -497,58 +475,7 @@ export default function DevicesPage() {
           );
         }
       },
-      // --- Associated Column (remains after Device Type) --- //
-      {
-        accessorKey: 'associationCount',
-        header: "Associated",
-        enableSorting: true,
-        cell: ({ row }) => {
-          const device = row.original;
-          const showCount = device.connectorCategory === 'yolink' || device.connectorCategory === 'piko';
-          const count = device.associationCount;
-          if (!showCount || count === null || count === undefined || count === 0) return null;
-          return (
-            <div>
-              <Popover onOpenChange={(open) => { if (open) { fetchAssociatedDevices(device.deviceId, device.connectorCategory); } }}>
-                <TooltipProvider delayDuration={100}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <PopoverTrigger asChild>
-                        <Button variant={count > 0 ? "secondary" : "outline"} size="sm" className="h-5 min-w-[1.5rem] px-1.5 text-xs font-medium">{count}</Button>
-                      </PopoverTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{device.connectorCategory === 'yolink' ? `${count} associated Piko cameras` : `${count} associated devices`}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <PopoverContent className="text-sm p-3 max-w-[250px] w-full" align="center">
-                  {count > 0 ? (
-                    <div className="space-y-2">
-                      <p className="font-medium border-b pb-1">{device.connectorCategory === 'yolink' ? `Piko Cameras (${count})` : `YoLink Devices (${count})`}</p>
-                      <div>
-                        {loadingAssociatedDevices ? (
-                          <div className="flex justify-center items-center py-4"><Loader2 className="h-4 w-4 animate-spin" /><span className="text-xs text-muted-foreground">Loading...</span></div>
-                        ) : associatedDevices.length > 0 && activeDeviceId === device.deviceId ? (
-                          <ul className="space-y-1 max-h-[150px] overflow-y-auto">
-                            {associatedDevices.map(assocDevice => (
-                              <li key={assocDevice.id} className="text-xs py-1 px-1.5 border-b border-border/50 last:border-0">{assocDevice.name}</li>
-                            ))}
-                          </ul>
-                        ) : activeDeviceId === device.deviceId ? (
-                          <p className="text-xs text-muted-foreground py-1">No associated devices found.</p>
-                        ) : (
-                          <div className="flex justify-center items-center py-4"><Loader2 className="h-4 w-4 mr-2 animate-spin" /><span className="text-xs text-muted-foreground">Loading...</span></div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (<div className="space-y-2"><p>No associated devices</p></div>)}
-                </PopoverContent>
-              </Popover>
-            </div>
-          );
-        },
-      },
+
       // --- Actions Column (remains last) --- //
       {
         id: 'actions',
@@ -632,7 +559,7 @@ export default function DevicesPage() {
       },
     ],
     // Update dependencies for columns useMemo
-    [fetchAssociatedDevices, loadingAssociatedDevices, associatedDevices, activeDeviceId, deviceActionLoading, executeDeviceAction]
+    [deviceActionLoading, executeDeviceAction]
   );
 
   // Initialize the table with TanStack
