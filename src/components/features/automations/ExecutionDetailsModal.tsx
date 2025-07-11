@@ -379,10 +379,10 @@ export function ExecutionDetailsModal({
                           </div>
                         </div>
                         <div className="text-right">
-                          {triggerEvent.areaName && (
+                          {triggerEvent.spaceName && (
                             <div className="text-xs text-muted-foreground flex items-center gap-1">
                               <MapPin className="h-3 w-3" />
-                              {triggerEvent.areaName}
+                              {triggerEvent.spaceName}
                             </div>
                           )}
                           {triggerEvent.locationName && (

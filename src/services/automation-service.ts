@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { db } from '@/data/db';
-import { automations, connectors, devices, cameraAssociations, areas, areaDevices, locations, automationExecutions, automationActionExecutions } from '@/data/db/schema';
+import { alarmZones, alarmZoneDevices, automations, connectors, devices, cameraAssociations, locations, spaces, spaceDevices, automationExecutions, automationActionExecutions } from '@/data/db/schema';
 import { eq, and, inArray, or, isNotNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
@@ -42,13 +42,15 @@ function assertNever(value: never, message: string = "Unhandled discriminated un
 }
 
 // --- Moved Type Definition Earlier ---
-// Define structure for trigger device context, including nested location
+// Define structure for trigger device context, including space, location, and alarm zones
 type SourceDeviceContext = {
     id: string;
     name: string;
     standardizedDeviceType: string | null;
     standardizedDeviceSubtype: string | null;
-    area: (typeof areas.$inferSelect & { location: typeof locations.$inferSelect | null }) | null; 
+    space: typeof spaces.$inferSelect | null;
+    location: typeof locations.$inferSelect | null;
+    alarmZones: Array<typeof alarmZones.$inferSelect>;
 };
 
 // --- NEW: Helper function to recursively remove null values --- 
@@ -541,7 +543,7 @@ async function executeActionWithRetry(
 /**
  * Resolves tokens in action parameter templates.
  * stdEvent is now optional and used if present for event-specific tokens.
- * tokenFactContext is the primary source for general facts (device, area, location, schedule).
+ * tokenFactContext is the primary source for general facts (device, space, alarm zone, location, schedule).
  * thumbnailContext provides thumbnail data for thumbnail-related tokens.
  */
 function resolveTokens(
@@ -560,7 +562,8 @@ function resolveTokens(
         // Prioritize facts from tokenFactContext
         schedule: tokenFactContext?.schedule ?? null,
         device: tokenFactContext?.device ?? null,
-        area: tokenFactContext?.area ?? null,
+        space: tokenFactContext?.space ?? null,
+        alarmZone: tokenFactContext?.alarmZone ?? null,
         location: tokenFactContext?.location ?? null,
         connector: tokenFactContext?.connector ?? null,
         // Event-specific details, only if stdEvent is provided
@@ -663,36 +666,60 @@ async function evaluateTemporalCondition(
     
     let targetDeviceExternalIds: string[] | undefined = undefined;
 
-    if (condition.scoping === 'sameArea' || condition.scoping === 'sameLocation') {
+    if (condition.scoping === 'sameSpace' || condition.scoping === 'sameLocation' || condition.scoping === 'sameZone') {
         // This scoping relies on triggerDeviceContext, which will be null for scheduled tasks
-        // unless we define "sameArea/Location" relative to the rule's own scopeId.
+        // unless we define "sameSpace/Location/Zone" relative to the rule's own scopeId.
         // For now, if triggerDeviceContext is null, these scopings will likely result in no devices.
-        const scopeId = (condition.scoping === 'sameArea' && triggerDeviceContext?.area?.id)
-                        ? triggerDeviceContext.area.id
-                        : (condition.scoping === 'sameLocation' && triggerDeviceContext?.area?.location?.id)
-                            ? triggerDeviceContext.area.location.id
-                            : null; // If context is null, or area/location is null in context
+        
+        let scopeId: string | null = null;
+        let scopeType: 'space' | 'location' | 'zone' = 'space';
+        
+        if (condition.scoping === 'sameSpace' && triggerDeviceContext?.space?.id) {
+            scopeId = triggerDeviceContext.space.id;
+            scopeType = 'space';
+        } else if (condition.scoping === 'sameLocation' && triggerDeviceContext?.location?.id) {
+            scopeId = triggerDeviceContext.location.id;
+            scopeType = 'location';
+        } else if (condition.scoping === 'sameZone' && triggerDeviceContext?.alarmZones && triggerDeviceContext.alarmZones.length > 0) {
+            // For zone scoping, we'll need to get all devices in any of the trigger device's zones
+            scopeId = 'multiple'; // Special marker for zone handling
+            scopeType = 'zone';
+        }
         
         if (!scopeId && triggerDeviceContext) { // Only warn if context was expected but scopeId couldn't be derived
-            console.warn(`[evaluateTemporalCondition] Cannot scope by ${condition.scoping}: Trigger device context available but no associated ${condition.scoping === 'sameArea' ? 'area' : 'location'}. Condition type ${condition.type} may fail.`);
-        } else if (!scopeId && !triggerDeviceContext && (condition.scoping === 'sameArea' || condition.scoping === 'sameLocation')) {
+            console.warn(`[evaluateTemporalCondition] Cannot scope by ${condition.scoping}: Trigger device context available but no associated ${condition.scoping.replace('same', '')}. Condition type ${condition.type} may fail.`);
+        } else if (!scopeId && !triggerDeviceContext && (condition.scoping === 'sameSpace' || condition.scoping === 'sameLocation' || condition.scoping === 'sameZone')) {
             console.warn(`[evaluateTemporalCondition] Cannot scope by ${condition.scoping} for a non-event-triggered rule without a defined rule location scope to infer from. Condition type ${condition.type} may fail.`);
-             // If no scopeId, this implies that for a scheduled trigger, these scopings are problematic
-             // unless we adjust logic to use rule.locationScopeId if available.
-             // For now, this will likely lead to no devices found.
         }
-
 
         if (scopeId) { // Only proceed if we derived a scopeId
             try {
-                const scopedDeviceQuery = db.select({ externalId: devices.deviceId })
-                                            .from(devices)
-                                            .leftJoin(areaDevices, eq(devices.id, areaDevices.deviceId))
-                                            .leftJoin(areas, eq(areaDevices.areaId, areas.id))
-                                            .where(condition.scoping === 'sameArea' 
-                                                    ? eq(areaDevices.areaId, scopeId)
-                                                    : eq(areas.locationId, scopeId)); 
-                const targetDevices = await scopedDeviceQuery;
+                let targetDevices: { externalId: string }[] = [];
+                
+                if (scopeType === 'space') {
+                    const scopedDeviceQuery = db.select({ externalId: devices.deviceId })
+                                                .from(devices)
+                                                .innerJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+                                                .where(eq(spaceDevices.spaceId, scopeId));
+                    targetDevices = await scopedDeviceQuery;
+                } else if (scopeType === 'location') {
+                    // Get devices by location through spaces
+                    const scopedDeviceQuery = db.selectDistinct({ externalId: devices.deviceId })
+                                                .from(devices)
+                                                .innerJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+                                                .innerJoin(spaces, eq(spaceDevices.spaceId, spaces.id))
+                                                .where(eq(spaces.locationId, scopeId));
+                    targetDevices = await scopedDeviceQuery;
+                } else if (scopeType === 'zone' && triggerDeviceContext?.alarmZones) {
+                    // Get all devices in any of the trigger device's alarm zones
+                    const zoneIds = triggerDeviceContext.alarmZones.map(z => z.id);
+                    const scopedDeviceQuery = db.selectDistinct({ externalId: devices.deviceId })
+                                                .from(devices)
+                                                .innerJoin(alarmZoneDevices, eq(devices.id, alarmZoneDevices.deviceId))
+                                                .where(inArray(alarmZoneDevices.zoneId, zoneIds));
+                    targetDevices = await scopedDeviceQuery;
+                }
+                
                 if (targetDevices.length === 0) {
                      console.log(`[evaluateTemporalCondition] No devices found matching scope '${condition.scoping}' (ID: ${scopeId}).`);
                      return condition.type === 'noEventOccurred'; // This makes sense: no devices means no events occurred from them
@@ -702,7 +729,7 @@ async function evaluateTemporalCondition(
                 console.error(`[evaluateTemporalCondition] Error fetching devices for ${condition.scoping} scope (ID: ${scopeId}):`, dbError);
                 return false;
             }
-        } else if (condition.scoping === 'sameArea' || condition.scoping === 'sameLocation') {
+        } else if (condition.scoping === 'sameSpace' || condition.scoping === 'sameLocation' || condition.scoping === 'sameZone') {
             // If scopeId could not be determined for these scopings, it means no devices match this criteria.
             return condition.type === 'noEventOccurred';
         }
@@ -730,7 +757,7 @@ async function evaluateTemporalCondition(
     for (const event of candidateEvents) {
         const eventPayload = event.payload as any;
         // For temporal conditions, the facts for the engine are derived purely from the candidate event itself.
-        // No area/location context is assumed for these past events unless already on event.deviceInfo
+        // No space/location context is assumed for these past events unless already on event.deviceInfo
         const eventFacts: Record<string, any> = {
              event: {
                  category: event.category ?? null, type: event.type ?? null, subtype: event.subtype ?? null,
@@ -740,8 +767,7 @@ async function evaluateTemporalCondition(
                  externalId: event.deviceId ?? null, type: event.deviceInfo?.type ?? null, subtype: event.deviceInfo?.subtype ?? null
              },
              connector: { id: event.connectorId ?? null },
-             area: null, // Cannot easily get historical area for an event for this check
-             location: null, // Cannot easily get historical location
+             location: null, // Cannot easily get historical location for past events
         };
         
         const temporalRequiredPaths = extractReferencedFactPaths(condition.eventFilter);

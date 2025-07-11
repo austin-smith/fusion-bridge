@@ -58,7 +58,12 @@ export const AlarmZoneDeviceAssignmentDialog: React.FC<AlarmZoneDeviceAssignment
 
   // Get unique device types and connectors for filtering
   const uniqueDeviceTypes = useMemo(() => {
-    const types = new Set(allDevices.map(device => device.deviceTypeInfo?.type).filter(Boolean));
+    const types = new Set(
+      allDevices
+        .map(device => device.deviceTypeInfo?.type)
+        .filter((type): type is DeviceType => Boolean(type))
+        .map(type => String(type))
+    );
     return Array.from(types).sort();
   }, [allDevices]);
 
@@ -79,7 +84,7 @@ export const AlarmZoneDeviceAssignmentDialog: React.FC<AlarmZoneDeviceAssignment
       const searchMatch = nameMatch || typeMatch || connectorMatch;
       
       // Type filter
-      const typeFilterMatch = typeFilter === 'all' || device.deviceTypeInfo?.type === typeFilter;
+      const typeFilterMatch = typeFilter === 'all' || String(device.deviceTypeInfo?.type) === typeFilter;
       
       // Connector filter
       const connectorFilterMatch = connectorFilter === 'all' || device.connectorCategory === connectorFilter;
@@ -211,7 +216,7 @@ export const AlarmZoneDeviceAssignmentDialog: React.FC<AlarmZoneDeviceAssignment
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Shield className="h-5 w-5" />
-            Assign Devices to "{zone.name}"
+            Assign Devices to &quot;{zone.name}&quot;
           </DialogTitle>
           <DialogDescription>
             Select devices to monitor in this alarm zone. Devices can be assigned to multiple zones.

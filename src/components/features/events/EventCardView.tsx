@@ -2,37 +2,34 @@
 
 import React, { useMemo } from 'react';
 import type { EnrichedEvent } from '@/types/events';
-import type { Area } from '@/types/index';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { EventGroupCard } from './EventGroupCard'; // Import the actual card
+import { EventGroupCard } from './EventGroupCard';
 import { differenceInMinutes, isToday, isYesterday, formatRelative } from 'date-fns';
-import type { DeviceWithConnector } from '@/types/index'; // <-- Added DeviceWithConnector
+import type { DeviceWithConnector, Space } from '@/types/index';
 import { clusterEventsByProximity } from '@/lib/events/contextual-event-grouper';
 import { cn } from '@/lib/utils';
 
 interface EventCardViewProps {
   events: EnrichedEvent[];
-  areas: Area[]; // Pass areas for potential grouping/filtering
-  allDevices: DeviceWithConnector[]; // <-- Added allDevices prop
+  onSelectEvent?: (event: EnrichedEvent) => void;
+  showDeviceName?: boolean;
+  allDevices: DeviceWithConnector[];
+  spaces: Space[];
 }
 
 // Define the structure for a group of events (matching EventGroupCard's expectation)
 interface EventGroup {
   groupKey: string;
-  areaId?: string;
-  areaName?: string;
-  startTime: Date; // Earliest event time in the group
-  endTime: Date; // Latest event time in the group
+  spaceId?: string;
+  spaceName?: string;
+  startTime: Date;
+  endTime: Date;
   events: EnrichedEvent[];
 }
 
 const GROUPING_TIME_WINDOW_MS = 60 * 1000; // 1 minute
 
-export const EventCardView: React.FC<EventCardViewProps> = ({ events, areas, allDevices }) => {
-
-  const areaMap = useMemo(() => { 
-    return new Map(areas.map(area => [area.id, area.name]));
-  }, [areas]);
+export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices, spaces }) => {
 
   const timeSegments = useMemo(() => {
     // 1. Cluster events using the new contextual grouper
@@ -56,7 +53,7 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, areas, all
     const yesterdayGroups: EventGroup[] = [];
     const olderGroups: EventGroup[] = [];
 
-    for (const group of contextualEventGroups) { // Operate on new groups
+    for (const group of contextualEventGroups) {
       if (group.endTime > recentCutoff) {
         recentGroups.push(group);
       } else if (group.endTime > hourCutoff) {
@@ -87,7 +84,7 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, areas, all
 
     return segments;
 
-  }, [events]); // Recalculate when events or areas change. clusterEventsByProximity is pure.
+  }, [events]);
 
   if (!events || events.length === 0) {
     return (
@@ -127,7 +124,7 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, areas, all
                       key={group.groupKey}
                       group={group}
                       allDevices={allDevices}
-                      areas={areas}
+                      spaces={spaces}
                       isRecentGroup={segment.label === 'Recent'}
                     />
                   );

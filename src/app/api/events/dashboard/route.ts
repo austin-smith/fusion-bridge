@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { db } from '@/data/db';
-import { events, devices, connectors, areaDevices, areas, locations } from '@/data/db/schema';
+import { events, devices, connectors, locations } from '@/data/db/schema';
 import { desc, eq, and, isNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
@@ -16,8 +16,8 @@ export interface DashboardEvent extends StandardizedEvent {
     deviceRawType?: string | null;
     connectorName?: string | null;
     connectorCategory?: string | null;
-    areaId?: string | null;
-    areaName?: string | null;
+    spaceId?: string | null;
+    spaceName?: string | null;
     locationId?: string | null;
     locationName?: string | null;
     locationPath?: string | null;
@@ -57,8 +57,8 @@ async function getRecentEventsForDashboard(orgDb: any, limit: number = DEFAULT_L
                 deviceRawType: row.rawDeviceType,
                 connectorName: row.connectorName,
                 connectorCategory: row.connectorCategory,
-                areaId: row.areaId,
-                areaName: row.areaName,
+                spaceId: row.spaceId,
+                spaceName: row.spaceName,
                 locationId: row.locationId,
                 locationName: row.locationName,
                 locationPath: row.locationPath,

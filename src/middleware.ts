@@ -44,10 +44,11 @@ export function middleware(request: NextRequest) {
     // These routes use withApiRouteAuth and handle both session + API key auth
     if (pathname.startsWith('/api/admin/') ||
         pathname.startsWith('/api/alarm') ||
-        pathname.startsWith('/api/areas') ||
+        pathname.startsWith('/api/alarm-zones') ||
         pathname.startsWith('/api/devices') ||
         pathname.startsWith('/api/events') ||
         pathname.startsWith('/api/locations') ||
+        pathname.startsWith('/api/spaces') ||
         pathname.startsWith('/api/alarm/') ||
         pathname.startsWith('/api/piko/webrtc')) {
       console.log(`[Middleware] Allowing route with own auth wrapper: ${pathname}`);

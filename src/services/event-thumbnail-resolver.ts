@@ -1,7 +1,7 @@
 import { StandardizedEvent } from '@/types/events';
 import { EnrichedEvent } from '@/types/events';
 import { EventCategory, DeviceType } from '@/lib/mappings/definitions';
-import type { DeviceWithConnector, Area, Space } from '@/types';
+import type { DeviceWithConnector, Space } from '@/types';
 
 export interface ThumbnailSource {
   type: 'best-shot' | 'space-camera';
@@ -67,7 +67,7 @@ export function getThumbnailSource(
 }
 
 /**
- * Finds Piko cameras in a specific space (updated from area-based to space-based)
+ * Finds Piko cameras in a specific space
  * Can work with either space objects or direct device filtering
  */
 export function findSpaceCameras(
@@ -95,42 +95,6 @@ export function findSpaceCameras(
   // Otherwise filter by spaceId directly (for backend use)
   return allDevices.filter(device =>
     (device as any).spaceId === spaceId && // Type assertion for backend device records
-    device.deviceTypeInfo?.type === DeviceType.Camera &&
-    device.connectorCategory === 'piko' &&
-    device.connectorId &&
-    device.deviceId
-  );
-}
-
-/**
- * @deprecated Use findSpaceCameras instead - areas are being phased out in favor of spaces
- */
-export function findAreaCameras(
-  areaId: string | undefined,
-  allDevices: DeviceWithConnector[],
-  areas?: Area[]
-): DeviceWithConnector[] {
-  console.warn('findAreaCameras is deprecated. Use findSpaceCameras instead.');
-  if (!areaId) return [];
-  
-  // If areas provided, use them to get device IDs
-  if (areas && areas.length > 0) {
-    const area = areas.find(a => a.id === areaId);
-    if (!area?.deviceIds?.length) return [];
-    
-    const deviceIdSet = new Set(area.deviceIds);
-    return allDevices.filter(device =>
-      deviceIdSet.has(device.id) &&
-      device.deviceTypeInfo?.type === DeviceType.Camera &&
-      device.connectorCategory === 'piko' &&
-      device.connectorId &&
-      device.deviceId
-    );
-  }
-  
-  // Otherwise filter by areaId directly (for backend use)
-  return allDevices.filter(device =>
-    (device as any).areaId === areaId && // Type assertion for backend device records
     device.deviceTypeInfo?.type === DeviceType.Camera &&
     device.connectorCategory === 'piko' &&
     device.connectorId &&

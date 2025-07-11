@@ -15,7 +15,7 @@ import { formatConnectorCategory } from '@/lib/utils';
 import type { TypedDeviceInfo } from '@/lib/mappings/definitions';
 import { AlertTriangle, MoreHorizontal, Clock, ListTree, Expand, ZoomIn, PlayIcon, Gamepad } from 'lucide-react';
 import { LOCKED, UNLOCKED, ON, OFF, OPEN, CLOSED, LEAK_DETECTED, DRY, MOTION_DETECTED, NO_MOTION, VIBRATION_DETECTED, NO_VIBRATION, SensorAlertState } from '@/lib/mappings/definitions'; // <-- Import specific states
-import type { DeviceWithConnector, Area } from '@/types/index'; // <-- Added Area, DeviceWithConnector
+import type { DeviceWithConnector, Space } from '@/types/index';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"; // <-- Added Popover imports
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -24,14 +24,14 @@ import { Button } from "@/components/ui/button";
 import { ImagePreviewDialog } from './image-preview-dialog'; // <-- Import the new dialog
 import { VideoPlaybackDialog, type VideoPlaybackDialogProps } from './video-playback-dialog'; // <-- Import VideoPlaybackDialog and its props type
 import { toast } from 'react-hot-toast';
-import { getThumbnailSource, findAreaCameras, buildThumbnailUrl } from '@/services/event-thumbnail-resolver';
+import { getThumbnailSource, findSpaceCameras, buildThumbnailUrl } from '@/services/event-thumbnail-resolver';
 
 // Define the structure for a group of events
 // This might be refined later based on the grouping logic in EventCardView
 interface EventGroup {
   groupKey: string;
-  areaId?: string;
-  areaName?: string;
+  spaceId?: string;
+  spaceName?: string;
   startTime: Date;
   endTime: Date;
   events: EnrichedEvent[];
@@ -40,7 +40,7 @@ interface EventGroup {
 interface EventGroupCardProps {
   group: EventGroup;
   allDevices: DeviceWithConnector[];
-  areas: Area[];
+  spaces: Space[];
   isRecentGroup: boolean;
 }
 
@@ -79,9 +79,9 @@ const calculatePriority = (summary: Omit<DeviceSummary, 'priorityScore'>): numbe
 };
 // --- End Device Summary Logic ---
 
-export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevices, areas, isRecentGroup }) => {
+export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevices, isRecentGroup }) => {
   // Destructure group properties first
-  const { areaId, areaName, startTime, endTime, events, groupKey } = group; 
+  const { spaceId, spaceName, startTime, endTime, events, groupKey } = group; 
   const eventCount = events.length;
   
   // --- UPGRADED: Better timestamp formatting --- 
@@ -92,39 +92,68 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     return `${format(startTime, 'h:mm:ss a')} - ${format(endTime, 'h:mm:ss a')}`;
   }, [startTime, endTime]);
   
-  // --- Use shared service for thumbnail logic --- 
+  // --- Find cameras for thumbnail logic --- 
   const thumbnailUrl = useMemo(() => {
-    // Find area cameras using shared service
-    const areaCameras = findAreaCameras(areaId, allDevices, areas);
+    // Find cameras based on space associations for devices in the events
+    const deviceIds = events.map(e => e.deviceId);
+    const devicesInGroup = allDevices.filter(d => deviceIds.includes(d.deviceId));
+    
+    // Get space IDs from devices that have space associations
+    const spaceIds = [...new Set(devicesInGroup
+      .map(d => d.spaceId)
+      .filter(Boolean)
+    )];
+    
+    // Find cameras in the same spaces
+    const spaceCameras = allDevices.filter(device => 
+      device.connectorCategory === 'piko' && 
+      device.deviceTypeInfo?.type === 'Camera' &&
+      spaceIds.includes(device.spaceId)
+    );
     
     // Try to find the best event for thumbnail (most recent analytics event preferred)
     let bestEvent: EnrichedEvent | undefined;
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i];
-      const source = getThumbnailSource(event, areaCameras);
+      const source = getThumbnailSource(event, spaceCameras);
       if (source?.type === 'best-shot') {
         bestEvent = event;
         break;
       }
     }
     
-    // If no best shot event, use the most recent event with area camera
+    // If no best shot event, use the most recent event
     if (!bestEvent) {
       bestEvent = events[events.length - 1];
     }
     
     // Get thumbnail source and build URL
-    const source = getThumbnailSource(bestEvent, areaCameras);
+    const source = getThumbnailSource(bestEvent, spaceCameras);
     if (!source) return undefined;
     
     return buildThumbnailUrl(source);
-  }, [events, areaId, allDevices, areas]);
+  }, [events, allDevices]);
 
-  // --- Keep the area camera for video playback logic ---
-  const areaPikoCamera = useMemo(() => {
-    const cameras = findAreaCameras(areaId, allDevices, areas);
-    return cameras[0] || null;
-  }, [areaId, allDevices, areas]);
+  // --- Find camera for video playback logic ---
+  const spacePikoCamera = useMemo(() => {
+    const deviceIds = events.map(e => e.deviceId);
+    const devicesInGroup = allDevices.filter(d => deviceIds.includes(d.deviceId));
+    
+    // Get space IDs from devices that have space associations
+    const spaceIds = [...new Set(devicesInGroup
+      .map(d => d.spaceId)
+      .filter(Boolean)
+    )];
+    
+    // Find cameras in the same spaces
+    const spaceCameras = allDevices.filter(device => 
+      device.connectorCategory === 'piko' && 
+      device.deviceTypeInfo?.type === 'Camera' &&
+      spaceIds.includes(device.spaceId)
+    );
+    
+    return spaceCameras[0] || null;
+  }, [events, allDevices]);
 
   // --- Sizing Logic (as before) --- 
   const cardSizeClass = useMemo(() => {
@@ -237,16 +266,16 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
       targetPositionMs = bestShotEvent.timestamp - 5000; // Start 5s before event
       targetDeviceName = bestShotEvent.deviceName;
       console.log("[EventGroupCard] Playing from Best Shot event context", { targetConnectorId, targetCameraId, targetPositionMs});
-    } else if (areaPikoCamera) {
-      // Fallback to area camera for live view if no specific event context
-      targetConnectorId = areaPikoCamera.connectorId;
-      // Attempt to get pikoSystemId from the allDevices list using the areaPikoCamera's internal ID
-      const fullAreaCameraDetails = allDevices.find(d => d.id === areaPikoCamera.id);
-      targetPikoSystemId = fullAreaCameraDetails?.pikoServerDetails?.systemId;
-      targetCameraId = areaPikoCamera.deviceId;
+    } else if (spacePikoCamera) {
+      // Fallback to space camera for live view if no specific event context
+      targetConnectorId = spacePikoCamera.connectorId;
+      // Attempt to get pikoSystemId from the allDevices list using the spacePikoCamera's internal ID
+      const fullSpaceCameraDetails = allDevices.find(d => d.id === spacePikoCamera.id);
+      targetPikoSystemId = fullSpaceCameraDetails?.pikoServerDetails?.systemId;
+      targetCameraId = spacePikoCamera.deviceId;
       targetPositionMs = undefined; // Live view
-      targetDeviceName = areaPikoCamera.name;
-      console.log("[EventGroupCard] Playing live from area camera context", { targetConnectorId, targetCameraId });
+      targetDeviceName = spacePikoCamera.name;
+      console.log("[EventGroupCard] Playing live from space camera context", { targetConnectorId, targetCameraId });
     }
 
     if (targetConnectorId && targetCameraId) {
@@ -279,7 +308,7 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         )}>
           <div className="flex justify-between items-start gap-2">
             <div className="min-w-0">
-              <CardTitle className="block text-base font-medium mb-0.5 truncate">{areaName ?? 'Unassigned Area'}</CardTitle>
+              <CardTitle className="block text-base font-medium mb-0.5 truncate">{spaceName ?? 'Unassigned Space'}</CardTitle>
               <CardDescription className="text-xs flex items-center">
                 <Clock className="h-3 w-3 mr-1.5 text-muted-foreground" />
                 {timeRangeText}
@@ -294,7 +323,7 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
             <div className="aspect-video bg-muted rounded-md relative overflow-hidden group/thumbnail">
               <Image 
                 src={thumbnailUrl} 
-                alt={`${areaName ?? 'Event'} thumbnail`} 
+                alt={`${spaceName ?? 'Event'} thumbnail`} 
                 fill
                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                 className="object-contain transition-transform duration-200 group-hover/thumbnail:scale-105"
@@ -335,7 +364,7 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                 >
                   <ZoomIn className="h-5 w-5" />
                 </Button>
-                {(bestShotEvent || areaPikoCamera) && (
+                {(bestShotEvent || spacePikoCamera) && (
                   <Button 
                     variant="outline"
                     size="icon"
@@ -521,8 +550,8 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         isOpen={isPreviewOpen} 
         onOpenChange={setIsPreviewOpen} 
         imageUrl={thumbnailUrl} 
-        imageAlt={`${areaName ?? 'Event'} - Preview`} 
-        title={`Preview: ${areaName ?? groupKey}`}
+        imageAlt={`${spaceName ?? 'Event'} - Preview`} 
+        title={`Preview: ${spaceName ?? groupKey}`}
       />
 
       {/* Video Playback Dialog */}

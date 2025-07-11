@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/accordion";
 import { TemporalConditionItem } from './TemporalConditionItem'; // Adjust path as needed
 import { type TemporalCondition, JsonRuleGroupSchema } from '@/lib/automation-schemas';
-import type { Location, Area } from '@/types';
+import type { Location, Space, AlarmZone } from '@/types';
 import type { AutomationFormValues } from '../AutomationForm'; // Adjust path as needed
 
 const defaultEventFilterRuleGroup = JsonRuleGroupSchema.parse({ all: [] });
@@ -53,8 +53,9 @@ interface TemporalConditionsSectionProps {
     initialExpanded: boolean; // Pass initial expanded state from parent
     watchedLocationScopeId: string | null | undefined;
     allLocations: Location[];
-    allAreas: Area[];
-    devicesForConditions: Array<{ id: string; name: string; areaId?: string | null; locationId?: string | null; }>;
+    allSpaces: Space[];
+    allAlarmZones: AlarmZone[];
+    devicesForConditions: Array<{ id: string; name: string; spaceId?: string | null; locationId?: string | null; }>;
     allConnectors: Array<{ id: string; name: string; category: string; }>;
 }
 
@@ -64,7 +65,8 @@ export function TemporalConditionsSection({
     initialExpanded,
     watchedLocationScopeId,
     allLocations,
-    allAreas,
+    allSpaces,
+    allAlarmZones,
     devicesForConditions,
     allConnectors,
 }: TemporalConditionsSectionProps) {
@@ -124,7 +126,8 @@ export function TemporalConditionsSection({
                                         isLoading={isLoading}
                                         watchedLocationScopeId={watchedLocationScopeId}
                                         allLocations={allLocations}
-                                        allAreas={allAreas}
+                                        allSpaces={allSpaces}
+                                        allAlarmZones={allAlarmZones}
                                         devicesForConditions={devicesForConditions}
                                         allConnectors={allConnectors}
                                     />

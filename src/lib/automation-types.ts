@@ -32,7 +32,7 @@ export interface ActionTypeInfo {
 export interface ActionContextData {
   connectors?: Array<{ id: string; name: string; category?: string }>;
   devices?: Array<{ id: string; name: string; [key: string]: any }>;
-  areas?: Array<{ id: string; name: string }>;
+  spaces?: Array<{ id: string; name: string }>;
   alarmZones?: Array<{ id: string; name: string }>;
   ruleLocationScope?: { id: string; name: string } | null;
 }

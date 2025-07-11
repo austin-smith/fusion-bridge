@@ -119,7 +119,7 @@ export const SpaceDeviceAssignmentDialog: React.FC<SpaceDeviceAssignmentDialogPr
       } else if (assignmentFilter === 'assigned-elsewhere') {
         // Show only devices assigned to other spaces (not this space and not unassigned)
         const assignedSpaceId = deviceSpaceAssignments.get(device.id);
-        assignmentMatch = assignedSpaceId && assignedSpaceId !== space?.id;
+        assignmentMatch = Boolean(assignedSpaceId && assignedSpaceId !== space?.id);
       }
       // 'all' shows everything
       

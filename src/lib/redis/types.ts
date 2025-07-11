@@ -18,8 +18,10 @@ export interface RedisEventMessage {
   connectorName?: string;
   locationId?: string;
   locationName?: string;
-  areaId?: string;
-  areaName?: string;
+  spaceId?: string;
+  spaceName?: string;
+  alarmZoneIds?: string[];
+  alarmZoneNames?: string[];
   event: {
     categoryId: string;
     category: string;
@@ -83,12 +85,12 @@ export interface SSESystemMessage extends SSEMessage {
 }
 
 /**
- * SSE arming message (for area armed state changes)
+ * SSE arming message (for alarm zone armed state changes)
  */
 export interface SSEArmingMessage extends SSEMessage {
   type: 'arming';
   organizationId: string;
-  area: {
+  alarmZone: {
     id: string;
     name: string;
     locationId: string;

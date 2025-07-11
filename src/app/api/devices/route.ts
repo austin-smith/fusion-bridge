@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { db } from '@/data/db';
-import { devices, connectors, pikoServers, cameraAssociations, areas, areaDevices, spaces, spaceDevices } from '@/data/db/schema';
+import { devices, connectors, pikoServers, cameraAssociations, spaces, spaceDevices } from '@/data/db/schema';
 import { eq, count, and, inArray, sql } from 'drizzle-orm';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import { getRawStateStringFromYoLinkData } from '@/services/drivers/yolink';
@@ -245,7 +245,6 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
         associationCount: associationCount,
         deviceTypeInfo: deviceTypeInfo,
         displayState,
-        areaId: deviceRow.areaId,
         locationId: deviceRow.locationId,
         spaceId: deviceRow.spaceId,
         spaceName: deviceRow.spaceName,
@@ -335,7 +334,6 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
           associationCount: associationCount,
           deviceTypeInfo: deviceTypeInfo,
           displayState,
-          areaId: deviceRow.areaId,
           locationId: deviceRow.locationId,
           spaceId: deviceRow.spaceId,
           spaceName: deviceRow.spaceName,
@@ -507,7 +505,6 @@ async function fetchDevicesForOrganization(orgDb: any): Promise<DeviceWithConnec
       associationCount: associationCount,
       deviceTypeInfo: deviceTypeInfo,
       displayState,
-      areaId: deviceRow.areaId,
       locationId: deviceRow.locationId,
       spaceId: deviceRow.spaceId,
       spaceName: deviceRow.spaceName,

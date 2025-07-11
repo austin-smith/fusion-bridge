@@ -4,10 +4,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Terminal, Loader2, Plus, MoreHorizontal, Package, Search, Video } from 'lucide-react';
-import { SpaceEditDialog } from '@/components/features/locations-areas/spaces/space-edit-dialog';
-import { SpaceDeviceAssignmentDialog } from '@/components/features/locations-areas/spaces/space-device-assignment-dialog';
-import { SpaceCameraWallDialog } from '@/components/features/locations-areas/spaces/space-camera-wall-dialog';
-import { SpaceCard } from '@/components/features/locations-areas/spaces/SpaceCard';
+import { SpaceEditDialog } from '@/components/features/locations/spaces/space-edit-dialog';
+import { SpaceDeviceAssignmentDialog } from '@/components/features/locations/spaces/space-device-assignment-dialog';
+import { SpaceCameraWallDialog } from '@/components/features/locations/spaces/space-camera-wall-dialog';
+import { SpaceCard } from '@/components/features/locations/spaces/SpaceCard';
 import type { Space, Location, DeviceWithConnector } from "@/types/index";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";

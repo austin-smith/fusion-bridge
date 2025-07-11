@@ -4,9 +4,6 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 
 // Import schemas from dedicated schemas file instead of route files
 import { 
-  createAreaSchema, 
-  updateAreaSchema, 
-  updateArmedStateSchema, 
   createLocationSchema, 
   deviceSyncSchema,
   validatePinSchema,
@@ -51,9 +48,6 @@ const paginatedResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
   }).openapi('PaginatedResponse');
 
 // Define query schemas
-const areasQuerySchema = z.object({
-  locationId: z.string().uuid().optional().describe('Filter by location UUID'),
-}).openapi('AreasQuery');
 
 const eventsQuerySchema = z.object({
   eventUuid: z.string().uuid().optional().describe('Get specific event by UUID'),
@@ -77,10 +71,6 @@ const devicesQuerySchema = z.object({
 }).openapi('DevicesQuery');
 
 // Define param schemas
-const areaIdParamsSchema = z.object({
-  id: z.string().uuid().describe('Area UUID'),
-}).openapi('AreaIdParams');
-
 const locationIdParamsSchema = z.object({
   id: z.string().uuid().describe('Location UUID'),
 }).openapi('LocationIdParams');
@@ -90,21 +80,6 @@ const userIdParamsSchema = z.object({
 }).openapi('UserIdParams');
 
 // Define response data schemas (inferred from your existing types)
-const areaSchema = z.object({
-  id: z.string().uuid().describe('Area UUID'),
-  name: z.string().describe('Area name'),
-  locationId: z.string().uuid().describe('Location UUID'),
-  locationName: z.string().describe('Location name'),
-  armedState: z.string().describe('Current armed state'),
-  deviceIds: z.array(z.string()).describe('Array of device IDs assigned to this area'),
-  nextScheduledArmTime: z.string().nullable().describe('Next scheduled arm time (ISO string)'),
-  nextScheduledDisarmTime: z.string().nullable().describe('Next scheduled disarm time (ISO string)'),
-  lastArmedStateChangeReason: z.string().nullable().describe('Reason for last armed state change'),
-  isArmingSkippedUntil: z.string().nullable().describe('Arming skipped until time (ISO string)'),
-  createdAt: z.string().describe('Creation timestamp (ISO string)'),
-  updatedAt: z.string().describe('Last update timestamp (ISO string)'),
-}).openapi('Area');
-
 const spaceSchema = z.object({
   id: z.string().uuid().describe('Space UUID'),
   name: z.string().describe('Space name'),
@@ -198,8 +173,8 @@ const deviceSchema = z.object({
     createdAt: z.string().describe('Server creation timestamp'),
     updatedAt: z.string().describe('Server update timestamp'),
   }).nullable().describe('Piko server details if applicable'),
-  areaId: z.string().nullable().describe('Area UUID'),
   locationId: z.string().nullable().describe('Location UUID'),
+  spaceId: z.string().nullable().describe('Space UUID'),
   associationCount: z.number().nullable().describe('Number of associated devices'),
   deviceTypeInfo: z.object({
     type: z.string().describe('Standardized device type'),
@@ -216,10 +191,10 @@ const eventSchema = z.object({
   connectorId: z.string().describe('Connector ID'),
   connectorName: z.string().optional().describe('Connector name'),
   connectorCategory: z.string().describe('Connector category'),
-  areaId: z.string().optional().describe('Area UUID'),
-  areaName: z.string().optional().describe('Area name'),
   locationId: z.string().optional().describe('Location UUID'),
   locationName: z.string().optional().describe('Location name'),
+  spaceId: z.string().optional().describe('Space UUID'),
+  spaceName: z.string().optional().describe('Space name'),
   timestamp: z.number().describe('Event timestamp (epoch milliseconds)'),
   eventCategory: z.string().describe('Event category'),
   eventType: z.string().describe('Event type'),
@@ -296,18 +271,18 @@ const devicesCountResponseSchema = z.object({
   }).describe('Applied filters'),
 }).openapi('DevicesCountResponse');
 
-const sseStreamResponseSchema = z.string().describe('Server-Sent Events stream in text/event-stream format. Includes connection events, real-time events, heartbeat messages, system notifications, error messages, and arming state changes. Events may include Piko thumbnail data when includeThumbnails=true.').openapi('SSEStreamResponse', {
+const sseStreamResponseSchema = z.string().describe('Server-Sent Events stream in text/event-stream format. Includes connection events, real-time events, heartbeat messages, system notifications, error messages, and alarm zone state changes. Events may include Piko thumbnail data when includeThumbnails=true.').openapi('SSEStreamResponse', {
   example: `event: connection
 data: {"type":"connection","organizationId":"org-123","timestamp":"2024-01-01T00:00:00.000Z"}
 
 event: event  
-data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2024-01-01T00:00:00.000Z","organizationId":"org-123","deviceId":"front-door-camera","deviceName":"Front Door Camera","connectorId":"piko-001","connectorName":"Piko Server Main","locationId":"home-location-456","locationName":"Main House","areaId":"living-area-123","areaName":"Living Area","event":{"categoryId":"analytics","category":"Analytics","typeId":"object_detected","type":"Object Detected","subTypeId":"person","subType":"Person","objectTrackId":"track_12345","confidence":0.95,"zone":"entrance"},"rawEvent":{"eventType":"analyticsSdkObjectDetected","eventResourceId":"front-door-camera","objectTrackId":"track_12345","timestamp":"2024-01-01T00:00:00Z"},"thumbnailData":{"data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==","contentType":"image/jpeg","size":1024}}
+data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2024-01-01T00:00:00.000Z","organizationId":"org-123","deviceId":"front-door-camera","deviceName":"Front Door Camera","connectorId":"piko-001","connectorName":"Piko Server Main","locationId":"home-location-456","locationName":"Main House","spaceId":"living-space-123","spaceName":"Living Room","event":{"categoryId":"analytics","category":"Analytics","typeId":"object_detected","type":"Object Detected","subTypeId":"person","subType":"Person","objectTrackId":"track_12345","confidence":0.95,"zone":"entrance"},"rawEvent":{"eventType":"analyticsSdkObjectDetected","eventResourceId":"front-door-camera","objectTrackId":"track_12345","timestamp":"2024-01-01T00:00:00Z"},"thumbnailData":{"data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==","contentType":"image/jpeg","size":1024}}
 
 event: event
-data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440001","timestamp":"2024-01-01T00:01:00.000Z","organizationId":"org-123","deviceId":"side-gate-sensor","deviceName":"Side Gate Sensor","connectorId":"netbox-001","connectorName":"NetBox Controller","locationId":"home-location-456","locationName":"Main House","areaId":"perimeter-area-124","areaName":"Perimeter","event":{"categoryId":"security","category":"Security","typeId":"door_opened","type":"Door Opened","motion":true,"zone":"side_entrance"},"rawEvent":{"event_type":"door","sensor_id":"side-gate-sensor","state":"open","timestamp":"2024-01-01T00:01:00Z"}}
+data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440001","timestamp":"2024-01-01T00:01:00.000Z","organizationId":"org-123","deviceId":"side-gate-sensor","deviceName":"Side Gate Sensor","connectorId":"netbox-001","connectorName":"NetBox Controller","locationId":"home-location-456","locationName":"Main House","spaceId":"perimeter-space-124","spaceName":"Side Gate","event":{"categoryId":"security","category":"Security","typeId":"door_opened","type":"Door Opened","motion":true,"zone":"side_entrance"},"rawEvent":{"event_type":"door","sensor_id":"side-gate-sensor","state":"open","timestamp":"2024-01-01T00:01:00Z"}}
 
-event: arming
-data: {"type":"arming","organizationId":"org-123","timestamp":"2024-01-01T00:02:00.000Z","area":{"id":"living-area-123","name":"Living Area","locationId":"home-location-456","locationName":"Main House","previousState":"DISARMED","previousStateDisplayName":"Disarmed","currentState":"ARMED","currentStateDisplayName":"Armed"}}
+event: alarm-zone
+data: {"type":"alarm-zone","organizationId":"org-123","timestamp":"2024-01-01T00:02:00.000Z","alarmZone":{"id":"perimeter-zone-123","name":"Perimeter Security","locationId":"home-location-456","locationName":"Main House","previousState":"DISARMED","previousStateDisplayName":"Disarmed","currentState":"ARMED","currentStateDisplayName":"Armed"}}
 
 event: heartbeat
 data: {"type":"heartbeat","timestamp":"2024-01-01T00:00:30.000Z"}
@@ -329,11 +304,6 @@ export function generateOpenApiSpec() {
   const registry = new OpenAPIRegistry();
 
   // Register all schemas
-  registry.register('CreateAreaRequest', createAreaSchema.openapi('CreateAreaRequest'));
-  registry.register('UpdateAreaRequest', updateAreaSchema.openapi('UpdateAreaRequest'));
-  registry.register('UpdateArmedStateRequest', updateArmedStateSchema.openapi('UpdateArmedStateRequest'));
-  registry.register('AreaIdParams', areaIdParamsSchema);
-  registry.register('Area', areaSchema);
   registry.register('Event', eventSchema);
   registry.register('CreateLocationRequest', createLocationSchema.openapi('CreateLocationRequest'));
   registry.register('LocationIdParams', locationIdParamsSchema);
@@ -377,8 +347,6 @@ export function generateOpenApiSpec() {
   registry.register('DevicesCountResponse', devicesCountResponseSchema);
 
   // Register response schemas
-  const areasSuccessResponse = successResponseSchema(z.array(areaSchema));
-  const areaSuccessResponse = successResponseSchema(areaSchema);
   const eventSuccessResponse = successResponseSchema(eventSchema);
   const eventsPagedResponse = paginatedResponseSchema(eventSchema);
   const locationsSuccessResponse = successResponseSchema(z.array(locationSchema));
@@ -416,8 +384,6 @@ export function generateOpenApiSpec() {
     deviceIds: z.array(z.string())
   }));
 
-  registry.register('AreasSuccessResponse', areasSuccessResponse);
-  registry.register('AreaSuccessResponse', areaSuccessResponse);
   registry.register('EventSuccessResponse', eventSuccessResponse);
   registry.register('EventsPagedResponse', eventsPagedResponse);
   registry.register('LocationsSuccessResponse', locationsSuccessResponse);
@@ -440,283 +406,6 @@ export function generateOpenApiSpec() {
   registry.register('AuditLogSuccessResponse', auditLogSuccessResponse);
   registry.register('DeviceAssignmentSuccessResponse', deviceAssignmentSuccessResponse);
   registry.register('ZoneDevicesSuccessResponse', zoneDevicesSuccessResponse);
-
-  // Areas endpoints
-  registry.registerPath({
-    method: 'get',
-    path: '/api/areas',
-    summary: 'Get all areas',
-    description: 'Retrieves all security areas with their location assignments and device associations',
-    tags: ['Areas'],
-    request: {
-      query: areasQuerySchema,
-    },
-    responses: {
-      200: {
-        description: 'List of areas',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/AreasSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid request parameters',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'post',
-    path: '/api/areas',
-    summary: 'Create a new area',
-    description: 'Creates a new security area with specified name and location',
-    tags: ['Areas'],
-    request: {
-      body: {
-        content: {
-          'application/json': {
-            schema: createAreaSchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'Area created successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/AreaSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid input or validation error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'Location not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  // Individual area endpoints
-  registry.registerPath({
-    method: 'get',
-    path: '/api/areas/{id}',
-    summary: 'Get specific area',
-    description: 'Retrieves a single area by ID',
-    tags: ['Areas'],
-    request: {
-      params: areaIdParamsSchema,
-    },
-    responses: {
-      200: {
-        description: 'Area retrieved successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/AreaSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid ID format',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'Area not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'put',
-    path: '/api/areas/{id}',
-    summary: 'Update area',
-    description: 'Updates an area\'s name or location assignment',
-    tags: ['Areas'],
-    request: {
-      params: areaIdParamsSchema,
-      body: {
-        content: {
-          'application/json': {
-            schema: updateAreaSchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'Area updated successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/AreaSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid input or ID format',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'Area or target location not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'delete',
-    path: '/api/areas/{id}',
-    summary: 'Delete area',
-    description: 'Deletes an area and its device associations',
-    tags: ['Areas'],
-    request: {
-      params: areaIdParamsSchema,
-    },
-    responses: {
-      200: {
-        description: 'Area deleted successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/DeleteSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid ID format',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  // ARM STATE endpoint
-  registry.registerPath({
-    method: 'put',
-    path: '/api/areas/{id}/arm-state',
-    summary: 'Update area armed state',
-    description: 'Updates the armed state of a security area (DISARMED, ARMED, TRIGGERED)',
-    tags: ['Areas'],
-    request: {
-      params: areaIdParamsSchema,
-      body: {
-        content: {
-          'application/json': {
-            schema: updateArmedStateSchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'Armed state updated successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/AreaSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid input or ID format',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'Area not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
 
   // Events endpoints
   registry.registerPath({

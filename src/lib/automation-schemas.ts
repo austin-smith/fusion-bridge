@@ -247,7 +247,7 @@ export const TemporalConditionSchema = z.object({
     expectedEventCount: z.number().int().min(0).optional(), // Required for count-based types
     
     // --- NEW: Scoping definition --- 
-    scoping: z.enum(['anywhere', 'sameArea', 'sameLocation']).default('anywhere'),
+    scoping: z.enum(['anywhere', 'sameSpace', 'sameLocation', 'sameZone']).default('anywhere'),
     eventFilter: JsonRuleGroupSchema, // Use the same rule builder structure
     
     // Time window relative to the primary trigger event

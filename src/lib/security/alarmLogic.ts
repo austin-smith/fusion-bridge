@@ -8,7 +8,7 @@ type Device = InferSelectModel<typeof devices>;
 
 /**
  * Determines if a given standardized event, in the context of a device,
- * should be considered a security risk if the area is armed.
+ * should be considered a security risk if the zone is armed.
  *
  * @param event The standardized event object.
  * @param device The device associated with the event. Can be null if device info isn't available.

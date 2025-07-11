@@ -53,7 +53,7 @@ const navGroups: NavGroup[] = [
       { href: '/connectors', label: 'Connectors', icon: Plug },
       { href: '/devices', label: 'Devices', icon: Cpu },
       { href: '/spaces', label: 'Spaces', icon: Package },
-      { href: '/locations-areas', label: 'Locations & Areas', icon: Building },
+      { href: '/locations', label: 'Locations', icon: Building },
     ]
   },
   {

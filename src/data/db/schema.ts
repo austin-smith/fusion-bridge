@@ -101,7 +101,6 @@ export const devicesRelations = relations(devices, ({ one, many }) => ({
   }),
   cameraAssociationsSource: many(cameraAssociations, { relationName: 'sourceDevice' }), // Associations where this device is the source (e.g., YoLink)
   cameraAssociationsTarget: many(cameraAssociations, { relationName: 'targetCamera' }), // Associations where this device is the target (e.g., Piko Camera)
-  areaDevices: many(areaDevices), // Relation to the junction table
   spaceDevices: one(spaceDevices), // One device per space
   alarmZoneDevices: many(alarmZoneDevices), // Many zones per device
 }));
@@ -234,7 +233,6 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
     fields: [locations.organizationId],
     references: [organization.id],
   }),
-  areas: many(areas), 
   spaces: many(spaces), // Locations have many spaces
   alarmZones: many(alarmZones), // Locations have many alarm zones
   activeArmingSchedule: one(armingSchedules, { // <-- ADDED relation
@@ -243,61 +241,6 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
   }),
 }));
 
-// --- NEW: Areas Table ---
-export const areas = sqliteTable("areas", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  locationId: text("location_id").references(() => locations.id, { onDelete: 'cascade' }).notNull(),
-  name: text("name").notNull(),
-  armedState: text("armed_state").$type<ArmedState>().notNull().default(ArmedState.DISARMED),
-  lastArmedStateChangeReason: text("last_armed_state_change_reason"), 
-  nextScheduledArmTime: integer("next_scheduled_arm_time", { mode: "timestamp" }), 
-  nextScheduledDisarmTime: integer("next_scheduled_disarm_time", { mode: "timestamp" }), 
-  isArmingSkippedUntil: integer("is_arming_skipped_until", { mode: "timestamp" }), 
-  overrideArmingScheduleId: text("override_arming_schedule_id").references(() => armingSchedules.id, { onDelete: 'set null' }),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-}, (table) => ({
-    locationIdx: index("areas_location_idx").on(table.locationId),
-    overrideArmingScheduleIdx: index("areas_override_arming_schedule_idx").on(table.overrideArmingScheduleId), // Index for FK
-}));
-
-// Relations for Areas
-export const areasRelations = relations(areas, ({ one, many }) => ({
-  location: one(locations, { 
-    fields: [areas.locationId],
-    references: [locations.id],
-  }),
-  areaDevices: many(areaDevices), 
-  overrideArmingSchedule: one(armingSchedules, { // <-- ADDED relation
-    fields: [areas.overrideArmingScheduleId],
-    references: [armingSchedules.id],
-  }),
-}));
-
-// --- NEW: AreaDevices Junction Table ---
-export const areaDevices = sqliteTable('area_devices', {
-  areaId: text('area_id').references(() => areas.id, { onDelete: 'cascade' }).notNull(),
-  deviceId: text('device_id').references(() => devices.id, { onDelete: 'cascade' }).notNull(), // FK to our internal devices.id
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
-}, (table) => ({
-  // Composite primary key
-  pk: primaryKey({ columns: [table.areaId, table.deviceId] }),
-  // Indexes for individual FKs can improve performance for certain queries
-  deviceIdx: index("area_devices_device_idx").on(table.deviceId),
-  areaIdx: index("area_devices_area_idx").on(table.areaId),
-}));
-
-// Relations for the AreaDevices junction table linking back to Areas and Devices
-export const areaDevicesRelations = relations(areaDevices, ({ one }) => ({
-  area: one(areas, {
-    fields: [areaDevices.areaId],
-    references: [areas.id],
-  }),
-  device: one(devices, {
-    fields: [areaDevices.deviceId],
-    references: [devices.id],
-  }),
-}));
 
 // --- NEW: ArmingSchedules Table ---
 export const armingSchedules = sqliteTable("arming_schedules", {
@@ -310,15 +253,15 @@ export const armingSchedules = sqliteTable("arming_schedules", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
-  // No direct FKs to areas or locations needed here; this is a lookup table.
+  // No direct FKs to locations or alarm zones needed here; this is a lookup table.
   // Index on isEnabled might be useful if querying for active schedules frequently.
   isEnabledIdx: index("arming_schedules_is_enabled_idx").on(table.isEnabled),
 }));
 
-// Relations for ArmingSchedules - this table is now a lookup, so it has no outgoing relations to specific locations/areas.
-// It will be referenced BY locations and areas.
+// Relations for ArmingSchedules - this table is now a lookup, so it has no outgoing relations to specific locations/alarm zones.
+// It will be referenced BY locations and alarm zones.
 export const armingSchedulesRelations = relations(armingSchedules, ({ many }) => ({
-  // Example if other tables needed to know all locations/areas using this schedule (complex)
+  // Example if other tables needed to know all locations/zones using this schedule (complex)
   // For now, this can be empty or used for other purposes if a schedule needs to link to something else directly.
 }));
 

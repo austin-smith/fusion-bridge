@@ -222,13 +222,13 @@ export default function EventsPage() {
   const cardViewContainerRef = useRef<HTMLDivElement>(null);
 
   const connectors = useFusionStore(state => state.connectors);
-  const areas = useFusionStore(state => state.areas);
+  const spaces = useFusionStore(state => state.spaces);
   const allDevices = useFusionStore(state => state.allDevices);
   const locations = useFusionStore(state => state.locations);
   
   // Use store loading states instead of manual loading
   const isLoadingConnectors = useFusionStore(state => state.isLoading);
-  const isLoadingAreas = useFusionStore(state => state.isLoadingAreas);
+  const isLoadingSpaces = useFusionStore(state => state.isLoadingSpaces);
   const isLoadingDevices = useFusionStore(state => state.isLoadingAllDevices);
   const isLoadingLocations = useFusionStore(state => state.isLoadingLocations);
 
@@ -259,13 +259,13 @@ export default function EventsPage() {
   // Initial events fetch if needed (for first-time page loads)
   useEffect(() => {
     // Only trigger if we have organization data but no events yet and we're not loading
-    if (connectors.length > 0 && events.length === 0 && !loading && !isLoadingConnectors && !isLoadingAreas && !isLoadingDevices && !isLoadingLocations) {
+    if (connectors.length > 0 && events.length === 0 && !loading && !isLoadingConnectors && !isLoadingSpaces && !isLoadingDevices && !isLoadingLocations) {
       console.log('[EventsPage] Triggering initial events fetch');
       // This will trigger the main useEffect above to fetch events
       setLoading(true);
       setTimeout(() => setLoading(false), 100); // Reset loading state to trigger the main effect
     }
-  }, [connectors.length, events.length, loading, isLoadingConnectors, isLoadingAreas, isLoadingDevices, isLoadingLocations]);
+      }, [connectors.length, events.length, loading, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations]);
 
   // MODIFIED: fetchEvents signature and URL construction
   const fetchEvents = useCallback(async (
@@ -387,7 +387,7 @@ export default function EventsPage() {
   // --- REVISED: Initial Load and Polling useEffect ---
   useEffect(() => {
     // Don't fetch events while store is still loading organization data or if no connectors loaded yet
-    if (!tableRef.current || isLoadingConnectors || isLoadingAreas || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
+    if (!tableRef.current || isLoadingConnectors || isLoadingSpaces || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
 
     setLoading(true);
     console.log('[EventsPage] Initial/Polling useEffect: Fetching initial data.');
@@ -418,7 +418,7 @@ export default function EventsPage() {
       });
 
     const intervalId = setInterval(() => {
-      if (!tableRef.current || isLoadingConnectors || isLoadingAreas || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
+      if (!tableRef.current || isLoadingConnectors || isLoadingSpaces || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
       console.log('[EventsPage] Polling useEffect: Polling for data.');
       fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter)
         .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
@@ -441,13 +441,13 @@ export default function EventsPage() {
       clearInterval(intervalId);
       isInitialLoadRef.current = true;
     };
-  }, [fetchEvents, pagination.pageIndex, pagination.pageSize, eventCategoryFilter, connectorCategoryFilter, locationFilter, isLoadingConnectors, isLoadingAreas, isLoadingDevices, isLoadingLocations, connectors.length]);
+  }, [fetchEvents, pagination.pageIndex, pagination.pageSize, eventCategoryFilter, connectorCategoryFilter, locationFilter, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
   // --- END REVISED ---
 
   // --- REVISED: useEffect for actual pagination OR filter changes by the user ---
   useEffect(() => {
     // Don't execute while store is loading or if no connectors loaded yet
-    if (!tableRef.current || isLoadingConnectors || isLoadingAreas || isLoadingDevices || isLoadingLocations || connectors.length === 0) return; 
+    if (!tableRef.current || isLoadingConnectors || isLoadingSpaces || isLoadingDevices || isLoadingLocations || connectors.length === 0) return; 
     if (isInitialLoadRef.current) {
       return; 
     }
@@ -501,7 +501,7 @@ export default function EventsPage() {
           setLoading(false); 
         });
     }
-  }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter, locationFilter, isLoadingConnectors, isLoadingAreas, isLoadingDevices, isLoadingLocations, connectors.length]);
+  }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter, locationFilter, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
   // --- END REVISED ---
 
   // Effect to save viewMode to localStorage when it changes
@@ -1130,7 +1130,7 @@ export default function EventsPage() {
           </TooltipProvider>
         </div>
         <div className="pt-12 h-full">
-            <EventCardView events={displayedEvents} areas={areas} allDevices={allDevices} />
+            <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} />
         </div>
       </div>
     );
@@ -1188,7 +1188,7 @@ export default function EventsPage() {
             {viewMode === 'table' ? (
               <EventsTableView table={table} columns={columns} />
             ) : viewMode === 'card' ? (
-              <EventCardView events={displayedEvents} areas={areas} allDevices={allDevices} /> 
+              <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} /> 
             ) : null}
           </div>
         ) : null}

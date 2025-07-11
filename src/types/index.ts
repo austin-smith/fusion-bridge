@@ -68,12 +68,11 @@ export type DeviceWithConnector = {
   serverId?: string | null;
   serverName?: string | null;
   pikoServerDetails?: any | null;
-  areaId?: string | null;
   locationId?: string | null; 
   associationCount?: number | null;
   deviceTypeInfo?: TypedDeviceInfo;
   displayState?: DisplayState;
-  // NEW: Space information
+  // Space information
   spaceId?: string | null;
   spaceName?: string | null;
 };
@@ -115,29 +114,9 @@ export interface Location {
   activeArmingScheduleId?: string | null;
   // Optional: Populated for hierarchical display, not stored directly in DB table this way
   children?: Location[];
-  areas?: Area[]; // Areas directly within this location (optional population)
 }
 
-// Represents a security partition (Area)
-export interface Area {
-  id: string;
-  locationId: string;
-  name: string;
-  armedState: ArmedState; // <-- Use imported Enum
-  createdAt: Date;
-  updatedAt: Date;
-  overrideArmingScheduleId?: string | null;
-  nextScheduledArmTime?: string | null; // ISO date string (as typically used in API responses/Zustand state for dates)
-  nextScheduledDisarmTime?: string | null; // ISO date string
-  lastArmedStateChangeReason?: string | null;
-  isArmingSkippedUntil?: string | null; // ISO date string
-  locationName?: string; // Convenience field, often populated from a join
 
-  // Optional: Populated for display, not stored directly in DB table this way
-  location?: Location | null; // The parent location details
-  deviceIds?: string[]; // IDs of devices assigned to this area
-  devices?: DeviceWithConnector[]; // Full device details (optional population)
-}
 
 export interface ArmingSchedule {
   id: string;

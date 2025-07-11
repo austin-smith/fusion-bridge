@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TimezoneSelector } from '@/components/common/timezone-selector';
-import { LocationSunTimesDisplay } from '@/components/features/locations-areas/locations/LocationSunTimesDisplay';
+import { LocationSunTimesDisplay } from '@/components/features/locations/locations/LocationSunTimesDisplay';
 import { Check, ChevronsUpDown, MapPin, RotateCcw, Map } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -639,7 +639,7 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground mt-2">
-                          This default schedule will be applied to all areas in this location unless overridden.
+                          This default schedule will be applied to all alarm zones in this location unless overridden.
                         </p>
                         <FormMessage />
                       </FormItem>

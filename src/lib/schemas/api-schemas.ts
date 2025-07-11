@@ -1,21 +1,9 @@
 import { z } from 'zod';
 import { ArmedState } from '@/lib/mappings/definitions';
 
-// Area schemas
-export const createAreaSchema = z.object({
-  name: z.string().min(1, "Name cannot be empty"),
-  locationId: z.string().uuid("Invalid location ID format"),
-});
-
-export const updateAreaSchema = z.object({
-  name: z.string().min(1, "Name cannot be empty").optional(),
-  locationId: z.string().uuid("Invalid location ID format").optional(),
-}).refine(data => data.name !== undefined || data.locationId !== undefined, {
-  message: "Either name or locationId must be provided for update",
-});
-
-export const updateArmedStateSchema = z.object({
-  armedState: z.nativeEnum(ArmedState),
+// Device schemas
+export const deviceSyncSchema = z.object({
+  connectorId: z.string().min(1, "Connector ID is required"),
 });
 
 // Location schemas
@@ -31,18 +19,7 @@ export const createLocationSchema = z.object({
   notes: z.string().optional(),
 });
 
-// Device schemas
-export const deviceSyncSchema = z.object({
-  connectorId: z.string().min(1, "Connector ID is required"),
-});
-
 // PIN management schemas
-export const setPinSchema = z.object({
-  pin: z.string()
-    .regex(/^\d{6}$/, "PIN must be exactly 6 digits")
-    .describe("6-digit numeric PIN for keypad access"),
-});
-
 export const validatePinSchema = z.object({
   pin: z.string()
     .regex(/^\d{6}$/, "PIN must be exactly 6 digits")
@@ -60,26 +37,18 @@ export const pinValidationResponseSchema = z.discriminatedUnion("valid", [
   }),
 ]);
 
-export const pinOperationResponseSchema = z.object({
-  userId: z.string().uuid().describe("User ID"),
-  message: z.string().describe("Operation result message"),
-}); 
-
 // Space schemas
 export const createSpaceSchema = z.object({
-  name: z.string().min(1, "Name cannot be empty"),
-  locationId: z.string().uuid("Invalid location ID format"),
+  name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
+  locationId: z.string().uuid("Invalid location ID"),
   metadata: z.record(z.any()).optional(),
 });
 
 export const updateSpaceSchema = z.object({
-  name: z.string().min(1, "Name cannot be empty").optional(),
-  locationId: z.string().uuid("Invalid location ID format").optional(),
+  name: z.string().min(1, "Name is required").optional(),
   description: z.string().optional(),
   metadata: z.record(z.any()).optional(),
-}).refine(data => Object.keys(data).length > 0, {
-  message: "At least one field must be provided for update",
 });
 
 export const assignDeviceToSpaceSchema = z.object({

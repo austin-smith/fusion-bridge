@@ -4,11 +4,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Terminal, Loader2, Plus, Shield, Search } from 'lucide-react';
-import { AlarmZoneEditDialog } from '@/components/features/locations-areas/alarm-zones/alarm-zone-edit-dialog';
-import { AlarmZoneCard } from '@/components/features/locations-areas/alarm-zones/AlarmZoneCard';
-import { AlarmZoneDeviceAssignmentDialog } from '@/components/features/locations-areas/alarm-zones/alarm-zone-device-assignment-dialog';
-import { AlarmZoneTriggerRulesDialog } from '@/components/features/locations-areas/alarm-zones/alarm-zone-trigger-rules-dialog';
-import { AlarmZoneAuditLogDialog } from '@/components/features/locations-areas/alarm-zones/alarm-zone-audit-log-dialog';
+import { AlarmZoneEditDialog } from '@/components/features/locations/alarm-zones/alarm-zone-edit-dialog';
+import { AlarmZoneCard } from '@/components/features/locations/alarm-zones/AlarmZoneCard';
+import { AlarmZoneDeviceAssignmentDialog } from '@/components/features/locations/alarm-zones/alarm-zone-device-assignment-dialog';
+import { AlarmZoneTriggerRulesDialog } from '@/components/features/locations/alarm-zones/alarm-zone-trigger-rules-dialog';
+import { AlarmZoneAuditLogDialog } from '@/components/features/locations/alarm-zones/alarm-zone-audit-log-dialog';
 import type { AlarmZone, Location, DeviceWithConnector } from "@/types/index";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";

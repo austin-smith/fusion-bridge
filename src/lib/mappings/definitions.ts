@@ -431,7 +431,7 @@ export const EVENT_CATEGORY_DISPLAY_MAP = {
 } as const;
 
 // --- NEW: Event Grouping Proximity Thresholds ---
-// Maximum time difference to consider an event for the same group if in the same area
+// Maximum time difference to consider an event for the same group if in the same space
 export const DEFAULT_MAX_TIME_WITHIN_GROUP_MS = 180 * 1000; // 180 seconds
 // Tighter window for events on the exact same device
 export const SAME_DEVICE_MAX_TIME_MS = 30 * 1000; // 30 seconds

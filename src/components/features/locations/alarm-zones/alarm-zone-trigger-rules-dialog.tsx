@@ -66,15 +66,15 @@ const EVENT_TYPE_DESCRIPTIONS: Record<EventType, string> = {
   [EventType.ACCESS_DENIED]: 'Failed authentication attempts',
   [EventType.DOOR_HELD_OPEN]: 'Door left open longer than expected',
   [EventType.DOOR_FORCED_OPEN]: 'Door opened without proper authorization',
-  [EventType.EXIT_REQUEST]: 'Exit request from inside secured area',
+  [EventType.EXIT_REQUEST]: 'Exit request from inside secured zone',
   [EventType.ANALYTICS_EVENT]: 'General analytics event from video analysis',
   [EventType.OBJECT_DETECTED]: 'Object detected by analytics system',
   [EventType.OBJECT_REMOVED]: 'Protected item taken without authorization',
-  [EventType.LOITERING]: 'Suspicious lingering in monitored areas',
+  [EventType.LOITERING]: 'Suspicious lingering in monitored zones',
   [EventType.LINE_CROSSING]: 'Unauthorized crossing of defined boundaries',
   [EventType.ARMED_PERSON]: 'Weapon or threat detected',
   [EventType.TAILGATING]: 'Unauthorized person following authorized entry',
-  [EventType.INTRUSION]: 'Motion or presence detected in secure areas',
+  [EventType.INTRUSION]: 'Motion or presence detected in secure zones',
   [EventType.DEVICE_CHECK_IN]: 'Device reporting status or heartbeat',
   [EventType.POWER_CHECK_IN]: 'Device power status reporting',
   [EventType.UNKNOWN_EXTERNAL_EVENT]: 'Unclassified or unrecognized events',
@@ -93,7 +93,7 @@ export const AlarmZoneTriggerRulesDialog: React.FC<AlarmZoneTriggerRulesDialogPr
   zone
 }) => {
   const [triggerBehavior, setTriggerBehavior] = useState<'standard' | 'custom'>('standard');
-  const [customTriggerRules, setCustomTriggerRules] = useState<Record<EventType, boolean>>({});
+  const [customTriggerRules, setCustomTriggerRules] = useState<Partial<Record<EventType, boolean>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Get store action
@@ -158,7 +158,7 @@ export const AlarmZoneTriggerRulesDialog: React.FC<AlarmZoneTriggerRulesDialogPr
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Trigger Rules for "{zone.name}"
+            Trigger Rules for &quot;{zone.name}&quot;
           </DialogTitle>
           <DialogDescription>
             Configure which events will trigger this alarm zone. Armed zones evaluate triggers, disarmed zones ignore all events.

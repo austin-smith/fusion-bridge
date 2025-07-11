@@ -40,7 +40,7 @@ This system provides an area-based security arming/disarming and alarm notificat
 
 4.  **User Interface**:
 
-    *   **Locations & Areas Page (`/locations-areas`)**:
+    *   **Locations Page (`/locations`)**:
         *   Displays locations and their associated areas.
         *   Provides UI to assign a default arming schedule to a location.
         *   Allows assigning an override arming schedule to an area (or opting to use the location default or no schedule).

@@ -61,8 +61,8 @@ export interface EnrichedEvent {
   eventSubtype?: EventSubtype; 
   rawEventType?: string; 
   displayState?: DisplayState | undefined;
-  areaId?: string;
-  areaName?: string;
+  spaceId?: string;
+  spaceName?: string;
   locationId?: string;
   locationName?: string;
   thumbnailUrl?: string; // Keep for placeholder use
@@ -81,8 +81,8 @@ export interface EnrichedEvent {
 // Structure for a group of events used in the Card View
 export interface EventGroup {
   groupKey: string;
-  areaId?: string;
-  areaName?: string;
+  spaceId?: string;
+  spaceName?: string;
   locationId?: string;
   locationName?: string;
   startTime: Date; // Earliest event time in the group
