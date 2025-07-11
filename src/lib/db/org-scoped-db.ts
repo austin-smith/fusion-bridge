@@ -1,5 +1,5 @@
 import { db } from '@/data/db';
-import { locations, areas, devices, areaDevices, connectors, events, pikoServers, cameraAssociations, automations, keypadPins, user } from '@/data/db/schema';
+import { locations, areas, devices, areaDevices, connectors, events, pikoServers, cameraAssociations, automations, keypadPins, user, spaces, spaceDevices } from '@/data/db/schema';
 import { eq, and, exists, getTableColumns, desc, count, inArray, ne, type SQL } from 'drizzle-orm';
 
 /**
@@ -181,12 +181,17 @@ export class OrgScopedDb {
         },
         // Include area/location info through areaDevices junction
         areaId: areaDevices.areaId,
-        locationId: areas.locationId
+        locationId: areas.locationId,
+        // Include space info through spaceDevices junction
+        spaceId: spaceDevices.spaceId,
+        spaceName: spaces.name
       })
       .from(devices)
       .innerJoin(connectors, eq(devices.connectorId, connectors.id))
       .leftJoin(areaDevices, eq(devices.id, areaDevices.deviceId))
       .leftJoin(areas, eq(areaDevices.areaId, areas.id))
+      .leftJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+      .leftJoin(spaces, eq(spaceDevices.spaceId, spaces.id))
       .where(eq(connectors.organizationId, this.orgId))
       .orderBy(devices.name),
       
@@ -199,12 +204,16 @@ export class OrgScopedDb {
           category: connectors.category
         },
         areaId: areaDevices.areaId,
-        locationId: areas.locationId
+        locationId: areas.locationId,
+        spaceId: spaceDevices.spaceId,
+        spaceName: spaces.name
       })
       .from(devices)
       .innerJoin(connectors, eq(devices.connectorId, connectors.id))
       .leftJoin(areaDevices, eq(devices.id, areaDevices.deviceId))
       .leftJoin(areas, eq(areaDevices.areaId, areas.id))
+      .leftJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+      .leftJoin(spaces, eq(spaceDevices.spaceId, spaces.id))
       .where(and(
         eq(devices.id, id),
         eq(connectors.organizationId, this.orgId)
@@ -219,12 +228,16 @@ export class OrgScopedDb {
           category: connectors.category
         },
         areaId: areaDevices.areaId,
-        locationId: areas.locationId
+        locationId: areas.locationId,
+        spaceId: spaceDevices.spaceId,
+        spaceName: spaces.name
       })
       .from(devices)
       .innerJoin(connectors, eq(devices.connectorId, connectors.id))
       .leftJoin(areaDevices, eq(devices.id, areaDevices.deviceId))
       .leftJoin(areas, eq(areaDevices.areaId, areas.id))
+      .leftJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+      .leftJoin(spaces, eq(spaceDevices.spaceId, spaces.id))
       .where(and(
         eq(devices.deviceId, deviceId),
         eq(connectors.organizationId, this.orgId)

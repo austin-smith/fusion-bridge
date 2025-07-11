@@ -79,6 +79,8 @@ export interface DeviceDetailProps {
   batteryPercentage?: number | null; // Add battery percentage
   createdAt: Date;
   updatedAt: Date;
+  spaceId?: string | null; // Add space ID
+  spaceName?: string | null; // Add space name
   // Add lastStateEvent / lastStatusEvent if needed in dialog?
 }
 
@@ -1053,6 +1055,17 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
             <DetailRow label="Model" value={device.model || "—"} />
             {device.connectorCategory === 'piko' && device.vendor && (
               <DetailRow label="Vendor" value={device.vendor} />
+            )}
+            {/* Space Information - Conditional Rendering */}
+            {device.spaceName && (
+              <DetailRow 
+                label="Space" 
+                value={
+                  <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                    <span className="text-xs">{device.spaceName}</span>
+                  </Badge>
+                }
+              />
             )}
             
             <div className="py-2">

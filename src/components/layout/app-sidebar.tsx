@@ -16,7 +16,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { LogOut, Loader2, User, Settings, ChevronsUpDown, Users, Plug, Cpu, Terminal, Workflow, Building, ShieldAlert, CalendarClock } from 'lucide-react';
+import { LogOut, Loader2, User, Settings, ChevronsUpDown, Users, Plug, Cpu, Terminal, Workflow, Building, ShieldAlert, CalendarClock, Package, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FiActivity } from 'react-icons/fi';
 import FusionIcon from '@/components/icons/FusionIcon';
@@ -52,11 +52,13 @@ const navGroups: NavGroup[] = [
     items: [
       { href: '/connectors', label: 'Connectors', icon: Plug },
       { href: '/devices', label: 'Devices', icon: Cpu },
+      { href: '/spaces', label: 'Spaces', icon: Package },
       { href: '/locations-areas', label: 'Locations & Areas', icon: Building },
     ]
   },
   {
     items: [
+      { href: '/alarm-zones', label: 'Alarm Zones', icon: Shield },
       { href: '/alarm/schedules', label: 'Alarm Schedules', icon: CalendarClock },
       { href: '/alarm/alarms', label: 'Active Alarms', icon: ShieldAlert },
     ]

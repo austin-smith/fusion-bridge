@@ -4,19 +4,24 @@ import {
   devices as devicesTableSchema,
   areas as areasTableSchema,
   areaDevices as areaDevicesTableSchema,
+  alarmZones as alarmZonesTableSchema,
+  alarmZoneDevices as alarmZoneDevicesTableSchema,
+  alarmZoneTriggerOverrides as alarmZoneTriggerOverridesTableSchema,
+  alarmZoneAuditLog as alarmZoneAuditLogTableSchema,
   connectors as connectorsTableSchema,
   automations as automationsTableSchema,
 } from '@/data/db/schema';
 import type { StandardizedEvent } from '@/types/events';
 import { eq, and, InferSelectModel } from 'drizzle-orm';
 import { ArmedState, EventType, EVENT_CATEGORY_DISPLAY_MAP, EVENT_TYPE_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP, DeviceType } from '@/lib/mappings/definitions';
-import { isSecurityRiskEvent } from '@/lib/security/alarmLogic';
+import { shouldTriggerAlarm } from '@/lib/alarm-event-types';
+import { createAlarmZonesRepository } from '@/data/repositories/alarm-zones';
 import { processEvent as processEventForAutomations } from '@/services/automation-service'; // Import automation service
 import { getRedisPubClient } from '@/lib/redis/client';
 import { getEventChannelName, getEventThumbnailChannelName, type RedisEventMessage } from '@/lib/redis/types';
 import { shouldFetchThumbnail, fetchEventThumbnail, type EventThumbnailData } from '@/services/event-thumbnail-fetcher';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
-import { findAreaCameras } from '@/services/event-thumbnail-resolver';
+import { findSpaceCameras, findAreaCameras } from '@/services/event-thumbnail-resolver';
 import { AutomationThumbnailAnalyzer } from '@/services/automation-thumbnail-analyzer';
 import { createThumbnailContext } from '@/types/automation-thumbnails';
 import { getThumbnailSource } from '@/services/event-thumbnail-resolver';
@@ -144,13 +149,14 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
     // 3. Check thumbnail requirements from both SSE and automations
     let thumbnailData: EventThumbnailData | null = null;
     
-    // Get area cameras if event has an area association
+    // Get space cameras if event has a space association (updated from area-based logic)
+    // TODO: This will need to be updated to use spaceDevices once the device lookup includes space associations
     const areaId = internalDeviceRecord?.areaDevices?.[0]?.area?.id;
-    let areaCameras: any[] = [];
+    let spaceCameras: any[] = [];
     
     if (areaId && connector?.organizationId) {
       try {
-        // Fetch all devices to find area cameras
+        // Fetch all devices to find space cameras
         const allDevices = await db.query.devices.findMany({
           with: {
             connector: true,
@@ -158,29 +164,56 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
               with: {
                 area: true
               }
+            },
+            spaceDevices: {
+              with: {
+                space: true
+              }
             }
           }
         });
         
         // Map to the format expected by shared service
-        const devicesWithArea = allDevices.map(device => ({
+        const devicesWithSpace = allDevices.map(device => ({
           ...device,
-          areaId: device.areaDevices?.[0]?.areaId,
+          spaceId: device.spaceDevices?.spaceId,
           connectorCategory: device.connector?.category || 'unknown',
           deviceTypeInfo: getDeviceTypeInfo(device.connector?.category || 'unknown', device.type)
         }));
         
-        // Use shared service to find area cameras
-        areaCameras = findAreaCameras(areaId, devicesWithArea);
+        // Get the space ID from the current device if available
+        const currentDevice = devicesWithSpace.find(d => d.deviceId === event.deviceId);
+        const spaceId = currentDevice?.spaceId;
         
-        if (areaCameras.length > 0) {
-          console.log(`[EventProcessor] Found ${areaCameras.length} Piko camera(s) in area ${areaId} for event ${event.eventId}`);
+        if (spaceId) {
+          // Use space-based camera lookup
+          spaceCameras = findSpaceCameras(spaceId, devicesWithSpace);
+          
+          if (spaceCameras.length > 0) {
+            console.log(`[EventProcessor] Found ${spaceCameras.length} Piko camera(s) in space ${spaceId} for event ${event.eventId}`);
+          } else {
+            console.log(`[EventProcessor] No Piko cameras found in space ${spaceId} for event ${event.eventId}`);
+          }
         } else {
-          console.log(`[EventProcessor] No Piko cameras found in area ${areaId} for event ${event.eventId}`);
+          // Fallback to area-based lookup for backward compatibility during migration
+          const devicesWithArea = allDevices.map(device => ({
+            ...device,
+            areaId: device.areaDevices?.[0]?.areaId,
+            connectorCategory: device.connector?.category || 'unknown',
+            deviceTypeInfo: getDeviceTypeInfo(device.connector?.category || 'unknown', device.type)
+          }));
+          
+          spaceCameras = findAreaCameras(areaId, devicesWithArea);
+          
+          if (spaceCameras.length > 0) {
+            console.log(`[EventProcessor] Found ${spaceCameras.length} Piko camera(s) in area ${areaId} for event ${event.eventId} (fallback to area-based lookup)`);
+          } else {
+            console.log(`[EventProcessor] No Piko cameras found in area ${areaId} for event ${event.eventId} (fallback to area-based lookup)`);
+          }
         }
       } catch (cameraFetchError) {
-        console.warn(`[EventProcessor] Failed to fetch area cameras for event ${event.eventId}:`, cameraFetchError);
-        // Continue without area cameras
+        console.warn(`[EventProcessor] Failed to fetch space cameras for event ${event.eventId}:`, cameraFetchError);
+        // Continue without space cameras
       }
     }
 
@@ -193,7 +226,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
       const pubClient = getRedisPubClient();
       
       // Check SSE subscribers
-      if (shouldFetchThumbnail(event, areaCameras)) {
+      if (shouldFetchThumbnail(event, spaceCameras)) {
         try {
           const thumbnailChannel = getEventThumbnailChannelName(connector.organizationId);
           const [, subscriberCount] = await pubClient.pubsub('NUMSUB', thumbnailChannel) as [string, number];
@@ -249,8 +282,8 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
       try {
         console.log(`[EventProcessor] Fetching thumbnail for event ${event.eventId} (SSE: ${sseSubscriberCount > 0}, Automations: ${automationRequiresThumbnail})`);
         
-        // Convert area cameras to the format expected by thumbnail fetcher
-        const areaCameraDevices = areaCameras.map(cam => ({
+        // Convert space cameras to the format expected by thumbnail fetcher
+        const spaceCameraDevices = spaceCameras.map((cam: any) => ({
           id: cam.id,
           deviceId: cam.deviceId,
           connectorId: cam.connectorId,
@@ -267,7 +300,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
           updatedAt: cam.updatedAt
         }));
         
-        thumbnailData = await fetchEventThumbnail(event, areaCameraDevices);
+        thumbnailData = await fetchEventThumbnail(event, spaceCameraDevices);
         
         if (thumbnailData) {
           console.log(`[EventProcessor] Thumbnail fetched successfully for event ${event.eventId} (${thumbnailData.size} bytes)`);
@@ -352,31 +385,63 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
         }
       }
 
-      // 5. Alarm Logic Integration (reuse area info from device lookup)
+      // 5. Alarm Zone Logic Integration (replaces old area-based logic)
       try {
-        const areaDevice = internalDeviceRecord.areaDevices?.[0];
-        if (areaDevice?.area) {
-          const area = areaDevice.area;
+        if (connector?.organizationId) {
+          const alarmZonesRepo = createAlarmZonesRepository(connector.organizationId);
           
-          if (area.armedState === ArmedState.ARMED) {
-            // Pass the Partial<Device> we fetched. isSecurityRiskEvent is designed to handle this.
-            const isRisk = isSecurityRiskEvent(event, internalDeviceRecord as Partial<Device>); 
-
-            if (isRisk) {
-              // If area is armed (AWAY or STAY) and a risk event occurs, always set to TRIGGERED.
-              await db.update(areasTableSchema)
-                .set({
-                  armedState: ArmedState.TRIGGERED,
-                  updatedAt: new Date(),
-                })
-                .where(eq(areasTableSchema.id, area.id));
-              console.log(`[EventProcessor] Area ${area.id} set to TRIGGERED due to event ${event.eventId} from device ${internalDeviceRecord.id}.`);
-              // TODO: Trigger notifications here (e.g., send email, push notification)
+          // Get the alarm zone for this device (one device per zone)
+          const deviceZone = await alarmZonesRepo.getDeviceZone(event.deviceId);
+          
+          if (deviceZone) {
+            // Only process alarm triggers for ARMED zones
+            if (deviceZone.armedState === ArmedState.ARMED) {
+              let shouldTrigger = false;
+              
+              // Determine if event should trigger based on zone's trigger behavior
+              if (deviceZone.triggerBehavior === 'standard') {
+                // Use standard trigger logic from alarm-event-types.ts
+                const displayState = (event.payload as any)?.displayState;
+                shouldTrigger = shouldTriggerAlarm(event.type, event.subtype, displayState);
+              } else if (deviceZone.triggerBehavior === 'custom') {
+                // Check trigger overrides first, fallback to standard behavior
+                const overrides = await alarmZonesRepo.getTriggerOverrides(deviceZone.id);
+                const override = overrides.find(o => o.eventType === event.type);
+                
+                if (override) {
+                  // Use custom override
+                  shouldTrigger = override.shouldTrigger;
+                } else {
+                  // Fallback to standard behavior
+                  const displayState = (event.payload as any)?.displayState;
+                  shouldTrigger = shouldTriggerAlarm(event.type, event.subtype, displayState);
+                }
+              }
+              
+              if (shouldTrigger) {
+                // Trigger the alarm zone with audit logging
+                await alarmZonesRepo.setArmedState(
+                  deviceZone.id,
+                  ArmedState.TRIGGERED,
+                  undefined, // No user ID for system-triggered events
+                  'security_event_trigger',
+                  { triggeredByEvent: event.eventId, deviceId: event.deviceId },
+                  event.eventId
+                );
+                console.log(`[EventProcessor] Alarm zone ${deviceZone.id} set to TRIGGERED due to event ${event.eventId} from device ${event.deviceId}.`);
+                // TODO: Trigger notifications here (e.g., send email, push notification)
+              }
+            } else {
+              // Zone is DISARMED or already TRIGGERED - no action needed
+              console.log(`[EventProcessor] Device ${event.deviceId} in zone ${deviceZone.id} (state: ${deviceZone.armedState}) - no alarm processing needed.`);
             }
+          } else {
+            // Device not assigned to any alarm zone
+            console.log(`[EventProcessor] Device ${event.deviceId} not assigned to any alarm zone - no alarm processing.`);
           }
         }
       } catch (alarmError) {
-        console.error(`[EventProcessor] Error during alarm logic for event ${event.eventId} (device ${internalDeviceRecord.id}):`, alarmError);
+        console.error(`[EventProcessor] Error during alarm zone logic for event ${event.eventId} (device ${event.deviceId}):`, alarmError);
       }
     } // End of if(internalDeviceRecord)
 
@@ -386,7 +451,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
       
       // Create thumbnail context for automation service
       const thumbnailContext = thumbnailData ? 
-        createThumbnailContext(thumbnailData, getThumbnailSource(event, areaCameras) ?? undefined) : 
+        createThumbnailContext(thumbnailData, getThumbnailSource(event, spaceCameras) ?? undefined) : 
         null;
       
       // Store thumbnail context on the event for the automation service to access

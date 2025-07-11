@@ -91,6 +91,8 @@ interface DisplayedDevice extends Omit<DeviceWithConnector, 'status' | 'type' | 
   // status: string | null; // Keep status omitted as it's replaced by displayState
   createdAt: Date;
   updatedAt: Date;
+  spaceId?: string | null; // Add space ID
+  spaceName?: string | null; // Add space name
 }
 
 // A simple component for sort indicators
@@ -290,6 +292,8 @@ export default function DevicesPage() {
                 batteryPercentage: fullDevice.batteryPercentage ?? undefined, // Get from fullDevice instead of state
                 createdAt: new Date(fullDevice.createdAt),
                 updatedAt: new Date(fullDevice.updatedAt), 
+                spaceId: fullDevice.spaceId ?? undefined, // Get from fullDevice
+                spaceName: fullDevice.spaceName ?? undefined, // Get from fullDevice
             };
             acc.push(displayDevice);
         } else {
@@ -576,6 +580,8 @@ export default function DevicesPage() {
             deviceTypeInfo: device.deviceTypeInfo ?? getDeviceTypeInfo('unknown', 'unknown'),
             createdAt: device.createdAt, // Assuming these exist on DisplayedDevice
             updatedAt: device.updatedAt, // Assuming these exist on DisplayedDevice
+            spaceId: device.spaceId ?? undefined, // Include space ID
+            spaceName: device.spaceName ?? undefined, // Include space name
           };
           
           return (

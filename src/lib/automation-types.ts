@@ -8,8 +8,8 @@ export enum AutomationActionType {
   SEND_HTTP_REQUEST = 'sendHttpRequest',
   SET_DEVICE_STATE = 'setDeviceState',
   SEND_PUSH_NOTIFICATION = 'sendPushNotification',
-  ARM_AREA = 'armArea',
-  DISARM_AREA = 'disarmArea',
+  ARM_ALARM_ZONE = 'armAlarmZone',
+  DISARM_ALARM_ZONE = 'disarmAlarmZone',
   // Add other action types here
 }
 
@@ -33,6 +33,7 @@ export interface ActionContextData {
   connectors?: Array<{ id: string; name: string; category?: string }>;
   devices?: Array<{ id: string; name: string; [key: string]: any }>;
   areas?: Array<{ id: string; name: string }>;
+  alarmZones?: Array<{ id: string; name: string }>;
   ruleLocationScope?: { id: string; name: string } | null;
 }
 
@@ -138,21 +139,42 @@ export const ACTION_TYPE_INFO: Record<AutomationActionType, ActionTypeInfo> = {
     }
   },
 
-  [AutomationActionType.ARM_AREA]: {
-    displayName: 'Arm Area',
+
+
+  [AutomationActionType.ARM_ALARM_ZONE]: {
+    displayName: 'Arm Alarm Zone',
     icon: ShieldCheck,
-    iconColorClass: 'text-sky-600 dark:text-sky-400',
-    bgColorClass: 'bg-sky-50/40 dark:bg-sky-950/20',
-    borderColorClass: 'border-sky-200 dark:border-sky-800',
+    iconColorClass: 'text-red-600 dark:text-red-400',
+    bgColorClass: 'bg-red-50/40 dark:bg-red-950/20',
+    borderColorClass: 'border-red-200 dark:border-red-800',
     formatter: (params, contextData) => {
       if (!params) return '→ (No parameters)';
-      const scoping = params.scoping === 'ALL_AREAS_IN_SCOPE' ? 'all areas in scope' : `${params.targetAreaIds?.length || 0} specific areas`;
-      return `Arm ${scoping}`;
+      const scoping = params.scoping;
+      const zoneIds = params.targetZoneIds || [];
+      const zones = contextData?.alarmZones || [];
+      const ruleLocationScopeName = contextData?.ruleLocationScope?.name;
+
+      if (scoping === 'SPECIFIC_ZONES') {
+        if (zoneIds.length === 0) return '→ Arm: No specific zones selected';
+        if (zoneIds.length === 1) {
+          const zone = zones.find(z => z.id === zoneIds[0]);
+          return `→ Arm '${zone?.name || zoneIds[0].substring(0,6) + '...'}'`;
+        }
+        return `→ Arm ${zoneIds.length} selected zones`;
+      }
+      if (scoping === 'ALL_ZONES_IN_SCOPE') {
+        if (ruleLocationScopeName) {
+          return `→ Arm all zones in '${ruleLocationScopeName}'`;
+        } else {
+          return `→ Arm all zones in system`;
+        }
+      }
+      return `→ Arm Alarm Zone(s): Config pending`;
     }
   },
 
-  [AutomationActionType.DISARM_AREA]: {
-    displayName: 'Disarm Area',
+  [AutomationActionType.DISARM_ALARM_ZONE]: {
+    displayName: 'Disarm Alarm Zone',
     icon: ShieldOff,
     iconColorClass: 'text-slate-600 dark:text-slate-400',
     bgColorClass: 'bg-slate-50/40 dark:bg-slate-950/20',
@@ -160,26 +182,26 @@ export const ACTION_TYPE_INFO: Record<AutomationActionType, ActionTypeInfo> = {
     formatter: (params, contextData) => {
       if (!params) return '→ (No parameters)';
       const scoping = params.scoping;
-      const areaIds = params.targetAreaIds || [];
-      const areas = contextData?.areas || [];
+      const zoneIds = params.targetZoneIds || [];
+      const zones = contextData?.alarmZones || [];
       const ruleLocationScopeName = contextData?.ruleLocationScope?.name;
 
-      if (scoping === 'SPECIFIC_AREAS') {
-        if (areaIds.length === 0) return '→ Disarm: No specific areas selected';
-        if (areaIds.length === 1) {
-          const area = areas.find(a => a.id === areaIds[0]);
-          return `→ Disarm '${area?.name || areaIds[0].substring(0,6) + '...'}'`;
+      if (scoping === 'SPECIFIC_ZONES') {
+        if (zoneIds.length === 0) return '→ Disarm: No specific zones selected';
+        if (zoneIds.length === 1) {
+          const zone = zones.find(z => z.id === zoneIds[0]);
+          return `→ Disarm '${zone?.name || zoneIds[0].substring(0,6) + '...'}'`;
         }
-        return `→ Disarm ${areaIds.length} selected areas`;
+        return `→ Disarm ${zoneIds.length} selected zones`;
       }
-      if (scoping === 'ALL_AREAS_IN_SCOPE') {
+      if (scoping === 'ALL_ZONES_IN_SCOPE') {
         if (ruleLocationScopeName) {
-          return `→ Disarm all areas in '${ruleLocationScopeName}'`;
+          return `→ Disarm all zones in '${ruleLocationScopeName}'`;
         } else {
-          return `→ Disarm all areas in system`;
+          return `→ Disarm all zones in system`;
         }
       }
-      return `→ Disarm Area(s): Config pending`;
+      return `→ Disarm Alarm Zone(s): Config pending`;
     }
   }
 };

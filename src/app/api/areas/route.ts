@@ -43,7 +43,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
         name: areaRow.name,
         locationId: areaRow.locationId,
         armedState: areaRow.armedState,
-        locationName: areaRow.location?.name || 'Unknown',
+        locationName: areaRow.location.name,
         nextScheduledArmTime: areaRow.nextScheduledArmTime ? new Date(areaRow.nextScheduledArmTime).toISOString() : null,
         nextScheduledDisarmTime: areaRow.nextScheduledDisarmTime ? new Date(areaRow.nextScheduledDisarmTime).toISOString() : null,
         lastArmedStateChangeReason: areaRow.lastArmedStateChangeReason || null,

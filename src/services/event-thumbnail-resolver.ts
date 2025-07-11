@@ -1,10 +1,10 @@
 import { StandardizedEvent } from '@/types/events';
 import { EnrichedEvent } from '@/types/events';
 import { EventCategory, DeviceType } from '@/lib/mappings/definitions';
-import type { DeviceWithConnector, Area } from '@/types';
+import type { DeviceWithConnector, Area, Space } from '@/types';
 
 export interface ThumbnailSource {
-  type: 'best-shot' | 'area-camera';
+  type: 'best-shot' | 'space-camera';
   connectorId: string;
   cameraId: string;
   objectTrackId?: string; // Only for best-shot
@@ -17,7 +17,7 @@ export interface ThumbnailSource {
  */
 export function getThumbnailSource(
   event: StandardizedEvent | EnrichedEvent,
-  areaCameras?: DeviceWithConnector[]
+  spaceCameras?: DeviceWithConnector[]
 ): ThumbnailSource | null {
   // Get event category - handle both StandardizedEvent and EnrichedEvent
   const eventCategory = 'category' in event ? event.category : event.eventCategory;
@@ -42,8 +42,8 @@ export function getThumbnailSource(
     };
   }
   
-  // 2. Fallback to area camera if available
-  const pikoCamera = areaCameras?.find(cam => 
+  // 2. Fallback to space camera if available
+  const pikoCamera = spaceCameras?.find(cam => 
     cam.deviceTypeInfo?.type === DeviceType.Camera &&
     cam.connectorCategory === 'piko' &&
     cam.connectorId &&
@@ -56,7 +56,7 @@ export function getThumbnailSource(
       : (event.timestamp as Date).getTime();
     
     return {
-      type: 'area-camera',
+      type: 'space-camera',
       connectorId: pikoCamera.connectorId,
       cameraId: pikoCamera.deviceId,
       timestamp
@@ -67,14 +67,50 @@ export function getThumbnailSource(
 }
 
 /**
- * Finds Piko cameras in a specific area
- * Can work with either area objects or direct device filtering
+ * Finds Piko cameras in a specific space (updated from area-based to space-based)
+ * Can work with either space objects or direct device filtering
+ */
+export function findSpaceCameras(
+  spaceId: string | undefined,
+  allDevices: DeviceWithConnector[],
+  spaces?: Space[]
+): DeviceWithConnector[] {
+  if (!spaceId) return [];
+  
+  // If spaces provided, use them to get device IDs
+  if (spaces && spaces.length > 0) {
+    const space = spaces.find(s => s.id === spaceId);
+    if (!space?.deviceIds?.length) return [];
+    
+    const deviceIdSet = new Set(space.deviceIds);
+    return allDevices.filter(device =>
+      deviceIdSet.has(device.id) &&
+      device.deviceTypeInfo?.type === DeviceType.Camera &&
+      device.connectorCategory === 'piko' &&
+      device.connectorId &&
+      device.deviceId
+    );
+  }
+  
+  // Otherwise filter by spaceId directly (for backend use)
+  return allDevices.filter(device =>
+    (device as any).spaceId === spaceId && // Type assertion for backend device records
+    device.deviceTypeInfo?.type === DeviceType.Camera &&
+    device.connectorCategory === 'piko' &&
+    device.connectorId &&
+    device.deviceId
+  );
+}
+
+/**
+ * @deprecated Use findSpaceCameras instead - areas are being phased out in favor of spaces
  */
 export function findAreaCameras(
   areaId: string | undefined,
   allDevices: DeviceWithConnector[],
   areas?: Area[]
 ): DeviceWithConnector[] {
+  console.warn('findAreaCameras is deprecated. Use findSpaceCameras instead.');
   if (!areaId) return [];
   
   // If areas provided, use them to get device IDs

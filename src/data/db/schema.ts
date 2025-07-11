@@ -102,6 +102,8 @@ export const devicesRelations = relations(devices, ({ one, many }) => ({
   cameraAssociationsSource: many(cameraAssociations, { relationName: 'sourceDevice' }), // Associations where this device is the source (e.g., YoLink)
   cameraAssociationsTarget: many(cameraAssociations, { relationName: 'targetCamera' }), // Associations where this device is the target (e.g., Piko Camera)
   areaDevices: many(areaDevices), // Relation to the junction table
+  spaceDevices: one(spaceDevices), // One device per space
+  alarmZoneDevices: many(alarmZoneDevices), // Many zones per device
 }));
 
 // Table for storing Piko server information
@@ -233,6 +235,8 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
     references: [organization.id],
   }),
   areas: many(areas), 
+  spaces: many(spaces), // Locations have many spaces
+  alarmZones: many(alarmZones), // Locations have many alarm zones
   activeArmingSchedule: one(armingSchedules, { // <-- ADDED relation
     fields: [locations.activeArmingScheduleId],
     references: [armingSchedules.id],
@@ -316,6 +320,155 @@ export const armingSchedules = sqliteTable("arming_schedules", {
 export const armingSchedulesRelations = relations(armingSchedules, ({ many }) => ({
   // Example if other tables needed to know all locations/areas using this schedule (complex)
   // For now, this can be empty or used for other purposes if a schedule needs to link to something else directly.
+}));
+
+// --- Spaces Table (Physical Proximity) ---
+export const spaces = sqliteTable("spaces", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  locationId: text("location_id").references(() => locations.id, { onDelete: 'cascade' }).notNull(),
+  name: text("name").notNull(), // e.g., "Lobby", "Vault Room", "Server Room"
+  description: text("description"),
+  metadata: text("metadata", { mode: "json" }).$type<Record<string, any> | null>(), // floor plan coordinates, etc.
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  locationIdx: index("spaces_location_idx").on(table.locationId),
+}));
+
+// Relations for Spaces
+export const spacesRelations = relations(spaces, ({ one, many }) => ({
+  location: one(locations, {
+    fields: [spaces.locationId],
+    references: [locations.id],
+  }),
+  spaceDevices: many(spaceDevices),
+}));
+
+// --- SpaceDevices Junction Table (One device per space constraint) ---
+export const spaceDevices = sqliteTable('space_devices', {
+  spaceId: text('space_id').references(() => spaces.id, { onDelete: 'cascade' }).notNull(),
+  deviceId: text('device_id').references(() => devices.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  // Use deviceId as primary key to ensure one device per space
+  pk: primaryKey({ columns: [table.deviceId] }),
+  // Index for space lookups
+  spaceIdx: index("space_devices_space_idx").on(table.spaceId),
+}));
+
+// Relations for SpaceDevices
+export const spaceDevicesRelations = relations(spaceDevices, ({ one }) => ({
+  space: one(spaces, {
+    fields: [spaceDevices.spaceId],
+    references: [spaces.id],
+  }),
+  device: one(devices, {
+    fields: [spaceDevices.deviceId],
+    references: [devices.id],
+  }),
+}));
+
+// --- Alarm Zones Table ---
+export const alarmZones = sqliteTable("alarm_zones", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  locationId: text("location_id").references(() => locations.id, { onDelete: 'cascade' }).notNull(),
+  name: text("name").notNull(), // e.g., "Vault Security", "Perimeter", "ATMs"
+  description: text("description"),
+  armedState: text("armed_state").$type<ArmedState>().notNull().default(ArmedState.DISARMED),
+  lastArmedStateChangeReason: text("last_armed_state_change_reason"), // who/what changed the state
+  triggerBehavior: text("trigger_behavior").notNull().default('standard'), // 'standard' or 'custom'
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  locationIdx: index("alarm_zones_location_idx").on(table.locationId),
+  armedStateIdx: index("alarm_zones_armed_state_idx").on(table.armedState),
+}));
+
+// Relations for Alarm Zones
+export const alarmZonesRelations = relations(alarmZones, ({ one, many }) => ({
+  location: one(locations, {
+    fields: [alarmZones.locationId],
+    references: [locations.id],
+  }),
+  alarmZoneDevices: many(alarmZoneDevices),
+  triggerOverrides: many(alarmZoneTriggerOverrides),
+  auditLogs: many(alarmZoneAuditLog),
+}));
+
+// --- AlarmZoneDevices Junction Table (One device per zone constraint) ---
+export const alarmZoneDevices = sqliteTable('alarm_zone_devices', {
+  zoneId: text('zone_id').references(() => alarmZones.id, { onDelete: 'cascade' }).notNull(),
+  deviceId: text('device_id').references(() => devices.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  // Use deviceId as primary key to ensure one device per zone
+  pk: primaryKey({ columns: [table.deviceId] }),
+  // Index for zone lookups
+  zoneIdx: index("alarm_zone_devices_zone_idx").on(table.zoneId),
+}));
+
+// Relations for AlarmZoneDevices
+export const alarmZoneDevicesRelations = relations(alarmZoneDevices, ({ one }) => ({
+  zone: one(alarmZones, {
+    fields: [alarmZoneDevices.zoneId],
+    references: [alarmZones.id],
+  }),
+  device: one(devices, {
+    fields: [alarmZoneDevices.deviceId],
+    references: [devices.id],
+  }),
+}));
+
+// --- Alarm Zone Trigger Overrides (Configure which event types trigger alarms) ---
+export const alarmZoneTriggerOverrides = sqliteTable("alarm_zone_trigger_overrides", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  zoneId: text("zone_id").references(() => alarmZones.id, { onDelete: 'cascade' }).notNull(),
+  eventType: text("event_type").notNull(), // from EventType enum
+  shouldTrigger: integer("should_trigger", { mode: "boolean" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  // Composite unique constraint to prevent duplicate rules
+  zoneEventTypeIdx: uniqueIndex("alarm_zone_trigger_overrides_zone_event_type_idx").on(table.zoneId, table.eventType),
+  // Index for efficient lookups
+  zoneIdx: index("alarm_zone_trigger_overrides_zone_idx").on(table.zoneId),
+}));
+
+// Relations for Trigger Overrides
+export const alarmZoneTriggerOverridesRelations = relations(alarmZoneTriggerOverrides, ({ one }) => ({
+  zone: one(alarmZones, {
+    fields: [alarmZoneTriggerOverrides.zoneId],
+    references: [alarmZones.id],
+  }),
+}));
+
+// --- Alarm Zone Audit Log ---
+export const alarmZoneAuditLog = sqliteTable("alarm_zone_audit_log", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  zoneId: text("zone_id").references(() => alarmZones.id, { onDelete: 'cascade' }).notNull(),
+  userId: text("user_id").references(() => user.id, { onDelete: 'cascade' }),
+  action: text("action").notNull(), // 'armed', 'disarmed', 'triggered', 'acknowledged'
+  previousState: text("previous_state").$type<ArmedState>(),
+  newState: text("new_state").$type<ArmedState>(),
+  reason: text("reason"), // e.g., 'manual', 'scheduled', 'automation', 'security_event'
+  triggerEventId: text("trigger_event_id"), // references events.eventUuid if event-triggered
+  metadata: text("metadata", { mode: "json" }).$type<Record<string, any> | null>(), // IP address, automation ID, etc.
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  zoneCreatedIdx: index("alarm_zone_audit_log_zone_created_idx").on(table.zoneId, table.createdAt),
+  userCreatedIdx: index("alarm_zone_audit_log_user_created_idx").on(table.userId, table.createdAt),
+  actionIdx: index("alarm_zone_audit_log_action_idx").on(table.action),
+}));
+
+// Relations for Audit Log
+export const alarmZoneAuditLogRelations = relations(alarmZoneAuditLog, ({ one }) => ({
+  zone: one(alarmZones, {
+    fields: [alarmZoneAuditLog.zoneId],
+    references: [alarmZones.id],
+  }),
+  user: one(user, {
+    fields: [alarmZoneAuditLog.userId],
+    references: [user.id],
+  }),
 }));
 
 // --- Better Auth Core Schema (Renamed to defaults) ---

@@ -6,7 +6,7 @@ import { eq, and, inArray, or, isNotNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
 import * as piko from '@/services/drivers/piko'; // Assuming Piko driver functions are here
-import { type AutomationConfig, AutomationConfigSchema, type AutomationAction, type TemporalCondition, SetDeviceStateActionParamsSchema, type ArmAreaActionParamsSchema, type DisarmAreaActionParamsSchema } from '@/lib/automation-schemas';
+import { type AutomationConfig, AutomationConfigSchema, type AutomationAction, type TemporalCondition, SetDeviceStateActionParamsSchema, type ArmAlarmZoneActionParamsSchema, type DisarmAlarmZoneActionParamsSchema } from '@/lib/automation-schemas';
 import pRetry from 'p-retry'; // Import p-retry
 import type { PikoCreateBookmarkPayload } from '@/services/drivers/piko'; // Import the specific payload type
 // Import other necessary drivers or services as needed
@@ -24,7 +24,7 @@ import { sendPushoverNotification } from '@/services/drivers/pushover';
 import type { ResolvedPushoverMessageParams } from '@/types/pushover-types';
 // Import the new action schema
 import type { SendPushNotificationActionParamsSchema } from '@/lib/automation-schemas';
-import { internalSetAreaArmedState } from '@/lib/actions/area-alarm-actions'; // Updated import
+import { internalSetAlarmZoneArmedState } from '@/lib/actions/alarm-zone-actions';
 import { AutomationActionType, AutomationTriggerType } from '@/lib/automation-types'; // Import AutomationActionType and AutomationTriggerType
 import { CronExpressionParser } from 'cron-parser'; // Using named import as per user example
 import { formatInTimeZone } from 'date-fns-tz'; // For formatting time in specific timezone
@@ -395,108 +395,88 @@ async function executeActionWithRetry(
                 console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Successfully sent Pushover notification.`);
                 break;
             }
-            case AutomationActionType.ARM_AREA: {
-                const params = action.params as z.infer<typeof ArmAreaActionParamsSchema>;
-                const { scoping, targetAreaIds: specificAreaIds } = params;
-                let areasToProcess: string[] = [];
+            case AutomationActionType.ARM_ALARM_ZONE: {
+                const params = action.params as z.infer<typeof ArmAlarmZoneActionParamsSchema>;
+                const { scoping, targetZoneIds: specificZoneIds } = params;
+                let zonesToProcess: string[] = [];
 
-                if (scoping === 'SPECIFIC_AREAS') {
-                    if (!specificAreaIds || specificAreaIds.length === 0) {
-                        console.warn(`[Rule ${rule.id}][Action armArea] Scoping is SPECIFIC_AREAS but no targetAreaIds provided. Skipping.`);
+                if (scoping === 'SPECIFIC_ZONES') {
+                    if (!specificZoneIds || specificZoneIds.length === 0) {
+                        console.warn(`[Rule ${rule.id}][Action armAlarmZone] Scoping is SPECIFIC_ZONES but no targetZoneIds provided. Skipping.`);
                         break;
                     }
-                    areasToProcess = specificAreaIds;
-                } else if (scoping === 'ALL_AREAS_IN_SCOPE') {
-                    if (rule.locationScopeId) {
-                        const areasInLocation = await db.query.areas.findMany({ where: eq(areas.locationId, rule.locationScopeId), columns: { id: true } });
-                        areasToProcess = areasInLocation.map(a => a.id);
-                        if (areasToProcess.length === 0) {
-                            console.log(`[Rule ${rule.id}][Action armArea] No areas found in rule's location scope ${rule.locationScopeId}.`);
-                            break;
-                        }
-                    } else {
-                        const allSystemAreas = await db.query.areas.findMany({ columns: { id: true } });
-                        areasToProcess = allSystemAreas.map(a => a.id);
-                        if (areasToProcess.length === 0) {
-                            console.log(`[Rule ${rule.id}][Action armArea] No areas found in system.`);
-                            break;
-                        }
-                    }
-                }
-
-                if (areasToProcess.length === 0) {
-                    console.log(`[Rule ${rule.id}][Action armArea] No areas determined for processing. Scoping: ${scoping}.`);
+                    zonesToProcess = specificZoneIds;
+                } else if (scoping === 'ALL_ZONES_IN_SCOPE') {
+                    // Note: This requires organization-scoped access, but this legacy service doesn't have that context
+                    // For now, this will be handled by the organization automation context instead
+                    console.warn(`[Rule ${rule.id}][Action armAlarmZone] ALL_ZONES_IN_SCOPE not supported in legacy automation service. Use organization context.`);
                     break;
                 }
 
-                console.log(`[Rule ${rule.id}][Action armArea] Attempting to arm ${areasToProcess.length} area(s). IDs: ${areasToProcess.join(', ')}`);
-                for (const areaId of areasToProcess) {
+                if (zonesToProcess.length === 0) {
+                    console.log(`[Rule ${rule.id}][Action armAlarmZone] No zones determined for processing. Scoping: ${scoping}.`);
+                    break;
+                }
+
+                console.log(`[Rule ${rule.id}][Action armAlarmZone] Attempting to arm ${zonesToProcess.length} alarm zone(s). IDs: ${zonesToProcess.join(', ')}`);
+                for (const zoneId of zonesToProcess) {
                     try {
-                        const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.ARMED, {
-                            isArmingSkippedUntil: null,                  // Clear schedule fields
-                            nextScheduledArmTime: null,
-                            nextScheduledDisarmTime: null,
-                        });
-                        if (updatedArea) {
-                            console.log(`[Rule ${rule.id}][Action armArea] Successfully armed area ${areaId}.`);
+                        const updatedZone = await internalSetAlarmZoneArmedState(
+                            zoneId, 
+                            ArmedState.ARMED,
+                            undefined, // No user ID for automation actions
+                            'automation_arm'
+                        );
+                        if (updatedZone) {
+                            console.log(`[Rule ${rule.id}][Action armAlarmZone] Successfully armed alarm zone ${zoneId}.`);
                         } else {
-                            console.warn(`[Rule ${rule.id}][Action armArea] Failed to arm area ${areaId} (area not found or no update occurred).`);
+                            console.warn(`[Rule ${rule.id}][Action armAlarmZone] Failed to arm alarm zone ${zoneId} (zone not found or no update occurred).`);
                         }
-                    } catch (areaError) {
-                        console.error(`[Rule ${rule.id}][Action armArea] Error arming area ${areaId}:`, areaError instanceof Error ? areaError.message : areaError);
+                    } catch (zoneError) {
+                        console.error(`[Rule ${rule.id}][Action armAlarmZone] Error arming alarm zone ${zoneId}:`, zoneError instanceof Error ? zoneError.message : zoneError);
                     }
                 }
                 break;
             }
-            case AutomationActionType.DISARM_AREA: {
-                const params = action.params as z.infer<typeof DisarmAreaActionParamsSchema>;
-                const { scoping, targetAreaIds: specificAreaIds } = params;
-                let areasToProcess: string[] = [];
+            case AutomationActionType.DISARM_ALARM_ZONE: {
+                const params = action.params as z.infer<typeof DisarmAlarmZoneActionParamsSchema>;
+                const { scoping, targetZoneIds: specificZoneIds } = params;
+                let zonesToProcess: string[] = [];
 
-                if (scoping === 'SPECIFIC_AREAS') {
-                    if (!specificAreaIds || specificAreaIds.length === 0) {
-                        console.warn(`[Rule ${rule.id}][Action disarmArea] Scoping is SPECIFIC_AREAS but no targetAreaIds provided. Skipping.`);
+                if (scoping === 'SPECIFIC_ZONES') {
+                    if (!specificZoneIds || specificZoneIds.length === 0) {
+                        console.warn(`[Rule ${rule.id}][Action disarmAlarmZone] Scoping is SPECIFIC_ZONES but no targetZoneIds provided. Skipping.`);
                         break;
                     }
-                    areasToProcess = specificAreaIds;
-                } else if (scoping === 'ALL_AREAS_IN_SCOPE') {
-                    if (rule.locationScopeId) {
-                        const areasInLocation = await db.query.areas.findMany({ where: eq(areas.locationId, rule.locationScopeId), columns: { id: true } });
-                        areasToProcess = areasInLocation.map(a => a.id);
-                        if (areasToProcess.length === 0) {
-                            console.log(`[Rule ${rule.id}][Action disarmArea] No areas found in rule's location scope ${rule.locationScopeId}.`);
-                            break;
-                        }
-                    } else {
-                        const allSystemAreas = await db.query.areas.findMany({ columns: { id: true } });
-                        areasToProcess = allSystemAreas.map(a => a.id);
-                         if (areasToProcess.length === 0) {
-                            console.log(`[Rule ${rule.id}][Action disarmArea] No areas found in system.`);
-                            break;
-                         }
-                    }
-                }
-
-                if (areasToProcess.length === 0) {
-                    console.log(`[Rule ${rule.id}][Action disarmArea] No areas determined for processing. Scoping: ${scoping}.`);
+                    zonesToProcess = specificZoneIds;
+                } else if (scoping === 'ALL_ZONES_IN_SCOPE') {
+                    // Note: This requires organization-scoped access, but this legacy service doesn't have that context
+                    // For now, this will be handled by the organization automation context instead
+                    console.warn(`[Rule ${rule.id}][Action disarmAlarmZone] ALL_ZONES_IN_SCOPE not supported in legacy automation service. Use organization context.`);
                     break;
                 }
 
-                console.log(`[Rule ${rule.id}][Action disarmArea] Attempting to disarm ${areasToProcess.length} area(s). IDs: ${areasToProcess.join(', ')}`);
-                for (const areaId of areasToProcess) {
+                if (zonesToProcess.length === 0) {
+                    console.log(`[Rule ${rule.id}][Action disarmAlarmZone] No zones determined for processing. Scoping: ${scoping}.`);
+                    break;
+                }
+
+                console.log(`[Rule ${rule.id}][Action disarmAlarmZone] Attempting to disarm ${zonesToProcess.length} alarm zone(s). IDs: ${zonesToProcess.join(', ')}`);
+                for (const zoneId of zonesToProcess) {
                     try {
-                        const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.DISARMED, {
-                            isArmingSkippedUntil: null,                     // Clear schedule fields
-                            nextScheduledArmTime: null,
-                            nextScheduledDisarmTime: null,
-                        });
-                        if (updatedArea) {
-                            console.log(`[Rule ${rule.id}][Action disarmArea] Successfully disarmed area ${areaId}.`);
+                        const updatedZone = await internalSetAlarmZoneArmedState(
+                            zoneId, 
+                            ArmedState.DISARMED,
+                            undefined, // No user ID for automation actions
+                            'automation_disarm'
+                        );
+                        if (updatedZone) {
+                            console.log(`[Rule ${rule.id}][Action disarmAlarmZone] Successfully disarmed alarm zone ${zoneId}.`);
                         } else {
-                            console.warn(`[Rule ${rule.id}][Action disarmArea] Failed to disarm area ${areaId} (area not found or no update occurred).`);
+                            console.warn(`[Rule ${rule.id}][Action disarmAlarmZone] Failed to disarm alarm zone ${zoneId} (zone not found or no update occurred).`);
                         }
-                    } catch (areaError) {
-                        console.error(`[Rule ${rule.id}][Action disarmArea] Error disarming area ${areaId}:`, areaError instanceof Error ? areaError.message : areaError);
+                    } catch (zoneError) {
+                        console.error(`[Rule ${rule.id}][Action disarmAlarmZone] Error disarming alarm zone ${zoneId}:`, zoneError instanceof Error ? zoneError.message : zoneError);
                     }
                 }
                 break;

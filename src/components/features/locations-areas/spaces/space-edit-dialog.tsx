@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import type { Area, Location } from '@/types/index'; // Import Area
+import type { Space, Location } from '@/types/index';
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,6 +23,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -31,64 +32,65 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-// --- Form Schema (Make locationId required) --- 
-const areaFormSchema = z.object({
-  name: z.string().min(1, { message: "Area name cannot be empty." }),
-  locationId: z.string().uuid({ message: "Please select a valid location." }), // No longer optional/nullable
+// Form Schema
+const spaceFormSchema = z.object({
+  name: z.string().min(1, { message: "Space name cannot be empty." }),
+  locationId: z.string().uuid({ message: "Please select a valid location." }),
+  description: z.string().optional(),
 });
 
-type AreaFormData = z.infer<typeof areaFormSchema>;
+type SpaceFormData = z.infer<typeof spaceFormSchema>;
 
-// --- Component Props --- 
-interface AreaEditDialogProps {
+// Component Props
+interface SpaceEditDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  areaToEdit?: Area | null; // Provide for editing, null/undefined for adding
+  spaceToEdit?: Space | null; // Provide for editing, null/undefined for adding
   allLocations: Location[]; // Needed for location dropdown
-  onSubmit: (data: AreaFormData, areaId?: string) => Promise<boolean>; // Returns promise indicating success
+  onSubmit: (data: SpaceFormData, spaceId?: string) => Promise<boolean>; // Returns promise indicating success
 }
 
-export const AreaEditDialog: React.FC<AreaEditDialogProps> = ({ 
+export const SpaceEditDialog: React.FC<SpaceEditDialogProps> = ({ 
   isOpen, 
   onOpenChange, 
-  areaToEdit, 
+  spaceToEdit, 
   allLocations,
   onSubmit 
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const form = useForm<AreaFormData>({
-    resolver: zodResolver(areaFormSchema),
-    // Adjust default values - locationId must have a valid default if adding
-    // We'll set it based on the first available location in useEffect
+  const form = useForm<SpaceFormData>({
+    resolver: zodResolver(spaceFormSchema),
     defaultValues: {
       name: '',
-      locationId: undefined, // Initialize as undefined
+      locationId: undefined,
+      description: '',
     },
   });
 
-  const isEditing = !!areaToEdit;
-  const dialogTitle = isEditing ? "Edit Area" : "Add New Area";
+  const isEditing = !!spaceToEdit;
+  const dialogTitle = isEditing ? "Edit Space" : "Add New Space";
   const dialogDescription = isEditing 
-    ? "Update the details for this security area." 
-    : "Create a new security area and assign it to a location."; // Updated description
+    ? "Update the details for this physical space." 
+    : "Create a new physical space and assign it to a location.";
 
-  // Reset form when dialog opens or areaToEdit changes
+  // Reset form when dialog opens or spaceToEdit changes
   useEffect(() => {
     if (isOpen) {
-      const defaultLocationId = areaToEdit?.locationId 
+      const defaultLocationId = spaceToEdit?.locationId 
                                   ?? (allLocations.length > 0 ? allLocations[0].id : undefined);
       form.reset({
-        name: areaToEdit?.name || '',
-        locationId: defaultLocationId, // Set required default
+        name: spaceToEdit?.name || '',
+        locationId: defaultLocationId,
+        description: spaceToEdit?.description || '',
       });
       setIsSubmitting(false);
     } 
-  }, [isOpen, areaToEdit, form, allLocations]); // Added allLocations dependency
+  }, [isOpen, spaceToEdit, form, allLocations]);
 
-  const handleFormSubmit = async (data: AreaFormData) => {
+  const handleFormSubmit = async (data: SpaceFormData) => {
     setIsSubmitting(true);
     // Call the provided onSubmit function (calls store action)
-    const success = await onSubmit(data, areaToEdit?.id);
+    const success = await onSubmit(data, spaceToEdit?.id);
     setIsSubmitting(false);
     if (success) {
       onOpenChange(false); // Close dialog on successful submission
@@ -112,7 +114,7 @@ export const AreaEditDialog: React.FC<AreaEditDialogProps> = ({
                 <FormItem>
                   <FormLabel>Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Ground Floor Zone, Perimeter" {...field} />
+                    <Input placeholder="e.g., Lobby, Server Room, Vault" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -123,22 +125,19 @@ export const AreaEditDialog: React.FC<AreaEditDialogProps> = ({
               name="locationId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Location</FormLabel> {/* Removed (Optional) */}
+                  <FormLabel>Location</FormLabel>
                   <Select 
-                    onValueChange={field.onChange} // Simplified onValueChange 
-                    defaultValue={field.value} // Use default value from form state
-                    value={field.value} // Control the value
-                    required // Add required attribute
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                    value={field.value}
+                    required
                   >
                     <FormControl>
-                       {/* Add check to disable trigger if no locations exist */}
                       <SelectTrigger disabled={allLocations.length === 0}>
                         <SelectValue placeholder="Select a location" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {/* Remove the '-- None --' option */}
-                      {/* <SelectItem value="__NONE__">-- None --</SelectItem> */} 
                       {allLocations.sort((a,b) => a.path.localeCompare(b.path)).map((loc) => (
                         <SelectItem key={loc.id} value={loc.id}>
                           {loc.name} 
@@ -153,13 +152,29 @@ export const AreaEditDialog: React.FC<AreaEditDialogProps> = ({
                 </FormItem>
               )}
             />
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description (Optional)</FormLabel>
+                  <FormControl>
+                    <Textarea 
+                      placeholder="Brief description of this physical space..."
+                      className="min-h-[80px]"
+                      {...field} 
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
                 Cancel
               </Button>
-               {/* Disable submit if no locations exist */}
               <Button type="submit" disabled={isSubmitting || allLocations.length === 0}>
-                {isSubmitting ? (isEditing ? 'Saving...' : 'Creating...') : (isEditing ? 'Save' : 'Create Area')}
+                {isSubmitting ? (isEditing ? 'Saving...' : 'Creating...') : (isEditing ? 'Save' : 'Create Space')}
               </Button>
             </DialogFooter>
           </form>

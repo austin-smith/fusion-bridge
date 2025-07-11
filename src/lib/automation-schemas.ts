@@ -163,36 +163,36 @@ export const SendPushNotificationActionParamsSchema = z.object({
 });
 // --- END Add SendPushNotificationActionParamsSchema ---
 
-// --- Enums & Schemas for new Arm/Disarm Actions ---
-export const AreaScopingSchema = z.enum([
-    'SPECIFIC_AREAS', 
-    'ALL_AREAS_IN_SCOPE'
+// --- Enums & Schemas for Alarm Zone Actions ---
+export const AlarmZoneScopingSchema = z.enum([
+    'SPECIFIC_ZONES', 
+    'ALL_ZONES_IN_SCOPE'
 ]);
 
-export const ArmAreaActionParamsSchema = z.object({
-    scoping: AreaScopingSchema,
-    targetAreaIds: z.array(z.string().uuid()).optional(), // UUIDs of areas
+export const ArmAlarmZoneActionParamsSchema = z.object({
+    scoping: AlarmZoneScopingSchema,
+    targetZoneIds: z.array(z.string().uuid()).optional(), // UUIDs of alarm zones
 }).refine(data => {
-    if (data.scoping === 'SPECIFIC_AREAS') {
-        return Array.isArray(data.targetAreaIds) && data.targetAreaIds.length > 0;
+    if (data.scoping === 'SPECIFIC_ZONES') {
+        return Array.isArray(data.targetZoneIds) && data.targetZoneIds.length > 0;
     }
     return true;
 }, {
-    message: "targetAreaIds must be provided and non-empty when scoping is SPECIFIC_AREAS",
-    path: ['targetAreaIds'], // Path of the error
+    message: "targetZoneIds must be provided and non-empty when scoping is SPECIFIC_ZONES",
+    path: ['targetZoneIds'], // Path of the error
 });
 
-export const DisarmAreaActionParamsSchema = z.object({
-    scoping: AreaScopingSchema,
-    targetAreaIds: z.array(z.string().uuid()).optional(), // UUIDs of areas
+export const DisarmAlarmZoneActionParamsSchema = z.object({
+    scoping: AlarmZoneScopingSchema,
+    targetZoneIds: z.array(z.string().uuid()).optional(), // UUIDs of alarm zones
 }).refine(data => {
-    if (data.scoping === 'SPECIFIC_AREAS') {
-        return Array.isArray(data.targetAreaIds) && data.targetAreaIds.length > 0;
+    if (data.scoping === 'SPECIFIC_ZONES') {
+        return Array.isArray(data.targetZoneIds) && data.targetZoneIds.length > 0;
     }
     return true;
 }, {
-    message: "targetAreaIds must be provided and non-empty when scoping is SPECIFIC_AREAS",
-    path: ['targetAreaIds'], // Path of the error
+    message: "targetZoneIds must be provided and non-empty when scoping is SPECIFIC_ZONES",
+    path: ['targetZoneIds'], // Path of the error
 });
 // --- End Enums & Schemas ---
 
@@ -223,8 +223,8 @@ export const AutomationActionSchema = z.discriminatedUnion("type", [
   }),
   // Add future action types here, e.g.:
   // z.object({ type: z.literal("sendNotification"), params: SendNotificationParamsSchema }),
-  z.object({ type: z.literal(AutomationActionType.ARM_AREA), params: ArmAreaActionParamsSchema }).strict(),
-  z.object({ type: z.literal(AutomationActionType.DISARM_AREA), params: DisarmAreaActionParamsSchema }).strict(),
+  z.object({ type: z.literal(AutomationActionType.ARM_ALARM_ZONE), params: ArmAlarmZoneActionParamsSchema }).strict(),
+  z.object({ type: z.literal(AutomationActionType.DISARM_ALARM_ZONE), params: DisarmAlarmZoneActionParamsSchema }).strict(),
 ]);
 
 // Type helper for a single action
@@ -393,8 +393,8 @@ export type AutomationActionParams =
     | z.infer<typeof SendHttpRequestActionParamsSchema>
     | z.infer<typeof SetDeviceStateActionParamsSchema>
     | z.infer<typeof SendPushNotificationActionParamsSchema>
-    | z.infer<typeof ArmAreaActionParamsSchema> 
-    | z.infer<typeof DisarmAreaActionParamsSchema>;
+    | z.infer<typeof ArmAlarmZoneActionParamsSchema> 
+    | z.infer<typeof DisarmAlarmZoneActionParamsSchema>;
 
 // The file should end here, removing any subsequent erroneous definitions. 
 

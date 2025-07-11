@@ -155,6 +155,13 @@
       "when": 1751685328115,
       "tag": "0021_nifty_jack_power",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1752201186265,
+      "tag": "0022_loud_captain_marvel",
+      "breakpoints": true
     }
   ]
 }

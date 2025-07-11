@@ -73,6 +73,9 @@ export type DeviceWithConnector = {
   associationCount?: number | null;
   deviceTypeInfo?: TypedDeviceInfo;
   displayState?: DisplayState;
+  // NEW: Space information
+  spaceId?: string | null;
+  spaceName?: string | null;
 };
 
 // Interface for Piko Server details (based on DB schema)
@@ -145,6 +148,68 @@ export interface ArmingSchedule {
   isEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
+}
+
+// Represents a physical space where devices coexist
+export interface Space {
+  id: string;
+  locationId: string;
+  name: string;
+  description?: string | null;
+  metadata?: Record<string, any> | null;
+  createdAt: Date;
+  updatedAt: Date;
+  
+  // Optional: Populated for display, not stored directly in DB
+  location?: Location | null;
+  deviceIds?: string[]; // IDs of devices in this space
+  devices?: DeviceWithConnector[]; // Full device details (optional population)
+}
+
+// Represents a logical alarm zone for security management
+export interface AlarmZone {
+  id: string;
+  locationId: string;
+  name: string;
+  description?: string | null;
+  armedState: ArmedState;
+  lastArmedStateChangeReason?: string | null;
+  triggerBehavior: 'standard' | 'custom';
+  createdAt: Date;
+  updatedAt: Date;
+  
+  // Optional: Populated for display, not stored directly in DB
+  location?: Location | null;
+  deviceIds?: string[]; // IDs of devices in this zone
+  devices?: DeviceWithConnector[]; // Full device details (optional population)
+  triggerOverrides?: AlarmZoneTriggerOverride[]; // Custom trigger rules
+}
+
+// Represents a custom trigger override for an alarm zone
+export interface AlarmZoneTriggerOverride {
+  id: string;
+  zoneId: string;
+  eventType: string; // EventType enum value
+  shouldTrigger: boolean;
+  createdAt: Date;
+}
+
+// Represents an audit log entry for alarm zone actions
+export interface AlarmZoneAuditLogEntry {
+  id: string;
+  zoneId: string;
+  userId?: string | null;
+  action: 'armed' | 'disarmed' | 'triggered' | 'acknowledged';
+  previousState?: ArmedState | null;
+  newState?: ArmedState | null;
+  reason?: string | null;
+  triggerEventId?: string | null;
+  metadata?: Record<string, any> | null;
+  createdAt: Date;
+  
+  // Optional: Populated for display
+  zone?: AlarmZone | null;
+  user?: { id: string; name?: string | null; email: string } | null;
 }
 
 // ====================================

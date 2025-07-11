@@ -1,13 +1,12 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Row } from '@tanstack/react-table';
-import type { Area, DeviceWithConnector } from '@/types/index';
+import type { AlarmZone, DeviceWithConnector } from '@/types/index';
 import { Badge } from "@/components/ui/badge";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 import { getDeviceTypeIcon, getDisplayStateIcon, getDisplayStateColorClass } from "@/lib/mappings/presentation";
-import { HelpCircle, Info, Cpu, Plus, GripVertical } from 'lucide-react';
+import { HelpCircle, Info, Cpu, Plus, Shield } from 'lucide-react';
 import type { DeviceType } from "@/lib/mappings/definitions";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from '@/components/ui/button';
@@ -17,29 +16,25 @@ import { cn } from "@/lib/utils";
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { getDeviceTypeInfo } from "@/lib/mappings/identification";
-import { DisplayState } from '@/lib/mappings/definitions';
 
-// --- ADDED BACK AGAIN: Interface definition ---
-interface AreaDevicesSubRowProps {
-  row: Row<Area>;
+interface AlarmZoneDevicesSubRowProps {
+  zone: AlarmZone;
   allDevices: DeviceWithConnector[];
-  onAssignDevices?: (area: Area) => void;
-  areaId: string;
+  onAssignDevices?: (zone: AlarmZone) => void;
 }
-// --- END ADDED BACK AGAIN ---
 
-// --- Draggable Device Item Component ---
+// Draggable Device Item Component
 interface DraggableDeviceItemProps {
     device: DeviceWithConnector;
-    sourceAreaId: string;
+    sourceZoneId: string;
 }
 
-const DraggableDeviceItem: React.FC<DraggableDeviceItemProps> = ({ device, sourceAreaId }) => {
+const DraggableDeviceItem: React.FC<DraggableDeviceItemProps> = ({ device, sourceZoneId }) => {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
         id: device.id,
         data: {
             type: 'device',
-            sourceAreaId: sourceAreaId,
+            sourceZoneId: sourceZoneId,
             deviceDetails: device
         }
     });
@@ -134,26 +129,24 @@ const DraggableDeviceItem: React.FC<DraggableDeviceItemProps> = ({ device, sourc
     );
 };
 
-// --- Main AreaDevicesSubRow Component ---
-export const AreaDevicesSubRow: React.FC<AreaDevicesSubRowProps> = ({ 
-  row, 
+// Main AlarmZoneDevicesSubRow Component
+export const AlarmZoneDevicesSubRow: React.FC<AlarmZoneDevicesSubRowProps> = ({ 
+  zone, 
   allDevices,
   onAssignDevices,
-  areaId
 }) => {
-  const area = row.original;
-  console.log(`[AreaDevicesSubRow] Rendering for Area: ${area.name} (${area.id})`, { deviceIds: area.deviceIds });
+  console.log(`[AlarmZoneDevicesSubRow] Rendering for Zone: ${zone.name} (${zone.id})`, { deviceIds: zone.deviceIds });
 
-  const assignedDeviceIds = useMemo(() => new Set(area.deviceIds || []), [area.deviceIds]);
+  const assignedDeviceIds = useMemo(() => new Set(zone.deviceIds || []), [zone.deviceIds]);
 
-  const assignedDevicesInArea = useMemo(() => {
+  const assignedDevicesInZone = useMemo(() => {
     return allDevices.filter(device => assignedDeviceIds.has(device.id));
   }, [allDevices, assignedDeviceIds]);
 
   const groupedDevices = useMemo(() => {
-    console.log(`[AreaDevicesSubRow] Recalculating groupedDevices for Area: ${area.name}`);
+    console.log(`[AlarmZoneDevicesSubRow] Recalculating groupedDevices for Zone: ${zone.name}`);
     const groups: Record<string, DeviceWithConnector[]> = {};
-    assignedDevicesInArea.forEach(device => {
+    assignedDevicesInZone.forEach(device => {
         const type = device.deviceTypeInfo?.type ?? "Unknown";
         if (!groups[type]) groups[type] = [];
         groups[type].push(device);
@@ -161,24 +154,24 @@ export const AreaDevicesSubRow: React.FC<AreaDevicesSubRowProps> = ({
     Object.values(groups).forEach(group => group.sort((a, b) => a.name.localeCompare(b.name)));
     const sortedGroupEntries = Object.entries(groups).sort(([typeA], [typeB]) => typeA.localeCompare(typeB));
     return Object.fromEntries(sortedGroupEntries);
-  }, [assignedDevicesInArea, area.name]);
+  }, [assignedDevicesInZone, zone.name]);
 
-  const totalDeviceCount = assignedDevicesInArea.length;
+  const totalDeviceCount = assignedDevicesInZone.length;
 
   if (totalDeviceCount === 0) {
     return (
       <div className="bg-muted/25 p-6 flex flex-col items-center justify-center text-center">
         <div className="rounded-full bg-muted p-3 mb-3 inline-flex">
-          <Cpu className="h-5 w-5 text-muted-foreground" />
+          <Shield className="h-5 w-5 text-muted-foreground" />
         </div>
         <p className="text-sm text-muted-foreground max-w-md mb-3">
-          No devices assigned to this area. Assign devices to monitor and control them as part of this area.
+          No devices assigned to this alarm zone. Assign devices to monitor them for security events.
         </p>
         {onAssignDevices && (
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => onAssignDevices(area)} 
+            onClick={() => onAssignDevices(zone)} 
             className="gap-1"
           >
             <Plus className="h-3.5 w-3.5" /> Assign Devices
@@ -213,7 +206,7 @@ export const AreaDevicesSubRow: React.FC<AreaDevicesSubRowProps> = ({
                   <DraggableDeviceItem 
                     key={device.id} 
                     device={device} 
-                    sourceAreaId={areaId}
+                    sourceZoneId={zone.id}
                   />
                 ))}
               </div>
