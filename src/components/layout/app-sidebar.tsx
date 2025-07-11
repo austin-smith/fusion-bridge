@@ -52,8 +52,8 @@ const navGroups: NavGroup[] = [
     items: [
       { href: '/connectors', label: 'Connectors', icon: Plug },
       { href: '/devices', label: 'Devices', icon: Cpu },
-      { href: '/spaces', label: 'Spaces', icon: Package },
       { href: '/locations', label: 'Locations', icon: Building },
+      { href: '/spaces', label: 'Spaces', icon: Package },
     ]
   },
   {
@@ -116,16 +116,8 @@ export function AppSidebar() {
 
   // Helper function to determine if an admin-only item should be shown
   const canViewAdminItem = (): boolean => {
-    // Explicitly get userRole from session within the function scope for clarity
-    const currentDynamicUserRole = (session?.user as any)?.role;
-    if (initialUserRole === 'admin') {
-      return true;
-    }
-    // Check dynamic role from session if initialRole is not admin
-    if (!isPending && session?.user && currentDynamicUserRole === 'admin') {
-      return true;
-    }
-    return false; // Default to false if no admin conditions are met
+    // Use the server-provided initial role for consistency
+    return initialUserRole === 'admin';
   };
 
   const handleLogout = async () => {
@@ -181,13 +173,11 @@ export function AppSidebar() {
                       const active = isActive(item.href);
                       
                       // Determine if the item should be shown based on role
-                      let showItem = true; // Default to true
-                      if (item.label === 'Users' || item.label === 'Settings') {
-                        showItem = canViewAdminItem();
-                      }
+                      const isAdminItem = item.label === 'Users' || item.label === 'Settings';
+                      const shouldShowAdminItem = canViewAdminItem();
                       
-                      // Skip rendering completely if item shouldn't be shown
-                      if (!showItem) {
+                      // Skip rendering admin items if user doesn't have access
+                      if (isAdminItem && !shouldShowAdminItem) {
                         return null;
                       }
                       

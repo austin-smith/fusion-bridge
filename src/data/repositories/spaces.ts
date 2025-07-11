@@ -1,6 +1,7 @@
 import { db } from '@/data/db';
 import { spaces, spaceDevices, devices, connectors, locations, cameraAssociations } from '@/data/db/schema';
 import { eq, and, getTableColumns, exists, desc } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import type { Space } from '@/types';
 
 /**
@@ -239,24 +240,28 @@ export class SpacesRepository {
       throw new Error('Space not found or not accessible');
     }
 
+    // Create proper table aliases for tables that are joined multiple times
+    const cameraDevices = alias(devices, 'camera_devices');
+    const cameraConnectors = alias(connectors, 'camera_connectors');
+
     return db.select({
-      ...getTableColumns(devices),
+      ...getTableColumns(cameraDevices),
       connector: {
-        id: connectors.id,
-        name: connectors.name,
-        category: connectors.category
+        id: cameraConnectors.id,
+        name: cameraConnectors.name,
+        category: cameraConnectors.category
       }
     })
     .from(spaceDevices)
     .innerJoin(devices, eq(spaceDevices.deviceId, devices.id))
     .innerJoin(cameraAssociations, eq(cameraAssociations.deviceId, devices.id))
-    .innerJoin(devices as any, eq(cameraAssociations.pikoCameraId, devices.id)) // Camera device
-    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+    .innerJoin(cameraDevices, eq(cameraAssociations.pikoCameraId, cameraDevices.id))
+    .innerJoin(cameraConnectors, eq(cameraDevices.connectorId, cameraConnectors.id))
     .where(and(
       eq(spaceDevices.spaceId, spaceId),
-      eq(connectors.organizationId, this.orgId)
+      eq(cameraConnectors.organizationId, this.orgId)
     ))
-    .orderBy(devices.name);
+    .orderBy(cameraDevices.name);
   }
 
   /**
