@@ -58,7 +58,7 @@ const navGroups: NavGroup[] = [
   {
     items: [
       { href: '/alarm-zones', label: 'Alarm Zones', icon: Shield },
-      { href: '/alarm/schedules', label: 'Alarm Schedules', icon: CalendarClock },
+      // { href: '/alarm/schedules', label: 'Alarm Schedules', icon: CalendarClock }, // Hidden: Infrastructure exists but not currently active
       { href: '/alarm/alarms', label: 'Active Alarms', icon: ShieldAlert },
     ]
   },

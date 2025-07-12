@@ -16,18 +16,7 @@ import { DeviceType, BinaryState, ContactState, ON, OFF, CANONICAL_STATE_MAP, OF
 import { z } from 'zod';
 import { deviceSyncSchema } from '@/lib/schemas/api-schemas';
 
-// Helper function to determine if a device is a security device based on its type
-function isSecurityDevice(deviceTypeInfo: TypedDeviceInfo): boolean {
-  const securityDeviceTypes = [
-    DeviceType.Sensor,
-    DeviceType.Camera,
-    DeviceType.Door,
-    DeviceType.Lock,
-    DeviceType.Alarm,
-  ];
-  
-  return securityDeviceTypes.includes(deviceTypeInfo.type);
-}
+
 
 
 
@@ -555,7 +544,6 @@ async function syncYoLinkDevices(
           url: device.url ? String(device.url) : null,
           standardizedDeviceType: stdTypeInfo.type,
           standardizedDeviceSubtype: stdTypeInfo.subtype || null,
-          isSecurityDevice: isSecurityDevice(stdTypeInfo),
           rawDeviceData: device,
           serverId: null,
           createdAt: new Date(),
@@ -572,7 +560,6 @@ async function syncYoLinkDevices(
             url: device.url ? String(device.url) : null,
             standardizedDeviceType: stdTypeInfo.type,
             standardizedDeviceSubtype: stdTypeInfo.subtype || null,
-            isSecurityDevice: isSecurityDevice(stdTypeInfo),
             rawDeviceData: device,
             updatedAt: new Date(),
           }
@@ -674,7 +661,6 @@ async function syncPikoDevices(
           url: camera.url || null,
           standardizedDeviceType: stdTypeInfo.type,
           standardizedDeviceSubtype: stdTypeInfo.subtype || null,
-          isSecurityDevice: isSecurityDevice(stdTypeInfo),
           rawDeviceData: camera,
           serverId: camera.serverId || null,
           createdAt: new Date(),
@@ -759,7 +745,6 @@ async function syncGeneaDevices(
           url: null,
           standardizedDeviceType: stdTypeInfo.type,
           standardizedDeviceSubtype: stdTypeInfo.subtype || null,
-          isSecurityDevice: isSecurityDevice(stdTypeInfo),
           rawDeviceData: door,
           serverId: null,
           createdAt: new Date(),

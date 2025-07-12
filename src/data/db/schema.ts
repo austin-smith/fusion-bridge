@@ -80,7 +80,6 @@ export const devices = sqliteTable("devices", {
   vendor: text("vendor"),
   model: text("model"),
   url: text("url"),
-  isSecurityDevice: integer("is_security_device", { mode: "boolean" }).default(false).notNull(),
   rawDeviceData: text("raw_device_data", { mode: "json" }).$type<Record<string, unknown> | null>(), // Store the raw device data object from the API as JSON string
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
