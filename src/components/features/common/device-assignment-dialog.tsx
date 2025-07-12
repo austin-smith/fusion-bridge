@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import type { DeviceWithConnector, ApiResponse } from '@/types/index';
+import type { DeviceWithConnector, ApiResponse, Space, AlarmZone } from '@/types/index';
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DataTable } from "@/components/ui/data-table";
@@ -41,6 +41,10 @@ interface DeviceAssignmentDialogProps {
   containerName: string; // Name of the space/zone being assigned to
   containerType: 'space' | 'alarm-zone'; // Type determines behavior
   allDevices: DeviceWithConnector[];
+  // For checking global assignments (needed for "Unassigned" filter)
+  allContainers: Space[] | AlarmZone[]; // All spaces or all alarm zones
+  // For filtering by supported device types (optional - if not provided, all types are supported)
+  supportedDeviceTypes?: DeviceType[];
   // For fetching current assignments
   fetchCurrentAssignments: () => Promise<string[]>; // Returns array of assigned device IDs
   // For saving changes - these handle the specific logic for spaces vs zones
@@ -57,12 +61,24 @@ export const DeviceAssignmentDialog: React.FC<DeviceAssignmentDialogProps> = ({
   containerName,
   containerType,
   allDevices,
+  allContainers,
+  supportedDeviceTypes,
   fetchCurrentAssignments,
   assignDeviceAction,
   removeDeviceAction,
   bulkAssignDevicesAction,
   bulkRemoveDevicesAction,
 }) => {
+  // Filter devices by supported types if provided
+  const filteredDevicesByType = useMemo(() => {
+    if (!supportedDeviceTypes || supportedDeviceTypes.length === 0) {
+      return allDevices;
+    }
+    return allDevices.filter(device => 
+      device.deviceTypeInfo?.type && supportedDeviceTypes.includes(device.deviceTypeInfo.type)
+    );
+  }, [allDevices, supportedDeviceTypes]);
+
   const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
   const [errorAssignments, setErrorAssignments] = useState<string | null>(null);
   const [initialAssignedIds, setInitialAssignedIds] = useState<Set<string>>(new Set());
@@ -74,6 +90,17 @@ export const DeviceAssignmentDialog: React.FC<DeviceAssignmentDialogProps> = ({
   const [typeFilter, setTypeFilter] = useState<string>('all'); 
   const [connectorFilter, setConnectorFilter] = useState<string>('all');
   const [assignmentFilter, setAssignmentFilter] = useState<string>('unassigned');
+
+  // Calculate globally assigned device IDs from all containers
+  const globallyAssignedDeviceIds = useMemo(() => {
+    const assignedIds = new Set<string>();
+    allContainers.forEach(container => {
+      (container.deviceIds || []).forEach(deviceId => {
+        assignedIds.add(deviceId);
+      });
+    });
+    return assignedIds;
+  }, [allContainers]);
 
   // --- Reusable function to fetch current assignments ---
   const refetchAssignments = useCallback(async () => {
@@ -263,13 +290,13 @@ export const DeviceAssignmentDialog: React.FC<DeviceAssignmentDialogProps> = ({
 
   // Get unique values for dropdown filters
   const uniqueDeviceTypes = useMemo(() => {
-    const types = new Set(allDevices.map(d => d.deviceTypeInfo?.type).filter(Boolean)); 
+    const types = new Set(filteredDevicesByType.map(d => d.deviceTypeInfo?.type).filter(Boolean)); 
     return ['all', ...Array.from(types).sort()];
-  }, [allDevices]);
+  }, [filteredDevicesByType]);
 
   const uniqueConnectors = useMemo(() => {
     const connectorMap = new Map<string, { name: string, category: string }>();
-    allDevices.forEach(d => {
+    filteredDevicesByType.forEach(d => {
       const name = d.connectorName ?? formatConnectorCategory(d.connectorCategory);
       if (name && !connectorMap.has(name)) { 
         connectorMap.set(name, { name: name, category: d.connectorCategory });
@@ -277,14 +304,14 @@ export const DeviceAssignmentDialog: React.FC<DeviceAssignmentDialogProps> = ({
     });
     const sortedConnectors = Array.from(connectorMap.values()).sort((a, b) => a.name.localeCompare(b.name));
     return sortedConnectors;
-  }, [allDevices]);
+  }, [filteredDevicesByType]);
 
   // Memoize the filtered devices - Split into assigned and available
   const [filteredAssignedDevices, filteredAvailableDevices] = useMemo(() => {
     const currentAssigned: DeviceWithConnector[] = [];
     const currentAvailable: DeviceWithConnector[] = [];
 
-    allDevices.forEach(device => {
+    filteredDevicesByType.forEach(device => {
         const isTargetAssigned = getDisplayedCheckedState(device.id);
         if (isTargetAssigned) {
           currentAssigned.push(device);
@@ -313,8 +340,8 @@ export const DeviceAssignmentDialog: React.FC<DeviceAssignmentDialogProps> = ({
         // Assignment filter logic - only applies to available devices
         let assignmentMatch = true;
         if (assignmentFilter === 'unassigned') {
-          // Show only unassigned devices
-          assignmentMatch = !initialAssignedIds.has(device.id);
+          // Show only devices that are not assigned to ANY container globally
+          assignmentMatch = !globallyAssignedDeviceIds.has(device.id);
         }
         
         return nameMatch && typeMatch && connectorMatch && assignmentMatch;
@@ -324,7 +351,7 @@ export const DeviceAssignmentDialog: React.FC<DeviceAssignmentDialogProps> = ({
         currentAssigned.filter(filterAssignedDevice),
         currentAvailable.filter(filterAvailableDevice)
     ];
-  }, [allDevices, nameFilter, typeFilter, connectorFilter, assignmentFilter, getDisplayedCheckedState, initialAssignedIds]);
+  }, [filteredDevicesByType, nameFilter, typeFilter, connectorFilter, assignmentFilter, getDisplayedCheckedState, globallyAssignedDeviceIds]);
 
   // --- Submit Handler ---
   const handleSaveChanges = async () => {
@@ -376,7 +403,9 @@ export const DeviceAssignmentDialog: React.FC<DeviceAssignmentDialogProps> = ({
   const containerTypeText = containerType === 'space' ? 'Space' : 'Alarm Zone';
   const multiSelectText = containerType === 'space' 
     ? 'Select the devices to assign to this space. Each device can only be assigned to one space.'
-    : 'Select the devices to assign to this alarm zone. Each device can only be assigned to one alarm zone.';
+    : supportedDeviceTypes && supportedDeviceTypes.length > 0
+      ? `Select the devices to assign to this alarm zone. Only devices compatible with alarming (${supportedDeviceTypes.join(', ')}) are shown. Each device can only be assigned to one alarm zone.`
+      : 'Select the devices to assign to this alarm zone. Each device can only be assigned to one alarm zone.';
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -385,6 +414,11 @@ export const DeviceAssignmentDialog: React.FC<DeviceAssignmentDialogProps> = ({
           <DialogTitle>Assign Devices to {containerTypeText}: {containerName}</DialogTitle>
           <DialogDescription>
             {multiSelectText}
+            {supportedDeviceTypes && supportedDeviceTypes.length > 0 && (
+              <div className="mt-2 text-xs text-muted-foreground">
+                <strong>Filtered to supported types:</strong> {supportedDeviceTypes.join(', ')}
+              </div>
+            )}
           </DialogDescription>
         </DialogHeader>
         

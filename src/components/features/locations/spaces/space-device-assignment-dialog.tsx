@@ -81,6 +81,7 @@ export const SpaceDeviceAssignmentDialog: React.FC<SpaceDeviceAssignmentDialogPr
       containerName={space.name}
       containerType="space"
       allDevices={allDevices}
+      allContainers={allSpaces}
       fetchCurrentAssignments={fetchCurrentAssignments}
       assignDeviceAction={wrappedAssignDeviceAction}
       removeDeviceAction={wrappedRemoveDeviceAction}

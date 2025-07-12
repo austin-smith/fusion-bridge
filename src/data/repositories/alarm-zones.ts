@@ -592,6 +592,47 @@ export class AlarmZonesRepository {
       .limit(1);
     return result.length > 0;
   }
+
+  /**
+   * Get device information including device type for validation
+   */
+  async getDeviceInfo(deviceId: string) {
+    const result = await db.select({
+      id: devices.id,
+      name: devices.name,
+      standardizedDeviceType: devices.standardizedDeviceType,
+      standardizedDeviceSubtype: devices.standardizedDeviceSubtype,
+    })
+    .from(devices)
+    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+    .where(and(
+      eq(devices.id, deviceId),
+      eq(connectors.organizationId, this.orgId)
+    ))
+    .limit(1);
+    
+    return result[0] || null;
+  }
+
+  /**
+   * Get device information for multiple devices
+   */
+  async getDevicesInfo(deviceIds: string[]) {
+    if (deviceIds.length === 0) return [];
+    
+    return db.select({
+      id: devices.id,
+      name: devices.name,
+      standardizedDeviceType: devices.standardizedDeviceType,
+      standardizedDeviceSubtype: devices.standardizedDeviceSubtype,
+    })
+    .from(devices)
+    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+    .where(and(
+      inArray(devices.id, deviceIds),
+      eq(connectors.organizationId, this.orgId)
+    ));
+  }
 }
 
 /**

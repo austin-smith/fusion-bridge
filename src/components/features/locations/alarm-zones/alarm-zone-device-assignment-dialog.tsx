@@ -3,6 +3,7 @@
 import React, { useCallback } from 'react';
 import type { AlarmZone, DeviceWithConnector } from '@/types/index';
 import { DeviceAssignmentDialog } from '@/components/features/common/device-assignment-dialog';
+import { SUPPORTED_ALARM_DEVICE_TYPES } from '@/lib/mappings/definitions';
 
 // --- Component Props --- 
 interface AlarmZoneDeviceAssignmentDialogProps {
@@ -80,6 +81,8 @@ export const AlarmZoneDeviceAssignmentDialog: React.FC<AlarmZoneDeviceAssignment
       containerName={zone.name}
       containerType="alarm-zone"
       allDevices={allDevices}
+      allContainers={allZones}
+      supportedDeviceTypes={SUPPORTED_ALARM_DEVICE_TYPES}
       fetchCurrentAssignments={fetchCurrentAssignments}
       assignDeviceAction={wrappedAssignDeviceAction}
       removeDeviceAction={wrappedRemoveDeviceAction}

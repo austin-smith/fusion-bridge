@@ -17,6 +17,24 @@ export enum DeviceType {
   Unmapped = 'Unmapped',
 }
 
+// --- DEVICE TYPE GROUPINGS ---
+// Define which device types are supported for different use cases
+
+// Device types that are supported for alarm zone assignment
+export const SUPPORTED_ALARM_DEVICE_TYPES: DeviceType[] = [
+  DeviceType.Camera,
+  DeviceType.Door,
+  DeviceType.GarageDoor,
+  DeviceType.Lock,
+  DeviceType.Sensor,
+  DeviceType.SmartFob,
+] as const;
+
+// Utility function to check if a device type is supported for alarm zones
+export const isAlarmDeviceTypeSupported = (deviceType: DeviceType): boolean => {
+  return SUPPORTED_ALARM_DEVICE_TYPES.includes(deviceType);
+};
+
 export enum DeviceSubtype {
   // Alarm
   Siren = 'Siren',

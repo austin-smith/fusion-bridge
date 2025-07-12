@@ -3,6 +3,8 @@ import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/w
 import { createAlarmZonesRepository } from '@/data/repositories/alarm-zones';
 import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
 import { assignDevicesToZoneSchema, removeDevicesFromZoneSchema } from '@/lib/schemas/api-schemas';
+import { SUPPORTED_ALARM_DEVICE_TYPES } from '@/lib/mappings/definitions';
+import type { DeviceType } from '@/lib/mappings/definitions';
 
 // Get devices in an alarm zone
 export const GET = withOrganizationAuth(async (request: NextRequest, authContext: OrganizationAuthContext, context: RouteContext<{ id: string }>) => {
@@ -62,6 +64,32 @@ export const POST = withOrganizationAuth(async (request: NextRequest, authContex
 
     const { deviceIds } = validation.data;
     const alarmZonesRepo = createAlarmZonesRepository(authContext.organizationId);
+
+    // Validate device types before assignment
+    const devicesInfo = await alarmZonesRepo.getDevicesInfo(deviceIds);
+    
+    if (devicesInfo.length !== deviceIds.length) {
+      const foundDeviceIds = devicesInfo.map(d => d.id);
+      const missingDeviceIds = deviceIds.filter(id => !foundDeviceIds.includes(id));
+      return NextResponse.json({ 
+        success: false, 
+        error: `One or more devices not found or not accessible: ${missingDeviceIds.join(', ')}` 
+      }, { status: 404 });
+    }
+
+    // Check that all devices have supported device types
+    const unsupportedDevices = devicesInfo.filter(device => {
+      const deviceType = device.standardizedDeviceType as DeviceType;
+      return !deviceType || !SUPPORTED_ALARM_DEVICE_TYPES.includes(deviceType);
+    });
+
+    if (unsupportedDevices.length > 0) {
+      const unsupportedDeviceNames = unsupportedDevices.map(d => `${d.name} (${d.standardizedDeviceType || 'Unknown'})`);
+      return NextResponse.json({ 
+        success: false, 
+        error: `The following devices are not supported for alarm zones: ${unsupportedDeviceNames.join(', ')}. Supported types: ${SUPPORTED_ALARM_DEVICE_TYPES.join(', ')}` 
+      }, { status: 400 });
+    }
 
     const assignments = await alarmZonesRepo.assignDevices(id, deviceIds);
 
