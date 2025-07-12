@@ -189,19 +189,19 @@ export function isTimeInRange(
     
     // Parse the time strings for today in the target timezone
     const todayStr = formatInTimeZone(currentLocal, timezone, 'yyyy-MM-dd');
-    const startDateTime = fromZonedTime(`${todayStr} ${startTime}:00`, timezone);
-    const endDateTime = fromZonedTime(`${todayStr} ${endTime}:00`, timezone);
+    const startDateTime = parse(`${todayStr} ${startTime}`, 'yyyy-MM-dd HH:mm', new Date());
+    const endDateTime = parse(`${todayStr} ${endTime}`, 'yyyy-MM-dd HH:mm', new Date());
     
     // Handle overnight ranges (e.g., 22:00 to 06:00)
     if (isAfter(startDateTime, endDateTime)) {
       // If start > end, it's an overnight range
       // Current time should be after start OR before end (next day)
       const nextDayEndDateTime = new Date(endDateTime.getTime() + 24 * 60 * 60 * 1000);
-      return isAfter(currentTime, startDateTime) || isBefore(currentTime, nextDayEndDateTime);
+      return isAfter(currentLocal, startDateTime) || isBefore(currentLocal, nextDayEndDateTime);
     } else {
       // Normal range within the same day
-      return (isAfter(currentTime, startDateTime) || isEqual(currentTime, startDateTime)) &&
-             (isBefore(currentTime, endDateTime) || isEqual(currentTime, endDateTime));
+      return (isAfter(currentLocal, startDateTime) || isEqual(currentLocal, startDateTime)) &&
+             (isBefore(currentLocal, endDateTime) || isEqual(currentLocal, endDateTime));
     }
   } catch (error) {
     console.error(`[Time Evaluator] Error checking time range:`, error);
@@ -221,15 +221,19 @@ export function isTimeInSunRange(
   isDayTime: boolean = true
 ): boolean {
   try {
-    // Calculate adjusted times
-    const sunriseDate = parse(sunTimes.sunrise, 'HH:mm', new Date());
-    const sunsetDate = parse(sunTimes.sunset, 'HH:mm', new Date());
+    // Sun times are stored as "HH:mm" in local timezone
+    // Parse them for today in the local timezone
+    const todayStr = formatInTimeZone(currentTime, timezone, 'yyyy-MM-dd');
+    const sunriseDate = parse(`${todayStr} ${sunTimes.sunrise}`, 'yyyy-MM-dd HH:mm', new Date());
+    const sunsetDate = parse(`${todayStr} ${sunTimes.sunset}`, 'yyyy-MM-dd HH:mm', new Date());
     
+    // Apply offsets
     const adjustedSunrise = new Date(sunriseDate.getTime() + (sunriseOffsetMinutes * 60 * 1000));
     const adjustedSunset = new Date(sunsetDate.getTime() + (sunsetOffsetMinutes * 60 * 1000));
     
-    const adjustedSunriseStr = formatInTimeZone(adjustedSunrise, 'UTC', 'HH:mm');
-    const adjustedSunsetStr = formatInTimeZone(adjustedSunset, 'UTC', 'HH:mm');
+    // Format back to HH:mm for use in isTimeInRange
+    const adjustedSunriseStr = formatInTimeZone(adjustedSunrise, timezone, 'HH:mm');
+    const adjustedSunsetStr = formatInTimeZone(adjustedSunset, timezone, 'HH:mm');
     
     if (isDayTime) {
       // During day: between adjusted sunrise and adjusted sunset

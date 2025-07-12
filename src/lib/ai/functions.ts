@@ -6,7 +6,7 @@
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { ArmedState, ActionableState, DisplayState, ON, OFF } from '@/lib/mappings/definitions';
 import { actionHandlers } from '@/lib/device-actions';
-import type { ChatAction, DeviceActionMetadata, AreaActionMetadata } from '@/types/ai/chat-actions';
+import type { ChatAction, DeviceActionMetadata, AlarmZoneActionMetadata } from '@/types/ai/chat-actions';
 import type { FunctionExecutionResult, AiFunctionResult } from '@/types/ai/chat-types';
 import pluralize from 'pluralize';
 
@@ -84,13 +84,13 @@ export const openAIFunctions = [
             deviceNames: { type: "array", items: { type: "string" } },
             eventTypes: { type: "array", items: { type: "string" } },
             locations: { type: "array", items: { type: "string" } },
-            areas: { type: "array", items: { type: "string" } }
+            spaces: { type: "array", items: { type: "string" } }
           }
         },
         aggregation: {
           type: "object",
           properties: {
-            groupBy: { type: "string", enum: ["device", "type", "location", "area", "time"] },
+            groupBy: { type: "string", enum: ["device", "type", "location", "space", "time"] },
             timeBucket: { type: "string", enum: ["hour", "day", "week", "month"] }
           }
         },
@@ -137,12 +137,28 @@ export const openAIFunctions = [
     }
   },
   {
-    name: "list_areas",
-    description: "List and search areas with their current armed state and status",
+    name: "list_spaces",
+    description: "List and search physical spaces with their device assignments",
     parameters: {
       type: "object",
       properties: {
-        areaFilter: {
+        spaceFilter: {
+          type: "object",
+          properties: {
+            names: { type: "array", items: { type: "string" } },
+            locations: { type: "array", items: { type: "string" } }
+          }
+        }
+      }
+    }
+  },
+  {
+    name: "list_alarm_zones",
+    description: "List and search alarm zones with their current armed state and status",
+    parameters: {
+      type: "object",
+      properties: {
+        zoneFilter: {
           type: "object",
           properties: {
             names: { type: "array", items: { type: "string" } },
@@ -163,37 +179,38 @@ export const openAIFunctions = [
   },
   // Dedicated bulk operation functions for consistent bulk actions
   {
-    name: "arm_all_areas",
-    description: "Arm all areas in the organization. Use this when user says 'arm all areas', 'arm everything', 'set all areas to armed', etc. Always returns bulk arm action regardless of current state.",
+    name: "arm_all_alarm_zones",
+    description: "Arm all alarm zones in the organization. Use this when user says 'arm all zones', 'arm everything', 'set all zones to armed', etc. Always returns bulk arm action regardless of current state.",
     parameters: {
       type: "object",
       properties: {
-        areaFilter: {
+        zoneFilter: {
           type: "object",
           properties: {
             locations: { type: "array", items: { type: "string" }, description: "Optional: filter to specific locations" },
-            excludeNames: { type: "array", items: { type: "string" }, description: "Optional: exclude specific area names" }
+            excludeNames: { type: "array", items: { type: "string" }, description: "Optional: exclude specific zone names" }
           }
         }
       }
     }
   },
   {
-    name: "disarm_all_areas",
-    description: "Disarm all areas in the organization. Use this when user says 'disarm all areas', 'disarm everything', 'set all areas to disarmed', etc. Always returns bulk disarm action regardless of current state.",
+    name: "disarm_all_alarm_zones",
+    description: "Disarm all alarm zones in the organization. Use this when user says 'disarm all zones', 'disarm everything', 'set all zones to disarmed', etc. Always returns bulk disarm action regardless of current state.",
     parameters: {
       type: "object",
       properties: {
-        areaFilter: {
+        zoneFilter: {
           type: "object",
           properties: {
             locations: { type: "array", items: { type: "string" }, description: "Optional: filter to specific locations" },
-            excludeNames: { type: "array", items: { type: "string" }, description: "Optional: exclude specific area names" }
+            excludeNames: { type: "array", items: { type: "string" }, description: "Optional: exclude specific zone names" }
           }
         }
       }
     }
   },
+  // Dedicated bulk operation functions for consistent bulk actions
   {
     name: "turn_on_all_devices",
     description: "Turn on all controllable devices. Use this when user says 'turn on all devices', 'turn everything on', 'power on all switches', etc. Always returns bulk turn-on action regardless of current state.",
@@ -230,27 +247,27 @@ export const openAIFunctions = [
       }
     }
   },
-  // Individual action functions for specific areas/devices
+  // Individual action functions for specific alarm zones/devices
   {
-    name: "arm_area",
-    description: "Arm a specific area by its exact name. ONLY use this when you know the precise area name. For multiple areas or unclear references, use arm_all_areas or list_areas first.",
+    name: "arm_alarm_zone",
+    description: "Arm a specific alarm zone by its exact name. ONLY use this when you know the precise zone name. For multiple zones or unclear references, use arm_all_alarm_zones or list_alarm_zones first.",
     parameters: {
       type: "object",
       properties: {
-        areaName: { type: "string", description: "Exact name of the specific area to arm" }
+        zoneName: { type: "string", description: "Exact name of the specific alarm zone to arm" }
       },
-      required: ["areaName"]
+      required: ["zoneName"]
     }
   },
   {
-    name: "disarm_area", 
-    description: "Disarm a specific area by its exact name. ONLY use this when you know the precise area name. For multiple areas or unclear references, use disarm_all_areas or list_areas first.",
+    name: "disarm_alarm_zone", 
+    description: "Disarm a specific alarm zone by its exact name. ONLY use this when you know the precise zone name. For multiple zones or unclear references, use disarm_all_alarm_zones or list_alarm_zones first.",
     parameters: {
       type: "object",
       properties: {
-        areaName: { type: "string", description: "Exact name of the specific area to disarm" }
+        zoneName: { type: "string", description: "Exact name of the specific alarm zone to disarm" }
       },
-      required: ["areaName"]
+      required: ["zoneName"]
     }
   },
   {
@@ -315,18 +332,21 @@ export async function executeFunction(
     case 'find_controllable_devices':
       return findControllableDevices(orgDb, args);
     
-    case 'list_areas':
-      return listAreas(orgDb, args);
+    case 'list_spaces':
+      return listSpaces(orgDb, args);
+      
+    case 'list_alarm_zones':
+      return listAlarmZones(orgDb, args);
       
     case 'get_system_overview':
       return getSystemOverview(orgDb);
       
     // Dedicated bulk operation functions
-    case 'arm_all_areas':
-      return armAllAreas(orgDb, args);
+    case 'arm_all_alarm_zones':
+      return armAllAlarmZones(orgDb, args);
       
-    case 'disarm_all_areas':
-      return disarmAllAreas(orgDb, args);
+    case 'disarm_all_alarm_zones':
+      return disarmAllAlarmZones(orgDb, args);
       
     case 'turn_on_all_devices':
       return turnOnAllDevices(orgDb, args);
@@ -335,11 +355,11 @@ export async function executeFunction(
       return turnOffAllDevices(orgDb, args);
       
     // Individual action functions
-    case 'arm_area':
-      return armArea(orgDb, args);
+    case 'arm_alarm_zone':
+      return armAlarmZone(orgDb, args);
       
-    case 'disarm_area':
-      return disarmArea(orgDb, args);
+    case 'disarm_alarm_zone':
+      return disarmAlarmZone(orgDb, args);
       
     case 'turn_on_device':
       return turnOnDevice(orgDb, args);
@@ -355,133 +375,72 @@ export async function executeFunction(
   }
 }
 
-// Count events using direct database query (proper database counting)
+// Count events
 async function countEvents(args: any, organizationId: string): Promise<FunctionExecutionResult> {
-  const { timeStart, timeEnd, deviceNames, eventTypes } = args;
-  
   try {
-    // Import dependencies at the top level or here
-    const { db } = await import('@/data/db');
-    const { events, devices, connectors } = await import('@/data/db/schema');
-    const { and, eq, gte, lte, inArray, count } = await import('drizzle-orm');
+    const params = new URLSearchParams();
+    params.append('count', 'true');
     
-    // Build WHERE conditions
-    const conditions = [eq(connectors.organizationId, organizationId)];
+    // Add filters to params
+    if (args.timeStart) params.append('timeStart', args.timeStart);
+    if (args.timeEnd) params.append('timeEnd', args.timeEnd);
+    if (args.deviceNames?.length) params.append('deviceNames', args.deviceNames.join(','));
+    if (args.eventTypes?.length) params.append('eventCategories', args.eventTypes.join(','));
     
-    // Time range filtering
-    if (timeStart && timeEnd) {
-      const startDate = new Date(timeStart);
-      const endDate = new Date(timeEnd);
-      conditions.push(gte(events.timestamp, startDate));
-      conditions.push(lte(events.timestamp, endDate));
+    const response = await fetch(`/api/events?${params.toString()}`);
+    const data = await response.json();
+    
+    if (data.success) {
+      return {
+        aiData: {
+          count: data.count,
+          timeRange: data.timeRange
+        }
+      };
+    } else {
+      throw new Error(data.error || 'Failed to count events');
     }
-    
-    // Event category filtering (ensure uppercase to match database)
-    if (eventTypes?.length) {
-      const upperCaseEventTypes = eventTypes.map((type: string) => type.toUpperCase());
-      conditions.push(inArray(events.standardizedEventCategory, upperCaseEventTypes));
-    }
-    
-    // Build the count query
-    let query = db
-      .select({ count: count() })
-      .from(events)
-      .innerJoin(connectors, eq(connectors.id, events.connectorId));
-    
-    // Add device join if needed for device name filtering
-    if (deviceNames?.length) {
-      query = query.leftJoin(devices, and(
-        eq(devices.connectorId, events.connectorId),
-        eq(devices.deviceId, events.deviceId)
-      ));
-      conditions.push(inArray(devices.name, deviceNames));
-    }
-    
-    const result = await query.where(and(...conditions));
-    const eventCount = result[0]?.count || 0;
-    
-    // Return separated AI and UI data
-    return {
-      aiData: {
-      count: eventCount,
-        timeRange: timeStart && timeEnd ? { start: timeStart, end: timeEnd } : undefined,
-      filters: {
-        deviceNames,
-        eventTypes
-      }
-      }
-      // No UI actions for count operations
-    };
   } catch (error) {
     console.error('Error counting events:', error);
     return {
       aiData: {
-      error: error instanceof Error ? error.message : 'Failed to count events',
-      count: 0
+        error: error instanceof Error ? error.message : 'Failed to count events',
+        count: 0
       }
     };
   }
 }
 
-// Count devices using the same counting logic as the API (consistent approach)
+// Count devices  
 async function countDevices(args: any, organizationId: string): Promise<FunctionExecutionResult> {
-  const { connectorCategories, deviceTypes, statuses } = args;
-  
   try {
-    // Import the counting function from the API route
-    // This way we reuse the exact same logic without HTTP overhead
-    const { db } = await import('@/data/db');
-    const { devices, connectors } = await import('@/data/db/schema');
-    const { and, eq, count } = await import('drizzle-orm');
+    const params = new URLSearchParams();
+    params.append('count', 'true');
     
-    // Build WHERE conditions (same logic as API)
-    const conditions = [eq(connectors.organizationId, organizationId)];
+    // Add filters
+    if (args.connectorCategories?.length) params.append('connectorCategories', args.connectorCategories.join(','));
+    if (args.deviceTypes?.length) params.append('deviceTypes', args.deviceTypes.join(','));
+    if (args.statuses?.length) params.append('statuses', args.statuses.join(','));
     
-    // Connector category filtering (use first category if multiple)
-    const connectorCategory = connectorCategories?.[0];
-    if (connectorCategory && connectorCategory.toLowerCase() !== 'all') {
-      conditions.push(eq(connectors.category, connectorCategory.toLowerCase()));
+    const response = await fetch(`/api/devices?${params.toString()}`);
+    const data = await response.json();
+    
+    if (data.success) {
+      return {
+        aiData: {
+          count: data.count,
+          filters: args
+        }
+      };
+    } else {
+      throw new Error(data.error || 'Failed to count devices');
     }
-    
-    // Device type filtering (use first type if multiple)
-    const deviceType = deviceTypes?.[0];
-    if (deviceType && deviceType.toLowerCase() !== 'all') {
-      conditions.push(eq(devices.type, deviceType));
-    }
-    
-    // Status filtering (use first status if multiple)
-    const status = statuses?.[0];
-    if (status && status.toLowerCase() !== 'all') {
-      conditions.push(eq(devices.status, status));
-    }
-    
-    // Build the count query (same as API)
-    const result = await db
-      .select({ count: count() })
-      .from(devices)
-      .innerJoin(connectors, eq(devices.connectorId, connectors.id))
-      .where(and(...conditions));
-    
-    const deviceCount = result[0]?.count || 0;
-    
-    // Return separated AI and UI data
-    return {
-      aiData: {
-      count: deviceCount,
-      filters: {
-        connectorCategories,
-        deviceTypes,
-        statuses
-      }
-      }
-      // No UI actions for count operations
-    };
   } catch (error) {
     console.error('Error counting devices:', error);
     return {
       aiData: {
-      error: error instanceof Error ? error.message : 'Failed to count devices',
-      count: 0
+        error: error instanceof Error ? error.message : 'Failed to count devices',
+        count: 0
       }
     };
   }
@@ -574,8 +533,8 @@ async function queryEvents(orgDb: any, args: any): Promise<FunctionExecutionResu
         case 'location':
           key = event.locationName || 'Unknown Location';
           break;
-        case 'area':
-          key = event.areaName || 'Unknown Area';
+        case 'space':
+          key = event.spaceName || 'Unknown Space';
           break;
       }
       groups.set(key, (groups.get(key) || 0) + 1);
@@ -600,16 +559,15 @@ async function queryEvents(orgDb: any, args: any): Promise<FunctionExecutionResu
       timestamp: e.timestamp,
       device: e.deviceName,
       type: e.standardizedEventType,
-      area: e.areaName,
+      space: e.spaceName,
       location: e.locationName
     }))
     }
   };
 }
 
-// List devices
 async function listDevices(orgDb: any, args: any): Promise<FunctionExecutionResult> {
-  const { deviceFilter, includeMetrics } = args;
+  const { deviceFilter, includeMetrics = false } = args;
   
   // Get all devices
   const devices = await orgDb.devices.findAll();
@@ -636,32 +594,18 @@ async function listDevices(orgDb: any, args: any): Promise<FunctionExecutionResu
           return true;
         }
         
-        // Strategy 3: Word-based match (all search words found in device name, with pluralization)
+        // Strategy 3: Word-based match (all search words found in device name)
         const searchWords = searchName.split(/\s+/);
         const deviceWords = deviceName.split(/\s+/);
         
         if (searchWords.length === 1) {
-          // Single word search - check if it matches any device word (with pluralization)
-          const searchWordSingular = pluralize.singular(searchName);
-          return deviceWords.some((deviceWord: string) => {
-            const deviceWordSingular = pluralize.singular(deviceWord);
-            return deviceWord === searchName ||
-                   deviceWord === searchWordSingular ||
-                   deviceWordSingular === searchName ||
-                   deviceWordSingular === searchWordSingular;
-          });
+          // Single word search - check if it matches any device word
+          return deviceWords.some((deviceWord: string) => deviceWord === searchName);
         } else {
-          // Multi-word search - check if all search words are found in device (with pluralization)
-          return searchWords.every((searchWord: string) => {
-            const searchWordSingular = pluralize.singular(searchWord);
-            return deviceWords.some((deviceWord: string) => {
-              const deviceWordSingular = pluralize.singular(deviceWord);
-              return deviceWord === searchWord ||
-                     deviceWord === searchWordSingular ||
-                     deviceWordSingular === searchWord ||
-                     deviceWordSingular === searchWordSingular;
-            });
-          });
+          // Multi-word search - check if all search words are found in device
+          return searchWords.every((searchWord: string) => 
+            deviceWords.some((deviceWord: string) => deviceWord === searchWord)
+          );
         }
       });
     });
@@ -681,11 +625,19 @@ async function listDevices(orgDb: any, args: any): Promise<FunctionExecutionResu
     );
   }
   
-  if (deviceFilter?.statuses?.length) {
-    const statusSet = new Set(deviceFilter.statuses);
+  if (deviceFilter?.locations?.length) {
+    const locationSet = new Set(deviceFilter.locations);
     filteredDevices = filteredDevices.filter((d: any) => 
-      d.status && statusSet.has(d.status)
+      d.locationId && locationSet.has(d.locationId)
     );
+  }
+  
+  if (deviceFilter?.statuses?.length) {
+    const statusSet = new Set(deviceFilter.statuses.map((s: string) => s.toLowerCase()));
+    filteredDevices = filteredDevices.filter((d: any) => {
+      const status = (d.status || 'unknown').toLowerCase();
+      return statusSet.has(status);
+    });
   }
   
   // Don't generate any action buttons for list_devices - it's for listing/status queries only
@@ -713,7 +665,7 @@ async function listDevices(orgDb: any, args: any): Promise<FunctionExecutionResu
       type: d.type,
       connectorCategory: d.connector?.category,
       status: d.status || 'unknown',
-      area: d.areaId,
+      space: d.spaceId,
       location: d.locationId,
       displayState: d.displayState
     })),
@@ -759,142 +711,58 @@ async function findControllableDevices(orgDb: any, args: any): Promise<FunctionE
         )
       );
       
-      if (matches.length > 0) {
-        console.log(`[findControllableDevices] Found ${matches.length} exact name matches`);
-        filteredDevices = matches;
-      } else {
-        // Strategy 2: Smart word matching (pluralization-aware, but conservative)
-        matches = devices.filter((d: any) => {
-          if (!d.name) return false;
-          
-          const deviceWords = d.name.toLowerCase().split(/\s+/);
-          const searchWords = lowerCaseSearchTerm.split(/\s+/);
-          
-          // For single search word, match any device word (with pluralization)
-          if (searchWords.length === 1) {
-            const searchWord = searchWords[0];
-            const searchWordSingular = pluralize.singular(searchWord);
-            
-            const wordMatch = deviceWords.some((deviceWord: string) => {
-              const deviceWordSingular = pluralize.singular(deviceWord);
-              return deviceWord === searchWord ||
-                     deviceWord === searchWordSingular ||
-                     deviceWordSingular === searchWord ||
-                     deviceWordSingular === searchWordSingular;
-            });
-            
-            if (wordMatch) {
-              console.log(`[findControllableDevices] Device "${d.name}" matches single word "${searchWord}"`);
-            }
-            return wordMatch;
-          }
-          
-          // For multi-word searches, be more conservative:
-          // Check if the search phrase appears as a meaningful unit
-          const deviceName = d.name.toLowerCase();
-          
-          // Try direct substring match first
-          if (deviceName.includes(lowerCaseSearchTerm) || deviceName.includes(singularSearchTerm)) {
-            console.log(`[findControllableDevices] Device "${d.name}" matches multi-word phrase as substring`);
-            return true;
-          }
-          
-          // Only if no substring match, try individual word matching
-          // But require that the LAST word (usually the device type) matches
-          const lastSearchWord = searchWords[searchWords.length - 1];
-          const lastSearchWordSingular = pluralize.singular(lastSearchWord);
-          
-          const lastWordMatches = deviceWords.some((deviceWord: string) => {
-            const deviceWordSingular = pluralize.singular(deviceWord);
-            return deviceWord === lastSearchWord ||
-                   deviceWord === lastSearchWordSingular ||
-                   deviceWordSingular === lastSearchWord ||
-                   deviceWordSingular === lastSearchWordSingular;
-          });
-          
-          if (lastWordMatches) {
-            // Also check that other search words are present
-            const otherSearchWords = searchWords.slice(0, -1);
-            const otherWordsMatch = otherSearchWords.every((searchWord: string) => {
-              const searchWordSingular = pluralize.singular(searchWord);
-              return deviceWords.some((deviceWord: string) => {
-                const deviceWordSingular = pluralize.singular(deviceWord);
-                return deviceWord === searchWord ||
-                       deviceWord === searchWordSingular ||
-                       deviceWordSingular === searchWord ||
-                       deviceWordSingular === searchWordSingular;
-              });
-            });
-            
-            if (otherWordsMatch) {
-              console.log(`[findControllableDevices] Device "${d.name}" matches multi-word with type matching`);
-              return true;
-            }
-          }
-          
-          return false;
-        });
-        
-        if (matches.length > 0) {
-          console.log(`[findControllableDevices] Found ${matches.length} smart word matches`);
-          filteredDevices = matches;
-        } else {
-          // Strategy 3: Partial name match (substring) - both forms
-          matches = devices.filter((d: any) => 
-            d.name && (
-              d.name.toLowerCase().includes(lowerCaseSearchTerm) ||
-              d.name.toLowerCase().includes(singularSearchTerm)
-            )
-          );
-          
-          if (matches.length > 0) {
-            console.log(`[findControllableDevices] Found ${matches.length} partial name matches`);
-            filteredDevices = matches;
-          } else {
-            // Strategy 4: Device type matching
-            matches = devices.filter((d: any) => 
-              d.type && (
-                d.type.toLowerCase() === lowerCaseSearchTerm ||
-                d.type.toLowerCase() === singularSearchTerm ||
-                d.type.toLowerCase().includes(lowerCaseSearchTerm) ||
-                d.type.toLowerCase().includes(singularSearchTerm) ||
-                pluralize.singular(d.type.toLowerCase()) === singularSearchTerm
-              )
-            );
-            
-            if (matches.length > 0) {
-              console.log(`[findControllableDevices] Found ${matches.length} device type matches`);
-              filteredDevices = matches;
-            } else {
-              // Strategy 5: Connector category matching
-              matches = devices.filter((d: any) => 
-                d.connector?.category && (
-                  d.connector.category.toLowerCase() === lowerCaseSearchTerm ||
-                  d.connector.category.toLowerCase().includes(lowerCaseSearchTerm) ||
-                  d.connector.category.toLowerCase().includes(singularSearchTerm)
-                )
-              );
-              
-              if (matches.length > 0) {
-                console.log(`[findControllableDevices] Found ${matches.length} connector category matches`);
-                filteredDevices = matches;
-              } else {
-                console.log(`[findControllableDevices] No matches found for any search strategy`);
-                filteredDevices = []; // No matches found
-              }
-            }
-          }
-        }
+      console.log(`[findControllableDevices] Strategy 1 (Exact match): ${matches.length} matches`);
+      
+      if (matches.length === 0) {
+        // Strategy 2: Partial name match (contains search term)
+        matches = devices.filter((d: any) => 
+          d.name && d.name.toLowerCase().includes(lowerCaseSearchTerm)
+        );
+        console.log(`[findControllableDevices] Strategy 2 (Partial match): ${matches.length} matches`);
       }
       
-      console.log(`[findControllableDevices] Final filtered result: ${filteredDevices.length} devices`);
-  }
+      if (matches.length === 0) {
+        // Strategy 3: Device type match
+        matches = devices.filter((d: any) => 
+          d.type && (
+            d.type.toLowerCase().includes(lowerCaseSearchTerm) ||
+            d.type.toLowerCase().includes(singularSearchTerm)
+          )
+        );
+        console.log(`[findControllableDevices] Strategy 3 (Type match): ${matches.length} matches`);
+      }
+      
+      if (matches.length === 0) {
+        // Strategy 4: Connector category match
+        matches = devices.filter((d: any) => 
+          d.connector?.category && (
+            d.connector.category.toLowerCase().includes(lowerCaseSearchTerm) ||
+            d.connector.category.toLowerCase().includes(singularSearchTerm)
+          )
+        );
+        console.log(`[findControllableDevices] Strategy 4 (Category match): ${matches.length} matches`);
+      }
+      
+      if (matches.length === 0) {
+        // Strategy 5: Type + category combined search (e.g., "yolink switches")
+        const searchWords = lowerCaseSearchTerm.split(/\s+/);
+                 if (searchWords.length > 1) {
+           matches = devices.filter((d: any) => {
+             const deviceText = `${d.name || ''} ${d.type || ''} ${d.connector?.category || ''}`.toLowerCase();
+             return searchWords.every((word: string) => deviceText.includes(word));
+           });
+           console.log(`[findControllableDevices] Strategy 5 (Multi-word match): ${matches.length} matches`);
+         }
+      }
+      
+      filteredDevices = matches;
+    }
+    
+    console.log(`[findControllableDevices] Total filtered devices: ${filteredDevices.length}`);
   
-  // Filter to ONLY controllable devices
+  // Filter for controllable devices and build action buttons
   const controllableDevices: any[] = [];
   const actions: ChatAction[] = [];
-  
-  console.log(`[findControllableDevices] Checking controllability for ${filteredDevices.length} filtered devices`);
   
   try {
     filteredDevices.forEach((device: any, index: number) => {
@@ -935,6 +803,7 @@ async function findControllableDevices(orgDb: any, args: any): Promise<FunctionE
         const canTurnOff = supportedHandler.canHandle(deviceContext, ActionableState.SET_OFF);
       
       console.log(`[findControllableDevices] Device "${device.name}" controllability: canTurnOn=${canTurnOn}, canTurnOff=${canTurnOff}`);
+
         
         if (canTurnOn || canTurnOff) {
           // This device is controllable - add to list
@@ -1003,7 +872,7 @@ async function findControllableDevices(orgDb: any, args: any): Promise<FunctionE
       type: d.type,
       connectorCategory: d.connector?.category,
       status: d.status || 'unknown',
-      area: d.areaId,
+      space: d.spaceId,
       location: d.locationId,
       displayState: d.displayState
     })),
@@ -1014,175 +883,258 @@ async function findControllableDevices(orgDb: any, args: any): Promise<FunctionE
   };
 }
 
-// List areas
-async function listAreas(orgDb: any, args: any): Promise<FunctionExecutionResult> {
-  const { areaFilter } = args;
+// List spaces
+async function listSpaces(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+  const { spaceFilter } = args;
   
-  // Get all areas
-  const areas = await orgDb.areas.findAll();
+  // Get all spaces
+  const spaces = await orgDb.spaces.findAll();
   
   // Apply filters
-  let filteredAreas = areas;
+  let filteredSpaces = spaces;
   
-  if (areaFilter?.names?.length) {
-    const searchNames = areaFilter.names.map((n: string) => n.toLowerCase());
-    filteredAreas = filteredAreas.filter((area: any) => {
-      if (!area.name) return false;
+  if (spaceFilter?.names?.length) {
+    const searchNames = spaceFilter.names.map((n: string) => n.toLowerCase());
+    filteredSpaces = filteredSpaces.filter((space: any) => {
+      if (!space.name) return false;
       
-      const areaName = area.name.toLowerCase();
+      const spaceName = space.name.toLowerCase();
       
-      // Check if any of the search names match this area
+      // Check if any of the search names match this space
       return searchNames.some((searchName: string) => {
         // Strategy 1: Exact match
-        if (areaName === searchName) {
+        if (spaceName === searchName) {
           return true;
         }
         
-        // Strategy 2: Partial match (search term is contained in area name)
-        if (areaName.includes(searchName)) {
+        // Strategy 2: Partial match (search term is contained in space name)
+        if (spaceName.includes(searchName)) {
           return true;
         }
         
-        // Strategy 3: Word-based match (all search words found in area name)
+        // Strategy 3: Word-based match (all search words found in space name)
         const searchWords = searchName.split(/\s+/);
-        const areaWords = areaName.split(/\s+/);
+        const spaceWords = spaceName.split(/\s+/);
         
-                 if (searchWords.length === 1) {
-           // Single word search - check if it matches any area word
-           return areaWords.some((areaWord: string) => areaWord === searchName);
-         } else {
-           // Multi-word search - check if all search words are found in area
-           return searchWords.every((searchWord: string) => 
-             areaWords.some((areaWord: string) => areaWord === searchWord)
-           );
-         }
+        if (searchWords.length === 1) {
+          // Single word search - check if it matches any space word
+          return spaceWords.some((spaceWord: string) => spaceWord === searchName);
+        } else {
+          // Multi-word search - check if all search words are found in space
+          return searchWords.every((searchWord: string) => 
+            spaceWords.some((spaceWord: string) => spaceWord === searchWord)
+          );
+        }
       });
     });
   }
   
-  if (areaFilter?.armedStates?.length) {
-    const stateSet = new Set(areaFilter.armedStates);
-    filteredAreas = filteredAreas.filter((a: any) => 
-      a.armedState && stateSet.has(a.armedState)
+  if (spaceFilter?.locations?.length) {
+    const locationSet = new Set(spaceFilter.locations);
+    filteredSpaces = filteredSpaces.filter((s: any) => 
+      s.locationId && locationSet.has(s.locationId)
     );
   }
   
-  // Generate actions for areas
+  // Return space data (no actions for spaces, they're just physical containers)
+  return {
+    aiData: {
+      totalCount: filteredSpaces.length,
+      spaces: filteredSpaces.map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        locationId: s.locationId,
+        deviceIds: s.deviceIds || []
+      }))
+    }
+  };
+}
+
+// List alarm zones
+async function listAlarmZones(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+  const { zoneFilter } = args;
+  
+  // Get all alarm zones
+  const alarmZones = await orgDb.alarmZones.findAll();
+  
+  // Apply filters
+  let filteredZones = alarmZones;
+  
+  if (zoneFilter?.names?.length) {
+    const searchNames = zoneFilter.names.map((n: string) => n.toLowerCase());
+    filteredZones = filteredZones.filter((zone: any) => {
+      if (!zone.name) return false;
+      
+      const zoneName = zone.name.toLowerCase();
+      
+      // Check if any of the search names match this zone
+      return searchNames.some((searchName: string) => {
+        // Strategy 1: Exact match
+        if (zoneName === searchName) {
+          return true;
+        }
+        
+        // Strategy 2: Partial match (search term is contained in zone name)
+        if (zoneName.includes(searchName)) {
+          return true;
+        }
+        
+        // Strategy 3: Word-based match (all search words found in zone name)
+        const searchWords = searchName.split(/\s+/);
+        const zoneWords = zoneName.split(/\s+/);
+        
+        if (searchWords.length === 1) {
+          // Single word search - check if it matches any zone word
+          return zoneWords.some((zoneWord: string) => zoneWord === searchName);
+        } else {
+          // Multi-word search - check if all search words are found in zone
+          return searchWords.every((searchWord: string) => 
+            zoneWords.some((zoneWord: string) => zoneWord === searchWord)
+          );
+        }
+      });
+    });
+  }
+  
+  if (zoneFilter?.armedStates?.length) {
+    const stateSet = new Set(zoneFilter.armedStates);
+    filteredZones = filteredZones.filter((z: any) => 
+      z.armedState && stateSet.has(z.armedState)
+    );
+  }
+
+  if (zoneFilter?.locations?.length) {
+    const locationSet = new Set(zoneFilter.locations);
+    filteredZones = filteredZones.filter((z: any) => 
+      z.locationId && locationSet.has(z.locationId)
+    );
+  }
+  
+  // Generate actions for alarm zones
   const actions: ChatAction[] = [];
   
   try {
-    filteredAreas.forEach((area: any) => {
-      // Input validation - skip areas with missing required data
-      if (!area?.id || !area?.name) {
-        console.warn('[listAreas] Skipping area with missing required data:', area?.id);
+    filteredZones.forEach((zone: any) => {
+      // Input validation - skip zones with missing required data
+      if (!zone?.id || !zone?.name) {
+        console.warn('[listAlarmZones] Skipping zone with missing required data:', zone?.id);
         return;
       }
 
-      const currentState = area.armedState || ArmedState.DISARMED;
+      const currentState = zone.armedState || ArmedState.DISARMED;
       
       // Only add actions that would change the current state
       const isArmed = currentState === ArmedState.ARMED || 
                    currentState === ArmedState.TRIGGERED;
       
-      // Only add ARM action if area is not already armed (and not triggered)
+      // Only add ARM action if zone is not already armed (and not triggered)
       if (!isArmed) {
         actions.push({
-          id: `area-${area.id}-arm`,
-          type: 'area',
-          label: `Arm ${area.name}`,
+          id: `alarm-zone-${zone.id}-arm`,
+          type: 'alarm-zone',
+          label: `Arm ${zone.name}`,
           icon: 'ShieldCheck',
           metadata: {
-            areaId: area.id,
-            areaName: area.name,
+            alarmZoneId: zone.id,
+            alarmZoneName: zone.name,
             targetState: ArmedState.ARMED,
             currentState: currentState
-          } as AreaActionMetadata
+          } as AlarmZoneActionMetadata
         });
       }
       
-      // Only add DISARM action if area is not already disarmed
+      // Only add DISARM action if zone is not already disarmed
       if (currentState !== ArmedState.DISARMED) {
         actions.push({
-          id: `area-${area.id}-disarm`,
-          type: 'area',
-          label: `Disarm ${area.name}`,
+          id: `alarm-zone-${zone.id}-disarm`,
+          type: 'alarm-zone',
+          label: `Disarm ${zone.name}`,
           icon: 'ShieldOff',
           metadata: {
-            areaId: area.id,
-            areaName: area.name,
+            alarmZoneId: zone.id,
+            alarmZoneName: zone.name,
             targetState: ArmedState.DISARMED,
             currentState: currentState
-          } as AreaActionMetadata
+          } as AlarmZoneActionMetadata
         });
       }
     });
   } catch (error) {
-    console.error('[listAreas] Error generating area actions:', error);
+    console.error('[listAlarmZones] Error generating zone actions:', error);
     // Continue execution - don't let action generation errors break the whole response
   }
   
-  // Return area status with actions
+  // Return alarm zone status with actions
   return {
     aiData: {
-    totalCount: filteredAreas.length,
-    areas: filteredAreas.map((a: any) => ({
-      id: a.id,
-      name: a.name,
-      armedState: a.armedState || ArmedState.DISARMED,
-      location: a.locationId
+      totalCount: filteredZones.length,
+      alarmZones: filteredZones.map((z: any) => ({
+        id: z.id,
+        name: z.name,
+        armedState: z.armedState || ArmedState.DISARMED,
+        locationId: z.locationId,
+        description: z.description,
+        triggerBehavior: z.triggerBehavior
       }))
     },
     uiData: {
-    actions: actions.length > 0 ? actions : undefined
+      actions: actions.length > 0 ? actions : undefined
     }
   };
 }
 
 // Get system overview
 async function getSystemOverview(orgDb: any): Promise<FunctionExecutionResult> {
-  const [devices, areas, locations] = await Promise.all([
+  const [devices, locations, spaces, alarmZones] = await Promise.all([
     orgDb.devices.findAll(),
-    orgDb.areas.findAll(),
-    orgDb.locations.findAll()
+    orgDb.locations.findAll(),
+    orgDb.spaces.findAll(),
+    orgDb.alarmZones.findAll()
   ]);
   
-  // Count armed states
-  const armedStateCounts = new Map<string, number>();
-  areas.forEach((a: any) => {
-    const state = a.armedState || ArmedState.DISARMED;
-    armedStateCounts.set(state, (armedStateCounts.get(state) || 0) + 1);
+  // Count device states
+  const deviceStateCounts = new Map<string, number>();
+  devices.forEach((d: any) => {
+    const currentState = d.displayState as DisplayState | undefined;
+    if (currentState === ON) {
+      deviceStateCounts.set('ON', (deviceStateCounts.get('ON') || 0) + 1);
+    } else {
+      deviceStateCounts.set('OFF', (deviceStateCounts.get('OFF') || 0) + 1);
+    }
+  });
+  
+  // Count alarm zone states
+  const alarmZoneStateCounts = new Map<string, number>();
+  alarmZones.forEach((z: any) => {
+    const state = z.armedState || ArmedState.DISARMED;
+    alarmZoneStateCounts.set(state, (alarmZoneStateCounts.get(state) || 0) + 1);
   });
   
   // Generate quick actions for system overview
   const actions: ChatAction[] = [];
   
-  // Note: Removed broken "arm all"/"disarm all" actions as they require 
-  // individual API calls per area. This will be implemented properly in 
-  // a future phase with batch operations.
-  
   return {
     aiData: {
-    deviceCount: devices.length,
-    areaCount: areas.length,
-    locationCount: locations.length,
-      armedStates: Array.from(armedStateCounts.entries()).map(([state, count]) => ({ state, count }))
+      deviceCount: devices.length,
+      locationCount: locations.length,
+      spaceCount: spaces.length,
+      alarmZoneCount: alarmZones.length,
+      armedStates: [
+        ...Array.from(deviceStateCounts.entries()).map(([state, count]) => ({ state: `Devices ${state}`, count })),
+        ...Array.from(alarmZoneStateCounts.entries()).map(([state, count]) => ({ state: `Zones ${state}`, count }))
+      ]
     },
     uiData: {
-    actions: actions.length > 0 ? actions : undefined
+      actions: actions.length > 0 ? actions : undefined
     }
   };
 }
 
-// Dedicated bulk operation functions for consistent bulk actions
-
-// Generic bulk operation helper to reduce code duplication
 interface BulkOperationConfig {
-  entityType: 'areas' | 'devices';
-  actionType: 'arm' | 'disarm' | 'turn_on' | 'turn_off';
-  actionLabel: string;
-  icon: string;
-  targetState?: ArmedState | ActionableState;
-  requiresControllabilityCheck?: boolean;
+  entityType: 'devices' | 'alarmZones';
+  actionType: string;
+  actionState?: ActionableState | ArmedState;
 }
 
 async function createBulkOperation(
@@ -1190,8 +1142,8 @@ async function createBulkOperation(
   args: any, 
   config: BulkOperationConfig
 ): Promise<FunctionExecutionResult> {
-  const { areaFilter, deviceFilter } = args;
-  const filter = config.entityType === 'areas' ? (areaFilter || {}) : (deviceFilter || {});
+  const { deviceFilter } = args;
+  const filter = deviceFilter || {};
   
   try {
     // Get all entities
@@ -1225,90 +1177,67 @@ async function createBulkOperation(
     const validEntities: any[] = [];
     const actions: ChatAction[] = [];
     
-    if (config.entityType === 'devices' && config.requiresControllabilityCheck) {
-      entities.forEach((device: any) => {
-        if (!device?.id || !device?.name || !device?.connector?.category) {
+    entities.forEach((entity: any) => {
+      if (config.entityType === 'devices') {
+        // Check if device is controllable
+        if (!entity?.id || !entity?.name || !entity?.connector?.category) {
           return;
         }
-
+        
         const supportedHandler = actionHandlers.find(handler => 
-          handler.category === device.connector.category
+          handler.category === entity.connector.category
         );
         
-        if (supportedHandler) {
-          const deviceContext = {
-            id: device.id,
-            deviceId: device.deviceId,
-            type: device.type,
-            connectorId: device.connectorId,
-            rawDeviceData: device.rawDeviceData
-          };
-          
-          const canPerformAction = supportedHandler.canHandle(deviceContext, config.targetState as ActionableState);
-          
-          if (canPerformAction) {
-            validEntities.push(device);
-            
-            actions.push({
-              id: `device-${device.id}-${config.actionType}`,
-              type: 'device' as const,
-              label: `${config.actionLabel} ${device.name}`,
-              icon: config.icon,
-              metadata: {
-                internalDeviceId: device.id,
-                deviceName: device.name,
-                action: config.targetState as ActionableState,
-                currentState: device.displayState,
-                connectorCategory: device.connector.category,
-                deviceType: device.type
-              } as DeviceActionMetadata
-            });
-          }
+        if (!supportedHandler) {
+          return;
         }
-      });
-    } else {
-      // For areas or non-controllability-checked entities
-      validEntities.push(...entities);
-      
-      entities.forEach((entity: any) => {
-        if (config.entityType === 'areas') {
-          actions.push({
-            id: `area-${entity.id}-${config.actionType}`,
-            type: 'area' as const,
-            label: `${config.actionLabel} ${entity.name}`,
-            icon: config.icon,
-            metadata: {
-              areaId: entity.id,
-              areaName: entity.name,
-              targetState: config.targetState as ArmedState,
-              currentState: entity.armedState || ArmedState.DISARMED
-            } as AreaActionMetadata
-          });
+        
+        const deviceContext = {
+          id: entity.id,
+          deviceId: entity.deviceId,
+          type: entity.type,
+          connectorId: entity.connectorId,
+          rawDeviceData: entity.rawDeviceData
+        };
+        
+        const canPerformAction = supportedHandler.canHandle(deviceContext, config.actionState as ActionableState);
+        
+        if (!canPerformAction) {
+          return;
         }
-      });
-    }
+        
+        validEntities.push(entity);
+        
+        // Create action for this device
+        actions.push({
+          id: `device-${entity.id}-${config.actionType.replace('_', '-')}`,
+          type: 'device',
+          label: `${config.actionType === 'turn_on' ? 'Turn On' : 'Turn Off'} ${entity.name}`,
+          icon: config.actionType === 'turn_on' ? 'Power' : 'PowerOff',
+          metadata: {
+            internalDeviceId: entity.id,
+            deviceName: entity.name,
+            action: config.actionState as ActionableState,
+            currentState: entity.displayState,
+            connectorCategory: entity.connector.category,
+            deviceType: entity.type
+          } as DeviceActionMetadata
+        });
+      }
+    });
     
     // Build response data
     const entityData = validEntities.map((e: any) => {
-      if (config.entityType === 'areas') {
-        return {
-          id: e.id,
-          name: e.name,
-          armedState: e.armedState || ArmedState.DISARMED,
-          location: e.locationId
-        };
-      } else {
-        return {
-          id: e.id,
-          name: e.name,
-          type: e.type,
-          connectorCategory: e.connector?.category,
-          status: e.status || 'unknown',
-          area: e.areaId,
-          location: e.locationId,
-          displayState: e.displayState
-        };
-      }
+      return {
+        id: e.id,
+        name: e.name,
+        type: e.type,
+        connectorCategory: e.connector?.category,
+        status: e.displayState || 'unknown',
+        space: e.spaceId,
+        location: e.locationId,
+        displayState: e.displayState
+      };
     });
     
     return {
@@ -1332,210 +1261,306 @@ async function createBulkOperation(
   }
 }
 
-// Simplified bulk operation functions using the helper
-async function armAllAreas(orgDb: any, args: any): Promise<FunctionExecutionResult> {
-  return createBulkOperation(orgDb, args, {
-    entityType: 'areas',
-    actionType: 'arm',
-    actionLabel: 'Arm',
-    icon: 'ShieldCheck',
-    targetState: ArmedState.ARMED
-  });
-}
-
-async function disarmAllAreas(orgDb: any, args: any): Promise<FunctionExecutionResult> {
-  return createBulkOperation(orgDb, args, {
-    entityType: 'areas',
-    actionType: 'disarm',
-    actionLabel: 'Disarm',
-    icon: 'ShieldOff',
-    targetState: ArmedState.DISARMED
-  });
-}
-
-async function turnOnAllDevices(orgDb: any, args: any): Promise<FunctionExecutionResult> {
-  return createBulkOperation(orgDb, args, {
-    entityType: 'devices',
-    actionType: 'turn_on',
-    actionLabel: 'Turn On',
-    icon: 'Power',
-    targetState: ActionableState.SET_ON,
-    requiresControllabilityCheck: true
-  });
-}
-
-async function turnOffAllDevices(orgDb: any, args: any): Promise<FunctionExecutionResult> {
-  return createBulkOperation(orgDb, args, {
-    entityType: 'devices',
-    actionType: 'turn_off',
-    actionLabel: 'Turn Off',
-    icon: 'PowerOff',
-    targetState: ActionableState.SET_OFF,
-    requiresControllabilityCheck: true
-  });
-}
-
-// Individual action functions for specific areas/devices
-
-async function armArea(orgDb: any, args: any): Promise<FunctionExecutionResult> {
-  const { areaName } = args;
-  
-  try {
-    // Get all areas
-    const areas = await orgDb.areas.findAll();
+  // Simplified bulk operation functions using the helper
+  async function armAllAlarmZones(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+    const { zoneFilter } = args;
     
-    // Find the specific area by name (case-insensitive)
-    const targetArea = areas.find((area: any) => 
-      area.name && area.name.toLowerCase() === areaName.toLowerCase()
-    );
-    
-    if (!targetArea) {
-      return {
-        aiData: {
-          error: `Area '${areaName}' not found`,
-          areaName,
-          totalCount: 0
+    try {
+      // Get all alarm zones
+      const alarmZones = await orgDb.alarmZones.findAll();
+      
+      // Apply filters
+      let filteredZones = alarmZones;
+      
+      if (zoneFilter?.locations?.length) {
+        const locationSet = new Set(zoneFilter.locations);
+        filteredZones = filteredZones.filter((z: any) => z.locationId && locationSet.has(z.locationId));
+      }
+      
+      if (zoneFilter?.excludeNames?.length) {
+        const excludeSet = new Set(zoneFilter.excludeNames.map((n: string) => n.toLowerCase()));
+        filteredZones = filteredZones.filter((z: any) => !z.name || !excludeSet.has(z.name.toLowerCase()));
+      }
+      
+      const actions: ChatAction[] = [];
+      
+      filteredZones.forEach((zone: any) => {
+        const currentState = zone.armedState || ArmedState.DISARMED;
+        const isArmed = currentState === ArmedState.ARMED || currentState === ArmedState.TRIGGERED;
+        
+        // Only add ARM action if zone is not already armed
+        if (!isArmed) {
+          actions.push({
+            id: `alarm-zone-${zone.id}-arm`,
+            type: 'alarm-zone',
+            label: `Arm ${zone.name}`,
+            icon: 'ShieldCheck',
+            metadata: {
+              alarmZoneId: zone.id,
+              alarmZoneName: zone.name,
+              targetState: ArmedState.ARMED,
+              currentState: currentState
+            } as AlarmZoneActionMetadata
+          });
         }
-      };
-    }
-    
-    const currentState = targetArea.armedState || ArmedState.DISARMED;
-    const actions: ChatAction[] = [];
-    
-    // Only add ARM action if area is not already armed
-    const isArmed = currentState === ArmedState.ARMED || 
-                   currentState === ArmedState.TRIGGERED;
-    
-    if (!isArmed) {
-      actions.push({
-        id: `area-${targetArea.id}-arm`,
-        type: 'area',
-        label: `Arm ${targetArea.name}`,
-        icon: 'ShieldCheck',
-        metadata: {
-          areaId: targetArea.id,
-          areaName: targetArea.name,
-          targetState: ArmedState.ARMED,
-          currentState: currentState
-        } as AreaActionMetadata
       });
-    }
-    
-    return {
-      aiData: {
-        areaName: targetArea.name,
-        currentState,
-        totalCount: 1,
-        canPerformAction: !isArmed,
-        actionReason: isArmed ? `${targetArea.name} is already armed (${currentState})` : undefined,
-        areas: [{
-          id: targetArea.id,
-          name: targetArea.name,
-          armedState: currentState,
-          location: targetArea.locationId
-        }]
-      },
-      uiData: {
-        actions: actions.length > 0 ? actions : undefined
-      }
-    };
-  } catch (error) {
-    console.error('[armArea] Error:', error);
-    return {
-      aiData: {
-        error: error instanceof Error ? error.message : 'Failed to arm area',
-        areaName,
-        totalCount: 0
-      }
-    };
-  }
-}
-
-async function disarmArea(orgDb: any, args: any): Promise<FunctionExecutionResult> {
-  const { areaName } = args;
-  
-  console.log(`[disarmArea] Called with areaName: "${areaName}"`);
-  
-  try {
-    // Get all areas
-    const areas = await orgDb.areas.findAll();
-    console.log(`[disarmArea] Found ${areas.length} total areas:`, areas.map((a: any) => `"${a.name}" (${a.armedState})`));
-    
-    // Find the specific area by name (case-insensitive)
-    const targetArea = areas.find((area: any) => 
-      area.name && area.name.toLowerCase() === areaName.toLowerCase()
-    );
-    
-    console.log(`[disarmArea] Target area lookup result:`, targetArea ? `Found "${targetArea.name}" with state: ${targetArea.armedState}` : 'NOT FOUND');
-    
-    if (!targetArea) {
+      
       return {
         aiData: {
-          error: `Area '${areaName}' not found`,
-          areaName,
+          totalCount: filteredZones.length,
+          summary: `Found ${filteredZones.length} alarm zones available for arming`,
+          alarmZones: filteredZones.map((z: any) => ({
+            id: z.id,
+            name: z.name,
+            armedState: z.armedState || ArmedState.DISARMED,
+            locationId: z.locationId
+          }))
+        },
+        uiData: {
+          actions
+        }
+      };
+    } catch (error) {
+      console.error('[armAllAlarmZones] Error:', error);
+      return {
+        aiData: {
+          error: error instanceof Error ? error.message : 'Failed to prepare bulk arm operation',
           totalCount: 0
         }
       };
     }
-    
-    const currentState = targetArea.armedState || ArmedState.DISARMED;
-    const actions: ChatAction[] = [];
-    
-    console.log(`[disarmArea] Current state: "${currentState}", DISARMED constant: "${ArmedState.DISARMED}"`);
-    console.log(`[disarmArea] Should create action: ${currentState !== ArmedState.DISARMED}`);
-    
-    // Only add DISARM action if area is not already disarmed
-    if (currentState !== ArmedState.DISARMED) {
-      const action: ChatAction = {
-        id: `area-${targetArea.id}-disarm`,
-        type: 'area',
-        label: `Disarm ${targetArea.name}`,
-        icon: 'ShieldOff',
-        metadata: {
-          areaId: targetArea.id,
-          areaName: targetArea.name,
-          targetState: ArmedState.DISARMED,
-          currentState: currentState
-        } as AreaActionMetadata
-      };
-      actions.push(action);
-      console.log(`[disarmArea] Created action:`, action);
-    } else {
-      console.log(`[disarmArea] No action created - area already disarmed`);
-    }
-    
-    const result = {
-      aiData: {
-        areaName: targetArea.name,
-        currentState,
-        totalCount: 1,
-        canPerformAction: currentState !== ArmedState.DISARMED,
-        actionReason: currentState === ArmedState.DISARMED ? `${targetArea.name} is already disarmed` : undefined,
-        areas: [{
-          id: targetArea.id,
-          name: targetArea.name,
-          armedState: currentState,
-          location: targetArea.locationId
-        }]
-      },
-      uiData: {
-        actions: actions.length > 0 ? actions : undefined
-      }
-    };
-    
-    console.log(`[disarmArea] Final result:`, JSON.stringify(result, null, 2));
-    return result;
-  } catch (error) {
-    console.error('[disarmArea] Error:', error);
-    return {
-      aiData: {
-        error: error instanceof Error ? error.message : 'Failed to disarm area',
-        areaName,
-        totalCount: 0
-      }
-    };
   }
-}
+
+  async function disarmAllAlarmZones(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+    const { zoneFilter } = args;
+    
+    try {
+      // Get all alarm zones
+      const alarmZones = await orgDb.alarmZones.findAll();
+      
+      // Apply filters
+      let filteredZones = alarmZones;
+      
+      if (zoneFilter?.locations?.length) {
+        const locationSet = new Set(zoneFilter.locations);
+        filteredZones = filteredZones.filter((z: any) => z.locationId && locationSet.has(z.locationId));
+      }
+      
+      if (zoneFilter?.excludeNames?.length) {
+        const excludeSet = new Set(zoneFilter.excludeNames.map((n: string) => n.toLowerCase()));
+        filteredZones = filteredZones.filter((z: any) => !z.name || !excludeSet.has(z.name.toLowerCase()));
+      }
+      
+      const actions: ChatAction[] = [];
+      
+      filteredZones.forEach((zone: any) => {
+        const currentState = zone.armedState || ArmedState.DISARMED;
+        
+        // Only add DISARM action if zone is not already disarmed
+        if (currentState !== ArmedState.DISARMED) {
+          actions.push({
+            id: `alarm-zone-${zone.id}-disarm`,
+            type: 'alarm-zone',
+            label: `Disarm ${zone.name}`,
+            icon: 'ShieldOff',
+            metadata: {
+              alarmZoneId: zone.id,
+              alarmZoneName: zone.name,
+              targetState: ArmedState.DISARMED,
+              currentState: currentState
+            } as AlarmZoneActionMetadata
+          });
+        }
+      });
+      
+      return {
+        aiData: {
+          totalCount: filteredZones.length,
+          summary: `Found ${filteredZones.length} alarm zones available for disarming`,
+          alarmZones: filteredZones.map((z: any) => ({
+            id: z.id,
+            name: z.name,
+            armedState: z.armedState || ArmedState.DISARMED,
+            locationId: z.locationId
+          }))
+        },
+        uiData: {
+          actions
+        }
+      };
+    } catch (error) {
+      console.error('[disarmAllAlarmZones] Error:', error);
+      return {
+        aiData: {
+          error: error instanceof Error ? error.message : 'Failed to prepare bulk disarm operation',
+          totalCount: 0
+        }
+      };
+    }
+  }
+
+  async function turnOnAllDevices(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+    return createBulkOperation(orgDb, args, {
+      entityType: 'devices',
+      actionType: 'turn_on',
+      actionState: ActionableState.SET_ON
+    });
+  }
+
+  async function turnOffAllDevices(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+    return createBulkOperation(orgDb, args, {
+      entityType: 'devices',
+      actionType: 'turn_off',
+      actionState: ActionableState.SET_OFF
+    });
+  }
+
+  // Individual action functions for specific alarm zones/devices
+
+  async function armAlarmZone(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+    const { zoneName } = args;
+    
+    try {
+      // Get all alarm zones
+      const alarmZones = await orgDb.alarmZones.findAll();
+      
+      // Find the specific zone by name (case-insensitive)
+      const targetZone = alarmZones.find((zone: any) => 
+        zone.name && zone.name.toLowerCase() === zoneName.toLowerCase()
+      );
+      
+      if (!targetZone) {
+        return {
+          aiData: {
+            error: `Alarm zone '${zoneName}' not found`,
+            zoneName,
+            totalCount: 0
+          }
+        };
+      }
+      
+      const currentState = targetZone.armedState || ArmedState.DISARMED;
+      const actions: ChatAction[] = [];
+      
+      // Only add ARM action if zone is not already armed
+      const isArmed = currentState === ArmedState.ARMED || 
+                     currentState === ArmedState.TRIGGERED;
+      
+      if (!isArmed) {
+        actions.push({
+          id: `alarm-zone-${targetZone.id}-arm`,
+          type: 'alarm-zone',
+          label: `Arm ${targetZone.name}`,
+          icon: 'ShieldCheck',
+          metadata: {
+            alarmZoneId: targetZone.id,
+            alarmZoneName: targetZone.name,
+            targetState: ArmedState.ARMED,
+            currentState: currentState
+          } as AlarmZoneActionMetadata
+        });
+      }
+      
+      return {
+        aiData: {
+          zoneName: targetZone.name,
+          currentState,
+          totalCount: 1,
+          canPerformAction: !isArmed,
+          actionReason: isArmed ? `${targetZone.name} is already armed or triggered` : undefined,
+          alarmZones: [{
+            id: targetZone.id,
+            name: targetZone.name,
+            armedState: currentState,
+            locationId: targetZone.locationId
+          }]
+        },
+        uiData: {
+          actions: actions.length > 0 ? actions : undefined
+        }
+      };
+    } catch (error) {
+      console.error('[armAlarmZone] Error:', error);
+      return {
+        aiData: {
+          error: error instanceof Error ? error.message : 'Failed to arm alarm zone',
+          zoneName,
+          totalCount: 0
+        }
+      };
+    }
+  }
+
+  async function disarmAlarmZone(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+    const { zoneName } = args;
+    
+    try {
+      // Get all alarm zones
+      const alarmZones = await orgDb.alarmZones.findAll();
+      
+      // Find the specific zone by name (case-insensitive)
+      const targetZone = alarmZones.find((zone: any) => 
+        zone.name && zone.name.toLowerCase() === zoneName.toLowerCase()
+      );
+      
+      if (!targetZone) {
+        return {
+          aiData: {
+            error: `Alarm zone '${zoneName}' not found`,
+            zoneName,
+            totalCount: 0
+          }
+        };
+      }
+      
+      const currentState = targetZone.armedState || ArmedState.DISARMED;
+      const actions: ChatAction[] = [];
+      
+      // Only add DISARM action if zone is not already disarmed
+      if (currentState !== ArmedState.DISARMED) {
+        actions.push({
+          id: `alarm-zone-${targetZone.id}-disarm`,
+          type: 'alarm-zone',
+          label: `Disarm ${targetZone.name}`,
+          icon: 'ShieldOff',
+          metadata: {
+            alarmZoneId: targetZone.id,
+            alarmZoneName: targetZone.name,
+            targetState: ArmedState.DISARMED,
+            currentState: currentState
+          } as AlarmZoneActionMetadata
+        });
+      }
+      
+      return {
+        aiData: {
+          zoneName: targetZone.name,
+          currentState,
+          totalCount: 1,
+          canPerformAction: currentState !== ArmedState.DISARMED,
+          actionReason: currentState === ArmedState.DISARMED ? `${targetZone.name} is already disarmed` : undefined,
+          alarmZones: [{
+            id: targetZone.id,
+            name: targetZone.name,
+            armedState: currentState,
+            locationId: targetZone.locationId
+          }]
+        },
+        uiData: {
+          actions: actions.length > 0 ? actions : undefined
+        }
+      };
+    } catch (error) {
+      console.error('[disarmAlarmZone] Error:', error);
+      return {
+        aiData: {
+          error: error instanceof Error ? error.message : 'Failed to disarm alarm zone',
+          zoneName,
+          totalCount: 0
+        }
+      };
+    }
+  }
 
 async function turnOnDevice(orgDb: any, args: any): Promise<FunctionExecutionResult> {
   const { deviceName } = args;
@@ -1628,7 +1653,7 @@ async function turnOnDevice(orgDb: any, args: any): Promise<FunctionExecutionRes
     return {
       aiData: {
         deviceName: targetDevice.name,
-        currentState,
+        currentState: currentState || 'unknown',
         totalCount: 1,
         canPerformAction: currentState !== ON,
         actionReason: currentState === ON ? `${targetDevice.name} is already on` : undefined,
@@ -1636,11 +1661,11 @@ async function turnOnDevice(orgDb: any, args: any): Promise<FunctionExecutionRes
           id: targetDevice.id,
           name: targetDevice.name,
           type: targetDevice.type,
-          connectorCategory: targetDevice.connector.category,
           status: targetDevice.status || 'unknown',
-          area: targetDevice.areaId,
-          location: targetDevice.locationId,
-          displayState: currentState
+          displayState: currentState,
+          connectorCategory: targetDevice.connector.category,
+          space: targetDevice.spaceId,
+          location: targetDevice.locationId
         }]
       },
       uiData: {
@@ -1750,7 +1775,7 @@ async function turnOffDevice(orgDb: any, args: any): Promise<FunctionExecutionRe
     return {
       aiData: {
         deviceName: targetDevice.name,
-        currentState,
+        currentState: currentState || 'unknown',
         totalCount: 1,
         canPerformAction: currentState !== OFF,
         actionReason: currentState === OFF ? `${targetDevice.name} is already off` : undefined,
@@ -1758,11 +1783,11 @@ async function turnOffDevice(orgDb: any, args: any): Promise<FunctionExecutionRe
           id: targetDevice.id,
           name: targetDevice.name,
           type: targetDevice.type,
-          connectorCategory: targetDevice.connector.category,
           status: targetDevice.status || 'unknown',
-          area: targetDevice.areaId,
-          location: targetDevice.locationId,
-          displayState: currentState
+          displayState: currentState,
+          connectorCategory: targetDevice.connector.category,
+          space: targetDevice.spaceId,
+          location: targetDevice.locationId
         }]
       },
       uiData: {
@@ -1781,43 +1806,101 @@ async function turnOffDevice(orgDb: any, args: any): Promise<FunctionExecutionRe
   }
 }
 
-// Get API documentation information
 async function getApiDocumentation(args: any): Promise<FunctionExecutionResult> {
-  const { requestType = "overview" } = args;
+  const { requestType = 'overview' } = args;
   
   try {
+    // Get base URL for the current environment
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '';
+    
     let documentation: any = {};
     
-    // Try to fetch the OpenAPI spec for detailed endpoint information
-    if (requestType === "endpoints") {
-      try {
-        const response = await fetch('/api/docs/spec');
-        if (response.ok) {
-          const spec = await response.json();
-          
-          // Extract endpoint information from OpenAPI spec
-          const endpoints = Object.entries(spec.paths || {}).map(([path, methods]: [string, any]) => {
-            const endpointMethods = Object.keys(methods).filter(method => 
-              ['get', 'post', 'put', 'delete', 'patch'].includes(method.toLowerCase())
-            );
-            
-            return {
-              path,
-              methods: endpointMethods,
-              summary: methods[endpointMethods[0]]?.summary || 'No description available'
-            };
-          });
-          
-          documentation.endpoints = endpoints;
-          documentation.totalEndpoints = endpoints.length;
-        }
-      } catch (error) {
-        console.warn('Could not fetch OpenAPI spec:', error);
-      }
+    switch (requestType) {
+      case 'overview':
+        documentation = {
+          title: "Fusion API Documentation",
+          description: "Comprehensive REST API for managing devices, spaces, alarm zones, events, and automations",
+          version: "1.0",
+          features: [
+            "Device management and control",
+            "Space and alarm zone management",
+            "Event querying and filtering", 
+            "Automation management",
+            "User and organization management",
+            "Real-time event streaming"
+          ]
+        };
+        break;
+        
+      case 'endpoints':
+        documentation = {
+          categories: [
+            {
+              name: "Devices",
+              endpoints: [
+                "GET /api/devices - List all devices",
+                "GET /api/devices/{id} - Get device details",
+                "POST /api/devices/{id}/state - Control device state"
+              ]
+            },
+            {
+              name: "Spaces",
+              endpoints: [
+                "GET /api/spaces - List all spaces",
+                "POST /api/spaces - Create new space",
+                "GET/PUT/DELETE /api/spaces/{id} - Manage specific space"
+              ]
+            },
+            {
+              name: "Alarm Zones", 
+              endpoints: [
+                "GET /api/alarm-zones - List all alarm zones",
+                "POST /api/alarm-zones - Create new zone",
+                "PUT /api/alarm-zones/{id}/arm-state - Arm/disarm zone"
+              ]
+            },
+            {
+              name: "Events",
+              endpoints: [
+                "GET /api/events - Query events with filters",
+                "GET /api/events/dashboard - Get dashboard events",
+                "GET /api/events/stream - Real-time event stream"
+              ]
+            }
+          ]
+        };
+        break;
+        
+      case 'authentication':
+        documentation = {
+          type: "API Key",
+          description: "All API requests require authentication using API keys",
+          headerName: "x-api-key",
+          headerFormat: "YOUR_API_KEY",
+          keyManagement: "API keys can be managed in Account Settings → Organization tab"
+        };
+        break;
+        
+      case 'examples':
+        documentation = {
+          listDevices: {
+            method: "GET",
+            endpoint: "/api/devices",
+            description: "Get all devices for your organization"
+          },
+          listEvents: {
+            method: "GET", 
+            endpoint: "/api/events?limit=50",
+            description: "Get recent events with optional filters"
+          },
+          armZone: {
+            method: "PUT",
+            endpoint: "/api/alarm-zones/{id}/arm-state",
+            description: "Arm a specific alarm zone"
+          }
+        };
+        break;
     }
-    
-    // Base documentation information
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
     
     documentation = {
       ...documentation,
@@ -1826,11 +1909,11 @@ async function getApiDocumentation(args: any): Promise<FunctionExecutionResult> 
       baseApiUrl: `${baseUrl}/api`,
       overview: {
         title: "Fusion API Documentation",
-        description: "Comprehensive REST API for managing security devices, areas, events, and automations",
+        description: "Comprehensive REST API for managing devices, spaces, alarm zones, events, and automations",
         version: "1.0",
         features: [
           "Device management and control",
-          "Area arming/disarming",
+          "Space and alarm zone management",
           "Event querying and filtering", 
           "Automation management",
           "User and organization management",
@@ -1855,10 +1938,10 @@ async function getApiDocumentation(args: any): Promise<FunctionExecutionResult> 
           endpoint: "/api/events?limit=50",
           description: "Get recent events with optional filters"
         },
-        armArea: {
+        armZone: {
           method: "PUT",
-          endpoint: "/api/areas/{id}/arm",
-          description: "Arm a specific area"
+          endpoint: "/api/alarm-zones/{id}/arm-state",
+          description: "Arm a specific alarm zone"
         }
       },
       gettingStarted: [
@@ -1869,57 +1952,17 @@ async function getApiDocumentation(args: any): Promise<FunctionExecutionResult> 
       ]
     };
     
-    // Create chat actions for easy access to documentation
-    const actions: ChatAction[] = [
-      {
-        id: 'open-api-docs',
-        type: 'device', // Using 'device' type as it's the most generic for external actions
-        label: 'Open API Documentation',
-        icon: 'BookOpen',
-        metadata: {
-          internalDeviceId: 'api-docs',
-          deviceName: 'API Documentation',
-          action: 'open_external_link',
-          externalUrl: `${baseUrl}/api/docs/reference`,
-          connectorCategory: 'system',
-          deviceType: 'documentation'
-        } as DeviceActionMetadata
-      }
-    ];
-
-    // Add API key management action if user is asking about authentication
-    if (requestType === 'authentication' || requestType === 'overview') {
-      actions.push({
-        id: 'manage-api-keys',
-        type: 'device',
-        label: 'Manage API Keys',
-        icon: 'Key',
-        metadata: {
-          internalDeviceId: 'api-keys',
-          deviceName: 'API Key Management',
-          action: 'navigate_to_account_settings',
-          accountSettingsTab: 'organization',
-          connectorCategory: 'system',
-          deviceType: 'settings'
-        } as DeviceActionMetadata
-      });
-    }
-
     return {
       aiData: {
-        summary: `API documentation information (${requestType})`,
+        summary: `API documentation for ${requestType} retrieved successfully`,
         ...documentation
-      },
-      uiData: {
-        actions
       }
     };
   } catch (error) {
     console.error('[getApiDocumentation] Error:', error);
     return {
       aiData: {
-        error: error instanceof Error ? error.message : 'Failed to get API documentation',
-        summary: `Failed to retrieve API documentation (${requestType})`
+        error: error instanceof Error ? error.message : 'Failed to get API documentation'
       }
     };
   }

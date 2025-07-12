@@ -123,7 +123,8 @@ The database schema (`src/data/db/schema.ts`) includes:
 -   `events` table for storing raw incoming events (e.g., from YoLink).
 -   `devices` table for storing discovered devices from connectors.
 -   `pikoServers` table for Piko-specific server info.
--   `cameraAssociations` for linking devices (e.g., YoLink sensor to Piko camera).
+-   `spaces` and `spaceDevices` for grouping devices by physical proximity.
+-   `alarmZones` and `alarmZoneDevices` for alarm zone management and device assignments.
 -   `automations` table for storing user-defined automation rules, linking source/target nodes and configuration.
 
 ## Database Migrations

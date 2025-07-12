@@ -99,13 +99,18 @@ interface TargetDevice {
   iconName: string;
 }
 
-// --- NEW: Add Location and Area types ---
+// --- NEW: Add Location, Space, and Alarm Zone types ---
 interface Location {
   id: string;
   name: string;
 }
 
-interface Area {
+interface Space {
+  id: string;
+  name: string;
+}
+
+interface AlarmZone {
   id: string;
   name: string;
 }
@@ -176,7 +181,7 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
     connectors,
     allDevices,
     locations,
-    areas,
+    alarmZones,
   } = useFusionStore();
 
   // Transform allDevices to match TargetDevice interface
@@ -356,7 +361,8 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
               connectors={connectors}
               targetDevices={targetDevices}
               locations={locations}
-              areas={areas}
+              spaces={[]}
+              alarmZones={alarmZones}
               lastRun={lastRuns.get(automation.id)}
               onOpenExecutionDetails={openExecutionDetails}
             />
@@ -380,12 +386,13 @@ interface AutomationCardProps {
   connectors: Connector[];
   targetDevices: TargetDevice[];
   locations: Location[];
-  areas: Area[];
+  spaces: Space[];
+  alarmZones: AlarmZone[];
   lastRun?: AutomationExecutionSummary;
   onOpenExecutionDetails: (execution: AutomationExecutionSummary) => void;
 }
 
-function AutomationCard({ automation, refreshData, connectors, targetDevices, locations, areas, lastRun, onOpenExecutionDetails }: AutomationCardProps) {
+function AutomationCard({ automation, refreshData, connectors, targetDevices, locations, spaces, alarmZones, lastRun, onOpenExecutionDetails }: AutomationCardProps) {
   // Helper function to format time-of-day filter display
   const formatTimeOfDayFilter = (timeOfDayFilter: any) => {
     if (!timeOfDayFilter) return null;
@@ -502,7 +509,7 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
   const safeConnectors = Array.isArray(connectors) ? connectors : [];
   const safeTargetDevices = Array.isArray(targetDevices) ? targetDevices : [];
   const safeLocations = Array.isArray(locations) ? locations : [];
-  const safeAreas = Array.isArray(areas) ? areas : [];
+  const safeAlarmZones = Array.isArray(alarmZones) ? alarmZones : [];
   
   const pikoConnectors = safeConnectors.filter(c => c?.category === 'piko');
   const sortedPikoConnectors = [...pikoConnectors].sort((a, b) => 
@@ -707,7 +714,7 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
                             { 
                               connectors: sortedPikoConnectors, 
                               devices: sortedTargetDevices,
-                              areas: safeAreas,
+                              alarmZones: safeAlarmZones,
                               ruleLocationScope: currentRuleLocationScope
                             }
                           )}
@@ -739,7 +746,7 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
                               { 
                                 connectors: sortedPikoConnectors, 
                                 devices: sortedTargetDevices,
-                                areas: safeAreas,
+                                alarmZones: safeAlarmZones,
                                 ruleLocationScope: currentRuleLocationScope
                               }
                             )}
@@ -763,7 +770,7 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
                                 { 
                                   connectors: sortedPikoConnectors, 
                                   devices: sortedTargetDevices,
-                                  areas: safeAreas,
+                                  alarmZones: safeAlarmZones,
                                   ruleLocationScope: currentRuleLocationScope
                                 }
                               )}

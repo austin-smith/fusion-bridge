@@ -28,4 +28,26 @@ export const AVAILABLE_AUTOMATION_TOKENS: AutomationToken[] = [
     { token: '{{device.name}}', description: 'Name of the triggering device', group: 'Device' },
     { token: '{{device.type}}', description: 'Device type display name', group: 'Device' },
     { token: '{{device.subtype}}', description: 'Device subtype display name', group: 'Device' },
+
+    // --- Space Context Data (Physical Location) ---
+    { token: '{{space.id}}', description: 'Internal ID of the device\'s physical space', group: 'Space' },
+    { token: '{{space.name}}', description: 'Name of the device\'s physical space', group: 'Space' },
+
+    // --- Alarm Zone Context Data (Security Grouping) ---
+    { token: '{{alarmZone.id}}', description: 'Internal ID of the device\'s alarm zone', group: 'Alarm Zone' },
+    { token: '{{alarmZone.name}}', description: 'Name of the device\'s alarm zone', group: 'Alarm Zone' },
+    { token: '{{alarmZone.armedState}}', description: 'Current armed state of the alarm zone (Armed, Disarmed, Triggered)', group: 'Alarm Zone' },
+
+    // --- Location Context Data ---
+    { token: '{{location.id}}', description: 'Internal ID of the location', group: 'Location' },
+    { token: '{{location.name}}', description: 'Name of the location', group: 'Location' },
+
+    // --- Connector Context Data ---
+    { token: '{{connector.id}}', description: 'Internal ID of the connector', group: 'Connector' },
+    { token: '{{connector.name}}', description: 'Name of the connector', group: 'Connector' },
+
+    // --- Schedule Context Data (for scheduled automations) ---
+    { token: '{{schedule.triggeredAtUTC}}', description: 'UTC timestamp when schedule triggered (ISO format)', group: 'Schedule' },
+    { token: '{{schedule.triggeredAtLocal}}', description: 'Local timestamp when schedule triggered', group: 'Schedule' },
+    { token: '{{schedule.triggeredAtMs}}', description: 'Timestamp when schedule triggered (Epoch milliseconds)', group: 'Schedule' },
 ]; 

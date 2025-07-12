@@ -12,11 +12,11 @@ import { cn } from '@/lib/utils';
 import type { JsonRuleGroup, JsonRuleCondition, JsonRulesEngineOperatorsSchema } from '@/lib/automation-schemas';
 import { AVAILABLE_AUTOMATION_FACTS, getFactById, type AutomationFact, OPERATOR_DISPLAY_MAP } from '@/lib/automation-facts';
 import { z } from 'zod';
-import type { Location, Area } from '@/types';
+import type { Location, Space, AlarmZone } from '@/types';
 import { Skeleton } from "@/components/ui/skeleton";
 
 // --- Types --- 
-type DeviceForFiltering = { id: string; name: string; areaId?: string | null; locationId?: string | null; };
+type DeviceForFiltering = { id: string; name: string; spaceId?: string | null; locationId?: string | null; };
 type ConnectorForFiltering = { id: string; name: string; category: string; };
 
 // Add _internalId for React key stability
@@ -47,7 +47,8 @@ interface RuleBuilderProps {
   onRemove?: () => void; // Callback to remove this node (if it's not the root)
   locationScopeId?: string | null;
   allLocations: Location[];
-  allAreas: Area[];
+  allSpaces: Space[];
+  allAlarmZones: AlarmZone[];
   allDevices: DeviceForFiltering[]; 
   allConnectors: ConnectorForFiltering[];
 }
@@ -70,29 +71,29 @@ const groupedFacts = AVAILABLE_AUTOMATION_FACTS.reduce((acc, fact) => {
 function getFilteredFactOptions(
     fact: AutomationFact,
     scopeId: string | null | undefined,
-    data: { allLocations: Location[], allAreas: Area[], allDevices: DeviceForFiltering[], allConnectors: ConnectorForFiltering[] }
+    data: { allLocations: Location[], allSpaces: Space[], allAlarmZones: AlarmZone[], allDevices: DeviceForFiltering[], allConnectors: ConnectorForFiltering[] }
 ): { options: FactSelectOption[], description: string } {
     let generatedOptions: FactSelectOption[] = [];
     let description = "options";
-    const { allLocations, allAreas, allDevices, allConnectors } = data;
+    const { allLocations, allSpaces, allAlarmZones, allDevices, allConnectors } = data;
 
     if (fact.selectableEntityType) {
-        let sourceArray: Array<{id: string, name: string, locationId?: string | null, areaId?: string | null}> = [];
+        let sourceArray: Array<{id: string, name: string, locationId?: string | null, spaceId?: string | null}> = [];
         const entityTypeLabel = fact.selectableEntityType.toLowerCase();
         let isScopable = false;
         let effectivelyScoped = false;
         
         switch (fact.selectableEntityType) {
             case 'Device':
-                // Devices are linked to Locations *indirectly* via Areas.
-                // If a location scope is applied, first find relevant Area IDs,
-                // then filter devices by those Area IDs.
+                // Devices are linked to Locations through Spaces.
+                // If a location scope is applied, first find relevant Space IDs,
+                // then filter devices by those Space IDs.
                 if (scopeId) { // If a location scope is selected
-                    const relevantAreaIds = allAreas
-                        .filter(area => area.locationId === scopeId)
-                        .map(area => area.id);
+                    const relevantSpaceIds = allSpaces
+                        .filter(space => space.locationId === scopeId)
+                        .map(space => space.id);
                     sourceArray = allDevices.filter(device => 
-                        device.areaId && relevantAreaIds.includes(device.areaId)
+                        device.spaceId && relevantSpaceIds.includes(device.spaceId)
                     );
                     isScopable = true;
                     effectivelyScoped = true;
@@ -102,8 +103,18 @@ function getFilteredFactOptions(
                     effectivelyScoped = false;
                 }
                 break;
-            case 'Area':
-                sourceArray = allAreas;
+            case 'Space':
+                sourceArray = allSpaces;
+                isScopable = true;
+                if (scopeId) {
+                    sourceArray = sourceArray.filter(item => item.locationId === scopeId);
+                    effectivelyScoped = true;
+                } else {
+                    effectivelyScoped = false;
+                }
+                break;
+            case 'AlarmZone':
+                sourceArray = allAlarmZones;
                 isScopable = true;
                 if (scopeId) {
                     sourceArray = sourceArray.filter(item => item.locationId === scopeId);
@@ -245,7 +256,8 @@ export function RuleBuilder({
     onRemove, 
     locationScopeId,
     allLocations,
-    allAreas,
+    allSpaces,
+    allAlarmZones,
     allDevices,
     allConnectors,
 }: RuleBuilderProps) {
@@ -271,7 +283,7 @@ export function RuleBuilder({
         }
         let initialValue: string | number = '';
         if (defaultFact.valueInputType === 'select') {
-            const { options: defaultFactOptions } = getFilteredFactOptions(defaultFact, locationScopeId, { allLocations, allAreas, allDevices, allConnectors });
+            const { options: defaultFactOptions } = getFilteredFactOptions(defaultFact, locationScopeId, { allLocations, allSpaces, allAlarmZones, allDevices, allConnectors });
             if (defaultFactOptions.length > 0) {
                 initialValue = defaultFactOptions[0].value;
             }
@@ -390,7 +402,8 @@ export function RuleBuilder({
                              onRemove={handleItemRemove(index, groupType, conditions)}
                              locationScopeId={locationScopeId}
                              allLocations={allLocations}
-                             allAreas={allAreas}
+                             allSpaces={allSpaces}
+                             allAlarmZones={allAlarmZones}
                              allDevices={allDevices}
                              allConnectors={allConnectors}
                          />
@@ -434,7 +447,7 @@ export function RuleBuilder({
                 const { options: initialOptions } = getFilteredFactOptions(
                     newFactDefinition, 
                     locationScopeId, // current scopeId
-                    { allLocations, allAreas, allDevices, allConnectors }
+                    { allLocations, allSpaces, allAlarmZones, allDevices, allConnectors }
                 );
                 if (initialOptions.length > 0) {
                     defaultValue = initialOptions[0].value;
@@ -470,7 +483,7 @@ export function RuleBuilder({
                     // const [openCombobox, setOpenCombobox] = React.useState(false); // REMOVE
 
                     // --- Calculate all necessary variables upfront ---
-                    const { options, description: initialDescription } = getFilteredFactOptions(factDefinitionFromProps, locationScopeId, { allLocations, allAreas, allDevices, allConnectors });
+                    const { options, description: initialDescription } = getFilteredFactOptions(factDefinitionFromProps, locationScopeId, { allLocations, allSpaces, allAlarmZones, allDevices, allConnectors });
                     const currentValue = String(conditionNode.value ?? '');
                     const hasExistingValue = conditionNode.value !== null && conditionNode.value !== undefined && currentValue !== '';
                     const isValuePresentInOptions = options.some(opt => String(opt.value) === currentValue);
@@ -484,9 +497,12 @@ export function RuleBuilder({
                         if (factDefinitionFromProps.selectableEntityType === 'Device') {
                             const staleDevice = allDevices.find(d => d.id === conditionNode.value);
                             if (staleDevice) staleLabel = staleDevice.name;
-                        } else if (factDefinitionFromProps.selectableEntityType === 'Area') {
-                            const staleArea = allAreas.find(a => a.id === conditionNode.value);
-                            if (staleArea) staleLabel = staleArea.name;
+                        } else if (factDefinitionFromProps.selectableEntityType === 'Space') {
+                            const staleSpace = allSpaces.find(s => s.id === conditionNode.value);
+                            if (staleSpace) staleLabel = staleSpace.name;
+                        } else if (factDefinitionFromProps.selectableEntityType === 'AlarmZone') {
+                            const staleAlarmZone = allAlarmZones.find(az => az.id === conditionNode.value);
+                            if (staleAlarmZone) staleLabel = staleAlarmZone.name;
                         } else if (factDefinitionFromProps.selectableEntityType === 'Location') {
                             const staleLocation = allLocations.find(l => l.id === conditionNode.value);
                             if (staleLocation) staleLabel = staleLocation.name;
@@ -507,7 +523,7 @@ export function RuleBuilder({
                     }
                     // --- END: Calculate all necessary variables upfront ---
 
-                    // --- Use EntityCombobox for Device/Area/Location, standard Select otherwise ---
+                    // --- Use EntityCombobox for Device/Space/Location, standard Select otherwise ---
                     if (factDefinitionFromProps.selectableEntityType) {
                         return (
                             <EntityCombobox

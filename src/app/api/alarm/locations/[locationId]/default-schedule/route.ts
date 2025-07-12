@@ -15,7 +15,6 @@ interface Location {
   activeArmingScheduleId: string | null;
   createdAt: Date;
   updatedAt: Date;
-  // Potentially other fields like 'areas', 'children' if you expand relations in queries
 }
 
 // Define a generic API response structure (consistent with other route files)

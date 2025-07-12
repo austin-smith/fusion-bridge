@@ -28,7 +28,7 @@ const DEFAULT_SUGGESTIONS = [
     icon: Cpu
   },
   {
-    text: "Are all areas armed?",
+    text: "Are all alarm zones armed?",
     icon: ShieldCheck
   },
   {
@@ -44,7 +44,7 @@ const DEFAULT_SUGGESTIONS = [
     icon: Cctv
   },
   {
-    text: "Arm all areas",
+    text: "Arm all alarm zones",
     icon: ShieldCheck
   },
   {

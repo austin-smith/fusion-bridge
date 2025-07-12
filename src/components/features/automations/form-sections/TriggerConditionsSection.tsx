@@ -9,7 +9,7 @@ import {
     FormItem,
     FormMessage,
 } from "@/components/ui/form";
-import type { Location, Area } from '@/types';
+import type { Location, Space, AlarmZone } from '@/types';
 import type { AutomationFormValues } from '../AutomationForm'; // Adjust path as needed
 
 const descriptionStyles = "text-xs text-muted-foreground mt-1";
@@ -19,8 +19,9 @@ interface TriggerConditionsSectionProps {
     basePath: string;
     watchedLocationScopeId: string | null | undefined;
     allLocations: Location[];
-    allAreas: Area[];
-    devicesForConditions: Array<{ id: string; name: string; areaId?: string | null; locationId?: string | null; }>;
+    allSpaces: Space[];
+    allAlarmZones: AlarmZone[];
+    devicesForConditions: Array<{ id: string; name: string; spaceId?: string | null; locationId?: string | null; }>;
     allConnectors: Array<{ id: string; name: string; category: string; }>;
 }
 
@@ -29,7 +30,8 @@ export function TriggerConditionsSection({
     basePath,
     watchedLocationScopeId,
     allLocations,
-    allAreas,
+    allSpaces,
+    allAlarmZones,
     devicesForConditions,
     allConnectors,
 }: TriggerConditionsSectionProps) {
@@ -47,7 +49,8 @@ export function TriggerConditionsSection({
                             basePath={basePath}
                             locationScopeId={watchedLocationScopeId}
                             allLocations={allLocations}
-                            allAreas={allAreas}
+                            allSpaces={allSpaces}
+                            allAlarmZones={allAlarmZones}
                             allDevices={devicesForConditions}
                             allConnectors={allConnectors}
                         />

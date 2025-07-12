@@ -16,7 +16,7 @@ import {
     FormMessage,
 } from "@/components/ui/form";
 import { JsonRuleGroup, type TemporalCondition } from '@/lib/automation-schemas';
-import type { Location, Area } from '@/types';
+import type { Location, Space, AlarmZone } from '@/types';
 import type { AutomationFormValues } from '../AutomationForm'; // Adjust path as needed
 import { RuleBuilder } from '../RuleBuilder'; // Adjust path as needed
 import { cn } from '@/lib/utils';
@@ -31,8 +31,9 @@ interface TemporalConditionItemProps {
     isLoading: boolean;
     watchedLocationScopeId: string | null | undefined;
     allLocations: Location[];
-    allAreas: Area[];
-    devicesForConditions: Array<{ id: string; name: string; areaId?: string | null; locationId?: string | null; }>;
+    allSpaces: Space[];
+    allAlarmZones: AlarmZone[];
+    devicesForConditions: Array<{ id: string; name: string; spaceId?: string | null; locationId?: string | null; }>;
     allConnectors: Array<{ id: string; name: string; category: string; }>;
 }
 
@@ -44,7 +45,8 @@ export function TemporalConditionItem({
     isLoading,
     watchedLocationScopeId,
     allLocations,
-    allAreas,
+    allSpaces,
+    allAlarmZones,
     devicesForConditions,
     allConnectors,
 }: TemporalConditionItemProps) {
@@ -133,8 +135,9 @@ export function TemporalConditionItem({
                             <FormControl><SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}><SelectValue /></SelectTrigger></FormControl>
                             <SelectContent>
                                 <SelectItem value="anywhere">Anywhere</SelectItem>
-                                <SelectItem value="sameArea">Devices in same area</SelectItem>
+                                <SelectItem value="sameSpace">Devices in same space</SelectItem>
                                 <SelectItem value="sameLocation">Devices in same location</SelectItem>
+                                <SelectItem value="sameZone">Devices in same alarm zone</SelectItem>
                             </SelectContent>
                         </Select>
                         <FormDescription className={descriptionStyles}>Scope the devices checked by this condition.</FormDescription>
@@ -153,7 +156,8 @@ export function TemporalConditionItem({
                           basePath={`config.temporalConditions.${index}.eventFilter`}
                           locationScopeId={watchedLocationScopeId}
                           allLocations={allLocations}
-                          allAreas={allAreas}
+                          allSpaces={allSpaces}
+                          allAlarmZones={allAlarmZones}
                           allDevices={devicesForConditions}
                           allConnectors={allConnectors}
                         />

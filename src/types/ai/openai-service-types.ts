@@ -52,7 +52,8 @@ export interface OpenAIGenerationRequest {
   prompt: string;
   context: {
     availableDevices?: Array<{ id: string; name: string; type: string }>;
-    availableAreas?: Array<{ id: string; name: string }>;
+    availableSpaces?: Array<{ id: string; name: string }>;
+    availableAlarmZones?: Array<{ id: string; name: string }>;
     availableConnectors?: Array<{ id: string; name: string; category: string }>;
     organizationId: string;
   };

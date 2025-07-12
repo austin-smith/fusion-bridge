@@ -41,7 +41,7 @@ export interface EventFilters {
   deviceNames?: string[];
   eventTypes?: string[];
   locations?: string[];
-  areas?: string[];
+  spaces?: string[];
 }
 
 export interface DeviceFilters {
@@ -52,9 +52,9 @@ export interface DeviceFilters {
 }
 
 export interface AggregationOptions {
-  groupBy?: 'device' | 'type' | 'location' | 'area' | 'time';
+  groupBy?: 'device' | 'type' | 'location' | 'space' | 'time';
   timeBucket?: 'hour' | 'day' | 'week' | 'month';
-} 
+}
 
 /**
  * Clean data structure for AI natural language generation
@@ -68,8 +68,8 @@ export interface AiFunctionResult {
   totalCount?: number;
   
   // Entity names for individual operations
-  areaName?: string;
   deviceName?: string;
+  zoneName?: string; // For alarm zone operations
   
   // Structured data for AI analysis
   devices?: Array<{
@@ -79,15 +79,27 @@ export interface AiFunctionResult {
     status: string;
     displayState?: string;
     connectorCategory?: string;
-    area?: string;
+    space?: string;
     location?: string;
   }>;
   
-  areas?: Array<{
+  // New alarm zones
+  alarmZones?: Array<{
     id: string;
     name: string;
     armedState: string;
-    location?: string;
+    locationId?: string;
+    description?: string;
+    triggerBehavior?: string;
+  }>;
+  
+  // New spaces
+  spaces?: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    locationId?: string;
+    deviceIds?: string[];
   }>;
   
   events?: Array<{
@@ -95,7 +107,7 @@ export interface AiFunctionResult {
     timestamp: string;
     device: string;
     type: string;
-    area?: string;
+    space?: string;
     location?: string;
   }>;
   
@@ -108,7 +120,8 @@ export interface AiFunctionResult {
   
   // System overview data
   deviceCount?: number;
-  areaCount?: number;
+  spaceCount?: number;
+  alarmZoneCount?: number;
   locationCount?: number;
   armedStates?: Array<{ state: string; count: number }>;
   

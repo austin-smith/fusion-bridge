@@ -2,7 +2,7 @@ import { Separator } from "@/components/ui/separator";
 import React from "react";
 import AutomationForm from "@/components/features/automations/AutomationForm";
 import { db } from "@/data/db";
-import { connectors, devices, locations, areas } from "@/data/db/schema"; // Import locations and areas
+import { connectors, devices, locations, spaces } from "@/data/db/schema"; // Import locations and spaces
 import { type AutomationConfig, type AutomationTrigger } from '@/lib/automation-schemas';
 import { DeviceType, ArmedState } from "@/lib/mappings/definitions"; 
 import type { Option as MultiSelectOption } from "@/components/ui/multi-select-combobox";
@@ -10,7 +10,7 @@ import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions"
 import { inArray, asc } from "drizzle-orm"; // Import inArray and asc
 import type { Metadata } from 'next';
 import { getDeviceTypeIconName } from '@/lib/mappings/presentation'; // Use getDeviceTypeIconName instead of getDeviceTypeIcon directly
-import type { Location, Area } from '@/types';
+import type { Location, Space, AlarmZone } from '@/types';
 import { AutomationTriggerType } from '@/lib/automation-types';
 import { auth } from "@/lib/auth/server";
 import { createOrgScopedDb } from "@/lib/db/org-scoped-db";
@@ -59,7 +59,7 @@ async function getAvailableTargetDevices(orgDb: ReturnType<typeof createOrgScope
         return [];
     }
     
-    // Get all devices with area information
+    // Get all devices with space information
     const actionableDbDevices = await orgDb.devices.findAll();
     
     // Filter by supported raw types and map to the expected format
@@ -74,7 +74,7 @@ async function getAvailableTargetDevices(orgDb: ReturnType<typeof createOrgScope
                 iconName: d.standardizedDeviceType
                     ? getDeviceTypeIconName(stdType)
                     : getDeviceTypeIconName(DeviceType.Unmapped),
-                areaId: d.areaId,
+                spaceId: d.spaceId,
                 locationId: d.locationId
             };
         });
@@ -87,7 +87,7 @@ async function getDevicesForConditions(orgDb: ReturnType<typeof createOrgScopedD
     return conditionDevices.map((d: any) => ({
         id: d.id,
         name: d.name,
-        areaId: d.areaId,
+        spaceId: d.spaceId,
         locationId: d.locationId
     }));
 }
@@ -110,17 +110,21 @@ async function getAllLocations(orgDb: ReturnType<typeof createOrgScopedDb>): Pro
     }));
 }
 
-async function getAllAreas(orgDb: ReturnType<typeof createOrgScopedDb>): Promise<Area[]> {
-    const dbAreas = await orgDb.areas.findAll();
+async function getAllSpaces(orgDb: ReturnType<typeof createOrgScopedDb>): Promise<Space[]> {
+    const dbSpaces = await orgDb.spaces.findAll();
     
-    return dbAreas.map(area => ({
-        id: area.id,
-        name: area.name,
-        locationId: area.location.id,
-        armedState: area.armedState,
-        createdAt: area.createdAt,
-        updatedAt: area.updatedAt
+    return dbSpaces.map((space: any) => ({
+        id: space.id,
+        name: space.name,
+        locationId: space.locationId,
+        createdAt: space.createdAt,
+        updatedAt: space.updatedAt
     }));
+}
+
+async function getAllAlarmZones(): Promise<AlarmZone[]> {
+    // TODO: Implement when org-scoped-db supports alarm zones
+    return [];
 }
 
 function getSourceDeviceTypeOptions(): MultiSelectOption[] {
@@ -165,14 +169,16 @@ export default async function NewAutomationPage() {
     sourceDeviceTypeOptionsData,
     devicesForConditionsData,
     allLocationsData,
-    allAreasData
+    allSpacesData,
+    allAlarmZonesData
   ] = await Promise.all([
     getAvailableConnectors(orgDb),
     getAvailableTargetDevices(orgDb),
     Promise.resolve(getSourceDeviceTypeOptions()), // Wrap sync function for Promise.all
     getDevicesForConditions(orgDb),
     getAllLocations(orgDb),
-    getAllAreas(orgDb)
+    getAllSpaces(orgDb),
+    getAllAlarmZones()
   ]);
 
   const initialData: AutomationFormData = {
@@ -209,7 +215,8 @@ export default async function NewAutomationPage() {
           availableTargetDevices={availableTargetDevicesData}
           devicesForConditions={devicesForConditionsData}
           allLocations={allLocationsData}
-          allAreas={allAreasData}
+          allSpaces={allSpacesData}
+          allAlarmZones={allAlarmZonesData}
         />
       </div>
     </div>

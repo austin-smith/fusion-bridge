@@ -16,8 +16,8 @@ import Image from 'next/image';
 
 export interface EventGroup {
   id: string;
-  areaId?: string | null;
-  areaName?: string | null;
+  spaceId?: string | null;
+  spaceName?: string | null;
   locationId?: string | null;
   locationName?: string | null;
   startTime: Date;
@@ -29,7 +29,7 @@ export interface EventGroup {
 const GROUPING_THRESHOLD_MS = 5 * 60 * 1000;
 
 /**
- * Groups chronologically sorted events based on time proximity and location/area.
+ * Groups chronologically sorted events based on time proximity and location/space.
  */
 export function groupEventsByTimeAndLocation(events: DashboardEvent[]): EventGroup[] {
   if (!events || events.length === 0) {
@@ -44,8 +44,8 @@ export function groupEventsByTimeAndLocation(events: DashboardEvent[]): EventGro
       // Start the first group
       currentGroup = {
         id: event.eventId,
-        areaId: event.areaId,
-        areaName: event.areaName,
+        spaceId: event.spaceId,
+        spaceName: event.spaceName,
         locationId: event.locationId,
         locationName: event.locationName,
         startTime: event.timestamp,
@@ -61,9 +61,9 @@ export function groupEventsByTimeAndLocation(events: DashboardEvent[]): EventGro
 
     // Check location match
     const sameLocation = (
-      (event.areaId && event.areaId === currentGroup.areaId) ||
-      (!event.areaId && !currentGroup.areaId && event.locationId && event.locationId === currentGroup.locationId) ||
-      (!event.areaId && !currentGroup.areaId && !event.locationId && !currentGroup.locationId)
+      (event.spaceId && event.spaceId === currentGroup.spaceId) ||
+      (!event.spaceId && !currentGroup.spaceId && event.locationId && event.locationId === currentGroup.locationId) ||
+      (!event.spaceId && !currentGroup.spaceId && !event.locationId && !currentGroup.locationId)
     );
 
     if (timeDiff <= GROUPING_THRESHOLD_MS && sameLocation) {
@@ -79,8 +79,8 @@ export function groupEventsByTimeAndLocation(events: DashboardEvent[]): EventGro
       // Start a new group
       currentGroup = {
         id: event.eventId,
-        areaId: event.areaId,
-        areaName: event.areaName,
+        spaceId: event.spaceId,
+        spaceName: event.spaceName,
         locationId: event.locationId,
         locationName: event.locationName,
         startTime: event.timestamp,
@@ -114,23 +114,23 @@ export function EventTimeline({ events, allDevices }: EventTimelineProps) {
     return map;
   }, [allDevices]);
 
-  // Pre-calculate a map of areaId to Piko Cameras in that area
-  const areaCameraMap = useMemo(() => {
+  // Pre-calculate a map of spaceId to Piko Cameras in that space
+  const spaceCameraMap = useMemo(() => {
     const map = new Map<string, DeviceWithConnector[]>();
     allDevices.forEach(device => {
-      // Check if it's a Piko camera and has an areaId
+      // Check if it's a Piko camera and has a spaceId
       const deviceInfo = getDeviceTypeInfo(device.connectorCategory, device.type);
-      const areaId = (device as any).areaId;
+      const spaceId = (device as any).spaceId;
 
       if (
         device.connectorCategory === 'piko' && 
         deviceInfo.type === DeviceType.Camera &&
-        areaId 
+        spaceId 
       ) {
-        if (!map.has(areaId)) {
-          map.set(areaId, []);
+        if (!map.has(spaceId)) {
+          map.set(spaceId, []);
         }
-        map.get(areaId)?.push(device);
+        map.get(spaceId)?.push(device);
       }
     });
     return map;
@@ -145,8 +145,8 @@ export function EventTimeline({ events, allDevices }: EventTimelineProps) {
       <div className="relative space-y-8 before:absolute before:inset-0 before:ml-5 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-300 before:to-transparent dark:before:via-slate-700">
         {groupedEvents.map((group) => {
 
-          // Find Piko Camera for this group's area
-          const pikoCamera = group.areaId ? areaCameraMap.get(group.areaId)?.[0] : undefined;
+          // Find Piko Camera for this group's space
+          const pikoCamera = group.spaceId ? spaceCameraMap.get(group.spaceId)?.[0] : undefined;
           const thumbnailUrl = pikoCamera 
             ? `/api/piko/device-thumbnail?deviceId=${pikoCamera.id}&connectorId=${pikoCamera.connectorId}&timestamp=${group.endTime.toISOString()}` 
             : null;
@@ -166,9 +166,9 @@ export function EventTimeline({ events, allDevices }: EventTimelineProps) {
                 {/* Text content */}
                 <div className="ml-4 flex-grow">
                    <h3 className="text-lg font-semibold">
-                       {group.areaName ? (
+                       {group.spaceName ? (
                            <>
-                               <MapPin className="inline-block w-4 h-4 mr-1.5 text-blue-500" /> {group.areaName}
+                               <MapPin className="inline-block w-4 h-4 mr-1.5 text-blue-500" /> {group.spaceName}
                                {group.locationName && <span className="text-sm text-muted-foreground ml-1">({group.locationName})</span>}
                            </>
                        ) : group.locationName ? (
@@ -176,7 +176,7 @@ export function EventTimeline({ events, allDevices }: EventTimelineProps) {
                                <MapPin className="inline-block w-4 h-4 mr-1.5 text-indigo-500" /> {group.locationName}
                            </>
                        ) : (
-                           <span className="text-muted-foreground italic">Events (No Area/Location)</span>
+                           <span className="text-muted-foreground italic">Events (No Space/Location)</span>
                        )}
                    </h3>
                    <Tooltip>
@@ -196,7 +196,7 @@ export function EventTimeline({ events, allDevices }: EventTimelineProps) {
                      <div className="ml-4 flex-shrink-0 w-24 h-16 relative rounded overflow-hidden shadow-md">
                          <Image
                              src={thumbnailUrl}
-                             alt={`Camera view for ${group.areaName || 'area'} around ${format(group.endTime, 'p')}`}
+                             alt={`Camera view for ${group.spaceName || 'space'} around ${format(group.endTime, 'p')}`}
                              fill
                              style={{ objectFit: 'cover' }}
                              sizes="(max-width: 768px) 10vw, 6rem"

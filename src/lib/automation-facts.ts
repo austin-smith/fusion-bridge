@@ -48,14 +48,14 @@ export interface FactValueOption {
 export interface AutomationFact {
     id: string; // Unique identifier for the fact (e.g., 'event.type') - Used as the 'fact' key in json-rules-engine
     label: string; // User-friendly name (e.g., "Event Type")
-    group: string; // Grouping for the UI dropdown (e.g., "Event", "Device", "Area")
+    group: string; // Grouping for the UI dropdown (e.g., "Event", "Device", "Space")
     dataType: 'enum' | 'string' | 'number' | 'boolean'; // Data type to determine operators/input
     operators: z.infer<typeof JsonRulesEngineOperatorsSchema>[]; // List of compatible operators
     valueInputType: FactValueInputType; // How the user provides the value
     valueOptions?: FactValueOption[]; // Options for 'select' or 'multiselect'
     
     // NEW: Simplified property for dynamic select options from entity lists
-    selectableEntityType?: 'Device' | 'Area' | 'Location' | 'Connector';
+    selectableEntityType?: 'Device' | 'Space' | 'AlarmZone' | 'Location' | 'Connector';
 }
 
 // Helper function to convert enum/map to FactValueOption[]
@@ -183,28 +183,47 @@ export const AVAILABLE_AUTOMATION_FACTS: AutomationFact[] = [
     },
     // Add connector.name/category later if needed
 
-    // --- Area Facts ---
+    // --- Space Facts ---
     {
-        id: 'area.id', 
-        label: 'Area',
-        group: 'Area',
+        id: 'space.id', 
+        label: 'Space',
+        group: 'Space',
         dataType: 'string',
         operators: stringOperators,
         valueInputType: 'select',
-        selectableEntityType: 'Area',
+        selectableEntityType: 'Space',
     },
     {
-        id: 'area.name',
-        label: 'Area Name',
-        group: 'Area',
+        id: 'space.name',
+        label: 'Space Name',
+        group: 'Space',
+        dataType: 'string',
+        operators: stringOperators,
+        valueInputType: 'text',
+    },
+
+    // --- Alarm Zone Facts ---
+    {
+        id: 'alarmZone.id', 
+        label: 'Alarm Zone',
+        group: 'Alarm Zone',
+        dataType: 'string',
+        operators: stringOperators,
+        valueInputType: 'select',
+        selectableEntityType: 'AlarmZone',
+    },
+    {
+        id: 'alarmZone.name',
+        label: 'Alarm Zone Name',
+        group: 'Alarm Zone',
         dataType: 'string',
         operators: stringOperators,
         valueInputType: 'text',
     },
     {
-        id: 'area.armedState',
-        label: 'Area Armed State',
-        group: 'Area',
+        id: 'alarmZone.armedState',
+        label: 'Alarm Zone Armed State',
+        group: 'Alarm Zone',
         dataType: 'enum',
         operators: enumOperators,
         valueInputType: 'select',

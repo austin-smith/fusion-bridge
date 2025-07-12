@@ -12,9 +12,9 @@ import { ShieldCheck, ShieldOff, Power, PowerOff, Loader2 } from 'lucide-react';
 import type { 
   ChatAction, 
   DeviceActionMetadata, 
-  AreaActionMetadata,
+  AlarmZoneActionMetadata,
   isDeviceAction,
-  isAreaAction
+  isAlarmZoneAction
 } from '@/types/ai/chat-actions';
 
 interface MessageActionsProps {
@@ -26,7 +26,7 @@ interface MessageActionsProps {
 /**
  * Container component for chat message actions
  * Features:
- * - Handles device and area action execution
+ * - Handles device and alarm zone action execution
  * - Integrates with existing store methods
  * - Provides proper spacing and layout
  * - Error handling with toast notifications
@@ -35,8 +35,7 @@ interface MessageActionsProps {
 export function MessageActions({ actions, className, addMessage }: MessageActionsProps) {
   const { 
     executeDeviceAction: storeExecuteDeviceAction, 
-    updateAreaArmedState,
-    batchUpdateAreasArmedState
+    updateAlarmZoneArmedState
   } = useFusionStore();
 
   const [bulkActionLoading, setBulkActionLoading] = useState<string | null>(null);
@@ -50,12 +49,12 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
     const actionDescription = actionType === 'arm' ? 'armed' : 
                             actionType === 'disarm' ? 'disarmed' :
                             actionType === 'device-on' ? 'turned on' : 'turned off';
-    const itemType = actionType.startsWith('device') ? 'devices' : 'areas';
+    const itemType = actionType.startsWith('device') ? 'devices' : 'alarm zones';
     
     const items = actions.map(action => {
-      if (action.type === 'area') {
-        const metadata = action.metadata as AreaActionMetadata;
-        return metadata.areaName;
+      if (action.type === 'alarm-zone') {
+        const metadata = action.metadata as AlarmZoneActionMetadata;
+        return metadata.alarmZoneName;
       } else if (action.type === 'device') {
         const metadata = action.metadata as DeviceActionMetadata;
         return metadata.deviceName;
@@ -82,17 +81,17 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
   }
 
   // Analyze actions for bulk operations
-  const areaActions = validActions.filter(action => action.type === 'area');
+  const alarmZoneActions = validActions.filter(action => action.type === 'alarm-zone');
   const deviceActions = validActions.filter(action => action.type === 'device');
   
-  // Check if we have multiple area actions of the same type (bulk operation)
-  const armActions = areaActions.filter(action => {
-    const metadata = action.metadata as AreaActionMetadata;
+  // Check if we have multiple alarm zone actions of the same type (bulk operation)
+  const armActions = alarmZoneActions.filter(action => {
+    const metadata = action.metadata as AlarmZoneActionMetadata;
     return metadata.targetState === ArmedState.ARMED;
   });
   
-  const disarmActions = areaActions.filter(action => {
-    const metadata = action.metadata as AreaActionMetadata;
+  const disarmActions = alarmZoneActions.filter(action => {
+    const metadata = action.metadata as AlarmZoneActionMetadata;
     return metadata.targetState === ArmedState.DISARMED;
   });
 
@@ -130,14 +129,14 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
           const confirmationMessage = `✅ Successfully ${actionWord} ${metadata.deviceName}`;
           addMessage(confirmationMessage);
         }
-      } else if (action.type === 'area') {
-        await handleAreaAction(action);
+      } else if (action.type === 'alarm-zone') {
+        await handleAlarmZoneAction(action);
         
-        // Add success message to chat for individual area actions
+        // Add success message to chat for individual alarm zone actions
         if (addMessage) {
-          const metadata = action.metadata as AreaActionMetadata;
+          const metadata = action.metadata as AlarmZoneActionMetadata;
           const actionWord = metadata.targetState === ArmedState.ARMED ? 'armed' : 'disarmed';
-          const confirmationMessage = `✅ Successfully ${actionWord} ${metadata.areaName}`;
+          const confirmationMessage = `✅ Successfully ${actionWord} ${metadata.alarmZoneName}`;
           addMessage(confirmationMessage);
         }
       } else {
@@ -187,13 +186,13 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
     await storeExecuteDeviceAction(metadata.internalDeviceId, metadata.action as ActionableState);
   };
 
-  const handleAreaAction = async (action: ChatAction): Promise<void> => {
-    const metadata = action.metadata as AreaActionMetadata;
+  const handleAlarmZoneAction = async (action: ChatAction): Promise<void> => {
+    const metadata = action.metadata as AlarmZoneActionMetadata;
     
-    const success = await updateAreaArmedState(metadata.areaId, metadata.targetState);
+    const success = await updateAlarmZoneArmedState(metadata.alarmZoneId, metadata.targetState);
     
     if (!success) {
-      throw new Error(`Failed to ${metadata.targetState === ArmedState.ARMED ? 'arm' : 'disarm'} area`);
+      throw new Error(`Failed to ${metadata.targetState === ArmedState.ARMED ? 'arm' : 'disarm'} alarm zone`);
     }
   };
 
@@ -222,8 +221,8 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
     try {
       // Execute all actions in parallel
       const promises = targetActions.map((action: ChatAction) => {
-        if (action.type === 'area') {
-          return handleAreaAction(action);
+        if (action.type === 'alarm-zone') {
+          return handleAlarmZoneAction(action);
         } else if (action.type === 'device') {
           return handleDeviceAction(action);
         }
@@ -241,7 +240,7 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
         const actionDescription = actionType === 'arm' ? 'armed' : 
                                 actionType === 'disarm' ? 'disarmed' :
                                 actionType === 'device-on' ? 'turned on' : 'turned off';
-        const itemType = actionType.startsWith('device') ? 'devices' : 'areas';
+        const itemType = actionType.startsWith('device') ? 'devices' : 'alarm zones';
         toast.success(`Successfully ${actionDescription} ${targetActions.length} ${itemType}`);
       }
     } catch (error) {
@@ -278,7 +277,7 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
             ) : (
               <ShieldCheck className="h-4 w-4" />
             )}
-            Arm All Areas
+            Arm All Zones
             <Badge variant="secondary" className="ml-1">
               {armActions.length}
             </Badge>
@@ -298,7 +297,7 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
             ) : (
               <ShieldOff className="h-4 w-4" />
             )}
-            Disarm All Areas
+            Disarm All Zones
             <Badge variant="default" className="ml-1">
               {disarmActions.length}
             </Badge>
@@ -346,41 +345,41 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
           </Button>
         )}
 
-                 {/* Individual action buttons (exclude bulk operations) */}
-         {validActions
-           .filter(action => {
-             if (action.type === 'area') {
-               const metadata = action.metadata as AreaActionMetadata;
-               const isArmAction = metadata.targetState === ArmedState.ARMED;
-               const isDisarmAction = metadata.targetState === ArmedState.DISARMED;
-               
-               // Hide individual buttons if we're showing bulk buttons for this type
-               if (isArmAction && hasBulkArmOperation) return false;
-               if (isDisarmAction && hasBulkDisarmOperation) return false;
-               
-               return true;
-             } else if (action.type === 'device') {
-               const metadata = action.metadata as DeviceActionMetadata;
-               const isOnAction = metadata.action === ActionableState.SET_ON;
-               const isOffAction = metadata.action === ActionableState.SET_OFF;
-               
-               // Hide individual buttons if we're showing bulk buttons for this type
-               if (isOnAction && hasBulkDeviceOnOperation) return false;
-               if (isOffAction && hasBulkDeviceOffOperation) return false;
-               
-               return true;
-             }
-             
-             return true; // Show unknown types
-           })
-           .map((action) => (
-             <ActionButton
-               key={action.id}
-               action={action}
-               onExecute={executeAction}
-             />
-           ))
-         }
+        {/* Individual action buttons (exclude bulk operations) */}
+        {validActions
+          .filter(action => {
+            if (action.type === 'alarm-zone') {
+              const metadata = action.metadata as AlarmZoneActionMetadata;
+              const isArmAction = metadata.targetState === ArmedState.ARMED;
+              const isDisarmAction = metadata.targetState === ArmedState.DISARMED;
+              
+              // Hide individual buttons if we're showing bulk buttons for this type
+              if (isArmAction && hasBulkArmOperation) return false;
+              if (isDisarmAction && hasBulkDisarmOperation) return false;
+              
+              return true;
+            } else if (action.type === 'device') {
+              const metadata = action.metadata as DeviceActionMetadata;
+              const isOnAction = metadata.action === ActionableState.SET_ON;
+              const isOffAction = metadata.action === ActionableState.SET_OFF;
+              
+              // Hide individual buttons if we're showing bulk buttons for this type
+              if (isOnAction && hasBulkDeviceOnOperation) return false;
+              if (isOffAction && hasBulkDeviceOffOperation) return false;
+              
+              return true;
+            }
+            
+            return true; // Show unknown types
+          })
+          .map((action) => (
+            <ActionButton
+              key={action.id}
+              action={action}
+              onExecute={executeAction}
+            />
+          ))
+        }
       </div>
     </TooltipProvider>
   );
@@ -394,7 +393,7 @@ function isValidChatAction(action: any): action is ChatAction {
     typeof action.id === 'string' &&
     typeof action.label === 'string' &&
     typeof action.icon === 'string' &&
-    (action.type === 'device' || action.type === 'area') &&
+    (action.type === 'device' || action.type === 'alarm-zone') &&
     action.metadata &&
     typeof action.metadata === 'object';
 } 

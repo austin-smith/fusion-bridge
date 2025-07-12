@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { db } from '@/data/db';
-import { connectors, devices, events, areaDevices, areas, locations } from '@/data/db/schema';
+import { connectors, devices, events, locations } from '@/data/db/schema';
 import { eq, sql, and, desc, count, gte, lte, inArray } from 'drizzle-orm';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { TypedDeviceInfo, DisplayState, DeviceType, EventCategory, EventSubtype } from '@/lib/mappings/definitions';
@@ -28,10 +28,11 @@ interface OrgEnrichedEvent {
   connectorName: string | null;
   connectorCategory: string | null;
   connectorConfig: string | null;
-  areaId: string | null;
-  areaName: string | null;
+  spaceId: string | null;
+  spaceName: string | null;
   locationId: string | null;
   locationName: string | null;
+  locationPath: string | null;
 }
 
 // Modified Pagination Metadata Interface
@@ -50,8 +51,8 @@ interface ApiEnrichedEvent {
   connectorId: string;
   connectorName?: string;
   connectorCategory: string;
-  areaId?: string;
-  areaName?: string;
+  spaceId?: string;
+  spaceName?: string;
   locationId?: string;
   locationName?: string;
   timestamp: number; // Epoch ms
@@ -236,8 +237,8 @@ async function getSingleEvent(eventUuid: string, orgDb: any): Promise<ApiEnriche
       rawPayload: rawPayload,
       rawEventType: event.rawEventType ?? undefined,
       bestShotUrlComponents: bestShotUrlComponents,
-      areaId: event.areaId ?? undefined,
-      areaName: event.areaName ?? undefined,
+      spaceId: event.spaceId ?? undefined,
+      spaceName: event.spaceName ?? undefined,
       locationId: event.locationId ?? undefined,
       locationName: event.locationName ?? undefined,
     };
@@ -407,8 +408,8 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
         rawPayload: rawPayload,
         rawEventType: event.rawEventType ?? undefined,
         bestShotUrlComponents: bestShotUrlComponents,
-        areaId: event.areaId ?? undefined,
-        areaName: event.areaName ?? undefined,
+        spaceId: event.spaceId ?? undefined,
+        spaceName: event.spaceName ?? undefined,
         locationId: event.locationId ?? undefined,
         locationName: event.locationName ?? undefined,
       };

@@ -156,7 +156,7 @@ export class PikoApiError extends Error {
 
 export interface PikoJsonRpcSubscribeParams {
     startTimeMs: number;
-    eventType: ("analyticsSdkEvent" | "analyticsSdkObjectDetected")[];
+    eventType: ("analyticsSdkEvent" | "analyticsSdkObjectDetected" | "cameraMotionEvent")[];
     eventsOnly: boolean;
     _with: "eventParams";
 }

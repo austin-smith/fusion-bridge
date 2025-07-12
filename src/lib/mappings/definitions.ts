@@ -17,6 +17,24 @@ export enum DeviceType {
   Unmapped = 'Unmapped',
 }
 
+// --- DEVICE TYPE GROUPINGS ---
+// Define which device types are supported for different use cases
+
+// Device types that are supported for alarm zone assignment
+export const SUPPORTED_ALARM_DEVICE_TYPES: DeviceType[] = [
+  DeviceType.Camera,
+  DeviceType.Door,
+  DeviceType.GarageDoor,
+  DeviceType.Lock,
+  DeviceType.Sensor,
+  DeviceType.SmartFob,
+] as const;
+
+// Utility function to check if a device type is supported for alarm zones
+export const isAlarmDeviceTypeSupported = (deviceType: DeviceType): boolean => {
+  return SUPPORTED_ALARM_DEVICE_TYPES.includes(deviceType);
+};
+
 export enum DeviceSubtype {
   // Alarm
   Siren = 'Siren',
@@ -278,6 +296,7 @@ export enum EventType {
   ANALYTICS_EVENT = 'ANALYTICS_EVENT',       // General or unknown analytics event
   OBJECT_DETECTED = 'OBJECT_DETECTED',         // NEW: Generic object detection (Use EventSubtype for class)
   OBJECT_REMOVED = 'OBJECT_REMOVED',           // Object removal detection
+  MOTION_DETECTED = 'MOTION_DETECTED',         // Camera motion detection (analytics)
   LOITERING = 'LOITERING',
   LINE_CROSSING = 'LINE_CROSSING',
   ARMED_PERSON = 'ARMED_PERSON',
@@ -362,6 +381,7 @@ export const EVENT_SUBTYPE_DISPLAY_MAP: Record<EventSubtype, string> = {
 // Define display strings once
 export const OBJECT_DETECTED_DISPLAY = 'Object Detected';
 export const OBJECT_REMOVED_DISPLAY = 'Object Removed';
+export const MOTION_DETECTED_DISPLAY = 'Motion Detected';
 export const LOITERING_DISPLAY = 'Loitering';
 export const LINE_CROSSING_DISPLAY = 'Line Crossing';
 export const ARMED_PERSON_DISPLAY = 'Armed Person Detected';
@@ -397,6 +417,7 @@ export const EVENT_TYPE_DISPLAY_MAP = {
   [EventType.ANALYTICS_EVENT]: GENERIC_ANALYTICS_DISPLAY,
   [EventType.OBJECT_DETECTED]: OBJECT_DETECTED_DISPLAY,
   [EventType.OBJECT_REMOVED]: OBJECT_REMOVED_DISPLAY,
+  [EventType.MOTION_DETECTED]: MOTION_DETECTED_DISPLAY,
   [EventType.LOITERING]: LOITERING_DISPLAY,
   [EventType.LINE_CROSSING]: LINE_CROSSING_DISPLAY,
   [EventType.ARMED_PERSON]: ARMED_PERSON_DISPLAY,
@@ -431,7 +452,7 @@ export const EVENT_CATEGORY_DISPLAY_MAP = {
 } as const;
 
 // --- NEW: Event Grouping Proximity Thresholds ---
-// Maximum time difference to consider an event for the same group if in the same area
+// Maximum time difference to consider an event for the same group if in the same space
 export const DEFAULT_MAX_TIME_WITHIN_GROUP_MS = 180 * 1000; // 180 seconds
 // Tighter window for events on the exact same device
 export const SAME_DEVICE_MAX_TIME_MS = 30 * 1000; // 30 seconds

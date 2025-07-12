@@ -1,5 +1,5 @@
 import { db } from '@/data/db';
-import { events, devices, connectors, areaDevices, areas, locations } from '@/data/db/schema';
+import { events, devices, connectors, spaceDevices, spaces, locations } from '@/data/db/schema';
 import { desc, asc, count, eq, sql, and, gte, lte, or, inArray, type SQL, isNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
 import { EventCategory, EventType, EventSubtype, DeviceType, DeviceSubtype } from '@/lib/mappings/definitions';
@@ -225,7 +225,7 @@ export async function storeStandardizedEvent(stdEvent: StandardizedEvent) {
 }
 
 /**
- * Gets recent events from the database, enriched with device, connector, and area info.
+ * Gets recent events from the database, enriched with device, connector, and space info.
  * Now supports filtering by event categories and connector category.
  */
 export async function getRecentEvents(limit = 100, offset = 0, filters?: RecentEventsFilters) {
@@ -246,7 +246,7 @@ export async function getRecentEvents(limit = 100, offset = 0, filters?: RecentE
     }
 
     if (filters?.locationId && filters.locationId.toLowerCase() !== 'all' && filters.locationId !== '') {
-      // Filter by location - events must be from devices in areas that belong to the specified location
+      // Filter by location - events must be from devices in spaces that belong to the specified location
       conditions.push(eq(locations.id, filters.locationId));
     }
     // --- END ADDED ---
@@ -272,24 +272,22 @@ export async function getRecentEvents(limit = 100, offset = 0, filters?: RecentE
         connectorName: connectors.name,
         connectorCategory: connectors.category,
         connectorConfig: connectors.cfg_enc,
-        // Joined Area fields (nullable due to LEFT JOINs)
-        areaId: areaDevices.areaId,
-        areaName: areas.name,
+        // Joined Space fields (nullable due to LEFT JOINs)
+        spaceId: spaceDevices.spaceId,
+        spaceName: spaces.name,
         // Joined Location fields (nullable due to LEFT JOINs)
         locationId: locations.id,
         locationName: locations.name
       })
       .from(events)
-      // Join device info (needed to bridge to areaDevices)
-      .leftJoin(devices, and(
-          eq(devices.connectorId, events.connectorId),
-          eq(devices.deviceId, events.deviceId) // Join based on external deviceId
-      ))
-      // Join connector info
-      .leftJoin(connectors, eq(connectors.id, events.connectorId))
-      .leftJoin(areaDevices, eq(areaDevices.deviceId, devices.id)) // Use devices.id (internal UUID)
-      .leftJoin(areas, eq(areas.id, areaDevices.areaId))
-      .leftJoin(locations, eq(locations.id, areas.locationId))
+      // Join device info (needed to bridge to spaceDevices)
+      .innerJoin(devices, eq(devices.deviceId, events.deviceId)) // Match on externalId
+      .leftJoin(connectors, eq(connectors.id, devices.connectorId))
+
+      // Join space info via spaceDevices
+      .leftJoin(spaceDevices, eq(spaceDevices.deviceId, devices.id)) // Use devices.id (internal UUID)
+      .leftJoin(spaces, eq(spaces.id, spaceDevices.spaceId))
+      .leftJoin(locations, eq(locations.id, spaces.locationId))
       // --- MODIFIED: Apply dynamic conditions ---
       .where(conditions.length > 0 ? and(...conditions) : undefined) // Pass undefined if no conditions to avoid empty AND()
       .orderBy(desc(events.timestamp))

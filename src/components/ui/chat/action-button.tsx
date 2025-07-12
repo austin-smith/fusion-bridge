@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Loader2 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ChatAction, DeviceActionMetadata, AreaActionMetadata } from '@/types/ai/chat-actions';
+import type { ChatAction, DeviceActionMetadata, AlarmZoneActionMetadata } from '@/types/ai/chat-actions';
 
 interface ActionButtonProps {
   action: ChatAction;
@@ -49,8 +49,8 @@ export function ActionButton({
       return `${action.label}${currentStateText}`;
     }
 
-    if (action.type === 'area') {
-      const metadata = action.metadata as AreaActionMetadata;
+    if (action.type === 'alarm-zone') {
+      const metadata = action.metadata as AlarmZoneActionMetadata;
       const currentStateText = metadata.currentState 
         ? ` (currently ${metadata.currentState})` 
         : '';

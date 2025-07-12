@@ -9,12 +9,12 @@ import { ActionableState, ArmedState, DisplayState } from '@/lib/mappings/defini
  */
 export interface ChatAction {
   id: string;
-  type: 'device' | 'area';
+  type: 'device' | 'alarm-zone';
   label: string;
   icon: string; // Lucide icon name (e.g., 'Power', 'ShieldCheck')
   disabled?: boolean;
   disabledReason?: string;
-  metadata: DeviceActionMetadata | AreaActionMetadata;
+  metadata: DeviceActionMetadata | AlarmZoneActionMetadata;
 }
 
 /**
@@ -34,11 +34,11 @@ export interface DeviceActionMetadata {
 }
 
 /**
- * Metadata for area actions (arm/disarm)
+ * Metadata for alarm zone actions (arm/disarm)
  */
-export interface AreaActionMetadata {
-  areaId: string;
-  areaName: string;
+export interface AlarmZoneActionMetadata {
+  alarmZoneId: string;
+  alarmZoneName: string;
   targetState: ArmedState;
   currentState: ArmedState;
 }
@@ -50,8 +50,8 @@ export function isDeviceAction(action: ChatAction): action is ChatAction & { met
   return action.type === 'device';
 }
 
-export function isAreaAction(action: ChatAction): action is ChatAction & { metadata: AreaActionMetadata } {
-  return action.type === 'area';
+export function isAlarmZoneAction(action: ChatAction): action is ChatAction & { metadata: AlarmZoneActionMetadata } {
+  return action.type === 'alarm-zone';
 }
 
 /**
@@ -62,7 +62,7 @@ export function isValidChatAction(action: any): action is ChatAction {
     typeof action.id === 'string' &&
     typeof action.label === 'string' &&
     typeof action.icon === 'string' &&
-    (action.type === 'device' || action.type === 'area') &&
+    (action.type === 'device' || action.type === 'alarm-zone') &&
     action.metadata &&
     typeof action.metadata === 'object';
 }
@@ -80,12 +80,12 @@ export function isValidDeviceActionMetadata(metadata: any): metadata is DeviceAc
 }
 
 /**
- * Validation helper - checks if area action metadata is complete
+ * Validation helper - checks if alarm zone action metadata is complete
  */
-export function isValidAreaActionMetadata(metadata: any): metadata is AreaActionMetadata {
+export function isValidAlarmZoneActionMetadata(metadata: any): metadata is AlarmZoneActionMetadata {
   return metadata &&
-    typeof metadata.areaId === 'string' &&
-    typeof metadata.areaName === 'string' &&
+    typeof metadata.alarmZoneId === 'string' &&
+    typeof metadata.alarmZoneName === 'string' &&
     typeof metadata.targetState === 'string' &&
     typeof metadata.currentState === 'string';
 } 

@@ -1,12 +1,12 @@
 import 'server-only';
 
 import { db } from '@/data/db';
-import { automations, connectors, devices, cameraAssociations, areas, areaDevices, locations, automationExecutions, automationActionExecutions } from '@/data/db/schema';
+import { alarmZones, alarmZoneDevices, automations, connectors, devices, locations, spaces, spaceDevices, automationExecutions, automationActionExecutions } from '@/data/db/schema';
 import { eq, and, inArray, or, isNotNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
 import * as piko from '@/services/drivers/piko'; // Assuming Piko driver functions are here
-import { type AutomationConfig, AutomationConfigSchema, type AutomationAction, type TemporalCondition, SetDeviceStateActionParamsSchema, type ArmAreaActionParamsSchema, type DisarmAreaActionParamsSchema } from '@/lib/automation-schemas';
+import { type AutomationConfig, AutomationConfigSchema, type AutomationAction, type TemporalCondition, SetDeviceStateActionParamsSchema, type ArmAlarmZoneActionParamsSchema, type DisarmAlarmZoneActionParamsSchema } from '@/lib/automation-schemas';
 import pRetry from 'p-retry'; // Import p-retry
 import type { PikoCreateBookmarkPayload } from '@/services/drivers/piko'; // Import the specific payload type
 // Import other necessary drivers or services as needed
@@ -24,7 +24,7 @@ import { sendPushoverNotification } from '@/services/drivers/pushover';
 import type { ResolvedPushoverMessageParams } from '@/types/pushover-types';
 // Import the new action schema
 import type { SendPushNotificationActionParamsSchema } from '@/lib/automation-schemas';
-import { internalSetAreaArmedState } from '@/lib/actions/area-alarm-actions'; // Updated import
+import { internalSetAlarmZoneArmedState } from '@/lib/actions/alarm-zone-actions';
 import { AutomationActionType, AutomationTriggerType } from '@/lib/automation-types'; // Import AutomationActionType and AutomationTriggerType
 import { CronExpressionParser } from 'cron-parser'; // Using named import as per user example
 import { formatInTimeZone } from 'date-fns-tz'; // For formatting time in specific timezone
@@ -42,13 +42,15 @@ function assertNever(value: never, message: string = "Unhandled discriminated un
 }
 
 // --- Moved Type Definition Earlier ---
-// Define structure for trigger device context, including nested location
+// Define structure for trigger device context, including space, location, and alarm zones
 type SourceDeviceContext = {
     id: string;
     name: string;
     standardizedDeviceType: string | null;
     standardizedDeviceSubtype: string | null;
-    area: (typeof areas.$inferSelect & { location: typeof locations.$inferSelect | null }) | null; 
+    space: typeof spaces.$inferSelect | null;
+    location: typeof locations.$inferSelect | null;
+    alarmZones: Array<typeof alarmZones.$inferSelect>;
 };
 
 // --- NEW: Helper function to recursively remove null values --- 
@@ -156,7 +158,7 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
  * @param currentTime The current time to check schedules against.
  */
 export async function processScheduledAutomations(currentTime: Date): Promise<void> {
-    console.log(`[Automation Service] ENTERED processScheduledAutomations at ${currentTime.toISOString()}`);
+    console.log(`[Automation Service] Processing scheduled automations at ${currentTime.toISOString()} (UTC)`);
 
     try {
         // Get all organizations that have automations
@@ -176,20 +178,31 @@ export async function processScheduledAutomations(currentTime: Date): Promise<vo
         console.log(`[Automation Service] Processing scheduled automations for ${organizationsWithAutomations.length} organization(s)`);
 
         // Process scheduled automations for each organization in parallel
-        await Promise.allSettled(
+        const results = await Promise.allSettled(
             organizationsWithAutomations.map(async ({ organizationId }) => {
                 if (!organizationId) return;
                 
                 try {
-                    console.log(`[Automation Service] Processing scheduled automations for organization ${organizationId}`);
+                    console.log(`[Automation Service] Processing organization ${organizationId} at ${currentTime.toISOString()}`);
                     const orgDb = createOrgScopedDb(organizationId);
                     const automationContext = new OrganizationAutomationContext(organizationId, orgDb);
                     await automationContext.processScheduledAutomations(currentTime);
+                    console.log(`[Automation Service] Completed processing organization ${organizationId}`);
                 } catch (orgError) {
                     console.error(`[Automation Service] Error processing scheduled automations for organization ${organizationId}:`, orgError);
                 }
             })
         );
+
+        // Log results summary
+        const successful = results.filter(r => r.status === 'fulfilled').length;
+        const failed = results.filter(r => r.status === 'rejected').length;
+        
+        if (failed > 0) {
+            console.warn(`[Automation Service] Completed processing: ${successful} successful, ${failed} failed`);
+        } else {
+            console.log(`[Automation Service] Successfully processed all ${successful} organizations`);
+        }
 
     } catch (error) {
         console.error(`[Automation Service] Top-level error processing scheduled automations:`, error);
@@ -232,39 +245,49 @@ async function executeActionWithRetry(
     const runAction = async () => {
         switch (action.type) {
             case AutomationActionType.CREATE_EVENT: {
-                // This action inherently relies on a triggering event context for some fields like timestamp.
-                // If stdEvent is null (scheduled trigger), we might need to adjust behavior or disallow.
-                // For now, it will try to use stdEvent if present, or tokenFactContext.schedule.triggeredAtUTC...
                 const resolvedParams = resolveTokens(action.params, stdEvent, tokenFactContext, thumbnailContext) as z.infer<typeof import('@/lib/automation-schemas').CreateEventActionParamsSchema>;
-                // Validation as before
-                // ...
-                // For pikoPayload.timestamp, use stdEvent.timestamp or fallback to context.schedule.triggeredAtUTC
                 const eventTimestamp = stdEvent?.timestamp.toISOString() ?? tokenFactContext.schedule?.triggeredAtUTC ?? new Date().toISOString();
 
-                // The rest of CREATE_EVENT logic needs careful review if stdEvent is null
-                // e.g., sourceDeviceInternalId for cameraAssociations
-                // For now, proceeding with existing logic, which might warn or skip if context is missing.
-                // ... (original CREATE_EVENT logic, ensuring stdEvent?.deviceId is handled if stdEvent is null)
-
-                // Simplified example for placeholder
                 const targetConnector = await db.query.connectors.findFirst({ where: eq(connectors.id, resolvedParams.targetConnectorId!) });
                 if (!targetConnector) throw new Error("Target connector not found for CREATE_EVENT");
                 console.log(`[Automation Service] Action CREATE_EVENT: Connector ${targetConnector.id}, Timestamp ${eventTimestamp}`);
-                // Actual piko.createPikoEvent call would be here
+                
                 if (targetConnector.category === 'piko') {
-                    const sourceDeviceInternalId = tokenFactContext.device?.id; // This would be null for scheduled unless set differently
+                    const sourceDeviceInternalId = tokenFactContext.device?.id;
                     let associatedPikoCameraExternalIds: string[] = [];
                     if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string') {
                          try {
-                            const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId }).from(cameraAssociations).where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
-                            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
-                            if (internalCameraIds.length > 0) {
-                                const cameraDevices = await db.select({ externalId: devices.deviceId }).from(devices).where(inArray(devices.id, internalCameraIds)); 
-                                associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
+                            // First, find the space ID of the source device
+                            const sourceDeviceSpace = await db
+                                .select({ spaceId: spaceDevices.spaceId })
+                                .from(spaceDevices)
+                                .where(eq(spaceDevices.deviceId, sourceDeviceInternalId))
+                                .limit(1);
+                                
+                            if (sourceDeviceSpace.length === 0) {
+                                console.warn(`[Rule ${rule.id}][Action createEvent] Source device ${sourceDeviceInternalId} is not assigned to any space.`);
+                            } else {
+                                const spaceId = sourceDeviceSpace[0].spaceId;
+                                
+                                // Find all Piko cameras in the same space
+                                const camerasInSameSpace = await db
+                                    .select({ externalId: devices.deviceId })
+                                    .from(devices)
+                                    .innerJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+                                    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+                                    .where(and(
+                                        eq(spaceDevices.spaceId, spaceId),
+                                        eq(connectors.category, 'piko'),
+                                        eq(devices.standardizedDeviceType, DeviceType.Camera)
+                                    ));
+                                associatedPikoCameraExternalIds = camerasInSameSpace.map(d => d.externalId);
+                                console.log(`[Rule ${rule.id}][Action createEvent] Found ${associatedPikoCameraExternalIds.length} Piko cameras in same space as source device.`);
                             }
-                        } catch (assocError) { console.error(`[Rule ${rule.id}][Action createEvent] Error fetching camera associations:`, assocError); }
-                    } else if (!stdEvent) { // only warn if no stdEvent and no sourceDeviceInternalId from facts
-                        console.warn(`[Rule ${rule.id}][Action createEvent (Scheduled)] No source device context to fetch camera associations.`);
+                        } catch (spaceError) { 
+                            console.error(`[Rule ${rule.id}][Action createEvent] Error fetching cameras in same space:`, spaceError); 
+                        }
+                    } else if (!stdEvent) {
+                        console.warn(`[Rule ${rule.id}][Action createEvent (Scheduled)] No source device context to fetch space-based cameras.`);
                     }
 
 
@@ -292,33 +315,55 @@ async function executeActionWithRetry(
                 // Actual piko.createPikoBookmark call
                  if (targetConnector.category === 'piko') {
                     let associatedPikoCameraExternalIds: string[] = [];
-                    const sourceDeviceInternalId = tokenFactContext.device?.id; // null for scheduled
+                    const sourceDeviceInternalId = tokenFactContext.device?.id;
                     if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string') {
                         try {
-                            const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId }).from(cameraAssociations).where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
-                            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
-                            if (internalCameraIds.length === 0) { console.warn(`[Rule ${rule.id}][Action createBookmark] No Piko cameras associated with source device ${sourceDeviceInternalId}. Skipping.`); break; }
-                            const cameraDevices = await db.select({ externalId: devices.deviceId }).from(devices).where(inArray(devices.id, internalCameraIds)); 
-                            associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
-                        } catch (assocError) { console.error(`[Rule ${rule.id}][Action createBookmark] Error fetching camera associations:`, assocError); throw new Error(`Failed to fetch camera associations: ${assocError instanceof Error ? assocError.message : String(assocError)}`); }
+                            // First, find the space ID of the source device
+                            const sourceDeviceSpace = await db
+                                .select({ spaceId: spaceDevices.spaceId })
+                                .from(spaceDevices)
+                                .where(eq(spaceDevices.deviceId, sourceDeviceInternalId))
+                                .limit(1);
+                                
+                            if (sourceDeviceSpace.length === 0) {
+                                console.warn(`[Rule ${rule.id}][Action createBookmark] Source device ${sourceDeviceInternalId} is not assigned to any space. Skipping.`);
+                                break;
+                            } else {
+                                const spaceId = sourceDeviceSpace[0].spaceId;
+                                
+                                // Find all Piko cameras in the same space
+                                const camerasInSameSpace = await db
+                                    .select({ externalId: devices.deviceId })
+                                    .from(devices)
+                                    .innerJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+                                    .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+                                    .where(and(
+                                        eq(spaceDevices.spaceId, spaceId),
+                                        eq(connectors.category, 'piko'),
+                                        eq(devices.standardizedDeviceType, DeviceType.Camera)
+                                    ));
+                                associatedPikoCameraExternalIds = camerasInSameSpace.map(d => d.externalId);
+                                console.log(`[Rule ${rule.id}][Action createBookmark] Found ${associatedPikoCameraExternalIds.length} Piko cameras in same space as source device.`);
+                                
+                                if (associatedPikoCameraExternalIds.length === 0) {
+                                    console.warn(`[Rule ${rule.id}][Action createBookmark] No Piko cameras found in same space. Skipping.`);
+                                    break;
+                                }
+                            }
+                        } catch (spaceError) { 
+                            console.error(`[Rule ${rule.id}][Action createBookmark] Error fetching cameras in same space:`, spaceError); 
+                            throw new Error(`Failed to fetch cameras in same space: ${spaceError instanceof Error ? spaceError.message : String(spaceError)}`);
+                        }
                     } else if (!stdEvent) {
-                         console.warn(`[Rule ${rule.id}][Action createBookmark (Scheduled)] No source device context for camera associations. Bookmark will not be camera-specific.`);
-                         // If no associations, perhaps bookmark globally on the connector if supported, or skip?
-                         // For now, if no camera association, it seems it would attempt to create a bookmark without camera ID,
-                         // which piko.createPikoBookmark might not support or handle gracefully.
-                         // The original code requires associatedPikoCameraExternalIds.length > 0 for the loop.
-                         // If no cameras, then it effectively skips.
-                         if(associatedPikoCameraExternalIds.length === 0){
-                            console.warn(`[Rule ${rule.id}][Action createBookmark (Scheduled)] No camera associations, skipping bookmark creation as per current logic flow.`);
-                            break;
-                         }
+                         console.warn(`[Rule ${rule.id}][Action createBookmark (Scheduled)] No source device context for space-based cameras. Skipping bookmark creation.`);
+                         break;
                     }
                     let durationMs = 5000;
                     try { const parsedDuration = parseInt(resolvedParams.durationMsTemplate, 10); if (!isNaN(parsedDuration) && parsedDuration > 0) durationMs = parsedDuration; } catch {} 
                     let tags: string[] = [];
                     if (resolvedParams.tagsTemplate && resolvedParams.tagsTemplate.trim() !== '') { try { tags = resolvedParams.tagsTemplate.split(',').map(tag => tag.trim()).filter(tag => tag !== ''); } catch {} }
                     
-                    for (const pikoCameraDeviceId of associatedPikoCameraExternalIds) { // This loop won't run if no cameras found.
+                    for (const pikoCameraDeviceId of associatedPikoCameraExternalIds) {
                         const pikoPayload: PikoCreateBookmarkPayload = {
                             name: resolvedParams.nameTemplate,
                             description: resolvedParams.descriptionTemplate || undefined,
@@ -395,108 +440,88 @@ async function executeActionWithRetry(
                 console.log(`[Automation Service] Rule ${rule.id} (${rule.name}): Successfully sent Pushover notification.`);
                 break;
             }
-            case AutomationActionType.ARM_AREA: {
-                const params = action.params as z.infer<typeof ArmAreaActionParamsSchema>;
-                const { scoping, targetAreaIds: specificAreaIds } = params;
-                let areasToProcess: string[] = [];
+            case AutomationActionType.ARM_ALARM_ZONE: {
+                const params = action.params as z.infer<typeof ArmAlarmZoneActionParamsSchema>;
+                const { scoping, targetZoneIds: specificZoneIds } = params;
+                let zonesToProcess: string[] = [];
 
-                if (scoping === 'SPECIFIC_AREAS') {
-                    if (!specificAreaIds || specificAreaIds.length === 0) {
-                        console.warn(`[Rule ${rule.id}][Action armArea] Scoping is SPECIFIC_AREAS but no targetAreaIds provided. Skipping.`);
+                if (scoping === 'SPECIFIC_ZONES') {
+                    if (!specificZoneIds || specificZoneIds.length === 0) {
+                        console.warn(`[Rule ${rule.id}][Action armAlarmZone] Scoping is SPECIFIC_ZONES but no targetZoneIds provided. Skipping.`);
                         break;
                     }
-                    areasToProcess = specificAreaIds;
-                } else if (scoping === 'ALL_AREAS_IN_SCOPE') {
-                    if (rule.locationScopeId) {
-                        const areasInLocation = await db.query.areas.findMany({ where: eq(areas.locationId, rule.locationScopeId), columns: { id: true } });
-                        areasToProcess = areasInLocation.map(a => a.id);
-                        if (areasToProcess.length === 0) {
-                            console.log(`[Rule ${rule.id}][Action armArea] No areas found in rule's location scope ${rule.locationScopeId}.`);
-                            break;
-                        }
-                    } else {
-                        const allSystemAreas = await db.query.areas.findMany({ columns: { id: true } });
-                        areasToProcess = allSystemAreas.map(a => a.id);
-                        if (areasToProcess.length === 0) {
-                            console.log(`[Rule ${rule.id}][Action armArea] No areas found in system.`);
-                            break;
-                        }
-                    }
-                }
-
-                if (areasToProcess.length === 0) {
-                    console.log(`[Rule ${rule.id}][Action armArea] No areas determined for processing. Scoping: ${scoping}.`);
+                    zonesToProcess = specificZoneIds;
+                } else if (scoping === 'ALL_ZONES_IN_SCOPE') {
+                    // Note: This requires organization-scoped access, but this legacy service doesn't have that context
+                    // For now, this will be handled by the organization automation context instead
+                    console.warn(`[Rule ${rule.id}][Action armAlarmZone] ALL_ZONES_IN_SCOPE not supported in legacy automation service. Use organization context.`);
                     break;
                 }
 
-                console.log(`[Rule ${rule.id}][Action armArea] Attempting to arm ${areasToProcess.length} area(s). IDs: ${areasToProcess.join(', ')}`);
-                for (const areaId of areasToProcess) {
+                if (zonesToProcess.length === 0) {
+                    console.log(`[Rule ${rule.id}][Action armAlarmZone] No zones determined for processing. Scoping: ${scoping}.`);
+                    break;
+                }
+
+                console.log(`[Rule ${rule.id}][Action armAlarmZone] Attempting to arm ${zonesToProcess.length} alarm zone(s). IDs: ${zonesToProcess.join(', ')}`);
+                for (const zoneId of zonesToProcess) {
                     try {
-                        const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.ARMED, {
-                            isArmingSkippedUntil: null,                  // Clear schedule fields
-                            nextScheduledArmTime: null,
-                            nextScheduledDisarmTime: null,
-                        });
-                        if (updatedArea) {
-                            console.log(`[Rule ${rule.id}][Action armArea] Successfully armed area ${areaId}.`);
+                        const updatedZone = await internalSetAlarmZoneArmedState(
+                            zoneId, 
+                            ArmedState.ARMED,
+                            undefined, // No user ID for automation actions
+                            'automation_arm'
+                        );
+                        if (updatedZone) {
+                            console.log(`[Rule ${rule.id}][Action armAlarmZone] Successfully armed alarm zone ${zoneId}.`);
                         } else {
-                            console.warn(`[Rule ${rule.id}][Action armArea] Failed to arm area ${areaId} (area not found or no update occurred).`);
+                            console.warn(`[Rule ${rule.id}][Action armAlarmZone] Failed to arm alarm zone ${zoneId} (zone not found or no update occurred).`);
                         }
-                    } catch (areaError) {
-                        console.error(`[Rule ${rule.id}][Action armArea] Error arming area ${areaId}:`, areaError instanceof Error ? areaError.message : areaError);
+                    } catch (zoneError) {
+                        console.error(`[Rule ${rule.id}][Action armAlarmZone] Error arming alarm zone ${zoneId}:`, zoneError instanceof Error ? zoneError.message : zoneError);
                     }
                 }
                 break;
             }
-            case AutomationActionType.DISARM_AREA: {
-                const params = action.params as z.infer<typeof DisarmAreaActionParamsSchema>;
-                const { scoping, targetAreaIds: specificAreaIds } = params;
-                let areasToProcess: string[] = [];
+            case AutomationActionType.DISARM_ALARM_ZONE: {
+                const params = action.params as z.infer<typeof DisarmAlarmZoneActionParamsSchema>;
+                const { scoping, targetZoneIds: specificZoneIds } = params;
+                let zonesToProcess: string[] = [];
 
-                if (scoping === 'SPECIFIC_AREAS') {
-                    if (!specificAreaIds || specificAreaIds.length === 0) {
-                        console.warn(`[Rule ${rule.id}][Action disarmArea] Scoping is SPECIFIC_AREAS but no targetAreaIds provided. Skipping.`);
+                if (scoping === 'SPECIFIC_ZONES') {
+                    if (!specificZoneIds || specificZoneIds.length === 0) {
+                        console.warn(`[Rule ${rule.id}][Action disarmAlarmZone] Scoping is SPECIFIC_ZONES but no targetZoneIds provided. Skipping.`);
                         break;
                     }
-                    areasToProcess = specificAreaIds;
-                } else if (scoping === 'ALL_AREAS_IN_SCOPE') {
-                    if (rule.locationScopeId) {
-                        const areasInLocation = await db.query.areas.findMany({ where: eq(areas.locationId, rule.locationScopeId), columns: { id: true } });
-                        areasToProcess = areasInLocation.map(a => a.id);
-                        if (areasToProcess.length === 0) {
-                            console.log(`[Rule ${rule.id}][Action disarmArea] No areas found in rule's location scope ${rule.locationScopeId}.`);
-                            break;
-                        }
-                    } else {
-                        const allSystemAreas = await db.query.areas.findMany({ columns: { id: true } });
-                        areasToProcess = allSystemAreas.map(a => a.id);
-                         if (areasToProcess.length === 0) {
-                            console.log(`[Rule ${rule.id}][Action disarmArea] No areas found in system.`);
-                            break;
-                         }
-                    }
-                }
-
-                if (areasToProcess.length === 0) {
-                    console.log(`[Rule ${rule.id}][Action disarmArea] No areas determined for processing. Scoping: ${scoping}.`);
+                    zonesToProcess = specificZoneIds;
+                } else if (scoping === 'ALL_ZONES_IN_SCOPE') {
+                    // Note: This requires organization-scoped access, but this legacy service doesn't have that context
+                    // For now, this will be handled by the organization automation context instead
+                    console.warn(`[Rule ${rule.id}][Action disarmAlarmZone] ALL_ZONES_IN_SCOPE not supported in legacy automation service. Use organization context.`);
                     break;
                 }
 
-                console.log(`[Rule ${rule.id}][Action disarmArea] Attempting to disarm ${areasToProcess.length} area(s). IDs: ${areasToProcess.join(', ')}`);
-                for (const areaId of areasToProcess) {
+                if (zonesToProcess.length === 0) {
+                    console.log(`[Rule ${rule.id}][Action disarmAlarmZone] No zones determined for processing. Scoping: ${scoping}.`);
+                    break;
+                }
+
+                console.log(`[Rule ${rule.id}][Action disarmAlarmZone] Attempting to disarm ${zonesToProcess.length} alarm zone(s). IDs: ${zonesToProcess.join(', ')}`);
+                for (const zoneId of zonesToProcess) {
                     try {
-                        const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.DISARMED, {
-                            isArmingSkippedUntil: null,                     // Clear schedule fields
-                            nextScheduledArmTime: null,
-                            nextScheduledDisarmTime: null,
-                        });
-                        if (updatedArea) {
-                            console.log(`[Rule ${rule.id}][Action disarmArea] Successfully disarmed area ${areaId}.`);
+                        const updatedZone = await internalSetAlarmZoneArmedState(
+                            zoneId, 
+                            ArmedState.DISARMED,
+                            undefined, // No user ID for automation actions
+                            'automation_disarm'
+                        );
+                        if (updatedZone) {
+                            console.log(`[Rule ${rule.id}][Action disarmAlarmZone] Successfully disarmed alarm zone ${zoneId}.`);
                         } else {
-                            console.warn(`[Rule ${rule.id}][Action disarmArea] Failed to disarm area ${areaId} (area not found or no update occurred).`);
+                            console.warn(`[Rule ${rule.id}][Action disarmAlarmZone] Failed to disarm alarm zone ${zoneId} (zone not found or no update occurred).`);
                         }
-                    } catch (areaError) {
-                        console.error(`[Rule ${rule.id}][Action disarmArea] Error disarming area ${areaId}:`, areaError instanceof Error ? areaError.message : areaError);
+                    } catch (zoneError) {
+                        console.error(`[Rule ${rule.id}][Action disarmAlarmZone] Error disarming alarm zone ${zoneId}:`, zoneError instanceof Error ? zoneError.message : zoneError);
                     }
                 }
                 break;
@@ -561,7 +586,7 @@ async function executeActionWithRetry(
 /**
  * Resolves tokens in action parameter templates.
  * stdEvent is now optional and used if present for event-specific tokens.
- * tokenFactContext is the primary source for general facts (device, area, location, schedule).
+ * tokenFactContext is the primary source for general facts (device, space, alarm zone, location, schedule).
  * thumbnailContext provides thumbnail data for thumbnail-related tokens.
  */
 function resolveTokens(
@@ -580,7 +605,8 @@ function resolveTokens(
         // Prioritize facts from tokenFactContext
         schedule: tokenFactContext?.schedule ?? null,
         device: tokenFactContext?.device ?? null,
-        area: tokenFactContext?.area ?? null,
+        space: tokenFactContext?.space ?? null,
+        alarmZone: tokenFactContext?.alarmZone ?? null,
         location: tokenFactContext?.location ?? null,
         connector: tokenFactContext?.connector ?? null,
         // Event-specific details, only if stdEvent is provided
@@ -683,36 +709,60 @@ async function evaluateTemporalCondition(
     
     let targetDeviceExternalIds: string[] | undefined = undefined;
 
-    if (condition.scoping === 'sameArea' || condition.scoping === 'sameLocation') {
+    if (condition.scoping === 'sameSpace' || condition.scoping === 'sameLocation' || condition.scoping === 'sameZone') {
         // This scoping relies on triggerDeviceContext, which will be null for scheduled tasks
-        // unless we define "sameArea/Location" relative to the rule's own scopeId.
+        // unless we define "sameSpace/Location/Zone" relative to the rule's own scopeId.
         // For now, if triggerDeviceContext is null, these scopings will likely result in no devices.
-        const scopeId = (condition.scoping === 'sameArea' && triggerDeviceContext?.area?.id)
-                        ? triggerDeviceContext.area.id
-                        : (condition.scoping === 'sameLocation' && triggerDeviceContext?.area?.location?.id)
-                            ? triggerDeviceContext.area.location.id
-                            : null; // If context is null, or area/location is null in context
+        
+        let scopeId: string | null = null;
+        let scopeType: 'space' | 'location' | 'zone' = 'space';
+        
+        if (condition.scoping === 'sameSpace' && triggerDeviceContext?.space?.id) {
+            scopeId = triggerDeviceContext.space.id;
+            scopeType = 'space';
+        } else if (condition.scoping === 'sameLocation' && triggerDeviceContext?.location?.id) {
+            scopeId = triggerDeviceContext.location.id;
+            scopeType = 'location';
+        } else if (condition.scoping === 'sameZone' && triggerDeviceContext?.alarmZones && triggerDeviceContext.alarmZones.length > 0) {
+            // For zone scoping, we'll need to get all devices in any of the trigger device's zones
+            scopeId = 'multiple'; // Special marker for zone handling
+            scopeType = 'zone';
+        }
         
         if (!scopeId && triggerDeviceContext) { // Only warn if context was expected but scopeId couldn't be derived
-            console.warn(`[evaluateTemporalCondition] Cannot scope by ${condition.scoping}: Trigger device context available but no associated ${condition.scoping === 'sameArea' ? 'area' : 'location'}. Condition type ${condition.type} may fail.`);
-        } else if (!scopeId && !triggerDeviceContext && (condition.scoping === 'sameArea' || condition.scoping === 'sameLocation')) {
+            console.warn(`[evaluateTemporalCondition] Cannot scope by ${condition.scoping}: Trigger device context available but no associated ${condition.scoping.replace('same', '')}. Condition type ${condition.type} may fail.`);
+        } else if (!scopeId && !triggerDeviceContext && (condition.scoping === 'sameSpace' || condition.scoping === 'sameLocation' || condition.scoping === 'sameZone')) {
             console.warn(`[evaluateTemporalCondition] Cannot scope by ${condition.scoping} for a non-event-triggered rule without a defined rule location scope to infer from. Condition type ${condition.type} may fail.`);
-             // If no scopeId, this implies that for a scheduled trigger, these scopings are problematic
-             // unless we adjust logic to use rule.locationScopeId if available.
-             // For now, this will likely lead to no devices found.
         }
-
 
         if (scopeId) { // Only proceed if we derived a scopeId
             try {
-                const scopedDeviceQuery = db.select({ externalId: devices.deviceId })
-                                            .from(devices)
-                                            .leftJoin(areaDevices, eq(devices.id, areaDevices.deviceId))
-                                            .leftJoin(areas, eq(areaDevices.areaId, areas.id))
-                                            .where(condition.scoping === 'sameArea' 
-                                                    ? eq(areaDevices.areaId, scopeId)
-                                                    : eq(areas.locationId, scopeId)); 
-                const targetDevices = await scopedDeviceQuery;
+                let targetDevices: { externalId: string }[] = [];
+                
+                if (scopeType === 'space') {
+                    const scopedDeviceQuery = db.select({ externalId: devices.deviceId })
+                                                .from(devices)
+                                                .innerJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+                                                .where(eq(spaceDevices.spaceId, scopeId));
+                    targetDevices = await scopedDeviceQuery;
+                } else if (scopeType === 'location') {
+                    // Get devices by location through spaces
+                    const scopedDeviceQuery = db.selectDistinct({ externalId: devices.deviceId })
+                                                .from(devices)
+                                                .innerJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+                                                .innerJoin(spaces, eq(spaceDevices.spaceId, spaces.id))
+                                                .where(eq(spaces.locationId, scopeId));
+                    targetDevices = await scopedDeviceQuery;
+                } else if (scopeType === 'zone' && triggerDeviceContext?.alarmZones) {
+                    // Get all devices in any of the trigger device's alarm zones
+                    const zoneIds = triggerDeviceContext.alarmZones.map(z => z.id);
+                    const scopedDeviceQuery = db.selectDistinct({ externalId: devices.deviceId })
+                                                .from(devices)
+                                                .innerJoin(alarmZoneDevices, eq(devices.id, alarmZoneDevices.deviceId))
+                                                .where(inArray(alarmZoneDevices.zoneId, zoneIds));
+                    targetDevices = await scopedDeviceQuery;
+                }
+                
                 if (targetDevices.length === 0) {
                      console.log(`[evaluateTemporalCondition] No devices found matching scope '${condition.scoping}' (ID: ${scopeId}).`);
                      return condition.type === 'noEventOccurred'; // This makes sense: no devices means no events occurred from them
@@ -722,7 +772,7 @@ async function evaluateTemporalCondition(
                 console.error(`[evaluateTemporalCondition] Error fetching devices for ${condition.scoping} scope (ID: ${scopeId}):`, dbError);
                 return false;
             }
-        } else if (condition.scoping === 'sameArea' || condition.scoping === 'sameLocation') {
+        } else if (condition.scoping === 'sameSpace' || condition.scoping === 'sameLocation' || condition.scoping === 'sameZone') {
             // If scopeId could not be determined for these scopings, it means no devices match this criteria.
             return condition.type === 'noEventOccurred';
         }
@@ -750,7 +800,7 @@ async function evaluateTemporalCondition(
     for (const event of candidateEvents) {
         const eventPayload = event.payload as any;
         // For temporal conditions, the facts for the engine are derived purely from the candidate event itself.
-        // No area/location context is assumed for these past events unless already on event.deviceInfo
+        // No space/location context is assumed for these past events unless already on event.deviceInfo
         const eventFacts: Record<string, any> = {
              event: {
                  category: event.category ?? null, type: event.type ?? null, subtype: event.subtype ?? null,
@@ -760,8 +810,7 @@ async function evaluateTemporalCondition(
                  externalId: event.deviceId ?? null, type: event.deviceInfo?.type ?? null, subtype: event.deviceInfo?.subtype ?? null
              },
              connector: { id: event.connectorId ?? null },
-             area: null, // Cannot easily get historical area for an event for this check
-             location: null, // Cannot easily get historical location
+             location: null, // Cannot easily get historical location for past events
         };
         
         const temporalRequiredPaths = extractReferencedFactPaths(condition.eventFilter);

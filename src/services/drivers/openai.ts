@@ -303,8 +303,12 @@ export async function analyzeAutomationRule(
       contextBuilder.push(`Available devices: ${request.context.availableDevices.map(d => `${d.name} (${d.type})`).join(', ')}`);
     }
     
-    if (request.context.availableAreas && request.context.availableAreas.length > 0) {
-      contextBuilder.push(`Available areas: ${request.context.availableAreas.map(a => a.name).join(', ')}`);
+    if (request.context.availableSpaces && request.context.availableSpaces.length > 0) {
+        contextBuilder.push(`Available spaces: ${request.context.availableSpaces.map(s => s.name).join(', ')}`);
+    }
+    
+    if (request.context.availableAlarmZones && request.context.availableAlarmZones.length > 0) {
+        contextBuilder.push(`Available alarm zones: ${request.context.availableAlarmZones.map(z => z.name).join(', ')}`);
     }
     
     if (request.context.availableConnectors && request.context.availableConnectors.length > 0) {
@@ -320,7 +324,7 @@ ${contextBuilder.join('\n')}
 
 When analyzing automation requests:
 1. Break down the user's intent into triggers, conditions, and actions
-2. Suggest specific devices, areas, or connectors from the available options
+2. Suggest specific devices, spaces, alarm zones, or connectors from the available options
 3. Explain your reasoning clearly
 4. Provide alternative suggestions if applicable
 5. Be specific about event types, device states, and action parameters

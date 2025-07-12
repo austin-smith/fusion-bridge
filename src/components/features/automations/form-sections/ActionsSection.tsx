@@ -12,14 +12,14 @@ import type { AutomationAction } from '@/lib/automation-schemas';
 import { AutomationActionType, AutomationTriggerType } from '@/lib/automation-types';
 import type { connectors } from '@/data/db/schema';
 import type { AutomationFormValues } from '../AutomationForm'; // Adjust path as needed
-import { ArmedState } from '@/lib/mappings/definitions'; // For default ArmArea params
+import { ArmedState } from '@/lib/mappings/definitions'; // For default ArmAlarmZone params
 
-// Define AreaOption directly here for props
-type AreaOptionForActionsSection = {
+// Define ZoneOption directly here for props
+type ZoneOptionForActionsSection = {
     id: string;
     name: string;
     locationId: string;
-    // Add any other fields from DbAreaType if ActionItem needs them directly from sortedAvailableAreas
+    // Add any other fields from alarm zones if ActionItem needs them directly from sortedAvailableZones
     // For now, id and name are sufficient for MultiSelectComboBox options passed from ActionItem
 };
 
@@ -29,7 +29,7 @@ type TargetDeviceOption = {
     name: string;
     displayType: string;
     iconName: string;
-    areaId?: string | null;
+    spaceId?: string | null;
     locationId?: string | null;
 };
 
@@ -48,7 +48,7 @@ interface ActionsSectionProps {
     sortedPikoConnectors: Pick<ConnectorSelect, 'id' | 'name' | 'category'>[];
     sortedAvailableTargetDevices: TargetDeviceOption[];
     // Add new props
-    sortedAvailableAreas: AreaOptionForActionsSection[]; 
+    sortedAvailableZones: ZoneOptionForActionsSection[]; 
     currentRuleLocationScope?: { id: string; name: string } | null;
 }
 
@@ -60,7 +60,7 @@ export function ActionsSection({
     sortedPikoConnectors,
     sortedAvailableTargetDevices,
     // Destructure new props
-    sortedAvailableAreas,
+    sortedAvailableZones,
     currentRuleLocationScope,
 }: ActionsSectionProps) {
     const { fields: actionsFields, append: appendAction, remove: removeAction } = useFieldArray({
@@ -88,12 +88,12 @@ export function ActionsSection({
         let defaultActionToAdd: AutomationAction;
 
         if (triggerType === AutomationTriggerType.SCHEDULED) {
-            // Default to ARM_AREA for scheduled triggers
+            // Default to ARM_ALARM_ZONE for scheduled triggers
             defaultActionToAdd = {
-                type: AutomationActionType.ARM_AREA,
+                type: AutomationActionType.ARM_ALARM_ZONE,
                 params: { 
-                    scoping: 'ALL_AREAS_IN_SCOPE', // Sensible default
-                    targetAreaIds: [] // Explicitly empty for ALL_AREAS_IN_SCOPE or to be filled for SPECIFIC
+                    scoping: 'ALL_ZONES_IN_SCOPE', // Sensible default
+                    targetZoneIds: [] // Explicitly empty for ALL_ZONES_IN_SCOPE or to be filled for SPECIFIC
                 }
             } as any; // Cast as any because AutomationAction is a union, and TS needs help here
         } else {
@@ -131,7 +131,7 @@ export function ActionsSection({
                         sortedPikoConnectors={sortedPikoConnectors}
                         sortedAvailableTargetDevices={sortedAvailableTargetDevices}
                         // Pass down the new props
-                        sortedAvailableAreas={sortedAvailableAreas}
+                        sortedAvailableZones={sortedAvailableZones}
                         currentRuleLocationScope={currentRuleLocationScope}
                     />
                 ))}

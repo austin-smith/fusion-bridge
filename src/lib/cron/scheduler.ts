@@ -1,5 +1,4 @@
 import cron from 'node-cron';
-// import { processAreaArmingSchedules } from '@/lib/actions/area-alarm-actions'; // No longer called directly here
 import { processScheduledAutomations } from '@/services/automation-service'; // Import new processor
 import { updateSunTimes } from '@/lib/cron/jobs/update-sun-times'; // Import sun times job
 import type { ScheduledTask } from 'node-cron';
