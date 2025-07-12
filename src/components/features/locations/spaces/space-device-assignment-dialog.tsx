@@ -3,6 +3,7 @@
 import React, { useCallback } from 'react';
 import type { Space, DeviceWithConnector } from '@/types/index';
 import { DeviceAssignmentDialog } from '@/components/features/common/device-assignment-dialog';
+import { useFusionStore } from '@/stores/store';
 
 // --- Component Props --- 
 interface SpaceDeviceAssignmentDialogProps {
@@ -54,26 +55,20 @@ export const SpaceDeviceAssignmentDialog: React.FC<SpaceDeviceAssignmentDialogPr
     return removeDeviceAction(space.id, deviceId);
   }, [space, removeDeviceAction]);
 
-  // Bulk operations for spaces - assign multiple devices
+  // Bulk operations for spaces
   const wrappedBulkAssignDevicesAction = useCallback(async (deviceIds: string[]): Promise<boolean> => {
     if (!space || deviceIds.length === 0) return false;
-    // Assign all devices to this space
-    for (const deviceId of deviceIds) {
-      const success = await assignDeviceAction(space.id, deviceId);
-      if (!success) return false;
-    }
-    return true;
-  }, [space, assignDeviceAction]);
+    // Use the new bulk assign function from the store
+    const { bulkAssignDevicesToSpace } = useFusionStore.getState();
+    return bulkAssignDevicesToSpace(space.id, deviceIds);
+  }, [space]);
 
   const wrappedBulkRemoveDevicesAction = useCallback(async (deviceIds: string[]): Promise<boolean> => {
     if (!space || deviceIds.length === 0) return false;
-    // Remove all specified devices
-    for (const deviceId of deviceIds) {
-      const success = await removeDeviceAction(space.id, deviceId);
-      if (!success) return false;
-    }
-    return true;
-  }, [space, removeDeviceAction]);
+    // Use the new bulk remove function from the store
+    const { bulkRemoveDevicesFromSpace } = useFusionStore.getState();
+    return bulkRemoveDevicesFromSpace(space.id, deviceIds);
+  }, [space]);
 
   if (!space) {
     return null;

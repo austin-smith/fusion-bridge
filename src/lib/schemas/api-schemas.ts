@@ -55,6 +55,14 @@ export const assignDeviceToSpaceSchema = z.object({
   deviceId: z.string().uuid("Invalid device ID format"),
 });
 
+export const assignDevicesToSpaceSchema = z.object({
+  deviceIds: z.array(z.string().uuid("Invalid device ID format")).min(1, "At least one device ID required"),
+});
+
+export const removeDevicesFromSpaceSchema = z.object({
+  deviceIds: z.array(z.string().uuid("Invalid device ID format")).min(1, "At least one device ID required"),
+});
+
 // Alarm Zone schemas
 export const createAlarmZoneSchema = z.object({
   name: z.string().min(1, "Name cannot be empty"),

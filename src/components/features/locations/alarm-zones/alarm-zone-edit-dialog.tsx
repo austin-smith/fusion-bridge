@@ -52,6 +52,8 @@ interface AlarmZoneEditDialogProps {
   onOpenChange: (open: boolean) => void;
   zoneToEdit?: AlarmZone | null; // Provide for editing, null/undefined for adding
   allLocations: Location[]; // Needed for location dropdown
+  allAlarmZones: AlarmZone[]; // Needed for duplicate validation
+  defaultLocationId?: string; // Default location ID for new zones
   onSubmit: (data: AlarmZoneFormData, zoneId?: string) => Promise<boolean>; // Returns promise indicating success
 }
 
@@ -60,6 +62,8 @@ export const AlarmZoneEditDialog: React.FC<AlarmZoneEditDialogProps> = ({
   onOpenChange, 
   zoneToEdit, 
   allLocations,
+  allAlarmZones,
+  defaultLocationId,
   onSubmit 
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -82,19 +86,36 @@ export const AlarmZoneEditDialog: React.FC<AlarmZoneEditDialogProps> = ({
   // Reset form when dialog opens or zoneToEdit changes
   useEffect(() => {
     if (isOpen) {
-      const defaultLocationId = zoneToEdit?.locationId 
-                                  ?? (allLocations.length > 0 ? allLocations[0].id : undefined);
+      const locationId = zoneToEdit?.locationId 
+                         ?? defaultLocationId 
+                         ?? (allLocations.length > 0 ? allLocations[0].id : undefined);
       form.reset({
         name: zoneToEdit?.name || '',
-        locationId: defaultLocationId,
+        locationId: locationId,
         description: zoneToEdit?.description || '',
         triggerBehavior: zoneToEdit?.triggerBehavior || 'standard',
       });
       setIsSubmitting(false);
     } 
-  }, [isOpen, zoneToEdit, form, allLocations]);
+  }, [isOpen, zoneToEdit, form, allLocations, defaultLocationId]);
 
   const handleFormSubmit = async (data: AlarmZoneFormData) => {
+    // Check for duplicate names within the same location
+    const trimmedName = data.name.trim();
+    const existingZone = allAlarmZones.find(zone => 
+      zone.name.toLowerCase() === trimmedName.toLowerCase() &&
+      zone.locationId === data.locationId &&
+      zone.id !== zoneToEdit?.id
+    );
+    
+    if (existingZone) {
+      form.setError('name', { 
+        type: 'manual', 
+        message: 'An alarm zone with this name already exists in this location.' 
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     // Call the provided onSubmit function (calls store action)
     const success = await onSubmit(data, zoneToEdit?.id);
@@ -145,7 +166,7 @@ export const AlarmZoneEditDialog: React.FC<AlarmZoneEditDialogProps> = ({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {allLocations.sort((a,b) => a.path.localeCompare(b.path)).map((loc) => (
+                      {[...allLocations].sort((a,b) => a.name.localeCompare(b.name)).map((loc) => (
                         <SelectItem key={loc.id} value={loc.id}>
                           {loc.name} 
                         </SelectItem>
@@ -180,40 +201,30 @@ export const AlarmZoneEditDialog: React.FC<AlarmZoneEditDialogProps> = ({
               control={form.control}
               name="triggerBehavior"
               render={({ field }) => (
-                <FormItem className="space-y-3">
+                <FormItem>
                   <FormLabel>Trigger Behavior</FormLabel>
                   <FormControl>
                     <RadioGroup
                       onValueChange={field.onChange}
-                      defaultValue={field.value}
+                      value={field.value}
                       className="flex flex-col space-y-2"
                     >
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="standard" id="standard" />
-                        <Label htmlFor="standard" className="font-normal cursor-pointer">
-                          <div>
-                            <div className="font-medium">Standard</div>
-                            <div className="text-sm text-muted-foreground">
-                              Use predefined alarm event types for triggering
-                            </div>
-                          </div>
+                        <Label htmlFor="standard" className="font-normal">
+                          Standard (Recommended)
                         </Label>
                       </div>
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="custom" id="custom" />
-                        <Label htmlFor="custom" className="font-normal cursor-pointer">
-                          <div>
-                            <div className="font-medium">Custom</div>
-                            <div className="text-sm text-muted-foreground">
-                              Configure specific trigger rules for this zone
-                            </div>
-                          </div>
+                        <Label htmlFor="custom" className="font-normal">
+                          Custom
                         </Label>
                       </div>
                     </RadioGroup>
                   </FormControl>
                   <FormDescription>
-                    Standard behavior works for most security zones. Choose custom only if you need specific trigger rules.
+                    Standard uses predefined security events. Custom allows fine-tuned control.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

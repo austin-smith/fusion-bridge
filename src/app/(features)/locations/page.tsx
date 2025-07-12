@@ -266,14 +266,11 @@ export default function LocationsPage() {
     const spaceIdBeingModified = spaceToAssignDevice?.id;
     setIsAssignDeviceDialogOpen(isOpen);
     if (!isOpen && spaceIdBeingModified) {
-      // When the dialog closes, refetch spaces
-      fetchSpaces().then(() => {
-        // After fetching, ensure the modified space remains expanded
-        setExpandedSpaceDevices(prev => ({
-          ...prev,
-          [spaceIdBeingModified]: true
-        }));
-      });
+      // After dialog closes, ensure the modified space remains expanded
+      setExpandedSpaceDevices(prev => ({
+        ...prev,
+        [spaceIdBeingModified]: true
+      }));
       setSpaceToAssignDevice(null);
     } else if (!isOpen) {
       setSpaceToAssignDevice(null);
@@ -434,7 +431,7 @@ export default function LocationsPage() {
     const lowerSearchTerm = searchTerm.toLowerCase();
     
     if (!searchTerm) {
-      return locations.sort((a, b) => a.name.localeCompare(b.name));
+      return [...locations].sort((a, b) => a.name.localeCompare(b.name));
     }
     
     // Filter locations by name OR if they contain spaces that match the search
@@ -727,6 +724,7 @@ export default function LocationsPage() {
           onOpenChange={setIsSpaceDialogOpen}
           spaceToEdit={editingSpace}
           allLocations={locations}
+          allSpaces={spaces}
           onSubmit={handleSpaceDialogSubmit}
         />
   

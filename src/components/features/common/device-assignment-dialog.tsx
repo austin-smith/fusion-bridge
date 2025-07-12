@@ -293,17 +293,27 @@ export const DeviceAssignmentDialog: React.FC<DeviceAssignmentDialogProps> = ({
         }
     });
 
-    // Apply filters to both lists
-    const filterDevice = (device: DeviceWithConnector): boolean => {
+    // Filter function for assigned devices (no assignment filter)
+    const filterAssignedDevice = (device: DeviceWithConnector): boolean => {
         const nameMatch = device.name.toLowerCase().includes(nameFilter.toLowerCase());
         const typeMatch = typeFilter === 'all' || device.deviceTypeInfo?.type === typeFilter;
         const connectorDisplayName = device.connectorName ?? formatConnectorCategory(device.connectorCategory);
         const connectorMatch = connectorFilter === 'all' || connectorDisplayName === connectorFilter;
         
-        // Assignment filter logic (simplified)
+        return nameMatch && typeMatch && connectorMatch;
+    };
+
+    // Filter function for available devices (includes assignment filter)
+    const filterAvailableDevice = (device: DeviceWithConnector): boolean => {
+        const nameMatch = device.name.toLowerCase().includes(nameFilter.toLowerCase());
+        const typeMatch = typeFilter === 'all' || device.deviceTypeInfo?.type === typeFilter;
+        const connectorDisplayName = device.connectorName ?? formatConnectorCategory(device.connectorCategory);
+        const connectorMatch = connectorFilter === 'all' || connectorDisplayName === connectorFilter;
+        
+        // Assignment filter logic - only applies to available devices
         let assignmentMatch = true;
         if (assignmentFilter === 'unassigned') {
-          // Show only unassigned devices (this is a simplified check)
+          // Show only unassigned devices
           assignmentMatch = !initialAssignedIds.has(device.id);
         }
         
@@ -311,8 +321,8 @@ export const DeviceAssignmentDialog: React.FC<DeviceAssignmentDialogProps> = ({
     };
 
     return [
-        currentAssigned.filter(filterDevice),
-        currentAvailable.filter(filterDevice)
+        currentAssigned.filter(filterAssignedDevice),
+        currentAvailable.filter(filterAvailableDevice)
     ];
   }, [allDevices, nameFilter, typeFilter, connectorFilter, assignmentFilter, getDisplayedCheckedState, initialAssignedIds]);
 

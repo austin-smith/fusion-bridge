@@ -47,6 +47,7 @@ interface SpaceEditDialogProps {
   onOpenChange: (open: boolean) => void;
   spaceToEdit?: Space | null; // Provide for editing, null/undefined for adding
   allLocations: Location[]; // Needed for location dropdown
+  allSpaces: Space[]; // Needed for duplicate validation
   onSubmit: (data: SpaceFormData, spaceId?: string) => Promise<boolean>; // Returns promise indicating success
 }
 
@@ -55,9 +56,11 @@ export const SpaceEditDialog: React.FC<SpaceEditDialogProps> = ({
   onOpenChange, 
   spaceToEdit, 
   allLocations,
+  allSpaces,
   onSubmit 
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
   const form = useForm<SpaceFormData>({
     resolver: zodResolver(spaceFormSchema),
     defaultValues: {
@@ -88,6 +91,22 @@ export const SpaceEditDialog: React.FC<SpaceEditDialogProps> = ({
   }, [isOpen, spaceToEdit, form, allLocations]);
 
   const handleFormSubmit = async (data: SpaceFormData) => {
+    // Check for duplicate names within the same location
+    const trimmedName = data.name.trim();
+    const existingSpace = allSpaces.find(space => 
+      space.name.toLowerCase() === trimmedName.toLowerCase() &&
+      space.locationId === data.locationId &&
+      space.id !== spaceToEdit?.id
+    );
+    
+    if (existingSpace) {
+      form.setError('name', { 
+        type: 'manual', 
+        message: 'A space with this name already exists in this location.' 
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     // Call the provided onSubmit function (calls store action)
     const success = await onSubmit(data, spaceToEdit?.id);
@@ -138,7 +157,7 @@ export const SpaceEditDialog: React.FC<SpaceEditDialogProps> = ({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {allLocations.sort((a,b) => a.path.localeCompare(b.path)).map((loc) => (
+                      {[...allLocations].sort((a,b) => a.name.localeCompare(b.name)).map((loc) => (
                         <SelectItem key={loc.id} value={loc.id}>
                           {loc.name} 
                         </SelectItem>

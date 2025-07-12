@@ -93,6 +93,7 @@ export default function AlarmZonesPage() {
 
   const [isZoneDialogOpen, setIsZoneDialogOpen] = useState(false);
   const [editingZone, setEditingZone] = useState<AlarmZone | null>(null);
+  const [defaultLocationId, setDefaultLocationId] = useState<string | undefined>(undefined);
   const [isZoneDeleteDialogOpen, setIsZoneDeleteDialogOpen] = useState(false);
   const [zoneToDelete, setZoneToDelete] = useState<AlarmZone | null>(null);
   const [isAssignDevicesDialogOpen, setIsAssignDevicesDialogOpen] = useState(false);
@@ -118,22 +119,20 @@ export default function AlarmZonesPage() {
     const zoneIdBeingModified = zoneToAssignDevices?.id;
     setIsAssignDevicesDialogOpen(isOpen);
     if (!isOpen && zoneIdBeingModified) {
-      // When the dialog closes, refetch zones
-      fetchAlarmZones().then(() => {
-        // After fetching, ensure the modified zone remains expanded
-        setExpandedZoneDevices(prev => ({
-          ...prev,
-          [zoneIdBeingModified]: true
-        }));
-      });
+      // After dialog closes, ensure the modified zone remains expanded
+      setExpandedZoneDevices(prev => ({
+        ...prev,
+        [zoneIdBeingModified]: true
+      }));
       setZoneToAssignDevices(null);
     } else if (!isOpen) {
       setZoneToAssignDevices(null);
     }
   };
 
-  const handleOpenZoneDialog = (zone: AlarmZone | null) => {
+  const handleOpenZoneDialog = (zone: AlarmZone | null, defaultLocationId?: string) => {
     setEditingZone(zone);
+    setDefaultLocationId(defaultLocationId);
     setIsZoneDialogOpen(true);
   };
 
@@ -333,7 +332,7 @@ export default function AlarmZonesPage() {
       });
     }
     
-    return filteredLocations.sort((a, b) => a.name.localeCompare(b.name));
+    return [...filteredLocations].sort((a, b) => a.name.localeCompare(b.name));
   }, [locations, searchTerm, locationFilter, statusFilter, zonesByLocation]);
 
   const isFilteredEmptyState = !isLoadingLocations && !isLoadingAlarmZones && 
@@ -360,7 +359,7 @@ export default function AlarmZonesPage() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Locations</SelectItem>
-          {locations.map(location => (
+          {[...locations].sort((a, b) => a.name.localeCompare(b.name)).map(location => (
             <SelectItem key={location.id} value={location.id}>
               {location.name}
             </SelectItem>
@@ -479,7 +478,7 @@ export default function AlarmZonesPage() {
                           <p className="text-sm text-muted-foreground mb-2">
                             No alarm zones in this location. 
                           </p>
-                          <Button variant="outline" size="sm" onClick={() => handleOpenZoneDialog(null)}>
+                          <Button variant="outline" size="sm" onClick={() => handleOpenZoneDialog(null, location.id)}>
                             <Plus className="h-3.5 w-3.5" /> Add Zone
                           </Button>
                         </div>
@@ -536,7 +535,7 @@ export default function AlarmZonesPage() {
                       }
                     </CardDescription>
                     {(!hasOriginalData || (searchTerm === '' && locationFilter === 'all' && statusFilter === 'all')) && (
-                      <Button onClick={() => handleOpenZoneDialog(null)}>
+                                              <Button onClick={() => handleOpenZoneDialog(null)}>
                         <Plus className="h-4 w-4 mr-2" />
                         Create Your First Zone
                       </Button>
@@ -554,6 +553,8 @@ export default function AlarmZonesPage() {
         onOpenChange={setIsZoneDialogOpen}
         zoneToEdit={editingZone}
         allLocations={locations}
+        allAlarmZones={alarmZones}
+        defaultLocationId={defaultLocationId}
         onSubmit={handleZoneDialogSubmit}
       />
       

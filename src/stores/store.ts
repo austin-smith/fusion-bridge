@@ -260,6 +260,8 @@ interface FusionState {
   deleteSpace: (id: string) => Promise<boolean>;
   assignDeviceToSpace: (spaceId: string, deviceId: string) => Promise<boolean>;
   removeDeviceFromSpace: (spaceId: string, deviceId: string) => Promise<boolean>;
+  bulkAssignDevicesToSpace: (spaceId: string, deviceIds: string[]) => Promise<boolean>;
+  bulkRemoveDevicesFromSpace: (spaceId: string, deviceIds: string[]) => Promise<boolean>;
   
   // --- NEW: Alarm Zone Actions ---
   fetchAlarmZones: (locationId?: string | null) => Promise<void>;
@@ -812,12 +814,11 @@ export const useFusionStore = create<FusionState>((set, get) => ({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ deviceId })
         });
-        const data: ApiResponse<{ spaceId: string, deviceId: string }> = await response.json();
+        const data: ApiResponse<{ spaceId: string, deviceIds: string[] }> = await response.json();
         if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to assign device to space');
         }
-        // Refresh spaces to update device assignments
-        await get().fetchSpaces();
+        // Don't refetch here - let bulk operations handle the refresh
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
@@ -828,19 +829,63 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   },
   removeDeviceFromSpace: async (spaceId, deviceId) => {
     try {
-         const response = await fetch(`/api/spaces/${spaceId}/devices/${deviceId}`, { method: 'DELETE' });
-        const data: ApiResponse<{ spaceId: string, deviceId: string }> = await response.json();
+         const response = await fetch(`/api/spaces/${spaceId}/devices?deviceId=${encodeURIComponent(deviceId)}`, { method: 'DELETE' });
+        const data: ApiResponse<{ spaceId: string, deviceIds: string[] }> = await response.json();
          if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to remove device from space');
         }
-        // Refresh spaces to update device assignments
-        await get().fetchSpaces();
+        // Don't refetch here - let bulk operations handle the refresh
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
        console.error(`Error removing device ${deviceId} from space ${spaceId}:`, message);
        set({ errorSpaces: message });
        return false;
+    }
+  },
+
+  // NEW: Bulk space device operations
+  bulkAssignDevicesToSpace: async (spaceId: string, deviceIds: string[]) => {
+    try {
+      const response = await fetch(`/api/spaces/${spaceId}/devices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceIds })
+      });
+      const data: ApiResponse<{ spaceId: string, deviceIds: string[] }> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to assign devices to space');
+      }
+      // Refresh spaces to update device assignments
+      await get().fetchSpaces();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error bulk assigning devices to space ${spaceId}:`, message);
+      set({ errorSpaces: message });
+      return false;
+    }
+  },
+  
+  bulkRemoveDevicesFromSpace: async (spaceId: string, deviceIds: string[]) => {
+    try {
+      const response = await fetch(`/api/spaces/${spaceId}/devices`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceIds })
+      });
+      const data: ApiResponse<{ spaceId: string, deviceIds: string[] }> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to remove devices from space');
+      }
+      // Refresh spaces to update device assignments
+      await get().fetchSpaces();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error bulk removing devices from space ${spaceId}:`, message);
+      set({ errorSpaces: message });
+      return false;
     }
   },
 
@@ -964,14 +1009,13 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         const response = await fetch(`/api/alarm-zones/${zoneId}/devices`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ deviceId })
+            body: JSON.stringify({ deviceIds: [deviceId] })
         });
-        const data: ApiResponse<{ zoneId: string, deviceId: string }> = await response.json();
+        const data: ApiResponse<{ zoneId: string, deviceIds: string[] }> = await response.json();
         if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to assign device to alarm zone');
         }
-        // Refresh alarm zones to update device assignments
-        await get().fetchAlarmZones();
+        // Don't refetch here - let bulk operations handle the refresh
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
@@ -982,13 +1026,16 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   },
   removeDeviceFromAlarmZone: async (zoneId, deviceId) => {
     try {
-         const response = await fetch(`/api/alarm-zones/${zoneId}/devices/${deviceId}`, { method: 'DELETE' });
-        const data: ApiResponse<{ zoneId: string, deviceId: string }> = await response.json();
+         const response = await fetch(`/api/alarm-zones/${zoneId}/devices`, {
+           method: 'DELETE',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ deviceIds: [deviceId] })
+         });
+        const data: ApiResponse<{ zoneId: string, deviceIds: string[] }> = await response.json();
          if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to remove device from alarm zone');
         }
-        // Refresh alarm zones to update device assignments
-        await get().fetchAlarmZones();
+        // Don't refetch here - let bulk operations handle the refresh
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
