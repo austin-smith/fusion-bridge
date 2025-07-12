@@ -28,8 +28,11 @@ interface OrgEnrichedEvent {
   connectorName: string | null;
   connectorCategory: string | null;
   connectorConfig: string | null;
+  spaceId: string | null;
+  spaceName: string | null;
   locationId: string | null;
   locationName: string | null;
+  locationPath: string | null;
 }
 
 // Modified Pagination Metadata Interface
@@ -48,6 +51,8 @@ interface ApiEnrichedEvent {
   connectorId: string;
   connectorName?: string;
   connectorCategory: string;
+  spaceId?: string;
+  spaceName?: string;
   locationId?: string;
   locationName?: string;
   timestamp: number; // Epoch ms
@@ -232,6 +237,8 @@ async function getSingleEvent(eventUuid: string, orgDb: any): Promise<ApiEnriche
       rawPayload: rawPayload,
       rawEventType: event.rawEventType ?? undefined,
       bestShotUrlComponents: bestShotUrlComponents,
+      spaceId: event.spaceId ?? undefined,
+      spaceName: event.spaceName ?? undefined,
       locationId: event.locationId ?? undefined,
       locationName: event.locationName ?? undefined,
     };
@@ -401,6 +408,8 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
         rawPayload: rawPayload,
         rawEventType: event.rawEventType ?? undefined,
         bestShotUrlComponents: bestShotUrlComponents,
+        spaceId: event.spaceId ?? undefined,
+        spaceName: event.spaceName ?? undefined,
         locationId: event.locationId ?? undefined,
         locationName: event.locationName ?? undefined,
       };

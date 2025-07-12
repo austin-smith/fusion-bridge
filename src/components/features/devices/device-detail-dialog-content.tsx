@@ -8,7 +8,7 @@ import { getDisplayStateIcon, getBatteryIcon, getBatteryColorClass } from '@/lib
 import { getDeviceTypeIcon } from "@/lib/mappings/presentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon, PowerIcon, PowerOffIcon, X } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon, PowerIcon, PowerOffIcon, X, Building, Box, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   DialogHeader,
@@ -223,6 +223,24 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     executeDeviceAction: state.executeDeviceAction,
     deviceActionLoading: state.deviceActionLoading,
   }));
+
+  // Get spaces and alarm zones to find device associations
+  const spaces = useFusionStore((state) => state.spaces);
+  const alarmZones = useFusionStore((state) => state.alarmZones);
+  const locations = useFusionStore((state) => state.locations);
+
+  // Find which space contains this device
+  const deviceSpace = spaces.find(space => space.deviceIds?.includes(device.internalId));
+  
+  // Find which alarm zone contains this device
+  const deviceAlarmZone = alarmZones.find(zone => zone.deviceIds?.includes(device.internalId));
+  
+  // Get location information from space or alarm zone
+  const deviceLocation = deviceSpace 
+    ? locations.find(loc => loc.id === deviceSpace.locationId)
+    : deviceAlarmZone 
+      ? locations.find(loc => loc.id === deviceAlarmZone.locationId)
+      : null;
 
   // Subscribe to device state changes from the store
   const deviceStateKey = `${device.connectorId}:${device.deviceId}`;
@@ -862,13 +880,38 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
             {device.connectorCategory === 'piko' && device.vendor && (
               <DetailRow label="Vendor" value={device.vendor} />
             )}
+            {/* Location Information - Conditional Rendering */}
+            {deviceLocation && (
+              <DetailRow 
+                label="Location" 
+                value={
+                  <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                    <Building className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-xs">{deviceLocation.name}</span>
+                  </Badge>
+                }
+              />
+            )}
             {/* Space Information - Conditional Rendering */}
-            {device.spaceName && (
+            {deviceSpace && (
               <DetailRow 
                 label="Space" 
                 value={
                   <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                    <span className="text-xs">{device.spaceName}</span>
+                    <Box className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-xs">{deviceSpace.name}</span>
+                  </Badge>
+                }
+              />
+            )}
+            {/* Alarm Zone Information - Conditional Rendering */}
+            {deviceAlarmZone && (
+              <DetailRow 
+                label="Alarm Zone" 
+                value={
+                  <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                    <ShieldCheck className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-xs">{deviceAlarmZone.name}</span>
                   </Badge>
                 }
               />
