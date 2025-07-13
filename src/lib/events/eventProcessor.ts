@@ -2,31 +2,36 @@ import { db } from '@/data/db';
 import {
   events as eventsTableSchema, // Alias to avoid naming conflict with the 'events' variable
   devices as devicesTableSchema,
-  areas as areasTableSchema,
-  areaDevices as areaDevicesTableSchema,
+  alarmZones as alarmZonesTableSchema,
+  alarmZoneDevices as alarmZoneDevicesTableSchema,
+  alarmZoneTriggerOverrides as alarmZoneTriggerOverridesTableSchema,
+  alarmZoneAuditLog as alarmZoneAuditLogTableSchema,
   connectors as connectorsTableSchema,
   automations as automationsTableSchema,
+  spaceDevices as spaceDevicesTableSchema,
+  spaces,
 } from '@/data/db/schema';
 import type { StandardizedEvent } from '@/types/events';
 import { eq, and, InferSelectModel } from 'drizzle-orm';
 import { ArmedState, EventType, EVENT_CATEGORY_DISPLAY_MAP, EVENT_TYPE_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP, DeviceType } from '@/lib/mappings/definitions';
-import { isSecurityRiskEvent } from '@/lib/security/alarmLogic';
+import { shouldTriggerAlarm } from '@/lib/alarm-event-types';
+import { createAlarmZonesRepository } from '@/data/repositories/alarm-zones';
 import { processEvent as processEventForAutomations } from '@/services/automation-service'; // Import automation service
 import { getRedisPubClient } from '@/lib/redis/client';
 import { getEventChannelName, getEventThumbnailChannelName, type RedisEventMessage } from '@/lib/redis/types';
 import { shouldFetchThumbnail, fetchEventThumbnail, type EventThumbnailData } from '@/services/event-thumbnail-fetcher';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
-import { findAreaCameras } from '@/services/event-thumbnail-resolver';
+import { findSpaceCameras } from '@/services/event-thumbnail-resolver';
 import { AutomationThumbnailAnalyzer } from '@/services/automation-thumbnail-analyzer';
 import { createThumbnailContext } from '@/types/automation-thumbnails';
 import { getThumbnailSource } from '@/services/event-thumbnail-resolver';
+import { buildEventWithContext } from '@/services/automation-execution-context-builder';
 
 // Infer types from schemas
 type Device = InferSelectModel<typeof devicesTableSchema>;
-type Area = InferSelectModel<typeof areasTableSchema>;
 
 /**
- * Creates an enriched Redis message with location and area information
+ * Creates an enriched Redis message with location and space information
  * Gracefully handles missing device info by publishing event without enrichment
  */
 async function createEnrichedRedisMessage(
@@ -35,22 +40,48 @@ async function createEnrichedRedisMessage(
   deviceInfo: any,
   thumbnailData?: EventThumbnailData | null
 ): Promise<RedisEventMessage> {
-  // Extract location and area information if device is associated
+  // Extract location and space information if device is associated
   let locationId: string | undefined;
   let locationName: string | undefined;
-  let areaId: string | undefined;
-  let areaName: string | undefined;
+  let spaceId: string | undefined;
+  let spaceName: string | undefined;
+  let alarmZoneId: string | undefined;
+  let alarmZoneName: string | undefined;
 
-  if (deviceInfo?.areaDevices?.[0]) {
-    const areaDevice = deviceInfo.areaDevices[0];
-    if (areaDevice.area) {
-      areaId = areaDevice.area.id;
-      areaName = areaDevice.area.name;
+  if (deviceInfo?.spaceDevices) {
+    const spaceDevice = deviceInfo.spaceDevices;
+    if (spaceDevice.space) {
+      spaceId = spaceDevice.space.id;
+      spaceName = spaceDevice.space.name;
       
-      if (areaDevice.area.location) {
-        locationId = areaDevice.area.location.id;
-        locationName = areaDevice.area.location.name;
+      if (spaceDevice.space.location) {
+        locationId = spaceDevice.space.location.id;
+        locationName = spaceDevice.space.location.name;
       }
+    }
+  }
+
+  // Get alarm zone for this device if we have device info (one zone per device)
+  if (deviceInfo?.id) {
+    try {
+      const deviceAlarmZone = await db.query.alarmZoneDevices.findFirst({
+        where: eq(alarmZoneDevicesTableSchema.deviceId, deviceInfo.id),
+        with: {
+          zone: {
+            columns: {
+              id: true,
+              name: true
+            }
+          }
+        }
+      });
+      
+      if (deviceAlarmZone) {
+        alarmZoneId = deviceAlarmZone.zone.id;
+        alarmZoneName = deviceAlarmZone.zone.name;
+      }
+    } catch (alarmZoneError) {
+      console.warn(`[EventProcessor] Failed to fetch alarm zone for device ${deviceInfo.id}:`, alarmZoneError);
     }
   }
 
@@ -64,8 +95,10 @@ async function createEnrichedRedisMessage(
     connectorName: connector.name,
     locationId,
     locationName,
-    areaId,
-    areaName,
+    spaceId,
+    spaceName,
+    alarmZoneId,
+    alarmZoneName,
     event: {
       ...event.payload, // Spread the standardized payload data into the event object first
       categoryId: event.category,
@@ -76,7 +109,7 @@ async function createEnrichedRedisMessage(
       subType: event.subtype ? (EVENT_SUBTYPE_DISPLAY_MAP[event.subtype] || event.subtype) : undefined,
     },
     rawEvent: event.originalEvent,
-    thumbnailData: thumbnailData || undefined
+    thumbnailUri: thumbnailData ? `data:${thumbnailData.contentType};base64,${thumbnailData.data}` : undefined
   };
 }
 
@@ -122,15 +155,19 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
             eq(devicesTableSchema.connectorId, event.connectorId),
             eq(devicesTableSchema.deviceId, event.deviceId)
           ),
-          limit: 1,
           with: {
-            areaDevices: {
+            spaceDevices: {
               with: {
-                area: {
+                space: {
                   with: {
                     location: true
                   }
                 }
+              }
+            },
+            alarmZoneDevice: {
+              with: {
+                zone: true
               }
             }
           }
@@ -144,43 +181,47 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
     // 3. Check thumbnail requirements from both SSE and automations
     let thumbnailData: EventThumbnailData | null = null;
     
-    // Get area cameras if event has an area association
-    const areaId = internalDeviceRecord?.areaDevices?.[0]?.area?.id;
-    let areaCameras: any[] = [];
+    // Get space cameras if event has a space association
+    const spaceDeviceAssociation = internalDeviceRecord?.spaceDevices;
+    const spaceId = spaceDeviceAssociation?.space?.id;
+    let spaceCameras: any[] = [];
     
-    if (areaId && connector?.organizationId) {
+    if (spaceId && connector?.organizationId) {
       try {
-        // Fetch all devices to find area cameras
+        // Fetch all devices to find space cameras
         const allDevices = await db.query.devices.findMany({
           with: {
             connector: true,
-            areaDevices: {
+            spaceDevices: {
               with: {
-                area: true
+                space: true
               }
             }
           }
         });
         
         // Map to the format expected by shared service
-        const devicesWithArea = allDevices.map(device => ({
-          ...device,
-          areaId: device.areaDevices?.[0]?.areaId,
-          connectorCategory: device.connector?.category || 'unknown',
-          deviceTypeInfo: getDeviceTypeInfo(device.connector?.category || 'unknown', device.type)
-        }));
+        const devicesWithSpace = allDevices.map(device => {
+          const spaceAssociation = device.spaceDevices;
+          return {
+            ...device,
+            spaceId: spaceAssociation?.space?.id,
+            connectorCategory: device.connector?.category || 'unknown',
+            deviceTypeInfo: getDeviceTypeInfo(device.connector?.category || 'unknown', device.type)
+          };
+        });
         
-        // Use shared service to find area cameras
-        areaCameras = findAreaCameras(areaId, devicesWithArea);
+        // Use space-based camera lookup
+        spaceCameras = findSpaceCameras(spaceId, devicesWithSpace);
         
-        if (areaCameras.length > 0) {
-          console.log(`[EventProcessor] Found ${areaCameras.length} Piko camera(s) in area ${areaId} for event ${event.eventId}`);
+        if (spaceCameras.length > 0) {
+          console.log(`[EventProcessor] Found ${spaceCameras.length} Piko camera(s) in space ${spaceId} for event ${event.eventId}`);
         } else {
-          console.log(`[EventProcessor] No Piko cameras found in area ${areaId} for event ${event.eventId}`);
+          console.log(`[EventProcessor] No Piko cameras found in space ${spaceId} for event ${event.eventId}`);
         }
       } catch (cameraFetchError) {
-        console.warn(`[EventProcessor] Failed to fetch area cameras for event ${event.eventId}:`, cameraFetchError);
-        // Continue without area cameras
+        console.warn(`[EventProcessor] Failed to fetch space cameras for event ${event.eventId}:`, cameraFetchError);
+        // Continue without space cameras
       }
     }
 
@@ -193,7 +234,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
       const pubClient = getRedisPubClient();
       
       // Check SSE subscribers
-      if (shouldFetchThumbnail(event, areaCameras)) {
+      if (shouldFetchThumbnail(event, spaceCameras)) {
         try {
           const thumbnailChannel = getEventThumbnailChannelName(connector.organizationId);
           const [, subscriberCount] = await pubClient.pubsub('NUMSUB', thumbnailChannel) as [string, number];
@@ -249,8 +290,8 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
       try {
         console.log(`[EventProcessor] Fetching thumbnail for event ${event.eventId} (SSE: ${sseSubscriberCount > 0}, Automations: ${automationRequiresThumbnail})`);
         
-        // Convert area cameras to the format expected by thumbnail fetcher
-        const areaCameraDevices = areaCameras.map(cam => ({
+        // Convert space cameras to the format expected by thumbnail fetcher
+        const spaceCameraDevices = spaceCameras.map((cam: any) => ({
           id: cam.id,
           deviceId: cam.deviceId,
           connectorId: cam.connectorId,
@@ -267,7 +308,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
           updatedAt: cam.updatedAt
         }));
         
-        thumbnailData = await fetchEventThumbnail(event, areaCameraDevices);
+        thumbnailData = await fetchEventThumbnail(event, spaceCameraDevices);
         
         if (thumbnailData) {
           console.log(`[EventProcessor] Thumbnail fetched successfully for event ${event.eventId} (${thumbnailData.size} bytes)`);
@@ -299,10 +340,10 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
           await pubClient.publish(thumbnailChannel, JSON.stringify(messageForThumbnailChannel));
         }
         
-        const areaName = baseMessage.areaName;
+        const spaceName = baseMessage.spaceName;
         const locationName = baseMessage.locationName;
         const thumbnailStatus = thumbnailData ? `with thumbnail (${thumbnailData.size} bytes)` : 'no thumbnail';
-        console.log(`[EventProcessor] Event ${event.eventId} published to channel(s): ${baseChannel}${sseSubscriberCount > 0 ? ` and ${thumbnailChannel} (${thumbnailStatus})` : ''} (area: ${areaName || 'none'}, location: ${locationName || 'none'})`);
+        console.log(`[EventProcessor] Event ${event.eventId} published to channel(s): ${baseChannel}${sseSubscriberCount > 0 ? ` and ${thumbnailChannel} (${thumbnailStatus})` : ''} (space: ${spaceName || 'none'}, location: ${locationName || 'none'})`);
       } else {
         console.warn(`[EventProcessor] Could not publish event ${event.eventId} to Redis: missing organizationId`);
       }
@@ -352,41 +393,71 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
         }
       }
 
-      // 5. Alarm Logic Integration (reuse area info from device lookup)
+      // 5. Alarm Zone Logic Integration
       try {
-        const areaDevice = internalDeviceRecord.areaDevices?.[0];
-        if (areaDevice?.area) {
-          const area = areaDevice.area;
+        if (connector?.organizationId) {
+          const alarmZonesRepo = createAlarmZonesRepository(connector.organizationId);
           
-          if (area.armedState === ArmedState.ARMED) {
-            // Pass the Partial<Device> we fetched. isSecurityRiskEvent is designed to handle this.
-            const isRisk = isSecurityRiskEvent(event, internalDeviceRecord as Partial<Device>); 
-
-            if (isRisk) {
-              // If area is armed (AWAY or STAY) and a risk event occurs, always set to TRIGGERED.
-              await db.update(areasTableSchema)
-                .set({
-                  armedState: ArmedState.TRIGGERED,
-                  updatedAt: new Date(),
-                })
-                .where(eq(areasTableSchema.id, area.id));
-              console.log(`[EventProcessor] Area ${area.id} set to TRIGGERED due to event ${event.eventId} from device ${internalDeviceRecord.id}.`);
-              // TODO: Trigger notifications here (e.g., send email, push notification)
+          // Get the alarm zone for this device (one device per zone)
+          const deviceZone = await alarmZonesRepo.getDeviceZone(internalDeviceRecord.id);
+          
+          if (deviceZone) {
+            // Only process alarm triggers for ARMED zones
+            if (deviceZone.armedState === ArmedState.ARMED) {
+              let shouldTrigger = false;
+              
+              // Determine if event should trigger based on zone's trigger behavior
+              if (deviceZone.triggerBehavior === 'standard') {
+                // Use standard trigger logic from alarm-event-types.ts
+                const displayState = (event.payload as any)?.displayState;
+                shouldTrigger = shouldTriggerAlarm(event.type, event.subtype, displayState);
+              } else if (deviceZone.triggerBehavior === 'custom') {
+                // Check trigger overrides first, fallback to standard behavior
+                const overrides = await alarmZonesRepo.getTriggerOverrides(deviceZone.id);
+                const override = overrides.find(o => o.eventType === event.type);
+                
+                if (override) {
+                  // Use custom override
+                  shouldTrigger = override.shouldTrigger;
+                } else {
+                  // Fallback to standard behavior
+                  const displayState = (event.payload as any)?.displayState;
+                  shouldTrigger = shouldTriggerAlarm(event.type, event.subtype, displayState);
+                }
+              }
+              
+              if (shouldTrigger) {
+                // Trigger the alarm zone with audit logging
+                await alarmZonesRepo.setArmedState(
+                  deviceZone.id,
+                  ArmedState.TRIGGERED,
+                  undefined, // No user ID for system-triggered events
+                  'alarm_event_trigger',
+                  event.eventId
+                );
+                console.log(`[EventProcessor] Alarm zone ${deviceZone.id} set to TRIGGERED due to event ${event.eventId} from device ${event.deviceId}.`);
+              }
+            } else {
+              // Zone is DISARMED or already TRIGGERED - no action needed
+              console.log(`[EventProcessor] Device ${event.deviceId} in zone ${deviceZone.id} (state: ${deviceZone.armedState}) - no alarm processing needed.`);
             }
+          } else {
+            // Device not assigned to any alarm zone
+            console.log(`[EventProcessor] Device ${event.deviceId} not assigned to any alarm zone - no alarm processing.`);
           }
         }
       } catch (alarmError) {
-        console.error(`[EventProcessor] Error during alarm logic for event ${event.eventId} (device ${internalDeviceRecord.id}):`, alarmError);
+        console.error(`[EventProcessor] Error during alarm zone logic for event ${event.eventId} (device ${event.deviceId}):`, alarmError);
       }
     } // End of if(internalDeviceRecord)
 
-    // 6. Process event for automations with thumbnail context
+    // 6. Process event for automations with context
     try {
       console.log(`[EventProcessor] Sending event ${event.eventId} to AutomationService${thumbnailData ? ' with thumbnail' : ''}.`);
       
       // Create thumbnail context for automation service
       const thumbnailContext = thumbnailData ? 
-        createThumbnailContext(thumbnailData, getThumbnailSource(event, areaCameras) ?? undefined) : 
+        createThumbnailContext(thumbnailData, getThumbnailSource(event, spaceCameras) ?? undefined) : 
         null;
       
       // Store thumbnail context on the event for the automation service to access
@@ -394,7 +465,25 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
         (event as any)._thumbnailContext = thumbnailContext;
       }
       
-      await processEventForAutomations(event);
+      // Create EventWithContext for automation processing
+      const eventWithContext = connector ? 
+        buildEventWithContext(event, connector, internalDeviceRecord) :
+        {
+          event,
+          deviceContext: {
+            deviceRecord: null,
+            spaceRecord: null,
+            alarmZoneRecord: null,
+            locationRecord: null,
+            connectorRecord: {
+              id: event.connectorId,
+              name: 'Unknown Connector',
+              category: 'unknown'
+            }
+          }
+        };
+      
+      await processEventForAutomations(eventWithContext);
     } catch (automationError) {
       console.error(`[EventProcessor] Error during automation processing for event ${event.eventId}:`, automationError);
     }

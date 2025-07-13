@@ -29,7 +29,7 @@ import { TriggerConditionsSection } from './form-sections/TriggerConditionsSecti
 import { TemporalConditionsSection } from './form-sections/TemporalConditionsSection';
 import { ActionsSection } from './form-sections/ActionsSection';
 import type { InsertableFieldNames } from './form-sections/ActionItem';
-import type { Location, Area } from '@/types';
+import type { Location, Space, AlarmZone } from '@/types';
 import { Skeleton } from "@/components/ui/skeleton";
 import { AutomationTriggerType } from '@/lib/automation-types';
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -83,10 +83,11 @@ interface AutomationFormProps {
     initialData: AutomationFormData;
     availableConnectors: Pick<ConnectorSelect, 'id' | 'name' | 'category'>[];
     sourceDeviceTypeOptions: any;
-    availableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; areaId?: string | null; locationId?: string | null; }>;
-    devicesForConditions: Array<{ id: string; name: string; areaId?: string | null; locationId?: string | null; }>;
+    availableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; spaceId?: string | null; locationId?: string | null; }>;
+    devicesForConditions: Array<{ id: string; name: string; spaceId?: string | null; locationId?: string | null; }>;
     allLocations: Location[];
-    allAreas: Area[];
+    allSpaces: Space[];
+    allAlarmZones: AlarmZone[];
 }
 
 const defaultRuleGroup: JsonRuleGroup = { any: [] };
@@ -131,7 +132,8 @@ export default function AutomationForm({
     availableTargetDevices = [],
     devicesForConditions,
     allLocations,
-    allAreas,
+    allSpaces,
+    allAlarmZones,
 }: AutomationFormProps) {
 
     const router = useRouter();
@@ -166,8 +168,9 @@ export default function AutomationForm({
     const previousTriggerRef = React.useRef<AutomationFormValues['config']['trigger']>();
 
     const safeAllLocations = Array.isArray(allLocations) ? allLocations : [];
-    const safeAllAreas = Array.isArray(allAreas) ? allAreas : [];
-    const conditionsDataReady = devicesForConditions && allLocations && allAreas;
+    const safeAllSpaces = Array.isArray(allSpaces) ? allSpaces : [];
+    const safeAllAlarmZones = Array.isArray(allAlarmZones) ? allAlarmZones : [];
+    const conditionsDataReady = devicesForConditions && allLocations && allSpaces && allAlarmZones;
 
     // Define the function to get default values. It will be called by useForm and useEffect.
     // This function should be pure and not cause side effects.
@@ -210,7 +213,7 @@ export default function AutomationForm({
             }
             if (action.type === 'sendHttpRequest' && typeof params === 'object' && params !== null) {
                  let headersArray = params.headers || [];
-                 const currentContentType = params.contentType || 'text/plain';
+                 const currentContentType = params.contentType || 'application/json';
                  if (typeof params.headersTemplate === 'string') {
                      headersArray = params.headersTemplate.split('\n')
                         .map((line: string) => line.trim()).filter((line: string) => line && line.includes(':')).map((line: string) => {
@@ -372,16 +375,27 @@ export default function AutomationForm({
         return foundLocation ? { id: foundLocation.id, name: foundLocation.name } : null;
     }, [watchedLocationScopeId, allLocations]);
 
-    const sortedAvailableAreas = React.useMemo(() => {
-        if (!Array.isArray(allAreas)) {
+    const sortedAvailableSpaces = React.useMemo(() => {
+        if (!Array.isArray(allSpaces)) {
             return [];
         }
-        let areasToConsider = allAreas;
+        let spacesToConsider = allSpaces;
         if (watchedLocationScopeId) {
-            areasToConsider = allAreas.filter(area => area.locationId === watchedLocationScopeId);
+            spacesToConsider = allSpaces.filter(space => space.locationId === watchedLocationScopeId);
         }
-        return [...areasToConsider].sort((a, b) => a.name.localeCompare(b.name));
-    }, [allAreas, watchedLocationScopeId]);
+        return [...spacesToConsider].sort((a, b) => a.name.localeCompare(b.name));
+    }, [allSpaces, watchedLocationScopeId]);
+
+    const sortedAvailableAlarmZones = React.useMemo(() => {
+        if (!Array.isArray(allAlarmZones)) {
+            return [];
+        }
+        let zonesToConsider = allAlarmZones;
+        if (watchedLocationScopeId) {
+            zonesToConsider = allAlarmZones.filter(zone => zone.locationId === watchedLocationScopeId);
+        }
+        return [...zonesToConsider].sort((a, b) => a.name.localeCompare(b.name));
+    }, [allAlarmZones, watchedLocationScopeId]);
 
     const initiallyHasTemporalConditions = React.useMemo(() => 
         Boolean(initialData?.configJson?.temporalConditions?.length),
@@ -697,7 +711,8 @@ export default function AutomationForm({
                                     basePath="config.trigger.conditions"
                                     watchedLocationScopeId={watchedLocationScopeId}
                                     allLocations={safeAllLocations}
-                                    allAreas={safeAllAreas}
+                                    allSpaces={safeAllSpaces}
+                                    allAlarmZones={safeAllAlarmZones}
                                     devicesForConditions={devicesForConditions}
                                     allConnectors={availableConnectors}
                                 />
@@ -855,7 +870,8 @@ export default function AutomationForm({
                                         initialExpanded={initiallyHasTemporalConditions}
                                         watchedLocationScopeId={watchedLocationScopeId}
                                         allLocations={safeAllLocations}
-                                        allAreas={safeAllAreas}
+                                        allSpaces={safeAllSpaces}
+                                        allAlarmZones={safeAllAlarmZones}
                                         devicesForConditions={devicesForConditions}
                                         allConnectors={availableConnectors}
                                     />
@@ -883,7 +899,7 @@ export default function AutomationForm({
                                 handleInsertToken={handleInsertToken}
                                 sortedPikoConnectors={sortedPikoConnectors}
                                 sortedAvailableTargetDevices={sortedAvailableTargetDevices}
-                                sortedAvailableAreas={sortedAvailableAreas}
+                                sortedAvailableZones={sortedAvailableAlarmZones}
                                 currentRuleLocationScope={currentRuleLocationScope}
                             />
                         </CardContent>

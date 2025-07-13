@@ -13,7 +13,8 @@ type ParsedPikoEventType = EventType.ANALYTICS_EVENT
                          | EventType.INTRUSION 
                          | EventType.LINE_CROSSING
                          | EventType.OBJECT_DETECTED
-                         | EventType.OBJECT_REMOVED;
+                         | EventType.OBJECT_REMOVED
+                         | EventType.MOTION_DETECTED;
 
 /**
  * Parses the event parameters from a Piko JSON-RPC event update message 
@@ -79,7 +80,7 @@ export async function parsePikoEvent(
     let specificEventSubtype: EventSubtype | undefined = undefined; 
     const inputPortId = rawEventParams.inputPortId?.toLowerCase(); 
     const pikoEventType = rawEventParams.eventType;
-    const allowedPikoEventTypes = ['analyticsSdkObjectDetected', 'analyticsSdkEvent'];
+    const allowedPikoEventTypes = ['analyticsSdkObjectDetected', 'analyticsSdkEvent', 'cameraMotionEvent'];
 
     if (!pikoEventType || !allowedPikoEventTypes.includes(pikoEventType)) {
         console.warn(`[Piko Parser][${connectorId}] Received Piko event with eventType '${pikoEventType || 'undefined'}'. Not an allowed type. Event discarded.`);
@@ -107,6 +108,8 @@ export async function parsePikoEvent(
         }
     } else if (pikoEventType === 'analyticsSdkEvent') {
         specificEventType = EventType.ANALYTICS_EVENT;
+    } else if (pikoEventType === 'cameraMotionEvent') {
+        specificEventType = EventType.MOTION_DETECTED;
     }
 
     const standardizedEvent: StandardizedEvent = {

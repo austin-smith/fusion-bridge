@@ -4,13 +4,21 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 
 // Import schemas from dedicated schemas file instead of route files
 import { 
-  createAreaSchema, 
-  updateAreaSchema, 
-  updateArmedStateSchema, 
   createLocationSchema, 
   deviceSyncSchema,
   validatePinSchema,
-  pinValidationResponseSchema
+  pinValidationResponseSchema,
+  createSpaceSchema,
+  updateSpaceSchema,
+  assignDevicesToSpaceSchema,
+  removeDevicesFromSpaceSchema,
+  createAlarmZoneSchema,
+  updateAlarmZoneSchema,
+  assignDevicesToZoneSchema,
+  removeDevicesFromZoneSchema,
+  setZoneArmedStateSchema,
+  addTriggerOverrideSchema,
+  removeTriggerOverrideSchema
 } from '../schemas/api-schemas';
 
 // Extend Zod with OpenAPI support
@@ -41,9 +49,6 @@ const paginatedResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
   }).openapi('PaginatedResponse');
 
 // Define query schemas
-const areasQuerySchema = z.object({
-  locationId: z.string().uuid().optional().describe('Filter by location UUID'),
-}).openapi('AreasQuery');
 
 const eventsQuerySchema = z.object({
   eventUuid: z.string().uuid().optional().describe('Get specific event by UUID'),
@@ -67,10 +72,6 @@ const devicesQuerySchema = z.object({
 }).openapi('DevicesQuery');
 
 // Define param schemas
-const areaIdParamsSchema = z.object({
-  id: z.string().uuid().describe('Area UUID'),
-}).openapi('AreaIdParams');
-
 const locationIdParamsSchema = z.object({
   id: z.string().uuid().describe('Location UUID'),
 }).openapi('LocationIdParams');
@@ -80,20 +81,50 @@ const userIdParamsSchema = z.object({
 }).openapi('UserIdParams');
 
 // Define response data schemas (inferred from your existing types)
-const areaSchema = z.object({
-  id: z.string().uuid().describe('Area UUID'),
-  name: z.string().describe('Area name'),
+const spaceSchema = z.object({
+  id: z.string().uuid().describe('Space UUID'),
+  name: z.string().describe('Space name'),
   locationId: z.string().uuid().describe('Location UUID'),
   locationName: z.string().describe('Location name'),
-  armedState: z.string().describe('Current armed state'),
-  deviceIds: z.array(z.string()).describe('Array of device IDs assigned to this area'),
-  nextScheduledArmTime: z.string().nullable().describe('Next scheduled arm time (ISO string)'),
-  nextScheduledDisarmTime: z.string().nullable().describe('Next scheduled disarm time (ISO string)'),
-  lastArmedStateChangeReason: z.string().nullable().describe('Reason for last armed state change'),
-  isArmingSkippedUntil: z.string().nullable().describe('Arming skipped until time (ISO string)'),
+  description: z.string().nullable().describe('Space description'),
+  deviceIds: z.array(z.string()).describe('Array of device IDs assigned to this space'),
   createdAt: z.string().describe('Creation timestamp (ISO string)'),
   updatedAt: z.string().describe('Last update timestamp (ISO string)'),
-}).openapi('Area');
+}).openapi('Space');
+
+const alarmZoneSchema = z.object({
+  id: z.string().uuid().describe('Alarm zone UUID'),
+  name: z.string().describe('Alarm zone name'),
+  locationId: z.string().uuid().describe('Location UUID'),
+  locationName: z.string().describe('Location name'),
+  description: z.string().nullable().describe('Alarm zone description'),
+  armedState: z.string().describe('Current armed state'),
+  lastArmedStateChangeReason: z.string().nullable().describe('Reason for last armed state change'),
+  triggerBehavior: z.enum(['standard', 'custom']).describe('Trigger behavior type'),
+  deviceIds: z.array(z.string()).describe('Array of device IDs assigned to this zone'),
+  createdAt: z.string().describe('Creation timestamp (ISO string)'),
+  updatedAt: z.string().describe('Last update timestamp (ISO string)'),
+}).openapi('AlarmZone');
+
+const triggerOverrideSchema = z.object({
+  id: z.string().uuid().describe('Override UUID'),
+  zoneId: z.string().uuid().describe('Alarm zone UUID'),
+  eventType: z.string().describe('Event type'),
+  shouldTrigger: z.boolean().describe('Whether this event type should trigger alarm'),
+  createdAt: z.string().describe('Creation timestamp (ISO string)'),
+}).openapi('TriggerOverride');
+
+const auditLogEntrySchema = z.object({
+  id: z.string().uuid().describe('Audit log entry UUID'),
+  zoneId: z.string().uuid().describe('Alarm zone UUID'),
+  userId: z.string().uuid().nullable().describe('User UUID'),
+  action: z.enum(['armed', 'disarmed', 'triggered', 'acknowledged']).describe('Action performed'),
+  previousState: z.string().nullable().describe('Previous armed state'),
+  newState: z.string().nullable().describe('New armed state'),
+  reason: z.string().nullable().describe('Reason for action'),
+  triggerEventId: z.string().nullable().describe('Event UUID that triggered the action'),
+  createdAt: z.string().describe('Creation timestamp (ISO string)'),
+}).openapi('AuditLogEntry');
 
 const locationSchema = z.object({
   id: z.string().uuid().describe('Location UUID'),
@@ -141,9 +172,8 @@ const deviceSchema = z.object({
     createdAt: z.string().describe('Server creation timestamp'),
     updatedAt: z.string().describe('Server update timestamp'),
   }).nullable().describe('Piko server details if applicable'),
-  areaId: z.string().nullable().describe('Area UUID'),
   locationId: z.string().nullable().describe('Location UUID'),
-  associationCount: z.number().nullable().describe('Number of associated devices'),
+  spaceId: z.string().nullable().describe('Space UUID'),
   deviceTypeInfo: z.object({
     type: z.string().describe('Standardized device type'),
     subtype: z.string().nullable().describe('Standardized device subtype'),
@@ -159,10 +189,12 @@ const eventSchema = z.object({
   connectorId: z.string().describe('Connector ID'),
   connectorName: z.string().optional().describe('Connector name'),
   connectorCategory: z.string().describe('Connector category'),
-  areaId: z.string().optional().describe('Area UUID'),
-  areaName: z.string().optional().describe('Area name'),
   locationId: z.string().optional().describe('Location UUID'),
   locationName: z.string().optional().describe('Location name'),
+  spaceId: z.string().optional().describe('Space UUID'),
+  spaceName: z.string().optional().describe('Space name'),
+  alarmZoneId: z.string().optional().describe('Alarm zone UUID that this device belongs to'),
+  alarmZoneName: z.string().optional().describe('Alarm zone name that this device belongs to'),
   timestamp: z.number().describe('Event timestamp (epoch milliseconds)'),
   eventCategory: z.string().describe('Event category'),
   eventType: z.string().describe('Event type'),
@@ -179,28 +211,12 @@ const eventSchema = z.object({
   rawEventType: z.string().optional().describe('Raw event type'),
 }).openapi('Event');
 
-// Admin schemas (create basic ones since they don't exist yet)
-const createApiKeySchema = z.object({
-  name: z.string().min(1, 'Name cannot be empty').describe('API key name'),
-}).openapi('CreateApiKeyRequest');
-
-const updateApiKeySchema = z.object({
-  enabled: z.boolean().describe('Whether the API key is enabled or disabled'),
-}).openapi('UpdateApiKeyRequest');
-
-const apiKeySchema = z.object({
-  id: z.string().uuid().describe('API key UUID'),
-  name: z.string().describe('API key name'),
-  keyPreview: z.string().describe('First 8 characters of the API key'),
-  createdAt: z.string().describe('Creation timestamp (ISO string)'),
-  lastUsedAt: z.string().nullable().describe('Last used timestamp (ISO string)'),
-}).openapi('ApiKey');
-
-const apiKeyTestResponseSchema = z.object({
-  success: z.literal(true),
-  message: z.string().describe('Test result message'),
-  timestamp: z.string().describe('Test timestamp (ISO string)'),
-}).openapi('ApiKeyTestResponse');
+  // API Key Test schema (only endpoint that works with API keys)
+  const apiKeyTestResponseSchema = z.object({
+    success: z.literal(true),
+    message: z.string().describe('Test result message'),
+    timestamp: z.string().describe('Test timestamp (ISO string)'),
+  }).openapi('ApiKeyTestResponse');
 
 // SSE Event Stream schemas
 const sseStreamQuerySchema = z.object({
@@ -239,18 +255,18 @@ const devicesCountResponseSchema = z.object({
   }).describe('Applied filters'),
 }).openapi('DevicesCountResponse');
 
-const sseStreamResponseSchema = z.string().describe('Server-Sent Events stream in text/event-stream format. Includes connection events, real-time events, heartbeat messages, system notifications, error messages, and arming state changes. Events may include Piko thumbnail data when includeThumbnails=true.').openapi('SSEStreamResponse', {
+const sseStreamResponseSchema = z.string().describe('Server-Sent Events stream in text/event-stream format. Includes connection events, real-time events, heartbeat messages, system notifications, error messages, and alarm zone state changes. Events may include Piko thumbnail data when includeThumbnails=true.').openapi('SSEStreamResponse', {
   example: `event: connection
 data: {"type":"connection","organizationId":"org-123","timestamp":"2024-01-01T00:00:00.000Z"}
 
 event: event  
-data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2024-01-01T00:00:00.000Z","organizationId":"org-123","deviceId":"front-door-camera","deviceName":"Front Door Camera","connectorId":"piko-001","connectorName":"Piko Server Main","locationId":"home-location-456","locationName":"Main House","areaId":"living-area-123","areaName":"Living Area","event":{"categoryId":"analytics","category":"Analytics","typeId":"object_detected","type":"Object Detected","subTypeId":"person","subType":"Person","objectTrackId":"track_12345","confidence":0.95,"zone":"entrance"},"rawEvent":{"eventType":"analyticsSdkObjectDetected","eventResourceId":"front-door-camera","objectTrackId":"track_12345","timestamp":"2024-01-01T00:00:00Z"},"thumbnailData":{"data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==","contentType":"image/jpeg","size":1024}}
+data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2024-01-01T00:00:00.000Z","organizationId":"org-123","deviceId":"front-door-camera","deviceName":"Front Door Camera","connectorId":"piko-001","connectorName":"Piko Server Main","locationId":"home-location-456","locationName":"Main House","spaceId":"living-space-123","spaceName":"Living Room","event":{"categoryId":"analytics","category":"Analytics","typeId":"object_detected","type":"Object Detected","subTypeId":"person","subType":"Person","objectTrackId":"track_12345","confidence":0.95,"zone":"entrance"},"rawEvent":{"eventType":"analyticsSdkObjectDetected","eventResourceId":"front-door-camera","objectTrackId":"track_12345","timestamp":"2024-01-01T00:00:00Z"},"thumbnailUri":"data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}
 
 event: event
-data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440001","timestamp":"2024-01-01T00:01:00.000Z","organizationId":"org-123","deviceId":"side-gate-sensor","deviceName":"Side Gate Sensor","connectorId":"netbox-001","connectorName":"NetBox Controller","locationId":"home-location-456","locationName":"Main House","areaId":"perimeter-area-124","areaName":"Perimeter","event":{"categoryId":"security","category":"Security","typeId":"door_opened","type":"Door Opened","motion":true,"zone":"side_entrance"},"rawEvent":{"event_type":"door","sensor_id":"side-gate-sensor","state":"open","timestamp":"2024-01-01T00:01:00Z"}}
+data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440001","timestamp":"2024-01-01T00:01:00.000Z","organizationId":"org-123","deviceId":"side-gate-sensor","deviceName":"Side Gate Sensor","connectorId":"netbox-001","connectorName":"NetBox Controller","locationId":"home-location-456","locationName":"Main House","spaceId":"perimeter-space-124","spaceName":"Side Gate","event":{"categoryId":"security","category":"Security","typeId":"door_opened","type":"Door Opened","motion":true,"zone":"side_entrance"},"rawEvent":{"event_type":"door","sensor_id":"side-gate-sensor","state":"open","timestamp":"2024-01-01T00:01:00Z"}}
 
-event: arming
-data: {"type":"arming","organizationId":"org-123","timestamp":"2024-01-01T00:02:00.000Z","area":{"id":"living-area-123","name":"Living Area","locationId":"home-location-456","locationName":"Main House","previousState":"DISARMED","previousStateDisplayName":"Disarmed","currentState":"ARMED","currentStateDisplayName":"Armed"}}
+event: alarm-zone
+data: {"type":"alarm-zone","organizationId":"org-123","timestamp":"2024-01-01T00:02:00.000Z","alarmZone":{"id":"perimeter-zone-123","name":"Perimeter Security","locationId":"home-location-456","locationName":"Main House","previousState":"DISARMED","previousStateDisplayName":"Disarmed","currentState":"ARMED","currentStateDisplayName":"Armed"}}
 
 event: heartbeat
 data: {"type":"heartbeat","timestamp":"2024-01-01T00:00:30.000Z"}
@@ -272,20 +288,12 @@ export function generateOpenApiSpec() {
   const registry = new OpenAPIRegistry();
 
   // Register all schemas
-  registry.register('CreateAreaRequest', createAreaSchema.openapi('CreateAreaRequest'));
-  registry.register('UpdateAreaRequest', updateAreaSchema.openapi('UpdateAreaRequest'));
-  registry.register('UpdateArmedStateRequest', updateArmedStateSchema.openapi('UpdateArmedStateRequest'));
-  registry.register('AreaIdParams', areaIdParamsSchema);
-  registry.register('Area', areaSchema);
   registry.register('Event', eventSchema);
   registry.register('CreateLocationRequest', createLocationSchema.openapi('CreateLocationRequest'));
   registry.register('LocationIdParams', locationIdParamsSchema);
   registry.register('Location', locationSchema);
   registry.register('DeviceSyncRequest', deviceSyncSchema.openapi('DeviceSyncRequest'));
   registry.register('Device', deviceSchema);
-  registry.register('CreateApiKeyRequest', createApiKeySchema);
-  registry.register('UpdateApiKeyRequest', updateApiKeySchema);
-  registry.register('ApiKey', apiKeySchema);
   registry.register('ErrorResponse', errorResponseSchema);
   registry.register('ApiKeyTestResponse', apiKeyTestResponseSchema);
   
@@ -293,6 +301,23 @@ export function generateOpenApiSpec() {
   registry.register('ValidatePinRequest', validatePinSchema.openapi('ValidatePinRequest'));
   registry.register('PinValidationResponse', pinValidationResponseSchema.openapi('PinValidationResponse'));
   registry.register('UserIdParams', userIdParamsSchema);
+  
+  // Spaces and alarm zones schemas
+  registry.register('CreateSpaceRequest', createSpaceSchema.openapi('CreateSpaceRequest'));
+  registry.register('UpdateSpaceRequest', updateSpaceSchema.openapi('UpdateSpaceRequest'));
+  registry.register('AssignDevicesToSpaceRequest', assignDevicesToSpaceSchema.openapi('AssignDevicesToSpaceRequest'));
+  registry.register('RemoveDevicesFromSpaceRequest', removeDevicesFromSpaceSchema.openapi('RemoveDevicesFromSpaceRequest'));
+  registry.register('CreateAlarmZoneRequest', createAlarmZoneSchema.openapi('CreateAlarmZoneRequest'));
+  registry.register('UpdateAlarmZoneRequest', updateAlarmZoneSchema.openapi('UpdateAlarmZoneRequest'));
+  registry.register('AssignDevicesToZoneRequest', assignDevicesToZoneSchema.openapi('AssignDevicesToZoneRequest'));
+  registry.register('RemoveDevicesFromZoneRequest', removeDevicesFromZoneSchema.openapi('RemoveDevicesFromZoneRequest'));
+  registry.register('SetZoneArmedStateRequest', setZoneArmedStateSchema.openapi('SetZoneArmedStateRequest'));
+  registry.register('AddTriggerOverrideRequest', addTriggerOverrideSchema.openapi('AddTriggerOverrideRequest'));
+  registry.register('RemoveTriggerOverrideRequest', removeTriggerOverrideSchema.openapi('RemoveTriggerOverrideRequest'));
+  registry.register('Space', spaceSchema);
+  registry.register('AlarmZone', alarmZoneSchema);
+  registry.register('TriggerOverride', triggerOverrideSchema);
+  registry.register('AuditLogEntry', auditLogEntrySchema);
 
   // SSE Event Stream schemas
   registry.register('SSEStreamQuery', sseStreamQuerySchema);
@@ -304,310 +329,61 @@ export function generateOpenApiSpec() {
   registry.register('DevicesCountResponse', devicesCountResponseSchema);
 
   // Register response schemas
-  const areasSuccessResponse = successResponseSchema(z.array(areaSchema));
-  const areaSuccessResponse = successResponseSchema(areaSchema);
   const eventSuccessResponse = successResponseSchema(eventSchema);
   const eventsPagedResponse = paginatedResponseSchema(eventSchema);
   const locationsSuccessResponse = successResponseSchema(z.array(locationSchema));
   const locationSuccessResponse = successResponseSchema(locationSchema);
   const devicesSuccessResponse = successResponseSchema(z.array(deviceSchema));
-  const apiKeysSuccessResponse = successResponseSchema(z.array(apiKeySchema));
-  const apiKeySuccessResponse = successResponseSchema(apiKeySchema);
   const deleteSuccessResponse = successResponseSchema(z.object({ id: z.string() }));
   
   // PIN management response schemas
   const pinValidationSuccessResponse = successResponseSchema(pinValidationResponseSchema);
+  
+  // Spaces and alarm zones response schemas
+  const spacesSuccessResponse = successResponseSchema(z.array(spaceSchema));
+  const spaceSuccessResponse = successResponseSchema(spaceSchema);
+  const alarmZonesSuccessResponse = successResponseSchema(z.array(alarmZoneSchema));
+  const alarmZoneSuccessResponse = successResponseSchema(alarmZoneSchema);
+  const triggerOverridesSuccessResponse = successResponseSchema(z.array(triggerOverrideSchema));
+  const triggerOverrideSuccessResponse = successResponseSchema(triggerOverrideSchema);
+  const auditLogSuccessResponse = z.object({
+    success: z.literal(true),
+    data: z.array(auditLogEntrySchema),
+    pagination: z.object({
+      limit: z.number(),
+      offset: z.number(),
+      hasMore: z.boolean(),
+    }),
+  });
+  const deviceAssignmentSuccessResponse = successResponseSchema(z.object({ 
+    spaceId: z.string(), 
+    deviceIds: z.array(z.string())
+  }));
+  const zoneDevicesSuccessResponse = successResponseSchema(z.object({ 
+    zoneId: z.string(), 
+    deviceIds: z.array(z.string())
+  }));
 
-  registry.register('AreasSuccessResponse', areasSuccessResponse);
-  registry.register('AreaSuccessResponse', areaSuccessResponse);
   registry.register('EventSuccessResponse', eventSuccessResponse);
   registry.register('EventsPagedResponse', eventsPagedResponse);
   registry.register('LocationsSuccessResponse', locationsSuccessResponse);
   registry.register('LocationSuccessResponse', locationSuccessResponse);
   registry.register('DevicesSuccessResponse', devicesSuccessResponse);
-  registry.register('ApiKeysSuccessResponse', apiKeysSuccessResponse);
-  registry.register('ApiKeySuccessResponse', apiKeySuccessResponse);
   registry.register('DeleteSuccessResponse', deleteSuccessResponse);
 
   // PIN management response schemas
   registry.register('PinValidationSuccessResponse', pinValidationSuccessResponse);
-
-  // Areas endpoints
-  registry.registerPath({
-    method: 'get',
-    path: '/api/areas',
-    summary: 'Get all areas',
-    description: 'Retrieves all security areas with their location assignments and device associations',
-    tags: ['Areas'],
-    request: {
-      query: areasQuerySchema,
-    },
-    responses: {
-      200: {
-        description: 'List of areas',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/AreasSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid request parameters',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'post',
-    path: '/api/areas',
-    summary: 'Create a new area',
-    description: 'Creates a new security area with specified name and location',
-    tags: ['Areas'],
-    request: {
-      body: {
-        content: {
-          'application/json': {
-            schema: createAreaSchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'Area created successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/AreaSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid input or validation error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'Location not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  // Individual area endpoints
-  registry.registerPath({
-    method: 'get',
-    path: '/api/areas/{id}',
-    summary: 'Get specific area',
-    description: 'Retrieves a single area by ID',
-    tags: ['Areas'],
-    request: {
-      params: areaIdParamsSchema,
-    },
-    responses: {
-      200: {
-        description: 'Area retrieved successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/AreaSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid ID format',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'Area not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'put',
-    path: '/api/areas/{id}',
-    summary: 'Update area',
-    description: 'Updates an area\'s name or location assignment',
-    tags: ['Areas'],
-    request: {
-      params: areaIdParamsSchema,
-      body: {
-        content: {
-          'application/json': {
-            schema: updateAreaSchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'Area updated successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/AreaSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid input or ID format',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'Area or target location not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'delete',
-    path: '/api/areas/{id}',
-    summary: 'Delete area',
-    description: 'Deletes an area and its device associations',
-    tags: ['Areas'],
-    request: {
-      params: areaIdParamsSchema,
-    },
-    responses: {
-      200: {
-        description: 'Area deleted successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/DeleteSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid ID format',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  // ARM STATE endpoint
-  registry.registerPath({
-    method: 'put',
-    path: '/api/areas/{id}/arm-state',
-    summary: 'Update area armed state',
-    description: 'Updates the armed state of a security area (DISARMED, ARMED, TRIGGERED)',
-    tags: ['Areas'],
-    request: {
-      params: areaIdParamsSchema,
-      body: {
-        content: {
-          'application/json': {
-            schema: updateArmedStateSchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'Armed state updated successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/AreaSuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid input or ID format',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'Area not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
+  
+  // Spaces and alarm zones response schemas
+  registry.register('SpacesSuccessResponse', spacesSuccessResponse);
+  registry.register('SpaceSuccessResponse', spaceSuccessResponse);
+  registry.register('AlarmZonesSuccessResponse', alarmZonesSuccessResponse);
+  registry.register('AlarmZoneSuccessResponse', alarmZoneSuccessResponse);
+  registry.register('TriggerOverridesSuccessResponse', triggerOverridesSuccessResponse);
+  registry.register('TriggerOverrideSuccessResponse', triggerOverrideSuccessResponse);
+  registry.register('AuditLogSuccessResponse', auditLogSuccessResponse);
+  registry.register('DeviceAssignmentSuccessResponse', deviceAssignmentSuccessResponse);
+  registry.register('ZoneDevicesSuccessResponse', zoneDevicesSuccessResponse);
 
   // Events endpoints
   registry.registerPath({
@@ -1072,182 +848,16 @@ export function generateOpenApiSpec() {
     },
   });
 
-  // Admin/API Keys endpoints
-  registry.registerPath({
-    method: 'get',
-    path: '/api/admin/api-keys',
-    summary: 'Get all API keys',
-    description: 'Retrieves all API keys with metadata (excludes actual key values)',
-    tags: ['Admin'],
-    responses: {
-      200: {
-        description: 'List of API keys',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ApiKeysSuccessResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'post',
-    path: '/api/admin/api-keys',
-    summary: 'Create a new API key',
-    description: 'Creates a new API key with the specified name',
-    tags: ['Admin'],
-    request: {
-      body: {
-        content: {
-          'application/json': {
-            schema: createApiKeySchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'API key created successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ApiKeySuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid input or validation error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'patch',
-    path: '/api/admin/api-keys/{id}',
-    summary: 'Update API key status',
-    description: 'Updates the enabled/disabled status of an existing API key',
-    tags: ['Admin'],
-    request: {
-      params: z.object({
-        id: z.string().uuid().describe('API key UUID'),
-      }),
-      body: {
-        content: {
-          'application/json': {
-            schema: updateApiKeySchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'API key status updated successfully',
-        content: {
-          'application/json': {
-            schema: successResponseSchema(z.object({
-              message: z.string(),
-            })),
-          },
-        },
-      },
-      400: {
-        description: 'Invalid input or validation error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'API key not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'delete',
-    path: '/api/admin/api-keys/{id}',
-    summary: 'Delete an API key',
-    description: 'Deletes an existing API key',
-    tags: ['Admin'],
-    request: {
-      params: z.object({
-        id: z.string().uuid().describe('API key UUID'),
-      }),
-    },
-    responses: {
-      200: {
-        description: 'API key deleted successfully',
-        content: {
-          'application/json': {
-            schema: successResponseSchema(z.object({
-              message: z.string(),
-            })),
-          },
-        },
-      },
-      404: {
-        description: 'API key not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
+  // API Key Test endpoint (only admin endpoint that works with API keys)
   registry.registerPath({
     method: 'get',
     path: '/api/admin/api-keys/test',
-    summary: 'Get API key detail',
-    description: 'Validates the provided API key and returns detailed information about the key, associated user, and organization scope',
-    tags: ['Admin'],
+    summary: 'Validate API key',
+    description: 'Validates the provided API key and returns detailed information about the key, associated user, and organization scope. This endpoint works with both session and API key authentication.',
+    tags: ['API Keys'],
     responses: {
       200: {
-        description: 'API key test successful',
+        description: 'API key validation successful',
         content: {
           'application/json': {
             schema: successResponseSchema(z.object({
@@ -1299,7 +909,7 @@ export function generateOpenApiSpec() {
     path: '/api/alarm/keypad/validate-pin',
     summary: 'Validate keypad PIN',
     description: 'Validates a 6-digit PIN and returns user information if valid. Used by keypad devices for authentication.',
-    tags: ['Alarm'],
+    tags: ['Alarm Keypad'],
     request: {
       body: {
         content: {
@@ -1315,6 +925,1031 @@ export function generateOpenApiSpec() {
         content: {
           'application/json': {
             schema: { $ref: '#/components/schemas/PinValidationSuccessResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  // Spaces endpoints
+  registry.registerPath({
+    method: 'get',
+    path: '/api/spaces',
+    summary: 'Get all spaces',
+    description: 'Retrieves all physical spaces with their device assignments',
+    tags: ['Spaces'],
+    responses: {
+      200: {
+        description: 'List of spaces',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/SpacesSuccessResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/spaces',
+    summary: 'Create a new space',
+    description: 'Creates a new physical space with specified name and location',
+    tags: ['Spaces'],
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            schema: createSpaceSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Space created successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/SpaceSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid input or validation error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Location not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/spaces/{id}',
+    summary: 'Get specific space',
+    description: 'Retrieves a single space by ID',
+    tags: ['Spaces'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Space UUID'),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Space retrieved successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/SpaceSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Space not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'put',
+    path: '/api/spaces/{id}',
+    summary: 'Update space',
+    description: 'Updates a space\'s name, description, or location assignment',
+    tags: ['Spaces'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Space UUID'),
+      }),
+      body: {
+        content: {
+          'application/json': {
+            schema: updateSpaceSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Space updated successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/SpaceSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid input or ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Space not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/api/spaces/{id}',
+    summary: 'Delete space',
+    description: 'Deletes a space and removes all device assignments',
+    tags: ['Spaces'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Space UUID'),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Space deleted successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/DeleteSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Space not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/spaces/{id}/devices',
+    summary: 'Get devices in space',
+    description: 'Retrieves all devices assigned to a space',
+    tags: ['Spaces'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Space UUID'),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Devices retrieved successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/DevicesSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Space not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/spaces/{id}/devices',
+    summary: 'Assign devices to space',
+    description: 'Assigns one or more devices to a space',
+    tags: ['Spaces'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Space UUID'),
+      }),
+      body: {
+        content: {
+          'application/json': {
+            schema: assignDevicesToSpaceSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Devices assigned successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/DeviceAssignmentSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid input or ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Space not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/api/spaces/{id}/devices',
+    summary: 'Remove devices from space',
+    description: 'Removes one or more device assignments from a space',
+    tags: ['Spaces'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Space UUID'),
+      }),
+      body: {
+        content: {
+          'application/json': {
+            schema: removeDevicesFromSpaceSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Devices removed successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/DeviceAssignmentSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid input or ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Space not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  // Alarm Zones endpoints
+  registry.registerPath({
+    method: 'get',
+    path: '/api/alarm-zones',
+    summary: 'Get all alarm zones',
+    description: 'Retrieves all alarm zones with their device assignments and armed states',
+    tags: ['Alarm Zones'],
+    responses: {
+      200: {
+        description: 'List of alarm zones',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/AlarmZonesSuccessResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/alarm-zones',
+    summary: 'Create a new alarm zone',
+    description: 'Creates a new alarm zone for security management',
+    tags: ['Alarm Zones'],
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            schema: createAlarmZoneSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Alarm zone created successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/AlarmZoneSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid input or validation error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Location not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/alarm-zones/{id}',
+    summary: 'Get specific alarm zone',
+    description: 'Retrieves a single alarm zone by ID',
+    tags: ['Alarm Zones'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Alarm zone UUID'),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Alarm zone retrieved successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/AlarmZoneSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Alarm zone not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'put',
+    path: '/api/alarm-zones/{id}',
+    summary: 'Update alarm zone',
+    description: 'Updates an alarm zone\'s name, description, or trigger behavior',
+    tags: ['Alarm Zones'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Alarm zone UUID'),
+      }),
+      body: {
+        content: {
+          'application/json': {
+            schema: updateAlarmZoneSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Alarm zone updated successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/AlarmZoneSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid input or ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Alarm zone not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/api/alarm-zones/{id}',
+    summary: 'Delete alarm zone',
+    description: 'Deletes an alarm zone and removes all device assignments',
+    tags: ['Alarm Zones'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Alarm zone UUID'),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Alarm zone deleted successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/DeleteSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Alarm zone not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/alarm-zones/{id}/devices',
+    summary: 'Get devices in alarm zone',
+    description: 'Retrieves all devices assigned to an alarm zone',
+    tags: ['Alarm Zones'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Alarm zone UUID'),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Devices retrieved successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/DevicesSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Alarm zone not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/alarm-zones/{id}/devices',
+    summary: 'Assign devices to alarm zone',
+    description: 'Assigns multiple devices to an alarm zone',
+    tags: ['Alarm Zones'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Alarm zone UUID'),
+      }),
+      body: {
+        content: {
+          'application/json': {
+            schema: assignDevicesToZoneSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Devices assigned successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ZoneDevicesSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid input or ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Alarm zone not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/api/alarm-zones/{id}/devices',
+    summary: 'Remove devices from alarm zone',
+    description: 'Removes multiple devices from an alarm zone',
+    tags: ['Alarm Zones'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Alarm zone UUID'),
+      }),
+      body: {
+        content: {
+          'application/json': {
+            schema: removeDevicesFromZoneSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Devices removed successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ZoneDevicesSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid input or ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Alarm zone not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'put',
+    path: '/api/alarm-zones/{id}/arm-state',
+    summary: 'Set alarm zone armed state',
+    description: 'Arms or disarms an alarm zone with audit logging',
+    tags: ['Alarm Zones'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Alarm zone UUID'),
+      }),
+      body: {
+        content: {
+          'application/json': {
+            schema: setZoneArmedStateSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Armed state updated successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/AlarmZoneSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid input or ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Alarm zone not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/alarm-zones/{id}/trigger-overrides',
+    summary: 'Get trigger overrides',
+    description: 'Retrieves custom trigger overrides for an alarm zone',
+    tags: ['Alarm Zones'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Alarm zone UUID'),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Trigger overrides retrieved successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/TriggerOverridesSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Alarm zone not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/alarm-zones/{id}/trigger-overrides',
+    summary: 'Add trigger override',
+    description: 'Adds or updates a custom trigger override for an alarm zone',
+    tags: ['Alarm Zones'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Alarm zone UUID'),
+      }),
+      body: {
+        content: {
+          'application/json': {
+            schema: addTriggerOverrideSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Trigger override added successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/TriggerOverrideSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid input or ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Alarm zone not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/api/alarm-zones/{id}/trigger-overrides',
+    summary: 'Remove trigger override',
+    description: 'Removes a custom trigger override from an alarm zone',
+    tags: ['Alarm Zones'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Alarm zone UUID'),
+      }),
+      body: {
+        content: {
+          'application/json': {
+            schema: removeTriggerOverrideSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Trigger override removed successfully',
+        content: {
+          'application/json': {
+            schema: successResponseSchema(z.object({
+              zoneId: z.string(),
+              eventType: z.string(),
+            })),
+          },
+        },
+      },
+      400: {
+        description: 'Invalid input or ID format',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Alarm zone not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      500: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/alarm-zones/{id}/audit-log',
+    summary: 'Get audit log',
+    description: 'Retrieves audit log for an alarm zone with pagination',
+    tags: ['Alarm Zones'],
+    request: {
+      params: z.object({
+        id: z.string().uuid().describe('Alarm zone UUID'),
+      }),
+      query: z.object({
+        limit: z.string().regex(/^\d+$/).optional().describe('Number of entries to return (default: 100, max: 1000)'),
+        offset: z.string().regex(/^\d+$/).optional().describe('Number of entries to skip (default: 0)'),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Audit log retrieved successfully',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/AuditLogSuccessResponse' },
+          },
+        },
+      },
+      400: {
+        description: 'Invalid ID format or pagination parameters',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
+          },
+        },
+      },
+      404: {
+        description: 'Alarm zone not found',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorResponse' },
           },
         },
       },

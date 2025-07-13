@@ -2,7 +2,7 @@ import { Separator } from "@/components/ui/separator";
 import React from "react";
 import AutomationForm from "@/components/features/automations/AutomationForm";
 import { db } from "@/data/db"; 
-import { connectors, devices, automations as automationsSchema, locations, areas, areaDevices } from "@/data/db/schema";
+import { connectors, devices, automations as automationsSchema, locations, spaces, alarmZones } from "@/data/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
 import { redirect, notFound } from 'next/navigation';
 import { AutomationConfigSchema, type AutomationConfig, type AutomationAction, type TemporalCondition } from "@/lib/automation-schemas";
@@ -10,7 +10,7 @@ import { AutomationTriggerType } from "@/lib/automation-types";
 import { DeviceType } from "@/lib/mappings/definitions";
 import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions";
 import { getDeviceTypeIconName } from "@/lib/mappings/presentation";
-import type { Location, Area } from '@/types';
+import type { Location, Space, AlarmZone } from '@/types';
 import { auth } from "@/lib/auth/server";
 import { createOrgScopedDb } from "@/lib/db/org-scoped-db";
 import { headers } from 'next/headers';
@@ -74,13 +74,15 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
     availableConnectorsResult, 
     allDevicesResult, 
     allLocationsResult, 
-    allAreasResult
+    allSpacesResult,
+    allAlarmZonesResult
   ] = await Promise.all([
     orgDb.automations.findById(id),
     orgDb.connectors.findAll(),
     orgDb.devices.findAll(),
     orgDb.locations.findAll(),
-    orgDb.areas.findAll()
+    orgDb.spaces.findAll(),
+    orgDb.alarmZones.findAll()
   ]);
 
   // Check if automation exists in this organization
@@ -89,12 +91,12 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
   }
 
   const automation = automationResult[0];
-  const formAvailableConnectors = availableConnectorsResult.map(c => ({
+  const formAvailableConnectors = availableConnectorsResult.map((c: any) => ({
     id: c.id,
     name: c.name,
     category: c.category,
   }));
-  const formAllLocations = allLocationsResult.map(location => ({
+  const formAllLocations = allLocationsResult.map((location: any) => ({
     id: location.id,
     parentId: location.parentId,
     name: location.name,
@@ -107,13 +109,25 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
     createdAt: location.createdAt,
     updatedAt: location.updatedAt
   }));
-  const formAllAreas = allAreasResult.map(area => ({
-    id: area.id,
-    name: area.name,
-    locationId: area.location.id,
-    armedState: area.armedState,
-    createdAt: area.createdAt,
-    updatedAt: area.updatedAt
+  const formAllSpaces = allSpacesResult.map((space: any) => ({
+    id: space.id,
+    name: space.name,
+    locationId: space.locationId,
+    createdAt: space.createdAt,
+    updatedAt: space.updatedAt
+  }));
+  const formAllAlarmZones: AlarmZone[] = allAlarmZonesResult.map((zone: any) => ({
+    id: zone.id,
+    locationId: zone.locationId,
+    name: zone.name,
+    description: zone.description,
+    armedState: zone.armedState,
+    lastArmedStateChangeReason: zone.lastArmedStateChangeReason,
+    triggerBehavior: zone.triggerBehavior,
+    createdAt: zone.createdAt,
+    updatedAt: zone.updatedAt,
+    // Don't include partial location data - let the component fetch full location if needed
+    location: undefined
   }));
   
   let processedConfigJson: AutomationConfig;
@@ -173,7 +187,7 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
   const rawTypesArray = Array.from(allSupportedRawTypesByAnyHandler);
 
   // 1. Determine Targetable Devices (for Actions)
-  let formAvailableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; areaId?: string | null; }> = [];
+  let formAvailableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; spaceId?: string | null; locationId?: string | null; }> = [];
   if (rawTypesArray.length > 0) {
       formAvailableTargetDevices = allDevicesResult
           .filter((d: any) => rawTypesArray.includes(d.type)) // Filter by controllable raw types
@@ -185,19 +199,21 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
                   name: d.name,
                   displayType: d.standardizedDeviceType || d.type || 'Unknown Type',
                   iconName: d.standardizedDeviceType ? getDeviceTypeIconName(stdType) : getDeviceTypeIconName(DeviceType.Unmapped),
-                  areaId: d.areaId, // Include areaId, might be useful for display/context
+                  spaceId: d.spaceId, // Include spaceId for display/context
+                  locationId: d.locationId, // Include locationId for scoping
               };
           });
   }
 
   // 2. Prepare Full List for Conditions (for RuleBuilder)
-  // RuleBuilder expects: { id: string; name: string; areaId?: string | null; }
-  // It uses the areaId to look up the area in the `allAreas` prop (which contains area.locationId)
+  // RuleBuilder expects: { id: string; name: string; spaceId?: string | null; locationId?: string | null; }
+  // It uses the spaceId to look up the space in the `allSpaces` prop (which contains space.locationId)
   // to perform location-based scoping.
   const devicesForConditions = allDevicesResult.map((d: any) => ({
       id: d.id,
       name: d.name,
-      areaId: d.areaId, // This is crucial for RuleBuilder's existing logic
+      spaceId: d.spaceId, // This is crucial for RuleBuilder's updated logic
+      locationId: d.locationId, // Include locationId for scoping
   }));
 
   // --- END: Process allDevicesResult ---
@@ -219,7 +235,8 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
           availableTargetDevices={formAvailableTargetDevices}
           devicesForConditions={devicesForConditions}
           allLocations={formAllLocations}
-          allAreas={formAllAreas}
+          allSpaces={formAllSpaces}
+          allAlarmZones={formAllAlarmZones}
         />
       </div>
     </div>

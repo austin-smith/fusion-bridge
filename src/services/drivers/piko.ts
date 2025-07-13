@@ -156,7 +156,7 @@ export class PikoApiError extends Error {
 
 export interface PikoJsonRpcSubscribeParams {
     startTimeMs: number;
-    eventType: ("analyticsSdkEvent" | "analyticsSdkObjectDetected")[];
+    eventType: ("analyticsSdkEvent" | "analyticsSdkObjectDetected" | "cameraMotionEvent")[];
     eventsOnly: boolean;
     _with: "eventParams";
 }
@@ -1008,7 +1008,6 @@ export async function testConnection(config: PikoConfig): Promise<{
     } else {
         if (!config.host || !config.port) return { connected: false, message: 'Missing host or port for local connection test' };
         const tokenResponse = await authManager['_fetchPikoLocalToken'](config as PikoConfig & { type: 'local' });
-        // TODO: Optionally make a test API call using pikoApiClient to verify token works
         return { connected: true, message: `Successfully authenticated with Piko at ${config.host}:${config.port}.`, systems: [], token: tokenResponse };
     }
   } catch (error) {

@@ -99,7 +99,6 @@ const eventHierarchy = {
             [EventType.UNKNOWN_EXTERNAL_EVENT]: { displayName: EVENT_TYPE_DISPLAY_MAP[EventType.UNKNOWN_EXTERNAL_EVENT], subtypes: [] },
         }
     },
-    // Note: SYSTEM_NOTIFICATION is not included as it's marked internal/placeholder
 };
 
 export const EventHierarchyViewer: React.FC = () => {

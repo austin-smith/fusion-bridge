@@ -4,7 +4,7 @@ import { toast } from 'sonner'; // <-- Import toast
 import { PikoServer } from '@/types';
 import type { StandardizedEvent } from '@/types/events';
 import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, ArmedState, ActionableState, ON, OFF } from '@/lib/mappings/definitions';
-import type { DeviceWithConnector, ConnectorWithConfig, Location, Area, ApiResponse, ArmingSchedule } from '@/types/index';
+import type { DeviceWithConnector, ConnectorWithConfig, Location, Space, AlarmZone, ApiResponse, ArmingSchedule, AlarmZoneTriggerOverride, CreateTriggerOverrideData } from '@/types/index';
 // Re-export the ArmingSchedule type
 export type { ArmingSchedule } from '@/types/index';
 import { YoLinkConfig } from '@/services/drivers/yolink';
@@ -152,10 +152,15 @@ interface FusionState {
   isLoadingLocations: boolean;
   errorLocations: string | null;
 
-  // --- NEW: Areas State ---
-  areas: Area[];
-  isLoadingAreas: boolean;
-  errorAreas: string | null;
+  // --- NEW: Spaces State ---
+  spaces: Space[];
+  isLoadingSpaces: boolean;
+  errorSpaces: string | null;
+  
+  // --- NEW: Alarm Zones State ---
+  alarmZones: AlarmZone[];
+  isLoadingAlarmZones: boolean;
+  errorAlarmZones: string | null;
   
   // --- NEW: Arming Schedules State ---
   armingSchedules: ArmingSchedule[];
@@ -248,20 +253,32 @@ interface FusionState {
   updateLocation: (id: string, data: { name?: string; parentId?: string | null }) => Promise<Location | null>;
   deleteLocation: (id: string) => Promise<boolean>;
 
-  // --- NEW: Area Actions ---
-  fetchAreas: (locationId?: string | null) => Promise<void>;
-  addArea: (data: { name: string; locationId?: string | null }) => Promise<Area | null>;
-  updateArea: (id: string, data: { name?: string; locationId?: string | null }) => Promise<Area | null>;
-  deleteArea: (id: string) => Promise<boolean>;
-  updateAreaArmedState: (id: string, armedState: ArmedState) => Promise<Area | null>;
-  assignDeviceToArea: (areaId: string, deviceId: string) => Promise<boolean>;
-  removeDeviceFromArea: (areaId: string, deviceId: string) => Promise<boolean>;
-  moveDeviceToArea: (deviceId: string, targetAreaId: string) => Promise<boolean>;
-  // Optimistic UI update for single device move
-  optimisticallyMoveDevice: (deviceId: string, sourceAreaId: string | undefined, targetAreaId: string) => void;
-
-  // Batch update armed state for areas in a location
-  batchUpdateAreasArmedState: (locationId: string, armedState: ArmedState) => Promise<boolean>;
+  // --- NEW: Space Actions ---
+  fetchSpaces: (locationId?: string | null) => Promise<void>;
+  addSpace: (data: { name: string; locationId: string; description?: string; metadata?: Record<string, any> }) => Promise<Space | null>;
+  updateSpace: (id: string, data: { name?: string; locationId?: string; description?: string; metadata?: Record<string, any> }) => Promise<Space | null>;
+  deleteSpace: (id: string) => Promise<boolean>;
+  assignDeviceToSpace: (spaceId: string, deviceId: string) => Promise<boolean>;
+  removeDeviceFromSpace: (spaceId: string, deviceId: string) => Promise<boolean>;
+  bulkAssignDevicesToSpace: (spaceId: string, deviceIds: string[]) => Promise<boolean>;
+  bulkRemoveDevicesFromSpace: (spaceId: string, deviceIds: string[]) => Promise<boolean>;
+  
+  // --- NEW: Alarm Zone Actions ---
+  fetchAlarmZones: (locationId?: string | null) => Promise<void>;
+  addAlarmZone: (data: { name: string; locationId: string; description?: string; triggerBehavior: 'standard' | 'custom' }) => Promise<AlarmZone | null>;
+  updateAlarmZone: (id: string, data: { name?: string; locationId?: string; description?: string; triggerBehavior?: 'standard' | 'custom' }) => Promise<AlarmZone | null>;
+  deleteAlarmZone: (id: string) => Promise<boolean>;
+  updateAlarmZoneArmedState: (id: string, armedState: ArmedState) => Promise<AlarmZone | null>;
+  assignDeviceToAlarmZone: (zoneId: string, deviceId: string) => Promise<boolean>;
+  removeDeviceFromAlarmZone: (zoneId: string, deviceId: string) => Promise<boolean>;
+  
+  // --- Bulk Alarm Zone Device Assignment Actions ---
+  bulkAssignDevicesToAlarmZone: (zoneId: string, deviceIds: string[]) => Promise<boolean>;
+  bulkRemoveDevicesFromAlarmZone: (zoneId: string, deviceIds: string[]) => Promise<boolean>;
+  
+  // --- Alarm Zone Trigger Override Actions ---
+  fetchAlarmZoneTriggerOverrides: (zoneId: string) => Promise<AlarmZoneTriggerOverride[]>;
+  saveAlarmZoneTriggerOverrides: (zoneId: string, overrides: CreateTriggerOverrideData[]) => Promise<boolean>;
 
   // NEW: Fetch all devices 
   fetchAllDevices: () => Promise<void>;
@@ -281,24 +298,11 @@ interface FusionState {
   // --- NEW: User List Refresh Action ---
   triggerUserListRefresh: () => void;
 
-  // --- NEW ZUSTAND ACTIONS FOR AREA SECURITY ---
-  armArea: (areaId: string) => Promise<boolean>;
-  disarmArea: (areaId: string) => Promise<boolean>;
-  skipNextArmForArea: (areaId: string) => Promise<boolean>;
-  // Optional: refreshAreaSecurityStatus: (areaId: string) => Promise<void>; 
-
   // --- NEW: Arming Schedule Actions ---
   fetchArmingSchedules: () => Promise<void>;
   addArmingSchedule: (scheduleData: NewArmingScheduleData) => Promise<ArmingSchedule | null>;
   updateArmingSchedule: (id: string, scheduleData: UpdateArmingScheduleData) => Promise<ArmingSchedule | null>;
   deleteArmingSchedule: (id: string) => Promise<boolean>;
-  setLocationDefaultSchedule: (locationId: string, scheduleId: string | null) => Promise<boolean>;
-  setAreaOverrideSchedule: (areaId: string, scheduleId: string | null) => Promise<boolean>;
-  // --- END NEW ---
-
-  // NEW: Bulk device assignment methods
-  bulkAssignDevicesToArea: (areaId: string, deviceIds: string[]) => Promise<boolean>;
-  bulkRemoveDevicesFromArea: (areaId: string, deviceIds: string[]) => Promise<boolean>;
 
   // --- NEW: Keypad PIN Management Actions ---
   setPinStatus: (userId: string, hasPin: boolean, setAt?: Date | null) => void;
@@ -394,10 +398,15 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   isLoadingLocations: false,
   errorLocations: null,
 
-  // NEW: Area State
-  areas: [],
-  isLoadingAreas: false,
-  errorAreas: null,
+  // NEW: Space State
+  spaces: [],
+  isLoadingSpaces: false,
+  errorSpaces: null,
+  
+  // NEW: Alarm Zone State
+  alarmZones: [],
+  isLoadingAlarmZones: false,
+  errorAlarmZones: null,
   
   // --- NEW: Arming Schedules Initial State ---
   armingSchedules: [],
@@ -722,360 +731,432 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: Area Actions ---
-  fetchAreas: async (locationId) => {
-    set({ isLoadingAreas: true, errorAreas: null });
+  // --- NEW: Space Actions ---
+  fetchSpaces: async (locationId) => {
+    set({ isLoadingSpaces: true, errorSpaces: null });
     try {
-      const url = locationId ? `/api/areas?locationId=${locationId}` : '/api/areas';
+      const url = locationId ? `/api/spaces?locationId=${locationId}` : '/api/spaces';
       const response = await fetch(url);
-      const data: ApiResponse<Area[]> = await response.json();
+      const data: ApiResponse<Space[]> = await response.json();
       if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to fetch areas');
+        throw new Error(data.error || 'Failed to fetch spaces');
       }
-      set({ areas: data.data || [], isLoadingAreas: false });
-      console.log(`[FusionStore] Areas loaded via clean organization filtering: ${data.data?.length || 0} areas`);
+      set({ spaces: data.data || [], isLoadingSpaces: false });
+      console.log(`[FusionStore] Spaces loaded: ${data.data?.length || 0} spaces`);
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
-       console.error("Error fetching areas:", message);
-       set({ isLoadingAreas: false, errorAreas: message });
+       console.error("Error fetching spaces:", message);
+       set({ isLoadingSpaces: false, errorSpaces: message });
     }
   },
-  addArea: async (areaData) => {
+  addSpace: async (spaceData) => {
      try {
-      const response = await fetch('/api/areas', {
+      const response = await fetch('/api/spaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(areaData)
+        body: JSON.stringify(spaceData)
       });
-      const data: ApiResponse<Area> = await response.json();
+      const data: ApiResponse<Space> = await response.json();
       if (!response.ok || !data.success || !data.data) {
-        throw new Error(data.error || 'Failed to create area');
+        throw new Error(data.error || 'Failed to create space');
       }
-       const newArea = data.data;
-      set((state) => ({ areas: [...state.areas, newArea].sort((a, b) => a.name.localeCompare(b.name)) }));
-      return newArea;
+       const newSpace = data.data;
+      set((state) => ({ spaces: [...state.spaces, newSpace].sort((a, b) => a.name.localeCompare(b.name)) }));
+      return newSpace;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
-       console.error("Error adding area:", message);
-       set({ errorAreas: message });
+       console.error("Error adding space:", message);
+       set({ errorSpaces: message });
        return null;
     }
   },
-  updateArea: async (id, areaData) => {
+  updateSpace: async (id, spaceData) => {
     try {
-      const response = await fetch(`/api/areas/${id}`, {
+      const response = await fetch(`/api/spaces/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(areaData)
+        body: JSON.stringify(spaceData)
       });
-      const data: ApiResponse<Area> = await response.json();
+      const data: ApiResponse<Space> = await response.json();
        if (!response.ok || !data.success || !data.data) {
-        throw new Error(data.error || 'Failed to update area');
+        throw new Error(data.error || 'Failed to update space');
       }
-      const updatedArea = data.data;
+      const updatedSpace = data.data;
       set((state) => ({ 
-        areas: state.areas.map(area => area.id === id ? updatedArea : area).sort((a, b) => a.name.localeCompare(b.name)),
+        spaces: state.spaces.map(space => space.id === id ? updatedSpace : space).sort((a, b) => a.name.localeCompare(b.name)),
       }));
-      return updatedArea;
+      return updatedSpace;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
-       console.error(`Error updating area ${id}:`, message);
-       set({ errorAreas: message });
+       console.error(`Error updating space ${id}:`, message);
+       set({ errorSpaces: message });
        return null;
     }
   },
-  deleteArea: async (id) => {
+  deleteSpace: async (id) => {
      try {
-      const response = await fetch(`/api/areas/${id}`, { method: 'DELETE' });
+      const response = await fetch(`/api/spaces/${id}`, { method: 'DELETE' });
       const data: ApiResponse<{ id: string }> = await response.json();
       if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to delete area');
+        throw new Error(data.error || 'Failed to delete space');
       }
       set((state) => ({ 
-        areas: state.areas.filter(area => area.id !== id),
+        spaces: state.spaces.filter(space => space.id !== id),
       }));
       return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
-       console.error(`Error deleting area ${id}:`, message);
-       set({ errorAreas: message });
+       console.error(`Error deleting space ${id}:`, message);
+       set({ errorSpaces: message });
        return false;
     }
   },
-  updateAreaArmedState: async (id, armedState) => {
+  assignDeviceToSpace: async (spaceId, deviceId) => {
+     try {
+        const response = await fetch(`/api/spaces/${spaceId}/devices`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceIds: [deviceId] })
+        });
+        const data: ApiResponse<{ spaceId: string, deviceIds: string[] }> = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Failed to assign device to space');
+        }
+        // Refresh spaces to update device assignments
+        await get().fetchSpaces();
+        return true;
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error(`Error assigning device ${deviceId} to space ${spaceId}:`, message);
+       set({ errorSpaces: message });
+       return false;
+    }
+  },
+  removeDeviceFromSpace: async (spaceId, deviceId) => {
     try {
-      const baseUrl = process.env.APP_URL || '';
-      const response = await fetch(`${baseUrl}/api/areas/${id}/arm-state`, {
+         const response = await fetch(`/api/spaces/${spaceId}/devices`, {
+           method: 'DELETE',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ deviceIds: [deviceId] })
+         });
+        const data: ApiResponse<{ spaceId: string, deviceIds: string[] }> = await response.json();
+         if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Failed to remove device from space');
+        }
+        // Refresh spaces to update device assignments
+        await get().fetchSpaces();
+        return true;
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error(`Error removing device ${deviceId} from space ${spaceId}:`, message);
+       set({ errorSpaces: message });
+       return false;
+    }
+  },
+
+  // NEW: Bulk space device operations
+  bulkAssignDevicesToSpace: async (spaceId: string, deviceIds: string[]) => {
+    try {
+      const response = await fetch(`/api/spaces/${spaceId}/devices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceIds })
+      });
+      const data: ApiResponse<{ spaceId: string, deviceIds: string[] }> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to assign devices to space');
+      }
+      // Refresh spaces to update device assignments
+      await get().fetchSpaces();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error bulk assigning devices to space ${spaceId}:`, message);
+      set({ errorSpaces: message });
+      return false;
+    }
+  },
+  
+  bulkRemoveDevicesFromSpace: async (spaceId: string, deviceIds: string[]) => {
+    try {
+      const response = await fetch(`/api/spaces/${spaceId}/devices`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceIds })
+      });
+      const data: ApiResponse<{ spaceId: string, deviceIds: string[] }> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to remove devices from space');
+      }
+      // Refresh spaces to update device assignments
+      await get().fetchSpaces();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error bulk removing devices from space ${spaceId}:`, message);
+      set({ errorSpaces: message });
+      return false;
+    }
+  },
+
+  // --- NEW: Alarm Zone Actions ---
+  fetchAlarmZones: async (locationId) => {
+    set({ isLoadingAlarmZones: true, errorAlarmZones: null });
+    try {
+      const url = locationId ? `/api/alarm-zones?locationId=${locationId}` : '/api/alarm-zones';
+      const response = await fetch(url);
+      const data: ApiResponse<AlarmZone[]> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch alarm zones');
+      }
+      set({ alarmZones: data.data || [], isLoadingAlarmZones: false });
+      console.log(`[FusionStore] Alarm zones loaded: ${data.data?.length || 0} zones`);
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error("Error fetching alarm zones:", message);
+       set({ isLoadingAlarmZones: false, errorAlarmZones: message });
+    }
+  },
+  addAlarmZone: async (zoneData) => {
+     try {
+      const response = await fetch('/api/alarm-zones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(zoneData)
+      });
+      const data: ApiResponse<AlarmZone> = await response.json();
+      if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || 'Failed to create alarm zone');
+      }
+       const newZone = data.data;
+      set((state) => ({ alarmZones: [...state.alarmZones, newZone].sort((a, b) => a.name.localeCompare(b.name)) }));
+      return newZone;
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error("Error adding alarm zone:", message);
+       set({ errorAlarmZones: message });
+       return null;
+    }
+  },
+  updateAlarmZone: async (id, zoneData) => {
+    try {
+      const response = await fetch(`/api/alarm-zones/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(zoneData)
+      });
+      const data: ApiResponse<AlarmZone> = await response.json();
+       if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || 'Failed to update alarm zone');
+      }
+      const updatedZone = data.data;
+      set((state) => ({ 
+        alarmZones: state.alarmZones.map(zone => zone.id === id ? updatedZone : zone).sort((a, b) => a.name.localeCompare(b.name)),
+      }));
+      return updatedZone;
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error(`Error updating alarm zone ${id}:`, message);
+       set({ errorAlarmZones: message });
+       return null;
+    }
+  },
+  deleteAlarmZone: async (id) => {
+     try {
+      const response = await fetch(`/api/alarm-zones/${id}`, { method: 'DELETE' });
+      const data: ApiResponse<{ id: string }> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to delete alarm zone');
+      }
+      set((state) => ({ 
+        alarmZones: state.alarmZones.filter(zone => zone.id !== id),
+      }));
+      return true;
+    } catch (err) {
+       const message = err instanceof Error ? err.message : 'Unknown error';
+       console.error(`Error deleting alarm zone ${id}:`, message);
+       set({ errorAlarmZones: message });
+       return false;
+    }
+  },
+  updateAlarmZoneArmedState: async (id, armedState) => {
+    try {
+      const response = await fetch(`/api/alarm-zones/${id}/arm-state`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ armedState })
       });
-      const data: ApiResponse<Area> = await response.json();
+      const data: ApiResponse<AlarmZone> = await response.json();
        if (!response.ok || !data.success || !data.data) {
         throw new Error(data.error || 'Failed to update armed state');
       }
-       // Assuming data.data contains at least { id: string, armedState: ArmedState }
-       const partialUpdatedArea = data.data;
+       const partialUpdatedZone = data.data;
        
       // Use produce for safe immutable update
       set(produce((draft: Draft<FusionState>) => {
-          const areaIndex = draft.areas.findIndex(area => area.id === id);
-          if (areaIndex !== -1) {
-              // Merge the new armedState into the existing area object
-              draft.areas[areaIndex] = { 
-                  ...draft.areas[areaIndex], // Keep existing properties (like deviceIds)
-                  armedState: partialUpdatedArea.armedState // Update only the armed state
+          const zoneIndex = draft.alarmZones.findIndex(zone => zone.id === id);
+          if (zoneIndex !== -1) {
+              // Merge the new armedState into the existing zone object
+              draft.alarmZones[zoneIndex] = { 
+                  ...draft.alarmZones[zoneIndex], // Keep existing properties
+                  armedState: partialUpdatedZone.armedState // Update only the armed state
               };
           }
       }));
       
-      // Return the updated area from the store for consistency, if needed elsewhere
-      // Note: The API response (partialUpdatedArea) might not be the full Area object now
-      const finalUpdatedArea = get().areas.find(area => area.id === id);
-      return finalUpdatedArea || null; 
+      const finalUpdatedZone = get().alarmZones.find(zone => zone.id === id);
+      return finalUpdatedZone || null; 
 
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
        console.error(`Error updating armed state for ${id}:`, message);
-       set({ errorAreas: message });
+       set({ errorAlarmZones: message });
        return null;
     }
   },
-  assignDeviceToArea: async (areaId, deviceId) => {
+  assignDeviceToAlarmZone: async (zoneId, deviceId) => {
      try {
-        const response = await fetch(`/api/areas/${areaId}/devices`, {
+        const response = await fetch(`/api/alarm-zones/${zoneId}/devices`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ deviceId })
+            body: JSON.stringify({ deviceIds: [deviceId] })
         });
-        const data: ApiResponse<{ areaId: string, deviceId: string }> = await response.json();
+        const data: ApiResponse<{ zoneId: string, deviceIds: string[] }> = await response.json();
         if (!response.ok || !data.success) {
-            throw new Error(data.error || 'Failed to assign device');
+            throw new Error(data.error || 'Failed to assign device to alarm zone');
         }
+        // Refresh alarm zones to update device assignments
+        await get().fetchAlarmZones();
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
-       console.error(`Error assigning device ${deviceId} to area ${areaId}:`, message);
-       set({ errorAreas: message });
+       console.error(`Error assigning device ${deviceId} to alarm zone ${zoneId}:`, message);
+       set({ errorAlarmZones: message });
        return false;
     }
   },
-  removeDeviceFromArea: async (areaId, deviceId) => {
+  removeDeviceFromAlarmZone: async (zoneId, deviceId) => {
     try {
-         const response = await fetch(`/api/areas/${areaId}/devices/${deviceId}`, { method: 'DELETE' });
-        const data: ApiResponse<{ areaId: string, deviceId: string }> = await response.json();
+         const response = await fetch(`/api/alarm-zones/${zoneId}/devices`, {
+           method: 'DELETE',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ deviceIds: [deviceId] })
+         });
+        const data: ApiResponse<{ zoneId: string, deviceIds: string[] }> = await response.json();
          if (!response.ok || !data.success) {
-            throw new Error(data.error || 'Failed to remove device');
+            throw new Error(data.error || 'Failed to remove device from alarm zone');
         }
-        // Refetch areas after successful removal to update the UI
-        await get().fetchAreas(); 
+        // Refresh alarm zones to update device assignments
+        await get().fetchAlarmZones();
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
-       console.error(`Error removing device ${deviceId} from area ${areaId}:`, message);
-       set({ errorAreas: message });
+       console.error(`Error removing device ${deviceId} from alarm zone ${zoneId}:`, message);
+       set({ errorAlarmZones: message });
        return false;
     }
   },
-
-  // NEW: Bulk assign devices to an area
-  bulkAssignDevicesToArea: async (areaId: string, deviceIds: string[]) => {
-    if (deviceIds.length === 0) return true; // Nothing to assign
-
+  
+  // --- Bulk Alarm Zone Device Assignment Actions ---
+  bulkAssignDevicesToAlarmZone: async (zoneId: string, deviceIds: string[]) => {
     try {
-      const response = await fetch(`/api/areas/${areaId}/devices/bulk`, {
-        method: 'PUT',
+      const response = await fetch(`/api/alarm-zones/${zoneId}/devices`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          deviceIds, 
-          operation: 'assign' 
-        })
+        body: JSON.stringify({ deviceIds })
       });
-      
-      const data: ApiResponse<{
-        areaId: string;
-        assigned: number;
-        skipped: number;
-        total: number;
-      }> = await response.json();
-      
+      const data: ApiResponse<any> = await response.json();
       if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to bulk assign devices');
+        throw new Error(data.error || 'Failed to assign devices to alarm zone');
       }
-      
-      console.log(`[Store] Bulk assigned ${data.data?.assigned || 0} devices to area ${areaId}`);
+      // Refresh alarm zones to update device assignments
+      await get().fetchAlarmZones();
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error bulk assigning devices to area ${areaId}:`, message);
-      set({ errorAreas: message });
+      console.error(`Error bulk assigning devices to alarm zone ${zoneId}:`, message);
+      set({ errorAlarmZones: message });
       return false;
     }
   },
-
-  // NEW: Bulk remove devices from an area
-  bulkRemoveDevicesFromArea: async (areaId: string, deviceIds: string[]) => {
-    if (deviceIds.length === 0) return true; // Nothing to remove
-
+  
+  bulkRemoveDevicesFromAlarmZone: async (zoneId: string, deviceIds: string[]) => {
     try {
-      const response = await fetch(`/api/areas/${areaId}/devices/bulk`, {
-        method: 'PUT',
+      const response = await fetch(`/api/alarm-zones/${zoneId}/devices`, {
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          deviceIds, 
-          operation: 'remove' 
-        })
+        body: JSON.stringify({ deviceIds })
       });
-      
-      const data: ApiResponse<{
-        areaId: string;
-        removed: number;
-        total: number;
-      }> = await response.json();
-      
+      const data: ApiResponse<any> = await response.json();
       if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to bulk remove devices');
+        throw new Error(data.error || 'Failed to remove devices from alarm zone');
       }
-      
-      console.log(`[Store] Bulk removed ${data.data?.removed || 0} devices from area ${areaId}`);
+      // Refresh alarm zones to update device assignments
+      await get().fetchAlarmZones();
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error bulk removing devices from area ${areaId}:`, message);
-      set({ errorAreas: message });
+      console.error(`Error bulk removing devices from alarm zone ${zoneId}:`, message);
+      set({ errorAlarmZones: message });
       return false;
     }
   },
-
-  // Optimistic UI update for single device move
-  optimisticallyMoveDevice: (deviceId, sourceAreaId, targetAreaId) => 
-    set(produce((draft: Draft<FusionState>) => {
-      if (sourceAreaId) {
-        const sourceArea = draft.areas.find(a => a.id === sourceAreaId);
-        if (sourceArea && sourceArea.deviceIds) {
-          sourceArea.deviceIds = sourceArea.deviceIds.filter(id => id !== deviceId);
-        }
+  
+  // --- Alarm Zone Trigger Override Actions ---
+  fetchAlarmZoneTriggerOverrides: async (zoneId: string) => {
+    try {
+      const response = await fetch(`/api/alarm-zones/${zoneId}/trigger-overrides`);
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch trigger overrides');
       }
-      const targetArea = draft.areas.find(a => a.id === targetAreaId);
-      if (targetArea) {
-        if (!targetArea.deviceIds) {
-          targetArea.deviceIds = [];
-        }
-        if (!targetArea.deviceIds.includes(deviceId)) {
-          targetArea.deviceIds.push(deviceId);
-        }
-      }
-      // Ensure sorting is maintained if needed, though usually order isn't critical for deviceIds
-      // draft.areas.sort((a, b) => a.name.localeCompare(b.name)); 
-    })),
+      return data.data || [];
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error fetching trigger overrides for zone ${zoneId}:`, message);
+      set({ errorAlarmZones: message });
+      return [];
+    }
+  },
 
-  moveDeviceToArea: async (deviceId, targetAreaId) => {
-      set({ errorAreas: null }); // Clear previous area-related errors
-      try {
-          console.log(`[Store] Attempting to move device ${deviceId} to area ${targetAreaId}`);
-          const response = await fetch(`/api/devices/${deviceId}/area`, { // Assuming this API endpoint
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ areaId: targetAreaId })
+  saveAlarmZoneTriggerOverrides: async (zoneId: string, overrides: CreateTriggerOverrideData[]) => {
+    try {
+      // Process each override individually using the REST API
+      for (const override of overrides) {
+        if (override.shouldTrigger) {
+          // Add or update the override
+          const response = await fetch(`/api/alarm-zones/${zoneId}/trigger-overrides`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              eventType: override.eventType,
+              shouldTrigger: override.shouldTrigger
+            })
           });
-
-          const data: ApiResponse<{ deviceId: string, areaId: string }> = await response.json();
-
+          const data = await response.json();
           if (!response.ok || !data.success) {
-              throw new Error(data.error || `Failed to move device ${deviceId}`);
+            throw new Error(data.error || `Failed to save override for ${override.eventType}`);
           }
-
-          console.log(`[Store] Successfully moved device ${deviceId} via API. Refetching areas.`);
-          // Refetch areas to get the updated device assignments - REMOVED FOR OPTIMISTIC UPDATE
-          // await get().fetchAreas(); 
-          return true;
-
-      } catch (err) {
-          const message = err instanceof Error ? err.message : 'Unknown error';
-          console.error(`Error moving device ${deviceId} to area ${targetAreaId}:`, message);
-          set({ errorAreas: `Failed to move device: ${message}` });
-          // Optionally refetch areas even on error to ensure UI consistency with backend state
-          await get().fetchAreas(); // Keep refetch on error
-          return false;
-      }
-  },
-
-  // Batch update armed state for areas in a location
-  batchUpdateAreasArmedState: async (locationId, armedState) => {
-    const { areas } = get(); // Get current areas from state
-    const targetAreas = areas.filter(area => area.locationId === locationId);
-    
-    if (targetAreas.length === 0) {
-      console.log(`[Store] No areas found for location ${locationId}. Skipping batch update.`);
-      return true; // Nothing to do, consider it success
-    }
-    
-    set({ errorAreas: null }); // Clear previous errors
-    console.log(`[Store] Batch updating ${targetAreas.length} areas in location ${locationId} to state ${armedState}`);
-    
-    try {
-      // Create an array of promises for each API call
-      const updatePromises = targetAreas.map(area => 
-        fetch(`/api/areas/${area.id}/arm-state`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ armedState })
-        }).then(async (response) => {
-          const data: ApiResponse<Area> = await response.json();
-          if (!response.ok || !data.success) {
-             // Throw an error for this specific area to be caught by Promise.allSettled
-             throw new Error(data.error || `Failed to update area ${area.id}`);
-          }
-          return { areaId: area.id, success: true, updatedArea: data.data }; // Return success indicator and potentially updated data
-        })
-      );
-      
-      // Use Promise.allSettled to wait for all updates, even if some fail
-      const results = await Promise.allSettled(updatePromises);
-      
-      const successfulUpdates: string[] = [];
-      const failedUpdates: { areaId: string; reason: string }[] = [];
-      
-      results.forEach((result, index) => {
-        const areaId = targetAreas[index].id;
-        if (result.status === 'fulfilled' && result.value.success) {
-          successfulUpdates.push(areaId);
         } else {
-          const reason = result.status === 'rejected' 
-                       ? (result.reason instanceof Error ? result.reason.message : String(result.reason))
-                       : 'Unknown failure';
-          failedUpdates.push({ areaId, reason });
-          console.error(`[Store] Failed batch update for area ${areaId}: ${reason}`);
+          // Remove the override (falling back to default behavior)
+          const response = await fetch(`/api/alarm-zones/${zoneId}/trigger-overrides`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              eventType: override.eventType
+            })
+          });
+          const data = await response.json();
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || `Failed to remove override for ${override.eventType}`);
+          }
         }
-      });
-      
-      // Update local state only for successful updates
-      if (successfulUpdates.length > 0) {
-         set(produce((draft: Draft<FusionState>) => {
-           successfulUpdates.forEach(areaId => {
-              const areaIndex = draft.areas.findIndex(a => a.id === areaId);
-              if (areaIndex !== -1) {
-                 draft.areas[areaIndex].armedState = armedState;
-              }
-           });
-         }));
-         console.log(`[Store] Successfully updated armed state for ${successfulUpdates.length} areas.`);
       }
-      
-      if (failedUpdates.length > 0) {
-        const errorMsg = `Failed to update ${failedUpdates.length} area(s).`;
-        set({ errorAreas: errorMsg });
-        console.warn(`[Store] Batch update completed with ${failedUpdates.length} failures.`);
-        return false; // Indicate partial or total failure
-      }
-      
-      return true; // All succeeded
-      
+      return true;
     } catch (err) {
-      // Catch any unexpected errors during the process (e.g., network issues before Promise.allSettled)
-      const message = err instanceof Error ? err.message : 'Unknown error during batch update';
-      console.error(`[Store] Error during batch area update:`, message);
-      set({ errorAreas: message });
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error saving trigger overrides for zone ${zoneId}:`, message);
+      set({ errorAlarmZones: message });
       return false;
     }
   },
@@ -1245,92 +1326,6 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   // --- NEW: User List Refresh Action ---
   triggerUserListRefresh: () => set({ lastUserListUpdateTimestamp: Date.now() }),
 
-  // --- NEW ZUSTAND ACTIONS IMPLEMENTATION ---
-  armArea: async (areaId: string) => {
-    const loadingToastId = toast.loading(`Arming area ${areaId.substring(0,6)}...`);
-    try {
-      const baseUrl = process.env.APP_URL || '';
-      const response = await fetch(`${baseUrl}/api/areas/${areaId}/security/arm`, { method: 'POST' });
-      const data: ApiResponse<{ area: Area }> = await response.json(); // Assuming API returns { area: UpdatedArea }
-      if (!response.ok || !data.success || !data.data?.area) {
-        throw new Error(data.error || 'Failed to arm area');
-      }
-      const updatedAreaFromApi = data.data.area;
-      set(produce((draft: Draft<FusionState>) => {
-        const areaIndex = draft.areas.findIndex(a => a.id === areaId);
-        if (areaIndex !== -1) {
-          // Merge updates: keep existing fields, overwrite with API response
-          draft.areas[areaIndex] = { ...draft.areas[areaIndex], ...updatedAreaFromApi };
-        }
-      }));
-      toast.success(`Area ${areaId.substring(0,6)} armed.`);
-      return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error arming area ${areaId}:`, message);
-      toast.error(`Failed to arm area: ${message}`);
-      return false;
-    } finally {
-      toast.dismiss(loadingToastId);
-    }
-  },
-
-  disarmArea: async (areaId: string) => {
-    const loadingToastId = toast.loading(`Disarming area ${areaId.substring(0,6)}...`);
-    try {
-      const baseUrl = process.env.APP_URL || '';
-      const response = await fetch(`${baseUrl}/api/areas/${areaId}/security/disarm`, { method: 'POST' });
-      const data: ApiResponse<{ area: Area }> = await response.json(); 
-      if (!response.ok || !data.success || !data.data?.area) {
-        throw new Error(data.error || 'Failed to disarm area');
-      }
-      const updatedAreaFromApi = data.data.area;
-      set(produce((draft: Draft<FusionState>) => {
-        const areaIndex = draft.areas.findIndex(a => a.id === areaId);
-        if (areaIndex !== -1) {
-          draft.areas[areaIndex] = { ...draft.areas[areaIndex], ...updatedAreaFromApi };
-        }
-      }));
-      toast.success(`Area ${areaId.substring(0,6)} disarmed.`);
-      return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error disarming area ${areaId}:`, message);
-      toast.error(`Failed to disarm area: ${message}`);
-      return false;
-    } finally {
-      toast.dismiss(loadingToastId);
-    }
-  },
-
-  skipNextArmForArea: async (areaId: string) => {
-    const loadingToastId = toast.loading(`Skipping next arm for area ${areaId.substring(0,6)}...`);
-    try {
-      const baseUrl = process.env.APP_URL || '';
-      const response = await fetch(`${baseUrl}/api/areas/${areaId}/security/skip-next-arm`, { method: 'POST' });
-      const data: ApiResponse<{ area: Area }> = await response.json(); 
-      if (!response.ok || !data.success || !data.data?.area) {
-        throw new Error(data.error || 'Failed to skip next arm');
-      }
-      const updatedAreaFromApi = data.data.area;
-      set(produce((draft: Draft<FusionState>) => {
-        const areaIndex = draft.areas.findIndex(a => a.id === areaId);
-        if (areaIndex !== -1) {
-          draft.areas[areaIndex] = { ...draft.areas[areaIndex], ...updatedAreaFromApi };
-        }
-      }));
-      toast.success(`Next arm for area ${areaId.substring(0,6)} will be skipped.`);
-      return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error skipping next arm for area ${areaId}:`, message);
-      toast.error(`Failed to skip next arm: ${message}`);
-      return false;
-    } finally {
-      toast.dismiss(loadingToastId);
-    }
-  },
-
   // --- NEW: Arming Schedule Actions ---
   fetchArmingSchedules: async () => {
     set({ isLoadingArmingSchedules: true, errorArmingSchedules: null });
@@ -1433,70 +1428,6 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error(`Error deleting arming schedule ${id}:`, message);
       toast.error(`Failed to delete arming schedule: ${message}`);
-      return false;
-    } finally {
-      toast.dismiss(loadingToastId);
-    }
-  },
-
-  setLocationDefaultSchedule: async (locationId: string, scheduleId: string | null) => {
-    const loadingToastId = toast.loading('Setting location default schedule...');
-    try {
-      const baseUrl = process.env.APP_URL || '';
-      const response = await fetch(`${baseUrl}/api/alarm/locations/${locationId}/default-schedule`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduleId }), // API expects { scheduleId: "uuid" | null }
-      });
-      const data: ApiResponse<Location> = await response.json();
-      if (!response.ok || !data.success || !data.data) {
-        throw new Error(data.error || 'Failed to set location default schedule.');
-      }
-      const updatedLocation = data.data;
-      set(produce((draft: Draft<FusionState>) => {
-        const locIndex = draft.locations.findIndex(l => l.id === locationId);
-        if (locIndex !== -1) {
-          draft.locations[locIndex].activeArmingScheduleId = updatedLocation.activeArmingScheduleId;
-           draft.locations[locIndex].updatedAt = new Date(updatedLocation.updatedAt); // Ensure updatedAt is a Date
-        }
-      }));
-      toast.success('Location default schedule updated.');
-      return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      toast.error(`Failed to set default schedule: ${message}`);
-      return false;
-    } finally {
-      toast.dismiss(loadingToastId);
-    }
-  },
-
-  setAreaOverrideSchedule: async (areaId: string, scheduleId: string | null) => {
-    const loadingToastId = toast.loading('Setting area override schedule...');
-    try {
-      const baseUrl = process.env.APP_URL || '';
-      const response = await fetch(`${baseUrl}/api/alarm/areas/${areaId}/override-schedule`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduleId }), // API expects { scheduleId: "uuid" | null }
-      });
-      const data: ApiResponse<Area> = await response.json();
-      if (!response.ok || !data.success || !data.data) {
-        throw new Error(data.error || 'Failed to set area override schedule.');
-      }
-      const updatedArea = data.data;
-      set(produce((draft: Draft<FusionState>) => {
-        const areaIndex = draft.areas.findIndex(a => a.id === areaId);
-        if (areaIndex !== -1) {
-          draft.areas[areaIndex].overrideArmingScheduleId = updatedArea.overrideArmingScheduleId;
-          draft.areas[areaIndex].updatedAt = new Date(updatedArea.updatedAt); // Ensure updatedAt is a Date
-        }
-      }));
-      toast.success('Area override schedule updated.');
-      return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      toast.error(`Failed to set override schedule: ${message}`);
       return false;
     } finally {
       toast.dismiss(loadingToastId);
@@ -1916,7 +1847,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         // Clear organization-scoped data
         connectors: [],
         locations: [],
-        areas: [],
+        spaces: [],
+        alarmZones: [],
         allDevices: [],
         deviceStates: new Map(), // Clear device states map
         armingSchedules: [],
@@ -1927,7 +1859,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         // Reset loading states
         isLoading: false,
         isLoadingLocations: false,
-        isLoadingAreas: false,
+        isLoadingSpaces: false,
+        isLoadingAlarmZones: false,
         isLoadingAllDevices: false,
         isLoadingArmingSchedules: false,
         isLoadingDashboardEvents: false,
@@ -1938,7 +1871,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         // Clear errors
         error: null,
         errorLocations: null,
-        errorAreas: null,
+        errorSpaces: null,
+        errorAlarmZones: null,
         errorAllDevices: null,
         errorArmingSchedules: null,
         errorDashboardEvents: null,
@@ -1956,7 +1890,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         // Trigger refetch of all organization-scoped data
         get().fetchConnectors();
         get().fetchLocations();
-        get().fetchAreas();
+        get().fetchSpaces();
+        get().fetchAlarmZones();
         get().fetchAllDevices(); // This now also populates deviceStates
         get().fetchArmingSchedules();
         get().fetchDashboardEvents();

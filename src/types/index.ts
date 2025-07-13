@@ -2,14 +2,6 @@
 import { TypedDeviceInfo } from '@/lib/mappings/definitions';
 import { ArmedState } from '@/lib/mappings/definitions'; // <-- Import the enum
 import { DisplayState } from '@/lib/mappings/definitions'; // <-- Import DisplayState
-// import { ConnectorCategory } from '@/lib/mappings/connector-categories'; // <-- Removed potentially incorrect import
-// import { PikoServer } from './piko'; // <-- Removed potentially incorrect import
-import { YoLinkConfig } from '@/services/drivers/yolink'; // Example config type
-// import { NetboxConfig } from '@/services/drivers/netbox'; // <-- Removed potentially incorrect import
-
-// ====================================
-// LEGACY TYPES (Phase 1 Compatible)
-// ====================================
 
 // Connector type for the database entities
 export interface Connector {
@@ -68,11 +60,13 @@ export type DeviceWithConnector = {
   serverId?: string | null;
   serverName?: string | null;
   pikoServerDetails?: any | null;
-  areaId?: string | null;
   locationId?: string | null; 
-  associationCount?: number | null;
+
   deviceTypeInfo?: TypedDeviceInfo;
   displayState?: DisplayState;
+  // Space information
+  spaceId?: string | null;
+  spaceName?: string | null;
 };
 
 // Interface for Piko Server details (based on DB schema)
@@ -112,29 +106,9 @@ export interface Location {
   activeArmingScheduleId?: string | null;
   // Optional: Populated for hierarchical display, not stored directly in DB table this way
   children?: Location[];
-  areas?: Area[]; // Areas directly within this location (optional population)
 }
 
-// Represents a security partition (Area)
-export interface Area {
-  id: string;
-  locationId: string;
-  name: string;
-  armedState: ArmedState; // <-- Use imported Enum
-  createdAt: Date;
-  updatedAt: Date;
-  overrideArmingScheduleId?: string | null;
-  nextScheduledArmTime?: string | null; // ISO date string (as typically used in API responses/Zustand state for dates)
-  nextScheduledDisarmTime?: string | null; // ISO date string
-  lastArmedStateChangeReason?: string | null;
-  isArmingSkippedUntil?: string | null; // ISO date string
-  locationName?: string; // Convenience field, often populated from a join
 
-  // Optional: Populated for display, not stored directly in DB table this way
-  location?: Location | null; // The parent location details
-  deviceIds?: string[]; // IDs of devices assigned to this area
-  devices?: DeviceWithConnector[]; // Full device details (optional population)
-}
 
 export interface ArmingSchedule {
   id: string;
@@ -145,6 +119,71 @@ export interface ArmingSchedule {
   isEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
+}
+
+// Represents a physical space where devices coexist
+export interface Space {
+  id: string;
+  locationId: string;
+  name: string;
+  description?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  
+  // Optional: Populated for display, not stored directly in DB
+  location?: Location | null;
+  deviceIds?: string[]; // IDs of devices in this space
+  devices?: DeviceWithConnector[]; // Full device details (optional population)
+}
+
+// Represents a logical alarm zone for security management
+export interface AlarmZone {
+  id: string;
+  locationId: string;
+  name: string;
+  description?: string | null;
+  armedState: ArmedState;
+  lastArmedStateChangeReason?: string | null;
+  triggerBehavior: 'standard' | 'custom';
+  createdAt: Date;
+  updatedAt: Date;
+  
+  // Optional: Populated for display, not stored directly in DB
+  location?: Location | null;
+  deviceIds?: string[]; // IDs of devices in this zone
+  devices?: DeviceWithConnector[]; // Full device details (optional population)
+  triggerOverrides?: AlarmZoneTriggerOverride[]; // Custom trigger rules
+}
+
+// Represents a custom trigger override for an alarm zone
+export interface AlarmZoneTriggerOverride {
+  id: string;
+  zoneId: string;
+  eventType: string; // EventType enum value
+  shouldTrigger: boolean;
+  createdAt: Date;
+}
+
+export interface CreateTriggerOverrideData {
+  eventType: string;
+  shouldTrigger: boolean;
+}
+
+// Represents an audit log entry for alarm zone actions
+export interface AlarmZoneAuditLogEntry {
+  id: string;
+  zoneId: string;
+  userId?: string | null;
+  action: 'armed' | 'disarmed' | 'triggered' | 'acknowledged';
+  previousState?: ArmedState | null;
+  newState?: ArmedState | null;
+  reason?: string | null;
+  triggerEventId?: string | null;
+  createdAt: Date;
+  
+  // Optional: Populated for display
+  zone?: AlarmZone | null;
+  user?: { id: string; name?: string | null; email: string } | null;
 }
 
 // ====================================

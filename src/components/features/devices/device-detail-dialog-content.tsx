@@ -8,7 +8,7 @@ import { getDisplayStateIcon, getBatteryIcon, getBatteryColorClass } from '@/lib
 import { getDeviceTypeIcon } from "@/lib/mappings/presentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon, PowerIcon, PowerOffIcon, X } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon, PowerIcon, PowerOffIcon, X, Building, Box, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   DialogHeader,
@@ -54,7 +54,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import type { PikoConfig } from '@/services/drivers/piko'; // Import PikoConfig type
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { MultiSelectComboBox } from '@/components/ui/multi-select-combobox';
+
 
 // Define the shape of the expected prop, compatible with DisplayedDevice from page.tsx
 // It needs all fields used internally, *excluding* the original 'status' field.
@@ -79,6 +79,8 @@ export interface DeviceDetailProps {
   batteryPercentage?: number | null; // Add battery percentage
   createdAt: Date;
   updatedAt: Date;
+  spaceId?: string | null; // Add space ID
+  spaceName?: string | null; // Add space name
   // Add lastStateEvent / lastStatusEvent if needed in dialog?
 }
 
@@ -119,11 +121,7 @@ const getStatusBadgeStyle = (
 // List of known badge variant names
 const knownBadgeVariants = ['default', 'secondary', 'destructive', 'outline'];
 
-// Interface for device selection
-interface DeviceOption {
-  value: string; // deviceId
-  label: string; // name
-}
+
 
 // Create a new TimeAgoText component just for the text content
 // Component that ONLY updates the text, not the container
@@ -226,6 +224,24 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     deviceActionLoading: state.deviceActionLoading,
   }));
 
+  // Get spaces and alarm zones to find device associations
+  const spaces = useFusionStore((state) => state.spaces);
+  const alarmZones = useFusionStore((state) => state.alarmZones);
+  const locations = useFusionStore((state) => state.locations);
+
+  // Find which space contains this device
+  const deviceSpace = spaces.find(space => space.deviceIds?.includes(device.internalId));
+  
+  // Find which alarm zone contains this device
+  const deviceAlarmZone = alarmZones.find(zone => zone.deviceIds?.includes(device.internalId));
+  
+  // Get location information from space or alarm zone
+  const deviceLocation = deviceSpace 
+    ? locations.find(loc => loc.id === deviceSpace.locationId)
+    : deviceAlarmZone 
+      ? locations.find(loc => loc.id === deviceAlarmZone.locationId)
+      : null;
+
   // Subscribe to device state changes from the store
   const deviceStateKey = `${device.connectorId}:${device.deviceId}`;
   const currentDeviceState = deviceStates.get(deviceStateKey);
@@ -238,18 +254,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   // No need for internal casting anymore
   // const displayDevice = device as ...;
 
-  // --- State for Associations ---
-  // For device -> Piko associations
-  const [availablePikoCameras, setAvailablePikoCameras] = useState<DeviceOption[]>([]);
-  const [selectedPikoCameraIds, setSelectedPikoCameraIds] = useState<Set<string>>(new Set());
-  // For device associations
-  const [availableLinkedDevices, setAvailableLinkedDevices] = useState<DeviceOption[]>([]);
-  const [selectedLinkedDeviceIds, setSelectedLinkedDeviceIds] = useState<Set<string>>(new Set());
-  const [fetchedAllDevices, setFetchedAllDevices] = useState<DeviceDetailProps[]>([]); // Added state for all devices
-  
-  const [isLoadingAssociations, setIsLoadingAssociations] = useState(false);
-  const [isSavingAssociations, setIsSavingAssociations] = useState(false);
-  const [associationError, setAssociationError] = useState<string | null>(null);
+
   
   // --- State for Thumbnail & Live Video --- 
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
@@ -300,84 +305,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   }
   // --- END: Logic ---
 
-  // Fetch available devices and current associations
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoadingAssociations(true);
-      setAssociationError(null);
-      
-      // Reset selections based on current device type
-      if (device.connectorCategory !== 'piko') { // For non-Piko devices (e.g., YoLink, and potentially others)
-        setSelectedPikoCameraIds(new Set());
-        setAvailablePikoCameras([]);
-      }
-      if (device.connectorCategory === 'piko') { // For Piko devices
-        setSelectedLinkedDeviceIds(new Set());
-        setAvailableLinkedDevices([]);
-      }
 
-      try {
-        // 1. Fetch all devices
-        const allDevicesResponse = await fetch('/api/devices');
-        if (!allDevicesResponse.ok) throw new Error('Failed to fetch device list');
-        const allDevicesData = await allDevicesResponse.json();
-        if (!allDevicesData.success) throw new Error(allDevicesData.error || 'Failed to fetch device list data');
-        
-        const allDevicesList = allDevicesData.data || [];
-        setFetchedAllDevices(allDevicesList); // Store all devices in state
-        
-        // Filter for either Piko cameras or other devices based on the current device type
-        if (device.connectorCategory !== 'piko') { // Current device is NOT a Piko camera (e.g., YoLink, other sensors/switches)
-          // Get Piko cameras to associate with the current non-Piko device
-          const pikoCameras = allDevicesList
-            .filter((d: DeviceDetailProps) => d.connectorCategory === 'piko' && d.deviceTypeInfo?.type === 'Camera') 
-            .map((d: DeviceDetailProps): DeviceOption => ({ value: d.deviceId, label: d.name }))
-            .sort((a: DeviceOption, b: DeviceOption) => a.label.localeCompare(b.label));
-          setAvailablePikoCameras(pikoCameras);
-          
-          // 2. Fetch current associations for this device
-          const associationsResponse = await fetch(`/api/device-associations?deviceId=${device.deviceId}`);
-          if (!associationsResponse.ok) throw new Error('Failed to fetch current associations');
-          const associationsData = await associationsResponse.json();
-          if (!associationsData.success) throw new Error(associationsData.error || 'Failed to fetch current associations data');
-          
-          // The API returns an array of Piko Camera IDs for a specific device
-          setSelectedPikoCameraIds(new Set(associationsData.data || []));
-        } 
-        else if (device.connectorCategory === 'piko') { // Current device IS a Piko camera
-          // Get other devices to associate with this Piko camera
-          const otherDevicesToAssociate = allDevicesList
-            .filter((d: DeviceDetailProps) => d.deviceId !== device.deviceId) // Any device except itself
-            .map((d: DeviceDetailProps): DeviceOption => ({ value: d.deviceId, label: d.name }))
-            .sort((a: DeviceOption, b: DeviceOption) => a.label.localeCompare(b.label));
-          setAvailableLinkedDevices(otherDevicesToAssociate);
-          
-          // 2. Fetch associated device IDs using the pikoCameraId
-          console.log(`UI: Fetching associated devices for Piko device ${device.deviceId}`);
-          const associationsResponse = await fetch(`/api/device-associations?pikoCameraId=${device.deviceId}`);
-          if (!associationsResponse.ok) throw new Error('Failed to fetch associations');
-          const associationsData = await associationsResponse.json();
-          if (!associationsData.success) throw new Error(associationsData.error || 'Failed to fetch associations data');
-          
-          // The API now directly returns an array of device IDs
-          const linkedDeviceIds = associationsData.data || [];
-          console.log(`UI: Received ${linkedDeviceIds.length} associated device IDs.`);
-          setSelectedLinkedDeviceIds(new Set(linkedDeviceIds));
-        }
-
-      } catch (err: unknown) {
-        console.error("Error fetching association data:", err);
-        const errorMessage = err instanceof Error ? err.message : 'Failed to load association data.';
-        setAssociationError(errorMessage);
-        toast.error(errorMessage);
-      } finally {
-        setIsLoadingAssociations(false);
-      }
-    };
-
-    fetchData();
-
-  }, [device.deviceId, device.connectorCategory, device.deviceTypeInfo?.type]); // Updated dependency
 
   const pikoServerDetails = device.pikoServerDetails;
 
@@ -579,98 +507,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     };
   }, []); // Empty dependency array ensures this runs only on unmount
 
-  // --- Handle Saving Associations ---
-  const handleSaveAssociations = async () => {
-    setIsSavingAssociations(true);
-    setAssociationError(null);
-    try {
-      let response;
-      
-      if (device.connectorCategory !== 'piko') { // Current device is non-Piko (e.g. YoLink)
-        // Save associations: current non-Piko device -> selected Piko cameras
-        response = await fetch('/api/device-associations', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            deviceId: device.deviceId,
-            pikoCameraIds: Array.from(selectedPikoCameraIds),
-          }),
-        });
-      } else if (device.connectorCategory === 'piko') {
-        console.log(`UI: Saving associations for Piko device ${device.deviceId}`);
-        
-        const pikoDeviceId = device.deviceId;
-        const currentlySelectedLinkedDeviceIds = Array.from(selectedLinkedDeviceIds);
-        console.log(`UI: Currently selected linked devices: [${currentlySelectedLinkedDeviceIds.join(', ')}]`);
-        
-        // Fetch initial state to determine diffs
-        const initialAssocResponse = await fetch(`/api/device-associations?pikoCameraId=${pikoDeviceId}`);
-        if (!initialAssocResponse.ok) throw new Error('Failed to fetch initial associations for Piko camera');
-        const initialAssocData = await initialAssocResponse.json();
-        const initialAssociatedDeviceIds = new Set<string>(initialAssocData.data || []);
-        
-        const updates: { deviceId: string, pikoCameraIds: string[] }[] = [];
 
-        // Devices to ADD this Piko camera association to:
-        for (const associatedDevId of currentlySelectedLinkedDeviceIds) {
-          if (!initialAssociatedDeviceIds.has(associatedDevId)) {
-            const currentPikoAssocRes = await fetch(`/api/device-associations?deviceId=${associatedDevId}`);
-            const currentPikoAssocData = currentPikoAssocRes.ok ? await currentPikoAssocRes.json() : { data: [] };
-            const currentPikoIds = new Set<string>(currentPikoAssocData.data || []);
-            currentPikoIds.add(pikoDeviceId);
-            updates.push({ deviceId: associatedDevId, pikoCameraIds: Array.from(currentPikoIds).sort() });
-          }
-        }
-
-        // Devices to REMOVE this Piko camera association from:
-        for (const associatedDevId of initialAssociatedDeviceIds) {
-          if (!selectedLinkedDeviceIds.has(associatedDevId)) {
-            const currentPikoAssocRes = await fetch(`/api/device-associations?deviceId=${associatedDevId}`);
-            const currentPikoAssocData = currentPikoAssocRes.ok ? await currentPikoAssocRes.json() : { data: [] };
-            const currentPikoIds = new Set<string>(currentPikoAssocData.data || []);
-            currentPikoIds.delete(pikoDeviceId);
-            updates.push({ deviceId: associatedDevId, pikoCameraIds: Array.from(currentPikoIds).sort() });
-          }
-        }
-        
-        if (updates.length > 0) {
-          console.log('UI: Attempting batch update:', updates);
-          response = await fetch('/api/device-associations/batch', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ updates }),
-          });
-
-          if (!response.ok) {
-              const errorData = await response.json().catch(() => ({}));
-              throw new Error(errorData.error || `Batch update failed with status ${response.status}`);
-          }
-        } else {
-           console.log('UI: No association updates required.');
-           response = new Response(JSON.stringify({ success: true }), { status: 200 });
-        }
-      } else {
-        throw new Error('Invalid device type for association');
-      }
-      
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        const errorMsg = data.error || 'Failed to save associations (check server logs)';
-        console.error('UI Save Error:', errorMsg, 'Status:', response.status);
-        throw new Error(errorMsg);
-      }
-      toast.success('Device associations saved successfully!');
-    } catch (err: unknown) {
-      console.error("Error saving associations:", err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to save associations.';
-      setAssociationError(errorMessage);
-      toast.error(errorMessage);
-    } finally {
-      setIsSavingAssociations(false);
-    }
-  };
 
   // --- Copy State & Handler ---
   const [isCopied, setIsCopied] = useState(false);
@@ -848,18 +685,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     );
   };
 
-  // Function to handle removing a single association 
-  const handleRemoveAssociation = (idToRemove: string, context: 'currentDeviceLinksToPikoCam' | 'pikoCamLinksToDevice') => {
-    if (context === 'currentDeviceLinksToPikoCam') { // Current device is non-Piko, removing a Piko cam from its list
-      const updatedSelections = new Set(selectedPikoCameraIds);
-      updatedSelections.delete(idToRemove);
-      setSelectedPikoCameraIds(updatedSelections);
-    } else { // Current device is Piko, removing an associated device from its list
-      const updatedSelections = new Set(selectedLinkedDeviceIds);
-      updatedSelections.delete(idToRemove);
-      setSelectedLinkedDeviceIds(updatedSelections);
-    }
-  };
+
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -1054,6 +880,42 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
             {device.connectorCategory === 'piko' && device.vendor && (
               <DetailRow label="Vendor" value={device.vendor} />
             )}
+            {/* Location Information - Conditional Rendering */}
+            {deviceLocation && (
+              <DetailRow 
+                label="Location" 
+                value={
+                  <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                    <Building className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-xs">{deviceLocation.name}</span>
+                  </Badge>
+                }
+              />
+            )}
+            {/* Space Information - Conditional Rendering */}
+            {deviceSpace && (
+              <DetailRow 
+                label="Space" 
+                value={
+                  <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                    <Box className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-xs">{deviceSpace.name}</span>
+                  </Badge>
+                }
+              />
+            )}
+            {/* Alarm Zone Information - Conditional Rendering */}
+            {deviceAlarmZone && (
+              <DetailRow 
+                label="Alarm Zone" 
+                value={
+                  <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                    <Shield className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-xs">{deviceAlarmZone.name}</span>
+                  </Badge>
+                }
+              />
+            )}
             
             <div className="py-2">
               <div className="flex items-center space-x-2">
@@ -1094,181 +956,6 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
 
         {/* Accordion for other sections */}
         <Accordion type="single" collapsible className="w-full">
-          {/* Device Association Section (Conditional) */}
-          {device.connectorCategory !== 'piko' && (
-            <AccordionItem value="device-to-piko-associations">
-              <AccordionTrigger className="text-sm font-medium">
-                <div className="flex items-center">
-                  Associated Piko Cameras
-                  {!isLoadingAssociations && (
-                    <Badge 
-                      variant={selectedPikoCameraIds.size > 0 ? "secondary" : "outline"} 
-                      className="ml-2 text-xs font-normal px-2 py-0.5"
-                    >
-                      {selectedPikoCameraIds.size}
-                    </Badge>
-                  )}
-                </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                {isLoadingAssociations ? (
-                  <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading camera associations...
-                  </div>
-                ) : associationError ? (
-                  <div className="p-4 rounded-md bg-destructive/10 text-destructive text-sm">
-                    <div className="flex items-start">
-                      <InfoIcon className="h-4 w-4 mr-2 mt-0.5" />
-                      <span>{associationError}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4 py-1">
-                    <div className="text-sm text-muted-foreground">
-                      Select Piko cameras related to this device.
-                    </div>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                      <MultiSelectComboBox
-                        options={availablePikoCameras} // DeviceOption matches MultiSelectOption structure
-                        selected={Array.from(selectedPikoCameraIds)}
-                        onChange={(newSelected) => setSelectedPikoCameraIds(new Set(newSelected))}
-                        placeholder={availablePikoCameras.length === 0 ? "No Piko cameras found" : "Select Piko cameras..."}
-                        emptyText={isLoadingAssociations ? "Loading..." : "No Piko cameras found."}
-                        className="w-full sm:w-[300px]"
-                        popoverContentClassName="w-[300px]" // Maintain consistent popover width
-                      />
-                      <Button 
-                        onClick={handleSaveAssociations} 
-                        disabled={isLoadingAssociations || isSavingAssociations}
-                        className="w-full sm:w-auto"
-                      >
-                        {isSavingAssociations && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Save
-                      </Button>
-                    </div>
-                    
-                    {selectedPikoCameraIds.size > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {Array.from(selectedPikoCameraIds).map(id => {
-                          const camera = availablePikoCameras.find(c => c.value === id);
-                          const cameraDetails = fetchedAllDevices.find(d => d.deviceId === id);
-                          const CameraIcon = cameraDetails?.deviceTypeInfo?.type ? getDeviceTypeIcon(cameraDetails.deviceTypeInfo.type) : HelpCircle;
-                          return camera ? (
-                            <Badge key={id} variant="secondary" className="flex items-center gap-1.5 px-2 py-1"> {/* Increased gap slightly */}
-                              <CameraIcon className="h-3.5 w-3.5 text-muted-foreground" /> {/* Icon with text-muted-foreground */}
-                              <span>{camera.label}</span>
-                              <Button 
-                                type="button" 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-4 w-4 p-0 ml-1 hover:bg-secondary-foreground/10 rounded-full"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleRemoveAssociation(id, 'currentDeviceLinksToPikoCam');
-                                }}
-                              >
-                                <X className="h-3 w-3" />
-                                <span className="sr-only">Remove {camera.label}</span>
-                              </Button>
-                            </Badge>
-                          ) : null;
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </AccordionContent>
-            </AccordionItem>
-          )}
-
-          {/* Piko Device Association Section (Conditional) */}
-          {device.connectorCategory === 'piko' && (
-            <AccordionItem value="piko-to-device-associations">
-              <AccordionTrigger className="text-sm font-medium">
-                <div className="flex items-center">
-                  Associated Devices
-                  {!isLoadingAssociations && (
-                    <Badge 
-                      variant={selectedLinkedDeviceIds.size > 0 ? "secondary" : "outline"} 
-                      className="ml-2 text-xs font-normal px-2 py-0.5"
-                    >
-                      {selectedLinkedDeviceIds.size}
-                    </Badge>
-                  )}
-                </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                {isLoadingAssociations ? (
-                  <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading device associations...
-                  </div>
-                ) : associationError ? (
-                  <div className="p-4 rounded-md bg-destructive/10 text-destructive text-sm">
-                    <div className="flex items-start">
-                      <InfoIcon className="h-4 w-4 mr-2 mt-0.5" />
-                      <span>{associationError}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4 py-1">
-                    <div className="text-sm text-muted-foreground">
-                      Select devices to associate with this Piko camera.
-                    </div>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                      <MultiSelectComboBox
-                        options={availableLinkedDevices} 
-                        selected={Array.from(selectedLinkedDeviceIds)}
-                        onChange={(newSelected) => setSelectedLinkedDeviceIds(new Set(newSelected))}
-                        placeholder={availableLinkedDevices.length === 0 ? "No devices found" : "Select devices..."}
-                        emptyText={isLoadingAssociations ? "Loading..." : "No devices found."}
-                        className="w-full sm:w-[300px]"
-                        popoverContentClassName="w-[300px]" // Maintain consistent popover width
-                      />
-                      <Button 
-                        onClick={handleSaveAssociations} 
-                        disabled={isLoadingAssociations || isSavingAssociations}
-                        className="w-full sm:w-auto"
-                      >
-                        {isSavingAssociations && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Save
-                      </Button>
-                    </div>
-                    
-                    {selectedLinkedDeviceIds.size > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {Array.from(selectedLinkedDeviceIds).map(id => {
-                          const linkedDevice = availableLinkedDevices.find(d => d.value === id);
-                          const deviceDetailsForIcon = fetchedAllDevices.find(d => d.deviceId === id);
-                          const DeviceIcon = deviceDetailsForIcon?.deviceTypeInfo?.type ? getDeviceTypeIcon(deviceDetailsForIcon.deviceTypeInfo.type) : HelpCircle;
-                          return linkedDevice ? (
-                            <Badge key={id} variant="secondary" className="flex items-center gap-1.5 px-2 py-1"> {/* Increased gap slightly */}
-                              <DeviceIcon className="h-3.5 w-3.5 text-muted-foreground" /> {/* Icon with text-muted-foreground */}
-                              <span>{linkedDevice.label}</span>
-                              <Button 
-                                type="button" 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-4 w-4 p-0 ml-1 hover:bg-secondary-foreground/10 rounded-full"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleRemoveAssociation(id, 'pikoCamLinksToDevice');
-                                }}
-                              >
-                                <X className="h-3 w-3" />
-                                <span className="sr-only">Remove {linkedDevice.label}</span>
-                              </Button>
-                            </Badge>
-                          ) : null;
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </AccordionContent>
-            </AccordionItem>
-          )}
 
           {/* Piko Server Details Section (Conditional) */}
           {device.connectorCategory === 'piko' && device.pikoServerDetails && (

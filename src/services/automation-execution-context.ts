@@ -1,21 +1,22 @@
 import 'server-only';
 
 import { db } from '@/data/db';
-import { automations, automationExecutions, automationActionExecutions, connectors, devices, cameraAssociations, areas, areaDevices, locations } from '@/data/db/schema';
+import { automations, automationExecutions, automationActionExecutions, connectors, devices, spaceDevices, spaces, locations } from '@/data/db/schema';
 import { eq, inArray, and } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
+import type { EventWithContext } from '@/lib/automation-types';
 import type { OrgScopedDb } from '@/lib/db/org-scoped-db';
 import type { AutomationConfig, AutomationAction } from '@/lib/automation-schemas';
-import { AutomationConfigSchema, SetDeviceStateActionParamsSchema, ArmAreaActionParamsSchema, DisarmAreaActionParamsSchema, SendPushNotificationActionParamsSchema } from '@/lib/automation-schemas';
+import { AutomationConfigSchema, SetDeviceStateActionParamsSchema, ArmAlarmZoneActionParamsSchema, DisarmAlarmZoneActionParamsSchema, SendPushNotificationActionParamsSchema } from '@/lib/automation-schemas';
 import { AutomationTriggerType, AutomationActionType } from '@/lib/automation-types';
 import { Engine } from 'json-rules-engine';
 import type { JsonRuleGroup } from '@/lib/automation-schemas';
-import { ActionableState, ArmedState, EVENT_TYPE_DISPLAY_MAP, EVENT_CATEGORY_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP } from '@/lib/mappings/definitions';
+import { ActionableState, ArmedState, EVENT_TYPE_DISPLAY_MAP, EVENT_CATEGORY_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP, DeviceType } from '@/lib/mappings/definitions';
 import { requestDeviceStateChange } from '@/lib/device-actions';
 import { getPushoverConfiguration } from '@/data/repositories/service-configurations';
 import { sendPushoverNotification } from '@/services/drivers/pushover';
 import type { ResolvedPushoverMessageParams } from '@/types/pushover-types';
-import { internalSetAreaArmedState } from '@/lib/actions/area-alarm-actions';
+import { internalSetAlarmZoneArmedState } from '@/lib/actions/alarm-zone-actions';
 import * as piko from '@/services/drivers/piko';
 import type { PikoCreateBookmarkPayload } from '@/services/drivers/piko';
 import { z } from 'zod';
@@ -23,8 +24,7 @@ import type { ThumbnailContext } from '@/types/automation-thumbnails';
 import { createEmptyThumbnailContext } from '@/types/automation-thumbnails';
 import { evaluateAutomationTimeFilter } from '@/lib/automation-time-evaluator';
 import { CronExpressionParser } from 'cron-parser';
-import { formatInTimeZone, toZonedTime } from 'date-fns-tz';
-import { parse, format } from 'date-fns';
+import { formatInTimeZone, toZonedTime, fromZonedTime } from 'date-fns-tz';
 
 export interface OrganizationAutomation {
   id: string;
@@ -59,11 +59,10 @@ function resolveTokens(
 
   const contextForTokenReplacement: Record<string, any> = {
     // Prioritize facts from tokenFactContext
-    schedule: tokenFactContext?.schedule ?? null,
     device: tokenFactContext?.device ?? null,
-    area: tokenFactContext?.area ?? null,
+    space: tokenFactContext?.space ?? null,
+    alarmZone: tokenFactContext?.alarmZone ?? null,
     location: tokenFactContext?.location ?? null,
-    connector: tokenFactContext?.connector ?? null,
     // Use the event context from tokenFactContext if available (preferred), otherwise build from stdEvent
     event: tokenFactContext?.event ?? (stdEvent ? {
       id: stdEvent.eventId,
@@ -154,7 +153,7 @@ async function executeAutomationAction(action: AutomationAction, context: Record
       });
       if (!targetConnector) throw new Error("Target connector not found for CREATE_EVENT");
       
-      const eventTimestamp = stdEvent?.timestamp.toISOString() ?? tokenFactContext.schedule?.triggeredAtUTC ?? new Date().toISOString();
+      const eventTimestamp = stdEvent?.timestamp.toISOString() ?? new Date().toISOString();
       
       if (targetConnector.category === 'piko') {
         const sourceDeviceInternalId = tokenFactContext.device?.id;
@@ -162,18 +161,34 @@ async function executeAutomationAction(action: AutomationAction, context: Record
         
         if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string') {
           try {
-            const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId })
-              .from(cameraAssociations)
-              .where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
-            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
-            if (internalCameraIds.length > 0) {
-              const cameraDevices = await db.select({ externalId: devices.deviceId })
+            // First, find the space ID of the source device
+            const sourceDeviceSpace = await db
+              .select({ spaceId: spaceDevices.spaceId })
+              .from(spaceDevices)
+              .where(eq(spaceDevices.deviceId, sourceDeviceInternalId))
+              .limit(1);
+              
+            if (sourceDeviceSpace.length === 0) {
+              console.warn(`[Automation Action Executor] Source device ${sourceDeviceInternalId} is not assigned to any space.`);
+            } else {
+              const spaceId = sourceDeviceSpace[0].spaceId;
+              
+              // Find all Piko cameras in the same space
+              const camerasInSameSpace = await db
+                .select({ externalId: devices.deviceId })
                 .from(devices)
-                .where(inArray(devices.id, internalCameraIds));
-              associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
+                .innerJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+                .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+                .where(and(
+                  eq(spaceDevices.spaceId, spaceId),
+                  eq(connectors.category, 'piko'),
+                  eq(devices.standardizedDeviceType, DeviceType.Camera)
+                ));
+              associatedPikoCameraExternalIds = camerasInSameSpace.map(d => d.externalId);
+              console.log(`[Automation Action Executor] Found ${associatedPikoCameraExternalIds.length} Piko cameras in same space as source device.`);
             }
-          } catch (assocError) {
-            console.error(`[Automation Action Executor] Error fetching camera associations:`, assocError);
+          } catch (spaceError) {
+            console.error(`[Automation Action Executor] Error fetching cameras in same space:`, spaceError);
           }
         }
 
@@ -200,7 +215,7 @@ async function executeAutomationAction(action: AutomationAction, context: Record
       });
       if (!targetConnector) throw new Error("Target connector not found for CREATE_BOOKMARK");
       
-      const eventTimestampMs = stdEvent?.timestamp.getTime() ?? tokenFactContext.schedule?.triggeredAtMs ?? new Date().getTime();
+      const eventTimestampMs = stdEvent?.timestamp.getTime() ?? new Date().getTime();
       
       if (targetConnector.category === 'piko') {
         let associatedPikoCameraExternalIds: string[] = [];
@@ -208,27 +223,42 @@ async function executeAutomationAction(action: AutomationAction, context: Record
         
         if (sourceDeviceInternalId && typeof sourceDeviceInternalId === 'string') {
           try {
-            const associations = await db.select({ pikoCameraInternalId: cameraAssociations.pikoCameraId })
-              .from(cameraAssociations)
-              .where(eq(cameraAssociations.deviceId, sourceDeviceInternalId));
-            const internalCameraIds = associations.map(a => a.pikoCameraInternalId);
-            if (internalCameraIds.length === 0) {
-              console.warn(`[Automation Action Executor] No Piko cameras associated with source device ${sourceDeviceInternalId}. Skipping.`);
+            // First, find the space ID of the source device
+            const sourceDeviceSpace = await db
+              .select({ spaceId: spaceDevices.spaceId })
+              .from(spaceDevices)
+              .where(eq(spaceDevices.deviceId, sourceDeviceInternalId))
+              .limit(1);
+              
+            if (sourceDeviceSpace.length === 0) {
+              console.warn(`[Automation Action Executor] Source device ${sourceDeviceInternalId} is not assigned to any space. Skipping.`);
               break;
+            } else {
+              const spaceId = sourceDeviceSpace[0].spaceId;
+              
+              // Find all Piko cameras in the same space
+              const camerasInSameSpace = await db
+                .select({ externalId: devices.deviceId })
+                .from(devices)
+                .innerJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
+                .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+                                 .where(and(
+                   eq(spaceDevices.spaceId, spaceId),
+                   eq(connectors.category, 'piko'),
+                   eq(devices.standardizedDeviceType, DeviceType.Camera)
+                 ));
+              associatedPikoCameraExternalIds = camerasInSameSpace.map(d => d.externalId);
+              console.log(`[Automation Action Executor] Found ${associatedPikoCameraExternalIds.length} Piko cameras in same space as source device.`);
+              
+              if (associatedPikoCameraExternalIds.length === 0) {
+                console.warn(`[Automation Action Executor] No Piko cameras found in same space. Skipping.`);
+                break;
+              }
             }
-            const cameraDevices = await db.select({ externalId: devices.deviceId })
-              .from(devices)
-              .where(inArray(devices.id, internalCameraIds));
-            associatedPikoCameraExternalIds = cameraDevices.map(d => d.externalId);
-          } catch (assocError) {
-            console.error(`[Automation Action Executor] Error fetching camera associations:`, assocError);
-            throw new Error(`Failed to fetch camera associations: ${assocError instanceof Error ? assocError.message : String(assocError)}`);
+          } catch (spaceError) {
+            console.error(`[Automation Action Executor] Error fetching cameras in same space:`, spaceError);
+            throw new Error(`Failed to fetch cameras in same space: ${spaceError instanceof Error ? spaceError.message : String(spaceError)}`);
           }
-        }
-        
-        if (associatedPikoCameraExternalIds.length === 0) {
-          console.warn(`[Automation Action Executor] No camera associations, skipping bookmark creation.`);
-          break;
         }
 
         let durationMs = 5000;
@@ -345,87 +375,87 @@ async function executeAutomationAction(action: AutomationAction, context: Record
       break;
     }
 
-    case AutomationActionType.ARM_AREA: {
-      const params = action.params as z.infer<typeof ArmAreaActionParamsSchema>;
-      const { scoping, targetAreaIds: specificAreaIds } = params;
-      let areasToProcess: string[] = [];
+    case AutomationActionType.ARM_ALARM_ZONE: {
+      const params = action.params as z.infer<typeof ArmAlarmZoneActionParamsSchema>;
+      const { scoping, targetZoneIds: specificZoneIds } = params;
+      let zonesToProcess: string[] = [];
 
-      if (scoping === 'SPECIFIC_AREAS') {
-        if (!specificAreaIds || specificAreaIds.length === 0) {
-          console.warn(`[Automation Action Executor] Scoping is SPECIFIC_AREAS but no targetAreaIds provided. Skipping.`);
+      if (scoping === 'SPECIFIC_ZONES') {
+        if (!specificZoneIds || specificZoneIds.length === 0) {
+          console.warn(`[Automation Action Executor] Scoping is SPECIFIC_ZONES but no targetZoneIds provided. Skipping.`);
           break;
         }
-        areasToProcess = specificAreaIds;
-      } else if (scoping === 'ALL_AREAS_IN_SCOPE') {
-        // For organization context, get all areas in the organization
-        const orgAreas = await context.orgDb.areas.findAll();
-        areasToProcess = orgAreas.map((a: any) => a.id);
-        if (areasToProcess.length === 0) {
-          console.log(`[Automation Action Executor] No areas found in organization scope.`);
+        zonesToProcess = specificZoneIds;
+      } else if (scoping === 'ALL_ZONES_IN_SCOPE') {
+        // For organization context, get all alarm zones in the organization
+        const orgZones = await context.orgDb.alarmZones.findAll();
+        zonesToProcess = orgZones.map((z: any) => z.id);
+        if (zonesToProcess.length === 0) {
+          console.log(`[Automation Action Executor] No alarm zones found in organization scope.`);
           break;
         }
       }
 
-      console.log(`[Automation Action Executor] Attempting to arm ${areasToProcess.length} area(s). IDs: ${areasToProcess.join(', ')}`);
-      for (const areaId of areasToProcess) {
+      console.log(`[Automation Action Executor] Attempting to arm ${zonesToProcess.length} alarm zone(s). IDs: ${zonesToProcess.join(', ')}`);
+      for (const zoneId of zonesToProcess) {
         try {
-          const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.ARMED, {
-            lastArmedStateChangeReason: 'automation_arm',
-            isArmingSkippedUntil: null,
-            nextScheduledArmTime: null,
-            nextScheduledDisarmTime: null,
-          });
-          if (updatedArea) {
-            console.log(`[Automation Action Executor] Successfully armed area ${areaId}.`);
+          const updatedZone = await internalSetAlarmZoneArmedState(
+            zoneId, 
+            ArmedState.ARMED,
+            undefined, // No user ID for automation actions
+            'automation'
+          );
+          if (updatedZone) {
+            console.log(`[Automation Action Executor] Successfully armed alarm zone ${zoneId}.`);
           } else {
-            console.warn(`[Automation Action Executor] Failed to arm area ${areaId} (area not found or no update occurred).`);
+            console.warn(`[Automation Action Executor] Failed to arm alarm zone ${zoneId} (zone not found or no update occurred).`);
           }
-        } catch (areaError) {
-          console.error(`[Automation Action Executor] Error arming area ${areaId}:`, areaError instanceof Error ? areaError.message : areaError);
-          throw areaError; // Re-throw to mark action as failed
+        } catch (zoneError) {
+          console.error(`[Automation Action Executor] Error arming alarm zone ${zoneId}:`, zoneError instanceof Error ? zoneError.message : zoneError);
+          throw zoneError; // Re-throw to mark action as failed
         }
       }
       break;
     }
 
-    case AutomationActionType.DISARM_AREA: {
-      const params = action.params as z.infer<typeof DisarmAreaActionParamsSchema>;
-      const { scoping, targetAreaIds: specificAreaIds } = params;
-      let areasToProcess: string[] = [];
+    case AutomationActionType.DISARM_ALARM_ZONE: {
+      const params = action.params as z.infer<typeof DisarmAlarmZoneActionParamsSchema>;
+      const { scoping, targetZoneIds: specificZoneIds } = params;
+      let zonesToProcess: string[] = [];
 
-      if (scoping === 'SPECIFIC_AREAS') {
-        if (!specificAreaIds || specificAreaIds.length === 0) {
-          console.warn(`[Automation Action Executor] Scoping is SPECIFIC_AREAS but no targetAreaIds provided. Skipping.`);
+      if (scoping === 'SPECIFIC_ZONES') {
+        if (!specificZoneIds || specificZoneIds.length === 0) {
+          console.warn(`[Automation Action Executor] Scoping is SPECIFIC_ZONES but no targetZoneIds provided. Skipping.`);
           break;
         }
-        areasToProcess = specificAreaIds;
-      } else if (scoping === 'ALL_AREAS_IN_SCOPE') {
-        // For organization context, get all areas in the organization
-        const orgAreas = await context.orgDb.areas.findAll();
-        areasToProcess = orgAreas.map((a: any) => a.id);
-        if (areasToProcess.length === 0) {
-          console.log(`[Automation Action Executor] No areas found in organization scope.`);
+        zonesToProcess = specificZoneIds;
+      } else if (scoping === 'ALL_ZONES_IN_SCOPE') {
+        // For organization context, get all alarm zones in the organization
+        const orgZones = await context.orgDb.alarmZones.findAll();
+        zonesToProcess = orgZones.map((z: any) => z.id);
+        if (zonesToProcess.length === 0) {
+          console.log(`[Automation Action Executor] No alarm zones found in organization scope.`);
           break;
         }
       }
 
-      console.log(`[Automation Action Executor] Attempting to disarm ${areasToProcess.length} area(s). IDs: ${areasToProcess.join(', ')}`);
-      for (const areaId of areasToProcess) {
+      console.log(`[Automation Action Executor] Attempting to disarm ${zonesToProcess.length} alarm zone(s). IDs: ${zonesToProcess.join(', ')}`);
+      for (const zoneId of zonesToProcess) {
         try {
-          const updatedArea = await internalSetAreaArmedState(areaId, ArmedState.DISARMED, {
-            lastArmedStateChangeReason: 'automation_disarm',
-            isArmingSkippedUntil: null,
-            nextScheduledArmTime: null,
-            nextScheduledDisarmTime: null,
-          });
-          if (updatedArea) {
-            console.log(`[Automation Action Executor] Successfully disarmed area ${areaId}.`);
+          const updatedZone = await internalSetAlarmZoneArmedState(
+            zoneId, 
+            ArmedState.DISARMED,
+            undefined, // No user ID for automation actions
+            'automation'
+          );
+          if (updatedZone) {
+            console.log(`[Automation Action Executor] Successfully disarmed alarm zone ${zoneId}.`);
           } else {
-            console.warn(`[Automation Action Executor] Failed to disarm area ${areaId} (area not found or no update occurred).`);
+            console.warn(`[Automation Action Executor] Failed to disarm alarm zone ${zoneId} (zone not found or no update occurred).`);
           }
-        } catch (areaError) {
-          console.error(`[Automation Action Executor] Error disarming area ${areaId}:`, areaError instanceof Error ? areaError.message : areaError);
-          throw areaError; // Re-throw to mark action as failed
+        } catch (zoneError) {
+          console.error(`[Automation Action Executor] Error disarming alarm zone ${zoneId}:`, zoneError instanceof Error ? zoneError.message : zoneError);
+          throw zoneError; // Re-throw to mark action as failed
         }
       }
       break;
@@ -452,7 +482,7 @@ export class OrganizationAutomationContext {
   /**
    * Process an event for this organization's automations
    */
-  async processEvent(event: StandardizedEvent): Promise<void> {
+  async processEvent(event: StandardizedEvent, deviceContext: EventWithContext['deviceContext']): Promise<void> {
     console.log(`[Automation Context][${this.organizationId}] Processing event: ${event.eventId}`);
     
     try {
@@ -468,7 +498,7 @@ export class OrganizationAutomationContext {
       
       // Process each automation in isolation
       await Promise.allSettled(
-        enabledAutomations.map(automation => this.executeAutomationSafely(automation, event))
+        enabledAutomations.map(automation => this.executeAutomationSafely(automation, event, deviceContext))
       );
       
     } catch (error) {
@@ -514,7 +544,7 @@ export class OrganizationAutomationContext {
   /**
    * Safely execute a single automation with full error isolation
    */
-  private async executeAutomationSafely(automation: OrganizationAutomation, event: StandardizedEvent): Promise<void> {
+  private async executeAutomationSafely(automation: OrganizationAutomation, event: StandardizedEvent, deviceContext: EventWithContext['deviceContext']): Promise<void> {
     try {
       console.log(`[Automation Context][${this.organizationId}] Evaluating automation: ${automation.name} (${automation.id})`);
       
@@ -533,7 +563,7 @@ export class OrganizationAutomationContext {
       }
       
       // Evaluate triggers within organization context
-      const shouldExecute = await this.evaluateEventTriggers(config.trigger.conditions, event, { 
+      const shouldExecute = await this.evaluateEventTriggers(config.trigger.conditions, event, deviceContext, { 
         id: automation.id, 
         name: automation.name 
       });
@@ -567,7 +597,7 @@ export class OrganizationAutomationContext {
       const executionId = await this.createExecutionRecord(automation.id, config.actions.length, event.eventId);
       
       // Build rich context for action execution including device information
-      const actionContext = await this.buildActionContext(event, automation);
+      const actionContext = await this.buildActionContext(event, automation, deviceContext);
       
       // Execute actions with organization-scoped permissions
       const actionResults = await this.executeActions(config.actions, executionId, actionContext);
@@ -630,121 +660,37 @@ export class OrganizationAutomationContext {
    * Get enabled automations for this organization
    */
   private async getEnabledAutomations(): Promise<OrganizationAutomation[]> {
-    const results = await this.orgDb.automations.findEnabled();
-    return results as OrganizationAutomation[];
+    const results = await this.orgDb.automations.findAll();
+    return results.filter((automation: any) => automation.enabled) as OrganizationAutomation[];
   }
 
   /**
-   * Fetch event context data including device, area, location, and connector information
-   * Uses organization-scoped database client for proper access control
+   * Get event context data from passed device context
    */
-  private async fetchEventContextData(event: StandardizedEvent): Promise<{
+  private getEventContextData(deviceContext: EventWithContext['deviceContext']): {
     deviceRecord: any,
-    areaRecord: any,
+    spaceRecord: any,
+    alarmZoneRecord: any,
     locationRecord: any,
     connectorRecord: any
-  }> {
-    try {
-      // Use organization-scoped database client for security
-      const deviceResults = await this.orgDb.devices.findByExternalId(event.deviceId);
-      const deviceResult = deviceResults[0]; // findByExternalId returns array
-
-      if (!deviceResult) {
-        // Device not found in this organization
-        return {
-          deviceRecord: null,
-          areaRecord: null,
-          locationRecord: null,
-          connectorRecord: null
-        };
-      }
-
-      // Build structured objects from org-scoped query result
-      const deviceRecord = {
-        id: deviceResult.id,
-        name: deviceResult.name,
-        standardizedDeviceType: deviceResult.standardizedDeviceType,
-        standardizedDeviceSubtype: deviceResult.standardizedDeviceSubtype,
-        vendor: deviceResult.vendor,
-        model: deviceResult.model,
-        status: deviceResult.status,
-        batteryPercentage: deviceResult.batteryPercentage,
-      };
-
-             // Area and location data are included in the org-scoped device query
-       const areaRecord = deviceResult.areaId ? {
-         id: deviceResult.areaId,
-         name: undefined as string | undefined,
-         armedState: undefined as any,
-         locationId: deviceResult.locationId,
-       } : null;
-
-       const locationRecord = deviceResult.locationId ? {
-         id: deviceResult.locationId,
-         name: undefined as string | undefined,
-         timeZone: undefined as string | undefined,
-         addressCity: undefined as string | undefined,
-         addressState: undefined as string | undefined,
-       } : null;
-
-      // Connector data is included in the org-scoped device query
-      const connectorRecord = {
-        id: deviceResult.connector.id,
-        name: deviceResult.connector.name,
-        category: deviceResult.connector.category,
-      };
-
-      // If we need full area/location details, fetch them using org-scoped methods
-      if (areaRecord && deviceResult.areaId) {
-        try {
-          const areaResults = await this.orgDb.areas.findById(deviceResult.areaId);
-          const fullArea = areaResults[0];
-          if (fullArea) {
-            areaRecord.name = fullArea.name;
-            areaRecord.armedState = fullArea.armedState;
-            
-                         // Location details are included in area query
-             if (fullArea.location && locationRecord) {
-               locationRecord.name = fullArea.location.name;
-               
-               // Fetch complete location details for automation facts
-               try {
-                 const locationResults = await this.orgDb.locations.findById(fullArea.location.id);
-                 const fullLocation = locationResults[0];
-                 if (fullLocation) {
-                   locationRecord.timeZone = fullLocation.timeZone;
-                   locationRecord.addressCity = fullLocation.addressCity;
-                   locationRecord.addressState = fullLocation.addressState;
-                 }
-               } catch (locationError) {
-                 console.warn(`[Automation Context][${this.organizationId}] Failed to fetch location details:`, locationError);
-               }
-             }
-          }
-        } catch (areaError) {
-          console.warn(`[Automation Context][${this.organizationId}] Failed to fetch area details:`, areaError);
-        }
-      }
-
-      return { deviceRecord, areaRecord, locationRecord, connectorRecord };
-
-    } catch (contextError) {
-      console.warn(`[Automation Context][${this.organizationId}] Failed to fetch context data:`, contextError);
-      return {
-        deviceRecord: null,
-        areaRecord: null,
-        locationRecord: null,
-        connectorRecord: null
-      };
-    }
+  } {
+    return {
+      deviceRecord: deviceContext.deviceRecord,
+      spaceRecord: deviceContext.spaceRecord,
+      alarmZoneRecord: deviceContext.alarmZoneRecord,
+      locationRecord: deviceContext.locationRecord,
+      connectorRecord: deviceContext.connectorRecord
+    };
   }
+
+
 
   /**
    * Evaluate event-based trigger conditions using json-rules-engine
    */
-  private async evaluateEventTriggers(conditions: JsonRuleGroup, event: StandardizedEvent, automationContext?: { id: string, name: string }): Promise<boolean> {
-    // Fetch comprehensive context data
-    const { deviceRecord, areaRecord, locationRecord, connectorRecord } = await this.fetchEventContextData(event);
+  private async evaluateEventTriggers(conditions: JsonRuleGroup, event: StandardizedEvent, deviceContext: EventWithContext['deviceContext'], automationContext?: { id: string, name: string }): Promise<boolean> {
+    // Get comprehensive context data from passed device context
+    const { deviceRecord, spaceRecord, alarmZoneRecord, locationRecord, connectorRecord } = this.getEventContextData(deviceContext);
 
     // Create comprehensive facts object with all available context
     const facts: Record<string, any> = {
@@ -760,32 +706,33 @@ export class OrganizationAutomationContext {
       'device.id': deviceRecord?.id || event.deviceId,
       'device.externalId': event.deviceId,
       'device.name': deviceRecord?.name || event.deviceId,
-      'device.type': deviceRecord?.standardizedDeviceType || event.deviceInfo?.type,
-      'device.subtype': deviceRecord?.standardizedDeviceSubtype || event.deviceInfo?.subtype,
+      'device.type': deviceRecord?.deviceType || event.deviceInfo?.type,
+      'device.subtype': deviceRecord?.deviceSubtype || event.deviceInfo?.subtype,
       'device.vendor': deviceRecord?.vendor,
       'device.model': deviceRecord?.model,
       'device.status': deviceRecord?.status,
       'device.batteryPercentage': deviceRecord?.batteryPercentage,
       
-      // Area facts
-      'area.id': areaRecord?.id,
-      'area.name': areaRecord?.name,
-      'area.armedState': areaRecord?.armedState,
-      'area.locationId': areaRecord?.locationId,
+      // Space facts
+      'space.id': spaceRecord?.id,
+      'space.name': spaceRecord?.name,
+      
+      // Alarm Zone facts
+      'alarmZone.id': alarmZoneRecord?.id,
+      'alarmZone.name': alarmZoneRecord?.name,
+      'alarmZone.armedState': alarmZoneRecord?.armedState,
       
       // Location facts
       'location.id': locationRecord?.id,
       'location.name': locationRecord?.name,
       'location.timeZone': locationRecord?.timeZone,
-      'location.addressCity': locationRecord?.addressCity,
-      'location.addressState': locationRecord?.addressState,
       
       // Connector facts - enhanced with database data
       'connector.id': event.connectorId,
       'connector.name': connectorRecord?.name,
       'connector.category': connectorRecord?.category,
       
-      // Legacy flat structure for backward compatibility
+  
       eventType: event.type,
       eventCategory: event.category,
       eventSubtype: event.subtype,
@@ -844,9 +791,31 @@ export class OrganizationAutomationContext {
         return false;
       }
 
-      // Get timezone - use trigger timezone, fall back to location timezone, then UTC
-      let timezone = scheduledTrigger.timeZone || 'UTC';
+      // Get timezone with proper fallback chain:
+      // 1. Manual timezone from trigger
+      // 2. Location timezone (if automation has location scope)
+      // 3. Error if no location scope and no manual timezone
+      let timezone = scheduledTrigger.timeZone;
       
+      if (!timezone) {
+        // Try location timezone if automation has location scope
+        if (automation.locationScopeId) {
+          const location = await db.query.locations.findFirst({
+            where: eq(locations.id, automation.locationScopeId),
+            columns: { timeZone: true }
+          });
+          if (location) {
+            timezone = location.timeZone;
+          }
+        }
+        
+        // If still no timezone, automation must specify one manually
+        if (!timezone) {
+          console.error(`${logPrefix} Automation ${automation.name} requires manual timezone specification when not location-scoped`);
+          return false;
+        }
+      }
+
       // For sunrise/sunset schedules, we need location data
       if (scheduledTrigger.scheduleType === 'sunrise' || scheduledTrigger.scheduleType === 'sunset') {
         // Get location ID for sun times lookup
@@ -856,7 +825,7 @@ export class OrganizationAutomationContext {
           return false;
         }
 
-        // Get location data for timezone and sun times
+        // Get location data for sun times
         const location = await db.query.locations.findFirst({
           where: eq(locations.id, locationId),
           columns: {
@@ -870,11 +839,6 @@ export class OrganizationAutomationContext {
         if (!location) {
           console.warn(`${logPrefix} Location ${locationId} not found for sunrise/sunset schedule: ${automation.name}`);
           return false;
-        }
-
-        // Use location timezone if not overridden
-        if (!scheduledTrigger.timeZone) {
-          timezone = location.timeZone;
         }
 
         // Check if sun times are available and fresh
@@ -899,13 +863,13 @@ export class OrganizationAutomationContext {
         );
       }
 
-      // Handle fixed_time schedule
+      // Handle fixed time schedules
       if (scheduledTrigger.scheduleType === 'fixed_time') {
         if (!scheduledTrigger.cronExpression) {
           console.error(`${logPrefix} Fixed time schedule missing CRON expression: ${automation.name}`);
           return false;
         }
-
+        
         return this.evaluateFixedTimeSchedule(
           scheduledTrigger.cronExpression,
           currentTime,
@@ -913,11 +877,10 @@ export class OrganizationAutomationContext {
         );
       }
 
-      console.error(`${logPrefix} Unknown schedule type: ${(scheduledTrigger as any).scheduleType}`);
+      console.error(`${logPrefix} Unknown schedule type: ${scheduledTrigger.scheduleType} for ${automation.name}`);
       return false;
-
     } catch (error) {
-      console.error(`${logPrefix} Error evaluating schedule trigger for ${automation.name}:`, error);
+      console.error(`${logPrefix} Error evaluating scheduled trigger for ${automation.name}:`, error);
       return false;
     }
   }
@@ -927,21 +890,24 @@ export class OrganizationAutomationContext {
    */
   private evaluateFixedTimeSchedule(cronExpression: string, currentTime: Date, timezone: string): boolean {
     try {
+      // Convert UTC time from cron job to the target timezone for evaluation
+      const currentTimeInTimezone = toZonedTime(currentTime, timezone);
+      
       const interval = CronExpressionParser.parse(cronExpression, { 
-        currentDate: currentTime,
-        tz: timezone 
+        currentDate: currentTimeInTimezone, // Time in target timezone
+        tz: timezone // Target timezone
       });
       
-      // Get the previous scheduled time
+      // Get the previous scheduled time (this will be in the target timezone)
       const prevTime = interval.prev();
       
       // Check if the previous scheduled time is within the last minute
-      // This handles the case where we run every minute and need to catch schedules
-      const timeDiff = currentTime.getTime() - prevTime.getTime();
+      // Both times are now in the same timezone
+      const timeDiff = currentTimeInTimezone.getTime() - prevTime.getTime();
       const shouldExecute = timeDiff >= 0 && timeDiff < 60000; // Within last minute
       
       if (shouldExecute) {
-        console.log(`[Schedule Evaluation] Fixed time schedule triggered: ${cronExpression} (prev: ${prevTime.toISOString()}, current: ${currentTime.toISOString()})`);
+        console.log(`[Schedule Evaluation] Fixed time schedule triggered: ${cronExpression} (prev: ${prevTime.toISOString()}, current: ${currentTimeInTimezone.toISOString()}, timezone: ${timezone})`);
       }
       
       return shouldExecute;
@@ -962,11 +928,11 @@ export class OrganizationAutomationContext {
     timezone: string
   ): boolean {
     try {
-      // Parse the sun time for today in the timezone
+      // Create scheduled time for today in the target timezone
       const todayStr = formatInTimeZone(currentTime, timezone, 'yyyy-MM-dd');
-      const sunTimeToday = parse(`${todayStr} ${sunTimeStr}`, 'yyyy-MM-dd HH:mm', new Date());
+      const sunTimeToday = fromZonedTime(`${todayStr} ${sunTimeStr}`, timezone);
       
-      // Apply offset
+      // Apply offset to get the actual scheduled time
       const scheduledTime = new Date(sunTimeToday.getTime() + (offsetMinutes * 60 * 1000));
       
       // Check if current time is within 1 minute of the scheduled time
@@ -974,7 +940,7 @@ export class OrganizationAutomationContext {
       const shouldExecute = timeDiff < 60000; // Within 1 minute
       
       if (shouldExecute) {
-        console.log(`[Schedule Evaluation] ${scheduleType} schedule triggered: ${sunTimeStr} + ${offsetMinutes}min = ${format(scheduledTime, 'HH:mm')} (current: ${formatInTimeZone(currentTime, timezone, 'HH:mm')})`);
+        console.log(`[Schedule Evaluation] ${scheduleType} schedule triggered: ${sunTimeStr} + ${offsetMinutes}min = ${formatInTimeZone(scheduledTime, timezone, 'HH:mm')} (current: ${formatInTimeZone(currentTime, timezone, 'HH:mm')}, timezone: ${timezone})`);
       }
       
       return shouldExecute;
@@ -985,9 +951,9 @@ export class OrganizationAutomationContext {
   }
 
   /**
-   * Build rich action context including device, area, location, and connector information
+   * Build rich action context including device, space, location, and connector information
    */
-  private async buildActionContext(event: StandardizedEvent, automation: OrganizationAutomation): Promise<Record<string, any>> {
+  private async buildActionContext(event: StandardizedEvent, automation: OrganizationAutomation, deviceContext: EventWithContext['deviceContext']): Promise<Record<string, any>> {
     const context: Record<string, any> = {
       triggerEvent: event,
       organizationId: this.organizationId,
@@ -999,15 +965,15 @@ export class OrganizationAutomationContext {
 
     try {
       // Use shared context fetching method
-      const { deviceRecord, areaRecord, locationRecord, connectorRecord } = await this.fetchEventContextData(event);
+      const { deviceRecord, spaceRecord, alarmZoneRecord, locationRecord, connectorRecord } = this.getEventContextData(deviceContext);
 
       if (deviceRecord) {
         context.device = {
           id: deviceRecord.id,
           externalId: event.deviceId,
           name: deviceRecord.name,
-          type: deviceRecord.standardizedDeviceType,
-          subtype: deviceRecord.standardizedDeviceSubtype,
+          type: deviceRecord.deviceType,
+          subtype: deviceRecord.deviceSubtype,
           vendor: deviceRecord.vendor,
           model: deviceRecord.model,
           status: deviceRecord.status,
@@ -1028,13 +994,20 @@ export class OrganizationAutomationContext {
         };
       }
 
-      // Build area context
-      if (areaRecord) {
-        context.area = {
-          id: areaRecord.id,
-          name: areaRecord.name,
-          armedState: areaRecord.armedState,
-          locationId: areaRecord.locationId
+      // Build space context
+      if (spaceRecord) {
+        context.space = {
+          id: spaceRecord.id,
+          name: spaceRecord.name
+        };
+      }
+
+      // Build alarm zone context
+      if (alarmZoneRecord) {
+        context.alarmZone = {
+          id: alarmZoneRecord.id,
+          name: alarmZoneRecord.name,
+          armedState: alarmZoneRecord.armedState
         };
       }
 
@@ -1043,20 +1016,11 @@ export class OrganizationAutomationContext {
         context.location = {
           id: locationRecord.id,
           name: locationRecord.name,
-          timeZone: locationRecord.timeZone,
-          addressCity: locationRecord.addressCity,
-          addressState: locationRecord.addressState
+          timeZone: locationRecord.timeZone
         };
       }
 
-      // Build connector context
-      if (connectorRecord) {
-        context.connector = {
-          id: connectorRecord.id,
-          name: connectorRecord.name,
-          category: connectorRecord.category
-        };
-      }
+
 
     } catch (error) {
       console.error(`[Automation Context][${this.organizationId}] Error building action context:`, error);
@@ -1270,7 +1234,6 @@ export class OrganizationAutomationContext {
       })
       .where(eq(automationExecutions.id, executionId));
     
-    // TODO: Implement organization-specific error notification
     console.error(`[Automation Context][${this.organizationId}] Execution ${executionId} failed: ${errorMessage}`);
   }
 

@@ -14,13 +14,13 @@ export interface EventThumbnailData {
 
 /**
  * Determines if a thumbnail should be fetched for the given event.
- * Now considers both best-shot and area camera availability.
+ * Now considers both best-shot and space camera availability.
  */
 export function shouldFetchThumbnail(
   event: StandardizedEvent,
-  areaCameras?: DeviceWithConnector[]
+  spaceCameras?: DeviceWithConnector[]
 ): boolean {
-  const source = getThumbnailSource(event, areaCameras);
+  const source = getThumbnailSource(event, spaceCameras);
   return source !== null;
 }
 
@@ -40,7 +40,7 @@ async function fetchThumbnailFromSource(
 
     console.log(`${logPrefix} Fetching ${source.type} thumbnail for timestamp ${source.timestamp} with size ${THUMBNAIL_SIZE}`);
 
-    // For now, both best-shot and area-camera use the same API
+    // For now, both best-shot and space-camera use the same API
     // In the future, best-shot could use a specialized endpoint
     const thumbnailBlob = await Promise.race([
       pikoDriver.getPikoDeviceThumbnail(source.connectorId, source.cameraId, source.timestamp, THUMBNAIL_SIZE),
@@ -78,15 +78,15 @@ async function fetchThumbnailFromSource(
 
 /**
  * Fetches a thumbnail for an event.
- * Tries best-shot first for analytics events, then falls back to area camera.
+ * Tries best-shot first for analytics events, then falls back to space camera.
  * Returns null if fetch fails or times out.
  * Never throws to ensure event processing continues.
  */
 export async function fetchEventThumbnail(
   event: StandardizedEvent,
-  areaCameras?: DeviceWithConnector[]
+  spaceCameras?: DeviceWithConnector[]
 ): Promise<EventThumbnailData | null> {
-  const source = getThumbnailSource(event, areaCameras);
+  const source = getThumbnailSource(event, spaceCameras);
   if (!source) {
     return null;
   }
@@ -94,7 +94,7 @@ export async function fetchEventThumbnail(
   return fetchThumbnailFromSource(source);
 }
 
-// Legacy function for backward compatibility
+
 // Remove once event processor is updated
 export async function fetchEventThumbnail_legacy(
   connectorId: string,
@@ -102,7 +102,7 @@ export async function fetchEventThumbnail_legacy(
   timestampMs: number
 ): Promise<EventThumbnailData | null> {
   const source: ThumbnailSource = {
-    type: 'area-camera',
+    type: 'space-camera',
     connectorId,
     cameraId: deviceId,
     timestamp: timestampMs

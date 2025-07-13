@@ -18,8 +18,10 @@ export interface RedisEventMessage {
   connectorName?: string;
   locationId?: string;
   locationName?: string;
-  areaId?: string;
-  areaName?: string;
+  spaceId?: string;
+  spaceName?: string;
+  alarmZoneId?: string;
+  alarmZoneName?: string;
   event: {
     categoryId: string;
     category: string;
@@ -30,11 +32,7 @@ export interface RedisEventMessage {
     [key: string]: any; // For additional standardized event data like displayState, batteryPercentage, etc.
   };
   rawEvent?: any;
-  thumbnailData?: {
-    data: string;        // base64 encoded image
-    contentType: string; // e.g., 'image/jpeg'
-    size: number;        // size in bytes
-  };
+  thumbnailUri?: string; // data URI format: data:image/jpeg;base64,<base64data>
 }
 
 /**
@@ -83,12 +81,12 @@ export interface SSESystemMessage extends SSEMessage {
 }
 
 /**
- * SSE arming message (for area armed state changes)
+ * SSE arming message (for alarm zone armed state changes)
  */
 export interface SSEArmingMessage extends SSEMessage {
   type: 'arming';
   organizationId: string;
-  area: {
+  alarmZone: {
     id: string;
     name: string;
     locationId: string;

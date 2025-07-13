@@ -28,8 +28,8 @@ import type {
     SendHttpRequestActionParamsSchema,
     SetDeviceStateActionParamsSchema,
     SendPushNotificationActionParamsSchema,
-    ArmAreaActionParamsSchema,
-    DisarmAreaActionParamsSchema,
+    ArmAlarmZoneActionParamsSchema,
+    DisarmAlarmZoneActionParamsSchema,
 } from '@/lib/automation-schemas';
 import { AutomationActionType, getActionTitle, getActionIconProps, getActionStyling, formatActionDetail, AutomationTriggerType } from '@/lib/automation-types';
 import { ActionableState, ArmedState } from '@/lib/mappings/definitions';
@@ -39,16 +39,16 @@ import { SendHttpRequestActionFields } from './SendHttpRequestActionFields';
 import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
 import { getIconComponentByName } from '@/lib/mappings/presentation';
 import { priorityOptions } from '@/lib/pushover-constants';
-import type { connectors, areas as areasTable } from '@/data/db/schema';
+import type { connectors, alarmZones } from '@/data/db/schema';
 import type { z } from 'zod';
 import type { AutomationFormValues } from '../AutomationForm';
 import { MultiSelectComboBox } from '@/components/ui/multi-select-combobox';
 
 const ALL_USERS_PUSHOVER_VALUE = '__all__';
 
-const AREA_SCOPING_OPTIONS = [
-    { value: 'ALL_AREAS_IN_SCOPE', label: "All Areas in Scope" },
-    { value: 'SPECIFIC_AREAS', label: "Specific Areas" },
+const ZONE_SCOPING_OPTIONS = [
+    { value: 'ALL_ZONES_IN_SCOPE', label: "All Zones in Scope" },
+    { value: 'SPECIFIC_ZONES', label: "Specific Zones" },
 ];
 
 // Action type groups for better organization
@@ -61,7 +61,7 @@ const ACTION_GROUPS = [
     {
         id: 'alarm',
         label: 'Alarm',
-        actions: [AutomationActionType.ARM_AREA, AutomationActionType.DISARM_AREA]
+        actions: [AutomationActionType.ARM_ALARM_ZONE, AutomationActionType.DISARM_ALARM_ZONE]
     },
     {
         id: 'device-control',
@@ -81,11 +81,11 @@ type TargetDeviceOption = {
     name: string;
     displayType: string;
     iconName: string;
-    areaId?: string | null;
+    spaceId?: string | null;
     locationId?: string | null;
 };
 
-type AreaOption = Pick<typeof areasTable.$inferSelect, 'id' | 'name' | 'locationId'>;
+type ZoneOption = Pick<typeof alarmZones.$inferSelect, 'id' | 'name' | 'locationId'>;
 
 const descriptionStyles = "text-xs text-muted-foreground mt-1";
 const ACTIONABLE_STATE_DISPLAY_MAP: Record<ActionableState, string> = {
@@ -118,7 +118,7 @@ interface ActionItemProps {
   isLoading: boolean;
   sortedPikoConnectors: Pick<ConnectorSelect, 'id' | 'name' | 'category'>[];
   sortedAvailableTargetDevices: TargetDeviceOption[];
-  sortedAvailableAreas: AreaOption[];
+  sortedAvailableZones: ZoneOption[];
   currentRuleLocationScope?: { id: string; name: string } | null;
 }
 
@@ -133,7 +133,7 @@ export function ActionItem({
   isLoading,
   sortedPikoConnectors,
   sortedAvailableTargetDevices,
-  sortedAvailableAreas,
+  sortedAvailableZones,
   currentRuleLocationScope,
 }: ActionItemProps) {
   const actionType = form.watch(`config.actions.${index}.type`);
@@ -144,7 +144,6 @@ export function ActionItem({
   const [isFetchingUsers, setIsFetchingUsers] = React.useState(false);
   const [fetchUsersError, setFetchUsersError] = React.useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
-  const [isSelectOpen, setIsSelectOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && isDropdownOpen && groupUsers.length === 0 && !isFetchingUsers) {
@@ -185,7 +184,7 @@ export function ActionItem({
     } else if (newType === AutomationActionType.CREATE_BOOKMARK) { 
         newActionParams = { nameTemplate: '', descriptionTemplate: '', durationMsTemplate: '5000', tagsTemplate: '', targetConnectorId: '' };
     } else if (newType === AutomationActionType.SEND_HTTP_REQUEST) { 
-        newActionParams = { urlTemplate: '', method: 'GET', headers: [], contentType: 'text/plain', bodyTemplate: '' };
+        newActionParams = { urlTemplate: '', method: 'GET', headers: [], contentType: 'application/json', bodyTemplate: '' };
     } else if (newType === AutomationActionType.SET_DEVICE_STATE) {
         newActionParams = {
             targetDeviceInternalId: sortedAvailableTargetDevices.length > 0 ? sortedAvailableTargetDevices[0].id : '',
@@ -198,16 +197,16 @@ export function ActionItem({
             targetUserKeyTemplate: ALL_USERS_PUSHOVER_VALUE,
             priority: 0
         };
-    } else if (newType === AutomationActionType.ARM_AREA) {
+    } else if (newType === AutomationActionType.ARM_ALARM_ZONE) {
         newActionParams = {
-            scoping: 'ALL_AREAS_IN_SCOPE',
-            targetAreaIds: []
-        } as z.infer<typeof ArmAreaActionParamsSchema>;
-    } else if (newType === AutomationActionType.DISARM_AREA) {
+            scoping: 'ALL_ZONES_IN_SCOPE',
+            targetZoneIds: []
+        } as z.infer<typeof ArmAlarmZoneActionParamsSchema>;
+    } else if (newType === AutomationActionType.DISARM_ALARM_ZONE) {
         newActionParams = {
-            scoping: 'ALL_AREAS_IN_SCOPE',
-            targetAreaIds: []
-        } as z.infer<typeof DisarmAreaActionParamsSchema>;
+            scoping: 'ALL_ZONES_IN_SCOPE',
+            targetZoneIds: []
+        } as z.infer<typeof DisarmAlarmZoneActionParamsSchema>;
     } else { 
         console.warn(`Unexpected action type: ${value}. Defaulting to minimal params.`); 
         newActionParams = {} as any;
@@ -221,16 +220,16 @@ export function ActionItem({
     const allTypes = Object.values(AutomationActionType);
     if (triggerType === AutomationTriggerType.SCHEDULED) {
         return allTypes.filter(type => 
-            type === AutomationActionType.ARM_AREA || 
-            type === AutomationActionType.DISARM_AREA
+            type === AutomationActionType.ARM_ALARM_ZONE || 
+            type === AutomationActionType.DISARM_ALARM_ZONE
         );
     }
     return allTypes;
   }, [triggerType]);
 
-  const areaOptionsForSelect = React.useMemo(() => 
-    (sortedAvailableAreas || []).map(area => ({ value: area.id, label: area.name }))
-  , [sortedAvailableAreas]);
+  const zoneOptionsForSelect = React.useMemo(() => 
+    (sortedAvailableZones || []).map(zone => ({ value: zone.id, label: zone.name }))
+  , [sortedAvailableZones]);
 
   return (
       <AccordionItem 
@@ -238,32 +237,45 @@ export function ActionItem({
           value={`action-${index}`}
           className={`${bgColor} border-2 ${borderColor} rounded-md shadow-sm`}
       >
-          <div className="relative">
+                    <div className="relative">
               <AccordionTrigger className="w-full p-0 hover:no-underline pr-6">
                   <div className="flex items-center w-full px-4 py-3 pr-14">
                       <div className="flex items-center flex-shrink-0">
-                          <Select
-                              value={actionType ?? availableActionTypes[0]}
-                              onValueChange={handleActionTypeChange}
-                              disabled={isLoading}
-                              open={isSelectOpen}
-                              onOpenChange={setIsSelectOpen}
-                          >
-                              <div 
-                                  className="text-sm font-semibold gap-1 flex items-center cursor-pointer"
-                                  onClick={(e) => {
-                                      e.stopPropagation();
-                                      setIsSelectOpen(!isSelectOpen);
-                                  }}
-                              >
-                                  {actionType && (
-                                      <div className="flex items-center gap-1">
-                                          <ActionIcon />
-                                          <span>{getActionTitle(actionType)}</span>
-                                      </div>
-                                  )}
-                              </div>
-                              <SelectContent>
+                          <div className="flex items-center gap-1">
+                              <ActionIcon />
+                              <span className="text-sm font-semibold">{getActionTitle(actionType)}</span>
+                          </div>
+                      </div>
+                      <div className="ml-2 overflow-hidden flex-1 min-w-0 flex items-center">
+                          <span className={`text-xs text-muted-foreground truncate inline-block w-full transition-opacity duration-200 ${isOpen ? 'opacity-0 invisible' : 'opacity-100 visible'}`}>
+                              {formatActionDetail(
+                                  actionType, 
+                                  actionParams, 
+                                  {
+                                      connectors: sortedPikoConnectors,
+                                      devices: sortedAvailableTargetDevices,
+                                      alarmZones: sortedAvailableZones || [],
+                                      ruleLocationScope: currentRuleLocationScope,
+                                  },
+                                  { includeType: false }
+                              )}
+                          </span>
+                      </div>
+                  </div>
+              </AccordionTrigger>
+              <div className="absolute left-4 top-[10px] z-20">
+                  <Select
+                      value={actionType ?? availableActionTypes[0]}
+                      onValueChange={handleActionTypeChange}
+                      disabled={isLoading}
+                  >
+                      <SelectTrigger className={`text-sm font-semibold gap-1 flex items-center cursor-pointer border-none shadow-none p-0 h-[24px] bg-transparent hover:bg-transparent focus:ring-0 ${!isOpen ? '[&>svg]:hidden' : ''}`}>
+                          <div className="flex items-center gap-1 opacity-0 pointer-events-none">
+                              <ActionIcon />
+                              <span>{getActionTitle(actionType)}</span>
+                          </div>
+                      </SelectTrigger>
+                      <SelectContent>
                               {availableActionTypes.length === 0 ? (
                                   <div className="px-2 py-1.5 text-sm text-muted-foreground text-center">
                                       No actions available for this trigger type.
@@ -298,24 +310,7 @@ export function ActionItem({
                               )}
                           </SelectContent>
                       </Select>
-                      </div>
-                      <div className="ml-2 overflow-hidden flex-1 min-w-0 flex items-center">
-                          <span className={`text-xs text-muted-foreground truncate inline-block w-full transition-opacity duration-200 ${isOpen ? 'opacity-0 invisible' : 'opacity-100 visible'}`}>
-                              {formatActionDetail(
-                                  actionType, 
-                                  actionParams, 
-                                  {
-                                      connectors: sortedPikoConnectors,
-                                      devices: sortedAvailableTargetDevices,
-                                      areas: sortedAvailableAreas || [],
-                                      ruleLocationScope: currentRuleLocationScope,
-                                  },
-                                  { includeType: false }
-                              )}
-                          </span>
-                      </div>
                   </div>
-              </AccordionTrigger>
               <Button 
                   type="button" 
                   variant="ghost" 
@@ -408,8 +403,8 @@ export function ActionItem({
                           {actionType === AutomationActionType.SEND_HTTP_REQUEST && "Sends an HTTP request."}
                           {actionType === AutomationActionType.SET_DEVICE_STATE && "Changes the state of a specified device (e.g., turn on/off)."}
                           {actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && "Sends a push notification via the Pushover service."}
-                          {actionType === AutomationActionType.ARM_AREA && "Arms one or more security areas, either specific ones or all within the rule's scope."}
-                          {actionType === AutomationActionType.DISARM_AREA && "Disarms one or more security areas, either specific ones or all within the rule's scope."}
+                          {actionType === AutomationActionType.ARM_ALARM_ZONE && "Arms one or more alarm zones, either specific ones or all within the rule's scope."}
+                          {actionType === AutomationActionType.DISARM_ALARM_ZONE && "Disarms one or more alarm zones, either specific ones or all within the rule's scope."}
                           {!Object.values(AutomationActionType).includes(actionType as any) && "Select an action type to see parameters."}
                       </p>
                       
@@ -731,15 +726,15 @@ export function ActionItem({
                           </>
                       )}
                       
-                      {/* === ARM AREA FIELDS === */} 
-                      {actionType === AutomationActionType.ARM_AREA && (
+                      {/* === ARM ALARM ZONE FIELDS === */} 
+                      {actionType === AutomationActionType.ARM_ALARM_ZONE && (
                           <>
                               <FormField
                                   control={form.control}
                                   name={`config.actions.${index}.params.scoping`}
                                   render={({ field }) => (
                                       <FormItem className="space-y-3">
-                                          <FormLabel>Area Scoping</FormLabel>
+                                          <FormLabel>Zone Scoping</FormLabel>
                                           <FormControl>
                                               <RadioGroup
                                                   onValueChange={field.onChange}
@@ -747,7 +742,7 @@ export function ActionItem({
                                                   className="flex flex-col space-y-1"
                                                   disabled={isLoading}
                                               >
-                                                  {AREA_SCOPING_OPTIONS.map(option => (
+                                                  {ZONE_SCOPING_OPTIONS.map(option => (
                                                       <FormItem key={option.value} className="flex items-center space-x-3 space-y-0">
                                                           <FormControl>
                                                               <RadioGroupItem value={option.value} />
@@ -763,26 +758,26 @@ export function ActionItem({
                                   )}
                               />
 
-                              {currentScoping === 'SPECIFIC_AREAS' && (
+                              {currentScoping === 'SPECIFIC_ZONES' && (
                                   <FormField
                                       control={form.control}
-                                      name={`config.actions.${index}.params.targetAreaIds`}
+                                      name={`config.actions.${index}.params.targetZoneIds`}
                                       render={({ field, fieldState }) => (
                                           <FormItem>
-                                              <FormLabel className="mr-2">Target Areas</FormLabel>
+                                              <FormLabel className="mr-2">Target Zones</FormLabel>
                                               <FormControl>
                                                 <MultiSelectComboBox
-                                                    options={areaOptionsForSelect}
+                                                    options={zoneOptionsForSelect}
                                                     selected={field.value || []}
                                                     onChange={field.onChange}
-                                                    placeholder="Select areas..."
+                                                    placeholder="Select zones..."
                                                     className={cn("w-full max-w-md", fieldState.error && 'border-destructive')}
-                                                    disabled={isLoading || areaOptionsForSelect.length === 0}
+                                                    disabled={isLoading || zoneOptionsForSelect.length === 0}
                                                 />
                                               </FormControl>
-                                              {areaOptionsForSelect.length === 0 && (
+                                              {zoneOptionsForSelect.length === 0 && (
                                                 <FormDescription className={descriptionStyles}>
-                                                    No areas available to select.
+                                                    No zones available to select.
                                                 </FormDescription>
                                               )}
                                           </FormItem>
@@ -792,15 +787,15 @@ export function ActionItem({
                           </>
                       )}
 
-                      {/* === DISARM AREA FIELDS === */} 
-                      {actionType === AutomationActionType.DISARM_AREA && (
+                      {/* === DISARM ALARM ZONE FIELDS === */} 
+                      {actionType === AutomationActionType.DISARM_ALARM_ZONE && (
                           <>
                               <FormField
                                   control={form.control}
                                   name={`config.actions.${index}.params.scoping`}
                                   render={({ field }) => (
                                       <FormItem className="space-y-3">
-                                          <FormLabel>Area Scoping</FormLabel>
+                                          <FormLabel>Zone Scoping</FormLabel>
                                           <FormControl>
                                               <RadioGroup
                                                   onValueChange={field.onChange}
@@ -808,7 +803,7 @@ export function ActionItem({
                                                   className="flex flex-col space-y-1"
                                                   disabled={isLoading}
                                               >
-                                                  {AREA_SCOPING_OPTIONS.map(option => (
+                                                  {ZONE_SCOPING_OPTIONS.map(option => (
                                                       <FormItem key={option.value} className="flex items-center space-x-3 space-y-0">
                                                           <FormControl>
                                                               <RadioGroupItem value={option.value} />
@@ -824,26 +819,26 @@ export function ActionItem({
                                   )}
                               />
 
-                              {currentScoping === 'SPECIFIC_AREAS' && (
+                              {currentScoping === 'SPECIFIC_ZONES' && (
                                   <FormField
                                       control={form.control}
-                                      name={`config.actions.${index}.params.targetAreaIds`}
+                                      name={`config.actions.${index}.params.targetZoneIds`}
                                       render={({ field, fieldState }) => (
                                           <FormItem>
-                                              <FormLabel className="mr-2">Target Areas</FormLabel>
+                                              <FormLabel className="mr-2">Target Zones</FormLabel>
                                               <FormControl>
                                                   <MultiSelectComboBox
-                                                      options={areaOptionsForSelect}
+                                                      options={zoneOptionsForSelect}
                                                       selected={field.value || []}
                                                       onChange={field.onChange}
-                                                      placeholder="Select areas..."
+                                                      placeholder="Select zones..."
                                                       className={cn("w-full max-w-md", fieldState.error && 'border-destructive')}
-                                                      disabled={isLoading || areaOptionsForSelect.length === 0}
+                                                      disabled={isLoading || zoneOptionsForSelect.length === 0}
                                                   />
                                               </FormControl>
-                                              {areaOptionsForSelect.length === 0 && (
+                                              {zoneOptionsForSelect.length === 0 && (
                                                 <FormDescription className={descriptionStyles}>
-                                                    No areas available to select.
+                                                    No zones available to select.
                                                 </FormDescription>
                                               )} 
                                           </FormItem>

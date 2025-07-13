@@ -580,7 +580,7 @@ export async function initPikoWebSocket(
                                  method: "rest.v3.servers.events.subscribe",
                                  params: {
                                      startTimeMs: Date.now(), 
-                                     eventType: ["analyticsSdkEvent", "analyticsSdkObjectDetected"], // Subscribe to both events
+                                     eventType: ["analyticsSdkEvent", "analyticsSdkObjectDetected", "cameraMotionEvent"],
                                      eventsOnly: true, 
                                      _with: "eventParams"
                                  }

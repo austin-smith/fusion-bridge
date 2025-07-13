@@ -16,7 +16,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { LogOut, Loader2, User, Settings, ChevronsUpDown, Users, Plug, Cpu, Terminal, Workflow, Building, ShieldAlert, CalendarClock } from 'lucide-react';
+import { LogOut, Loader2, User, Settings, ChevronsUpDown, Users, Plug, Cpu, Terminal, Workflow, Building, ShieldAlert, CalendarClock, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FiActivity } from 'react-icons/fi';
 import FusionIcon from '@/components/icons/FusionIcon';
@@ -52,12 +52,13 @@ const navGroups: NavGroup[] = [
     items: [
       { href: '/connectors', label: 'Connectors', icon: Plug },
       { href: '/devices', label: 'Devices', icon: Cpu },
-      { href: '/locations-areas', label: 'Locations & Areas', icon: Building },
+      { href: '/locations', label: 'Locations & Spaces', icon: Building },
     ]
   },
   {
     items: [
-      { href: '/alarm/schedules', label: 'Alarm Schedules', icon: CalendarClock },
+      { href: '/alarm-zones', label: 'Alarm Zones', icon: Shield },
+      // { href: '/alarm/schedules', label: 'Alarm Schedules', icon: CalendarClock }, // Hidden: Infrastructure exists but not currently active
       { href: '/alarm/alarms', label: 'Active Alarms', icon: ShieldAlert },
     ]
   },
@@ -114,16 +115,8 @@ export function AppSidebar() {
 
   // Helper function to determine if an admin-only item should be shown
   const canViewAdminItem = (): boolean => {
-    // Explicitly get userRole from session within the function scope for clarity
-    const currentDynamicUserRole = (session?.user as any)?.role;
-    if (initialUserRole === 'admin') {
-      return true;
-    }
-    // Check dynamic role from session if initialRole is not admin
-    if (!isPending && session?.user && currentDynamicUserRole === 'admin') {
-      return true;
-    }
-    return false; // Default to false if no admin conditions are met
+    // Use the server-provided initial role for consistency
+    return initialUserRole === 'admin';
   };
 
   const handleLogout = async () => {
@@ -179,13 +172,11 @@ export function AppSidebar() {
                       const active = isActive(item.href);
                       
                       // Determine if the item should be shown based on role
-                      let showItem = true; // Default to true
-                      if (item.label === 'Users' || item.label === 'Settings') {
-                        showItem = canViewAdminItem();
-                      }
+                      const isAdminItem = item.label === 'Users' || item.label === 'Settings';
+                      const shouldShowAdminItem = canViewAdminItem();
                       
-                      // Skip rendering completely if item shouldn't be shown
-                      if (!showItem) {
+                      // Skip rendering admin items if user doesn't have access
+                      if (isAdminItem && !shouldShowAdminItem) {
                         return null;
                       }
                       

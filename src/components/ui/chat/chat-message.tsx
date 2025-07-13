@@ -169,7 +169,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
     minute: "2-digit",
   })
 
-  // Render chat actions (device/area actions) - always visible
+  // Render chat actions (device/zone actions) - always visible
   const renderChatActions = () => {
     if (chatActions && chatActions.length > 0) {
       return <MessageActions actions={chatActions} addMessage={addMessage} />
@@ -228,7 +228,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
                     <div className={cn(chatBubbleVariants({ isUser, animation }))}>
           <MarkdownRenderer>{part.text}</MarkdownRenderer>
           
-          {/* Always visible chat actions (device/area controls) */}
+          {/* Always visible chat actions (device/zone controls) */}
           {chatActions?.length && (
             <div className="mt-3 pt-3 border-t border-border/30">
               {renderChatActions()}
@@ -279,7 +279,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
       <div className={cn(chatBubbleVariants({ isUser, animation }))}>
         <MarkdownRenderer>{content}</MarkdownRenderer>
         
-        {/* Always visible chat actions (device/area controls) */}
+        {/* Always visible chat actions (device/zone controls) */}
         {chatActions?.length && (
           <div className="mt-3 pt-3 border-t border-border/30">
             {renderChatActions()}

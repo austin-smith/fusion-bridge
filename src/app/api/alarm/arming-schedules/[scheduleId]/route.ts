@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/data/db';
-import { armingSchedules, locations, areas } from '@/data/db/schema';
+import { armingSchedules, locations } from '@/data/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -99,7 +99,7 @@ export async function PUT(
 /**
  * DELETE /api/alarm/arming-schedules/[scheduleId]
  * Deletes an arming schedule.
- * The schema's `onDelete: 'set null'` for FKs in locations and areas tables
+ * The schema's `onDelete: 'set null'` for FKs in locations table
  * will handle unlinking automatically.
  */
 export async function DELETE(
