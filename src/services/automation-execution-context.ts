@@ -60,11 +60,10 @@ function resolveTokens(
 
   const contextForTokenReplacement: Record<string, any> = {
     // Prioritize facts from tokenFactContext
-    schedule: tokenFactContext?.schedule ?? null,
     device: tokenFactContext?.device ?? null,
     space: tokenFactContext?.space ?? null,
+    alarmZone: tokenFactContext?.alarmZone ?? null,
     location: tokenFactContext?.location ?? null,
-    connector: tokenFactContext?.connector ?? null,
     // Use the event context from tokenFactContext if available (preferred), otherwise build from stdEvent
     event: tokenFactContext?.event ?? (stdEvent ? {
       id: stdEvent.eventId,
@@ -155,7 +154,7 @@ async function executeAutomationAction(action: AutomationAction, context: Record
       });
       if (!targetConnector) throw new Error("Target connector not found for CREATE_EVENT");
       
-      const eventTimestamp = stdEvent?.timestamp.toISOString() ?? tokenFactContext.schedule?.triggeredAtUTC ?? new Date().toISOString();
+      const eventTimestamp = stdEvent?.timestamp.toISOString() ?? new Date().toISOString();
       
       if (targetConnector.category === 'piko') {
         const sourceDeviceInternalId = tokenFactContext.device?.id;
@@ -217,7 +216,7 @@ async function executeAutomationAction(action: AutomationAction, context: Record
       });
       if (!targetConnector) throw new Error("Target connector not found for CREATE_BOOKMARK");
       
-      const eventTimestampMs = stdEvent?.timestamp.getTime() ?? tokenFactContext.schedule?.triggeredAtMs ?? new Date().getTime();
+      const eventTimestampMs = stdEvent?.timestamp.getTime() ?? new Date().getTime();
       
       if (targetConnector.category === 'piko') {
         let associatedPikoCameraExternalIds: string[] = [];
@@ -1028,14 +1027,7 @@ export class OrganizationAutomationContext {
         };
       }
 
-      // Build connector context
-      if (connectorRecord) {
-        context.connector = {
-          id: connectorRecord.id,
-          name: connectorRecord.name,
-          category: connectorRecord.category
-        };
-      }
+
 
     } catch (error) {
       console.error(`[Automation Context][${this.organizationId}] Error building action context:`, error);
