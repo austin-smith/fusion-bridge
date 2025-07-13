@@ -25,6 +25,7 @@ import { findSpaceCameras } from '@/services/event-thumbnail-resolver';
 import { AutomationThumbnailAnalyzer } from '@/services/automation-thumbnail-analyzer';
 import { createThumbnailContext } from '@/types/automation-thumbnails';
 import { getThumbnailSource } from '@/services/event-thumbnail-resolver';
+import { buildEventWithContext } from '@/services/automation-execution-context-builder';
 
 // Infer types from schemas
 type Device = InferSelectModel<typeof devicesTableSchema>;
@@ -154,7 +155,6 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
             eq(devicesTableSchema.connectorId, event.connectorId),
             eq(devicesTableSchema.deviceId, event.deviceId)
           ),
-          limit: 1,
           with: {
             spaceDevices: {
               with: {
@@ -163,6 +163,11 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
                     location: true
                   }
                 }
+              }
+            },
+            alarmZoneDevice: {
+              with: {
+                zone: true
               }
             }
           }
@@ -447,7 +452,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
       }
     } // End of if(internalDeviceRecord)
 
-    // 6. Process event for automations with thumbnail context
+    // 6. Process event for automations with context
     try {
       console.log(`[EventProcessor] Sending event ${event.eventId} to AutomationService${thumbnailData ? ' with thumbnail' : ''}.`);
       
@@ -461,7 +466,25 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
         (event as any)._thumbnailContext = thumbnailContext;
       }
       
-      await processEventForAutomations(event);
+      // Create EventWithContext for automation processing
+      const eventWithContext = connector ? 
+        buildEventWithContext(event, connector, internalDeviceRecord) :
+        {
+          event,
+          deviceContext: {
+            deviceRecord: null,
+            spaceRecord: null,
+            alarmZoneRecord: null,
+            locationRecord: null,
+            connectorRecord: {
+              id: event.connectorId,
+              name: 'Unknown Connector',
+              category: 'unknown'
+            }
+          }
+        };
+      
+      await processEventForAutomations(eventWithContext);
     } catch (automationError) {
       console.error(`[EventProcessor] Error during automation processing for event ${event.eventId}:`, automationError);
     }

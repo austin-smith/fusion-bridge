@@ -1,5 +1,45 @@
 import { Power, Bookmark, Globe, TriangleAlert, HelpCircle, Bell, ShieldCheck, ShieldOff } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import type { StandardizedEvent } from '@/types/events';
+
+/**
+ * Automation-specific enriched event type
+ * Contains original event plus device context to avoid duplicate database queries
+ */
+export interface EventWithContext {
+  event: StandardizedEvent;
+  deviceContext: {
+    deviceRecord: {
+      id: string;
+      name: string;
+      deviceType: string | null;
+      deviceSubtype: string | null;
+      vendor: string | null;
+      model: string | null;
+      status: string | null;
+      batteryPercentage: number | null;
+    } | null;
+    spaceRecord: {
+      id: string;
+      name: string;
+    } | null;
+    alarmZoneRecord: {
+      id: string;
+      name: string;
+      armedState: string;
+    } | null;
+    locationRecord: {
+      id: string;
+      name: string;
+      timeZone: string;
+    } | null;
+    connectorRecord: {
+      id: string;
+      name: string;
+      category: string;
+    };
+  };
+}
 
 // Enum for automation action types
 export enum AutomationActionType {

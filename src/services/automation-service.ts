@@ -4,6 +4,7 @@ import { db } from '@/data/db';
 import { alarmZones, alarmZoneDevices, automations, connectors, devices, locations, spaces, spaceDevices, automationExecutions, automationActionExecutions } from '@/data/db/schema';
 import { eq, and, inArray, or, isNotNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events'; // <-- Import StandardizedEvent
+import type { EventWithContext } from '@/lib/automation-types';
 import { DeviceType } from '@/lib/mappings/definitions'; // <-- Import DeviceType enum
 import * as piko from '@/services/drivers/piko'; // Assuming Piko driver functions are here
 import { type AutomationConfig, AutomationConfigSchema, type AutomationAction, type TemporalCondition, SetDeviceStateActionParamsSchema, type ArmAlarmZoneActionParamsSchema, type DisarmAlarmZoneActionParamsSchema } from '@/lib/automation-schemas';
@@ -119,11 +120,12 @@ function resolvePath(obj: any, path: string): any {
 // --- End NEW ---
 
 /**
- * NEW: Organization-scoped event processing
- * Processes a standardized event using the organization-scoped automation context.
- * @param stdEvent The incoming StandardizedEvent object.
+ * Organization-scoped event processing
+ * Processes an event with device context using the organization-scoped automation context.
+ * @param eventWithContext The EventWithContext object containing event and device context.
  */
-export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
+export async function processEvent(eventWithContext: EventWithContext): Promise<void> {
+    const { event: stdEvent, deviceContext } = eventWithContext;
     console.log(`[Automation Service] ENTERED processEvent for event: ${stdEvent.eventId}`);
     console.log(`[Automation Service] Processing event: ${stdEvent.type} (${stdEvent.category}) for device ${stdEvent.deviceId} from connector ${stdEvent.connectorId}`);
 
@@ -142,10 +144,10 @@ export async function processEvent(stdEvent: StandardizedEvent): Promise<void> {
         const organizationId = connectorRecord.organizationId;
         console.log(`[Automation Service] Processing event ${stdEvent.eventId} within organization ${organizationId}`);
 
-        // Use organization-scoped automation context
+        // Use organization-scoped automation context with device context
         const orgDb = createOrgScopedDb(organizationId);
         const automationContext = new OrganizationAutomationContext(organizationId, orgDb);
-        await automationContext.processEvent(stdEvent);
+        await automationContext.processEvent(stdEvent, deviceContext);
 
     } catch (error) {
         console.error('[Automation Service] Top-level error processing event:', error);

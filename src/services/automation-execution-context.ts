@@ -4,6 +4,7 @@ import { db } from '@/data/db';
 import { automations, automationExecutions, automationActionExecutions, connectors, devices, spaceDevices, spaces, locations } from '@/data/db/schema';
 import { eq, inArray, and } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
+import type { EventWithContext } from '@/lib/automation-types';
 import type { OrgScopedDb } from '@/lib/db/org-scoped-db';
 import type { AutomationConfig, AutomationAction } from '@/lib/automation-schemas';
 import { AutomationConfigSchema, SetDeviceStateActionParamsSchema, ArmAlarmZoneActionParamsSchema, DisarmAlarmZoneActionParamsSchema, SendPushNotificationActionParamsSchema } from '@/lib/automation-schemas';
@@ -483,7 +484,7 @@ export class OrganizationAutomationContext {
   /**
    * Process an event for this organization's automations
    */
-  async processEvent(event: StandardizedEvent): Promise<void> {
+  async processEvent(event: StandardizedEvent, deviceContext: EventWithContext['deviceContext']): Promise<void> {
     console.log(`[Automation Context][${this.organizationId}] Processing event: ${event.eventId}`);
     
     try {
@@ -499,7 +500,7 @@ export class OrganizationAutomationContext {
       
       // Process each automation in isolation
       await Promise.allSettled(
-        enabledAutomations.map(automation => this.executeAutomationSafely(automation, event))
+        enabledAutomations.map(automation => this.executeAutomationSafely(automation, event, deviceContext))
       );
       
     } catch (error) {
@@ -545,7 +546,7 @@ export class OrganizationAutomationContext {
   /**
    * Safely execute a single automation with full error isolation
    */
-  private async executeAutomationSafely(automation: OrganizationAutomation, event: StandardizedEvent): Promise<void> {
+  private async executeAutomationSafely(automation: OrganizationAutomation, event: StandardizedEvent, deviceContext: EventWithContext['deviceContext']): Promise<void> {
     try {
       console.log(`[Automation Context][${this.organizationId}] Evaluating automation: ${automation.name} (${automation.id})`);
       
@@ -564,7 +565,7 @@ export class OrganizationAutomationContext {
       }
       
       // Evaluate triggers within organization context
-      const shouldExecute = await this.evaluateEventTriggers(config.trigger.conditions, event, { 
+      const shouldExecute = await this.evaluateEventTriggers(config.trigger.conditions, event, deviceContext, { 
         id: automation.id, 
         name: automation.name 
       });
@@ -598,7 +599,7 @@ export class OrganizationAutomationContext {
       const executionId = await this.createExecutionRecord(automation.id, config.actions.length, event.eventId);
       
       // Build rich context for action execution including device information
-      const actionContext = await this.buildActionContext(event, automation);
+      const actionContext = await this.buildActionContext(event, automation, deviceContext);
       
       // Execute actions with organization-scoped permissions
       const actionResults = await this.executeActions(config.actions, executionId, actionContext);
@@ -666,74 +667,32 @@ export class OrganizationAutomationContext {
   }
 
   /**
-   * Fetch event context data including device, space, location, and connector information
-   * Uses organization-scoped database client for proper access control
+   * Get event context data from passed device context
    */
-  private async fetchEventContextData(event: StandardizedEvent): Promise<{
+  private getEventContextData(deviceContext: EventWithContext['deviceContext']): {
     deviceRecord: any,
+    spaceRecord: any,
+    alarmZoneRecord: any,
     locationRecord: any,
     connectorRecord: any
-  }> {
-    try {
-      // Use organization-scoped database client for security
-      const deviceResults = await this.orgDb.devices.findByExternalId(event.deviceId);
-      const deviceResult = deviceResults[0]; // findByExternalId returns array
-
-      if (!deviceResult) {
-        // Device not found in this organization
-        return {
-          deviceRecord: null,
-          locationRecord: null,
-          connectorRecord: null
-        };
-      }
-
-      // Build structured objects from org-scoped query result
-      const deviceRecord = {
-        id: deviceResult.id,
-        name: deviceResult.name,
-        standardizedDeviceType: deviceResult.standardizedDeviceType,
-        standardizedDeviceSubtype: deviceResult.standardizedDeviceSubtype,
-        vendor: deviceResult.vendor,
-        model: deviceResult.model,
-        status: deviceResult.status,
-        batteryPercentage: deviceResult.batteryPercentage,
-      };
-
-      // Build location and connector records from device data  
-      const locationRecord = deviceResult.locationId ? {
-        id: deviceResult.locationId,
-        name: undefined as string | undefined,
-        timeZone: undefined as string | undefined,
-        addressCity: undefined as string | undefined,
-        addressState: undefined as string | undefined,
-      } : null;
-
-      // Connector data is included in the org-scoped device query
-      const connectorRecord = {
-        id: deviceResult.connector.id,
-        name: deviceResult.connector.name,
-        category: deviceResult.connector.category,
-      };
-
-      return { deviceRecord, locationRecord, connectorRecord };
-
-    } catch (contextError) {
-      console.warn(`[Automation Context][${this.organizationId}] Failed to fetch context data:`, contextError);
-      return {
-        deviceRecord: null,
-        locationRecord: null,
-        connectorRecord: null
-      };
-    }
+  } {
+    return {
+      deviceRecord: deviceContext.deviceRecord,
+      spaceRecord: deviceContext.spaceRecord,
+      alarmZoneRecord: deviceContext.alarmZoneRecord,
+      locationRecord: deviceContext.locationRecord,
+      connectorRecord: deviceContext.connectorRecord
+    };
   }
+
+
 
   /**
    * Evaluate event-based trigger conditions using json-rules-engine
    */
-  private async evaluateEventTriggers(conditions: JsonRuleGroup, event: StandardizedEvent, automationContext?: { id: string, name: string }): Promise<boolean> {
-    // Fetch comprehensive context data
-    const { deviceRecord, locationRecord, connectorRecord } = await this.fetchEventContextData(event);
+  private async evaluateEventTriggers(conditions: JsonRuleGroup, event: StandardizedEvent, deviceContext: EventWithContext['deviceContext'], automationContext?: { id: string, name: string }): Promise<boolean> {
+    // Get comprehensive context data from passed device context
+    const { deviceRecord, spaceRecord, alarmZoneRecord, locationRecord, connectorRecord } = this.getEventContextData(deviceContext);
 
     // Create comprehensive facts object with all available context
     const facts: Record<string, any> = {
@@ -749,19 +708,26 @@ export class OrganizationAutomationContext {
       'device.id': deviceRecord?.id || event.deviceId,
       'device.externalId': event.deviceId,
       'device.name': deviceRecord?.name || event.deviceId,
-      'device.type': deviceRecord?.standardizedDeviceType || event.deviceInfo?.type,
-      'device.subtype': deviceRecord?.standardizedDeviceSubtype || event.deviceInfo?.subtype,
+      'device.type': deviceRecord?.deviceType || event.deviceInfo?.type,
+      'device.subtype': deviceRecord?.deviceSubtype || event.deviceInfo?.subtype,
       'device.vendor': deviceRecord?.vendor,
       'device.model': deviceRecord?.model,
       'device.status': deviceRecord?.status,
       'device.batteryPercentage': deviceRecord?.batteryPercentage,
       
+      // Space facts
+      'space.id': spaceRecord?.id,
+      'space.name': spaceRecord?.name,
+      
+      // Alarm Zone facts
+      'alarmZone.id': alarmZoneRecord?.id,
+      'alarmZone.name': alarmZoneRecord?.name,
+      'alarmZone.armedState': alarmZoneRecord?.armedState,
+      
       // Location facts
       'location.id': locationRecord?.id,
       'location.name': locationRecord?.name,
       'location.timeZone': locationRecord?.timeZone,
-      'location.addressCity': locationRecord?.addressCity,
-      'location.addressState': locationRecord?.addressState,
       
       // Connector facts - enhanced with database data
       'connector.id': event.connectorId,
@@ -995,7 +961,7 @@ export class OrganizationAutomationContext {
   /**
    * Build rich action context including device, space, location, and connector information
    */
-  private async buildActionContext(event: StandardizedEvent, automation: OrganizationAutomation): Promise<Record<string, any>> {
+  private async buildActionContext(event: StandardizedEvent, automation: OrganizationAutomation, deviceContext: EventWithContext['deviceContext']): Promise<Record<string, any>> {
     const context: Record<string, any> = {
       triggerEvent: event,
       organizationId: this.organizationId,
@@ -1007,15 +973,15 @@ export class OrganizationAutomationContext {
 
     try {
       // Use shared context fetching method
-      const { deviceRecord, locationRecord, connectorRecord } = await this.fetchEventContextData(event);
+      const { deviceRecord, spaceRecord, alarmZoneRecord, locationRecord, connectorRecord } = this.getEventContextData(deviceContext);
 
       if (deviceRecord) {
         context.device = {
           id: deviceRecord.id,
           externalId: event.deviceId,
           name: deviceRecord.name,
-          type: deviceRecord.standardizedDeviceType,
-          subtype: deviceRecord.standardizedDeviceSubtype,
+          type: deviceRecord.deviceType,
+          subtype: deviceRecord.deviceSubtype,
           vendor: deviceRecord.vendor,
           model: deviceRecord.model,
           status: deviceRecord.status,
@@ -1036,14 +1002,29 @@ export class OrganizationAutomationContext {
         };
       }
 
+      // Build space context
+      if (spaceRecord) {
+        context.space = {
+          id: spaceRecord.id,
+          name: spaceRecord.name
+        };
+      }
+
+      // Build alarm zone context
+      if (alarmZoneRecord) {
+        context.alarmZone = {
+          id: alarmZoneRecord.id,
+          name: alarmZoneRecord.name,
+          armedState: alarmZoneRecord.armedState
+        };
+      }
+
       // Build location context
       if (locationRecord) {
         context.location = {
           id: locationRecord.id,
           name: locationRecord.name,
-          timeZone: locationRecord.timeZone,
-          addressCity: locationRecord.addressCity,
-          addressState: locationRecord.addressState
+          timeZone: locationRecord.timeZone
         };
       }
 

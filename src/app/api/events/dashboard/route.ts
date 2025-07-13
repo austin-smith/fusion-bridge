@@ -31,9 +31,9 @@ async function getRecentEventsForDashboard(orgDb: any, limit: number = DEFAULT_L
 
         // Map DB results to DashboardEvent[]
         const dashboardEvents: DashboardEvent[] = results.map((row: any) => {
-            const payload = typeof row.standardizedPayload === 'string'
+            const payload: Record<string, unknown> = typeof row.standardizedPayload === 'string'
                             ? JSON.parse(row.standardizedPayload)
-                            : row.standardizedPayload ?? {};
+                            : row.standardizedPayload ?? ({} as Record<string, unknown>);
             const originalEvent = typeof row.rawPayload === 'string'
                                   ? JSON.parse(row.rawPayload)
                                   : row.rawPayload ?? {};
