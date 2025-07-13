@@ -246,7 +246,6 @@ export const spaces = sqliteTable("spaces", {
   locationId: text("location_id").references(() => locations.id, { onDelete: 'cascade' }).notNull(),
   name: text("name").notNull(), // e.g., "Lobby", "Vault Room", "Server Room"
   description: text("description"),
-  metadata: text("metadata", { mode: "json" }).$type<Record<string, any> | null>(), // floor plan coordinates, etc.
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
@@ -367,7 +366,6 @@ export const alarmZoneAuditLog = sqliteTable("alarm_zone_audit_log", {
   newState: text("new_state").$type<ArmedState>(),
   reason: text("reason"), // e.g., 'manual', 'scheduled', 'automation', 'security_event'
   triggerEventId: text("trigger_event_id"), // references events.eventUuid if event-triggered
-  metadata: text("metadata", { mode: "json" }).$type<Record<string, any> | null>(), // IP address, automation ID, etc.
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
   zoneCreatedIdx: index("alarm_zone_audit_log_zone_created_idx").on(table.zoneId, table.createdAt),

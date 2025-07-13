@@ -427,8 +427,7 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
                   deviceZone.id,
                   ArmedState.TRIGGERED,
                   undefined, // No user ID for system-triggered events
-                  'security_event_trigger',
-                  { triggeredByEvent: event.eventId, deviceId: event.deviceId },
+                  'alarm_event_trigger',
                   event.eventId
                 );
                 console.log(`[EventProcessor] Alarm zone ${deviceZone.id} set to TRIGGERED due to event ${event.eventId} from device ${event.deviceId}.`);

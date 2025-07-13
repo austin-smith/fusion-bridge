@@ -24,16 +24,15 @@ export const PUT = withOrganizationAuth(async (request: NextRequest, authContext
       return NextResponse.json({ success: false, error: "Invalid input", details: validation.error.flatten() }, { status: 400 });
     }
 
-    const { armedState, reason, metadata } = validation.data;
+    const { armedState } = validation.data;
     const alarmZonesRepo = createAlarmZonesRepository(authContext.organizationId);
 
-    // Set armed state with audit logging
+    // Set armed state with audit logging - reason is automatically determined as "manual" for API calls
     const updatedZone = await alarmZonesRepo.setArmedState(
       id,
       armedState,
       authContext.userId,
-      reason,
-      metadata
+      "manual" // System-determined reason for API calls
     );
 
     if (!updatedZone) {

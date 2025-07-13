@@ -10,7 +10,8 @@ import {
   pinValidationResponseSchema,
   createSpaceSchema,
   updateSpaceSchema,
-  assignDeviceToSpaceSchema,
+  assignDevicesToSpaceSchema,
+  removeDevicesFromSpaceSchema,
   createAlarmZoneSchema,
   updateAlarmZoneSchema,
   assignDevicesToZoneSchema,
@@ -86,7 +87,6 @@ const spaceSchema = z.object({
   locationId: z.string().uuid().describe('Location UUID'),
   locationName: z.string().describe('Location name'),
   description: z.string().nullable().describe('Space description'),
-  metadata: z.record(z.any()).nullable().describe('Space metadata'),
   deviceIds: z.array(z.string()).describe('Array of device IDs assigned to this space'),
   createdAt: z.string().describe('Creation timestamp (ISO string)'),
   updatedAt: z.string().describe('Last update timestamp (ISO string)'),
@@ -123,7 +123,6 @@ const auditLogEntrySchema = z.object({
   newState: z.string().nullable().describe('New armed state'),
   reason: z.string().nullable().describe('Reason for action'),
   triggerEventId: z.string().nullable().describe('Event UUID that triggered the action'),
-  metadata: z.record(z.any()).nullable().describe('Additional metadata'),
   createdAt: z.string().describe('Creation timestamp (ISO string)'),
 }).openapi('AuditLogEntry');
 
@@ -212,28 +211,12 @@ const eventSchema = z.object({
   rawEventType: z.string().optional().describe('Raw event type'),
 }).openapi('Event');
 
-// Admin schemas (create basic ones since they don't exist yet)
-const createApiKeySchema = z.object({
-  name: z.string().min(1, 'Name cannot be empty').describe('API key name'),
-}).openapi('CreateApiKeyRequest');
-
-const updateApiKeySchema = z.object({
-  enabled: z.boolean().describe('Whether the API key is enabled or disabled'),
-}).openapi('UpdateApiKeyRequest');
-
-const apiKeySchema = z.object({
-  id: z.string().uuid().describe('API key UUID'),
-  name: z.string().describe('API key name'),
-  keyPreview: z.string().describe('First 8 characters of the API key'),
-  createdAt: z.string().describe('Creation timestamp (ISO string)'),
-  lastUsedAt: z.string().nullable().describe('Last used timestamp (ISO string)'),
-}).openapi('ApiKey');
-
-const apiKeyTestResponseSchema = z.object({
-  success: z.literal(true),
-  message: z.string().describe('Test result message'),
-  timestamp: z.string().describe('Test timestamp (ISO string)'),
-}).openapi('ApiKeyTestResponse');
+  // API Key Test schema (only endpoint that works with API keys)
+  const apiKeyTestResponseSchema = z.object({
+    success: z.literal(true),
+    message: z.string().describe('Test result message'),
+    timestamp: z.string().describe('Test timestamp (ISO string)'),
+  }).openapi('ApiKeyTestResponse');
 
 // SSE Event Stream schemas
 const sseStreamQuerySchema = z.object({
@@ -311,9 +294,6 @@ export function generateOpenApiSpec() {
   registry.register('Location', locationSchema);
   registry.register('DeviceSyncRequest', deviceSyncSchema.openapi('DeviceSyncRequest'));
   registry.register('Device', deviceSchema);
-  registry.register('CreateApiKeyRequest', createApiKeySchema);
-  registry.register('UpdateApiKeyRequest', updateApiKeySchema);
-  registry.register('ApiKey', apiKeySchema);
   registry.register('ErrorResponse', errorResponseSchema);
   registry.register('ApiKeyTestResponse', apiKeyTestResponseSchema);
   
@@ -325,7 +305,8 @@ export function generateOpenApiSpec() {
   // Spaces and alarm zones schemas
   registry.register('CreateSpaceRequest', createSpaceSchema.openapi('CreateSpaceRequest'));
   registry.register('UpdateSpaceRequest', updateSpaceSchema.openapi('UpdateSpaceRequest'));
-  registry.register('AssignDeviceToSpaceRequest', assignDeviceToSpaceSchema.openapi('AssignDeviceToSpaceRequest'));
+  registry.register('AssignDevicesToSpaceRequest', assignDevicesToSpaceSchema.openapi('AssignDevicesToSpaceRequest'));
+  registry.register('RemoveDevicesFromSpaceRequest', removeDevicesFromSpaceSchema.openapi('RemoveDevicesFromSpaceRequest'));
   registry.register('CreateAlarmZoneRequest', createAlarmZoneSchema.openapi('CreateAlarmZoneRequest'));
   registry.register('UpdateAlarmZoneRequest', updateAlarmZoneSchema.openapi('UpdateAlarmZoneRequest'));
   registry.register('AssignDevicesToZoneRequest', assignDevicesToZoneSchema.openapi('AssignDevicesToZoneRequest'));
@@ -353,8 +334,6 @@ export function generateOpenApiSpec() {
   const locationsSuccessResponse = successResponseSchema(z.array(locationSchema));
   const locationSuccessResponse = successResponseSchema(locationSchema);
   const devicesSuccessResponse = successResponseSchema(z.array(deviceSchema));
-  const apiKeysSuccessResponse = successResponseSchema(z.array(apiKeySchema));
-  const apiKeySuccessResponse = successResponseSchema(apiKeySchema);
   const deleteSuccessResponse = successResponseSchema(z.object({ id: z.string() }));
   
   // PIN management response schemas
@@ -378,7 +357,7 @@ export function generateOpenApiSpec() {
   });
   const deviceAssignmentSuccessResponse = successResponseSchema(z.object({ 
     spaceId: z.string(), 
-    deviceId: z.string() 
+    deviceIds: z.array(z.string())
   }));
   const zoneDevicesSuccessResponse = successResponseSchema(z.object({ 
     zoneId: z.string(), 
@@ -390,8 +369,6 @@ export function generateOpenApiSpec() {
   registry.register('LocationsSuccessResponse', locationsSuccessResponse);
   registry.register('LocationSuccessResponse', locationSuccessResponse);
   registry.register('DevicesSuccessResponse', devicesSuccessResponse);
-  registry.register('ApiKeysSuccessResponse', apiKeysSuccessResponse);
-  registry.register('ApiKeySuccessResponse', apiKeySuccessResponse);
   registry.register('DeleteSuccessResponse', deleteSuccessResponse);
 
   // PIN management response schemas
@@ -871,182 +848,16 @@ export function generateOpenApiSpec() {
     },
   });
 
-  // Admin/API Keys endpoints
-  registry.registerPath({
-    method: 'get',
-    path: '/api/admin/api-keys',
-    summary: 'Get all API keys',
-    description: 'Retrieves all API keys with metadata (excludes actual key values)',
-    tags: ['Admin'],
-    responses: {
-      200: {
-        description: 'List of API keys',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ApiKeysSuccessResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'post',
-    path: '/api/admin/api-keys',
-    summary: 'Create a new API key',
-    description: 'Creates a new API key with the specified name',
-    tags: ['Admin'],
-    request: {
-      body: {
-        content: {
-          'application/json': {
-            schema: createApiKeySchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'API key created successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ApiKeySuccessResponse' },
-          },
-        },
-      },
-      400: {
-        description: 'Invalid input or validation error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'patch',
-    path: '/api/admin/api-keys/{id}',
-    summary: 'Update API key status',
-    description: 'Updates the enabled/disabled status of an existing API key',
-    tags: ['Admin'],
-    request: {
-      params: z.object({
-        id: z.string().uuid().describe('API key UUID'),
-      }),
-      body: {
-        content: {
-          'application/json': {
-            schema: updateApiKeySchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'API key status updated successfully',
-        content: {
-          'application/json': {
-            schema: successResponseSchema(z.object({
-              message: z.string(),
-            })),
-          },
-        },
-      },
-      400: {
-        description: 'Invalid input or validation error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      404: {
-        description: 'API key not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'delete',
-    path: '/api/admin/api-keys/{id}',
-    summary: 'Delete an API key',
-    description: 'Deletes an existing API key',
-    tags: ['Admin'],
-    request: {
-      params: z.object({
-        id: z.string().uuid().describe('API key UUID'),
-      }),
-    },
-    responses: {
-      200: {
-        description: 'API key deleted successfully',
-        content: {
-          'application/json': {
-            schema: successResponseSchema(z.object({
-              message: z.string(),
-            })),
-          },
-        },
-      },
-      404: {
-        description: 'API key not found',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Internal server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorResponse' },
-          },
-        },
-      },
-    },
-  });
-
+  // API Key Test endpoint (only admin endpoint that works with API keys)
   registry.registerPath({
     method: 'get',
     path: '/api/admin/api-keys/test',
-    summary: 'Get API key detail',
-    description: 'Validates the provided API key and returns detailed information about the key, associated user, and organization scope',
-    tags: ['Admin'],
+    summary: 'Validate API key',
+    description: 'Validates the provided API key and returns detailed information about the key, associated user, and organization scope. This endpoint works with both session and API key authentication.',
+    tags: ['API Keys'],
     responses: {
       200: {
-        description: 'API key test successful',
+        description: 'API key validation successful',
         content: {
           'application/json': {
             schema: successResponseSchema(z.object({
@@ -1098,7 +909,7 @@ export function generateOpenApiSpec() {
     path: '/api/alarm/keypad/validate-pin',
     summary: 'Validate keypad PIN',
     description: 'Validates a 6-digit PIN and returns user information if valid. Used by keypad devices for authentication.',
-    tags: ['Alarm'],
+    tags: ['Alarm Keypad'],
     request: {
       body: {
         content: {
@@ -1404,8 +1215,8 @@ export function generateOpenApiSpec() {
   registry.registerPath({
     method: 'post',
     path: '/api/spaces/{id}/devices',
-    summary: 'Assign device to space',
-    description: 'Assigns a device to a space (one device per space)',
+    summary: 'Assign devices to space',
+    description: 'Assigns one or more devices to a space',
     tags: ['Spaces'],
     request: {
       params: z.object({
@@ -1414,14 +1225,14 @@ export function generateOpenApiSpec() {
       body: {
         content: {
           'application/json': {
-            schema: assignDeviceToSpaceSchema,
+            schema: assignDevicesToSpaceSchema,
           },
         },
       },
     },
     responses: {
       200: {
-        description: 'Device assigned successfully',
+        description: 'Devices assigned successfully',
         content: {
           'application/json': {
             schema: { $ref: '#/components/schemas/DeviceAssignmentSuccessResponse' },
@@ -1458,8 +1269,8 @@ export function generateOpenApiSpec() {
   registry.registerPath({
     method: 'delete',
     path: '/api/spaces/{id}/devices',
-    summary: 'Remove device from space',
-    description: 'Removes a device assignment from a space',
+    summary: 'Remove devices from space',
+    description: 'Removes one or more device assignments from a space',
     tags: ['Spaces'],
     request: {
       params: z.object({
@@ -1468,14 +1279,14 @@ export function generateOpenApiSpec() {
       body: {
         content: {
           'application/json': {
-            schema: assignDeviceToSpaceSchema,
+            schema: removeDevicesFromSpaceSchema,
           },
         },
       },
     },
     responses: {
       200: {
-        description: 'Device removed successfully',
+        description: 'Devices removed successfully',
         content: {
           'application/json': {
             schema: { $ref: '#/components/schemas/DeviceAssignmentSuccessResponse' },

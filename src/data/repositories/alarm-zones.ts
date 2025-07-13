@@ -335,7 +335,6 @@ export class AlarmZonesRepository {
     newState: ArmedState, 
     userId?: string, 
     reason?: string, 
-    metadata?: Record<string, any>,
     triggerEventId?: string
   ) {
     // Verify zone belongs to organization
@@ -380,7 +379,6 @@ export class AlarmZonesRepository {
       newState,
       reason: reason || null,
       triggerEventId: triggerEventId || null,
-      metadata: metadata || null,
     });
 
     return result[0] || null;
@@ -517,7 +515,6 @@ export class AlarmZonesRepository {
     newState?: ArmedState | null;
     reason?: string | null;
     triggerEventId?: string | null;
-    metadata?: Record<string, any> | null;
   }) {
     return db.insert(alarmZoneAuditLog)
       .values({
@@ -528,7 +525,6 @@ export class AlarmZonesRepository {
         newState: data.newState || null,
         reason: data.reason || null,
         triggerEventId: data.triggerEventId || null,
-        metadata: data.metadata || null,
       })
       .returning();
   }

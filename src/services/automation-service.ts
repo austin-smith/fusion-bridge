@@ -470,7 +470,7 @@ async function executeActionWithRetry(
                             zoneId, 
                             ArmedState.ARMED,
                             undefined, // No user ID for automation actions
-                            'automation_arm'
+                            'automation'
                         );
                         if (updatedZone) {
                             console.log(`[Rule ${rule.id}][Action armAlarmZone] Successfully armed alarm zone ${zoneId}.`);
@@ -513,7 +513,7 @@ async function executeActionWithRetry(
                             zoneId, 
                             ArmedState.DISARMED,
                             undefined, // No user ID for automation actions
-                            'automation_disarm'
+                            'automation'
                         );
                         if (updatedZone) {
                             console.log(`[Rule ${rule.id}][Action disarmAlarmZone] Successfully disarmed alarm zone ${zoneId}.`);

@@ -37,8 +37,7 @@ export async function internalSetAlarmZoneArmedState(
   zoneId: string,
   armedState: ArmedState,
   userId?: string,
-  reason?: string,
-  additionalMetadata?: Record<string, any>
+  reason?: string
 ): Promise<AlarmZone | null> {
   // Validate inputs
   const validatedZoneId = zUUID.parse(zoneId);
@@ -93,8 +92,7 @@ export async function internalSetAlarmZoneArmedState(
       validatedZoneId,
       validatedArmedState,
       userId,
-      reason || 'manual',
-      additionalMetadata
+      reason || 'manual'
     );
 
     if (!updatedZone) {
@@ -161,7 +159,7 @@ export async function armAlarmZone(
     zoneId,
     ArmedState.ARMED,
     userId,
-    'manual_arm'
+    'manual'
   );
 }
 
@@ -176,7 +174,7 @@ export async function disarmAlarmZone(
     zoneId,
     ArmedState.DISARMED,
     userId,
-    'manual_disarm'
+    'manual'
   );
 }
 
@@ -191,7 +189,6 @@ export async function acknowledgeAlarmZone(
     zoneId,
     ArmedState.DISARMED,
     userId,
-    'acknowledged',
-    { acknowledged: true }
+    'manual'
   );
 } 

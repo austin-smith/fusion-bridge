@@ -404,7 +404,7 @@ async function executeAutomationAction(action: AutomationAction, context: Record
             zoneId, 
             ArmedState.ARMED,
             undefined, // No user ID for automation actions
-            'automation_arm'
+            'automation'
           );
           if (updatedZone) {
             console.log(`[Automation Action Executor] Successfully armed alarm zone ${zoneId}.`);
@@ -447,7 +447,7 @@ async function executeAutomationAction(action: AutomationAction, context: Record
             zoneId, 
             ArmedState.DISARMED,
             undefined, // No user ID for automation actions
-            'automation_disarm'
+            'automation'
           );
           if (updatedZone) {
             console.log(`[Automation Action Executor] Successfully disarmed alarm zone ${zoneId}.`);

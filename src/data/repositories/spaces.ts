@@ -154,7 +154,6 @@ export class SpacesRepository {
     locationId: string;
     name: string;
     description?: string;
-    metadata?: Record<string, any>;
   }) {
     // Verify location belongs to organization
     const locationExists = await this.verifyLocationAccess(data.locationId);
@@ -167,7 +166,6 @@ export class SpacesRepository {
         locationId: data.locationId,
         name: data.name,
         description: data.description || null,
-        metadata: data.metadata || null,
       })
       .returning();
 
@@ -183,7 +181,6 @@ export class SpacesRepository {
   async update(id: string, data: {
     name?: string;
     description?: string;
-    metadata?: Record<string, any>;
     locationId?: string;
   }) {
     // If locationId is being changed, verify new location belongs to org

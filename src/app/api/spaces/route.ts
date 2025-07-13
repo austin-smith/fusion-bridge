@@ -35,7 +35,6 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
       name: spaceRow.name,
       locationId: spaceRow.locationId,
       description: spaceRow.description,
-      metadata: spaceRow.metadata,
       locationName: spaceRow.location.name,
       createdAt: new Date(spaceRow.createdAt).toISOString(),
       updatedAt: new Date(spaceRow.updatedAt).toISOString(),
@@ -63,14 +62,13 @@ export const POST = withOrganizationAuth(async (request, authContext: Organizati
       return NextResponse.json({ success: false, error: "Invalid input", details: validation.error.flatten() }, { status: 400 });
     }
 
-    const { name, locationId, description, metadata } = validation.data;
+    const { name, locationId, description } = validation.data;
     const spacesRepo = createSpacesRepository(authContext.organizationId);
 
     const newSpace = await spacesRepo.create({
       name,
       locationId,
       description,
-      metadata,
     });
     
     const responseSpace: SpaceWithDetails = {
@@ -78,7 +76,6 @@ export const POST = withOrganizationAuth(async (request, authContext: Organizati
       name: newSpace.name,
       locationId: newSpace.locationId,
       description: newSpace.description,
-      metadata: newSpace.metadata,
       locationName: newSpace.location.name,
       deviceIds: [], // Empty for newly created spaces
       createdAt: new Date(newSpace.createdAt).toISOString(),

@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import { createSpacesRepository } from '@/data/repositories/spaces';
 import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
-import { assignDeviceToSpaceSchema, assignDevicesToSpaceSchema, removeDevicesFromSpaceSchema } from '@/lib/schemas/api-schemas';
+import { assignDevicesToSpaceSchema, removeDevicesFromSpaceSchema } from '@/lib/schemas/api-schemas';
 
 // Get devices in a space
 export const GET = withOrganizationAuth(async (request: NextRequest, authContext: OrganizationAuthContext, context: RouteContext<{ id: string }>) => {
@@ -40,7 +40,7 @@ export const GET = withOrganizationAuth(async (request: NextRequest, authContext
   }
 });
 
-// Assign devices to a space (supports both single and bulk operations)
+// Assign devices to a space (bulk assignment only)
 export const POST = withOrganizationAuth(async (request: NextRequest, authContext: OrganizationAuthContext, context: RouteContext<{ id: string }>) => {
   if (!context?.params) {
     return NextResponse.json({ success: false, error: "Missing route parameters" }, { status: 400 });
@@ -54,27 +54,13 @@ export const POST = withOrganizationAuth(async (request: NextRequest, authContex
 
   try {
     const body = await request.json();
-    
-    // Support both single device (legacy) and bulk deviceIds
-    let deviceIds: string[];
-    if ('deviceId' in body) {
-      // Legacy single device format
-      const validation = assignDeviceToSpaceSchema.safeParse(body);
-      if (!validation.success) {
-        return NextResponse.json({ success: false, error: "Invalid input", details: validation.error.flatten() }, { status: 400 });
-      }
-      deviceIds = [validation.data.deviceId];
-    } else if ('deviceIds' in body) {
-      // New bulk format
-      const bulkValidation = assignDevicesToSpaceSchema.safeParse(body);
-      if (!bulkValidation.success) {
-        return NextResponse.json({ success: false, error: "Invalid input", details: bulkValidation.error.flatten() }, { status: 400 });
-      }
-      deviceIds = bulkValidation.data.deviceIds;
-    } else {
-      return NextResponse.json({ success: false, error: "Either deviceId or deviceIds must be provided" }, { status: 400 });
+    const validation = assignDevicesToSpaceSchema.safeParse(body);
+
+    if (!validation.success) {
+      return NextResponse.json({ success: false, error: "Invalid input", details: validation.error.flatten() }, { status: 400 });
     }
 
+    const { deviceIds } = validation.data;
     const spacesRepo = createSpacesRepository(authContext.organizationId);
     const assignments = [];
 
@@ -101,7 +87,7 @@ export const POST = withOrganizationAuth(async (request: NextRequest, authContex
   }
 });
 
-// Remove devices from a space (supports both single and bulk operations)
+// Remove devices from a space (bulk removal only)
 export const DELETE = withOrganizationAuth(async (request: NextRequest, authContext: OrganizationAuthContext, context: RouteContext<{ id: string }>) => {
   if (!context?.params) {
     return NextResponse.json({ success: false, error: "Missing route parameters" }, { status: 400 });
@@ -114,27 +100,14 @@ export const DELETE = withOrganizationAuth(async (request: NextRequest, authCont
   }
 
   try {
-    // Support both query parameter (legacy) and request body (bulk)
-    let deviceIds: string[];
-    const { searchParams } = new URL(request.url);
-    const deviceIdParam = searchParams.get('deviceId');
-    
-    if (deviceIdParam) {
-      // Legacy single device via query parameter
-      if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(deviceIdParam)) {
-        return NextResponse.json({ success: false, error: "Invalid deviceId parameter" }, { status: 400 });
-      }
-      deviceIds = [deviceIdParam];
-    } else {
-      // New bulk format via request body
-      const body = await request.json();
-      const validation = removeDevicesFromSpaceSchema.safeParse(body);
-      if (!validation.success) {
-        return NextResponse.json({ success: false, error: "Invalid input", details: validation.error.flatten() }, { status: 400 });
-      }
-      deviceIds = validation.data.deviceIds;
+    const body = await request.json();
+    const validation = removeDevicesFromSpaceSchema.safeParse(body);
+
+    if (!validation.success) {
+      return NextResponse.json({ success: false, error: "Invalid input", details: validation.error.flatten() }, { status: 400 });
     }
 
+    const { deviceIds } = validation.data;
     const spacesRepo = createSpacesRepository(authContext.organizationId);
     
     // Remove each device from any space (spaces enforce one device per space)

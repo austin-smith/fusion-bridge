@@ -135,7 +135,6 @@ export interface Space {
   locationId: string;
   name: string;
   description?: string | null;
-  metadata?: Record<string, any> | null;
   createdAt: Date;
   updatedAt: Date;
   
@@ -183,7 +182,6 @@ export interface AlarmZoneAuditLogEntry {
   newState?: ArmedState | null;
   reason?: string | null;
   triggerEventId?: string | null;
-  metadata?: Record<string, any> | null;
   createdAt: Date;
   
   // Optional: Populated for display

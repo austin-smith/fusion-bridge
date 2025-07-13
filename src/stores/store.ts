@@ -812,7 +812,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         const response = await fetch(`/api/spaces/${spaceId}/devices`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ deviceId })
+            body: JSON.stringify({ deviceIds: [deviceId] })
         });
         const data: ApiResponse<{ spaceId: string, deviceIds: string[] }> = await response.json();
         if (!response.ok || !data.success) {
@@ -829,7 +829,11 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   },
   removeDeviceFromSpace: async (spaceId, deviceId) => {
     try {
-         const response = await fetch(`/api/spaces/${spaceId}/devices?deviceId=${encodeURIComponent(deviceId)}`, { method: 'DELETE' });
+         const response = await fetch(`/api/spaces/${spaceId}/devices`, {
+           method: 'DELETE',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ deviceIds: [deviceId] })
+         });
         const data: ApiResponse<{ spaceId: string, deviceIds: string[] }> = await response.json();
          if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to remove device from space');

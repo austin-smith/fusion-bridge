@@ -42,13 +42,11 @@ export const createSpaceSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
   locationId: z.string().uuid("Invalid location ID"),
-  metadata: z.record(z.any()).optional(),
 });
 
 export const updateSpaceSchema = z.object({
   name: z.string().min(1, "Name is required").optional(),
   description: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
 });
 
 export const assignDeviceToSpaceSchema = z.object({
@@ -90,8 +88,6 @@ export const removeDevicesFromZoneSchema = z.object({
 
 export const setZoneArmedStateSchema = z.object({
   armedState: z.nativeEnum(ArmedState),
-  reason: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
 });
 
 export const addTriggerOverrideSchema = z.object({
