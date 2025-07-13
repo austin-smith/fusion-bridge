@@ -322,28 +322,6 @@ export class OrgScopedDb {
         eq(connectors.organizationId, this.orgId)
       )),
       
-    findByExternalId: (deviceId: string) =>
-      db.select({
-        ...getTableColumns(devices),
-        connector: {
-          id: connectors.id,
-          name: connectors.name,
-          category: connectors.category
-        },
-        spaceId: spaceDevices.spaceId,
-        spaceName: spaces.name,
-        locationId: spaces.locationId
-      })
-      .from(devices)
-      .innerJoin(connectors, eq(devices.connectorId, connectors.id))
-      .leftJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
-      .leftJoin(spaces, eq(spaceDevices.spaceId, spaces.id))
-      .where(and(
-        eq(devices.deviceId, deviceId),
-        eq(connectors.organizationId, this.orgId)
-      ))
-      .limit(1),
-
     findBySpace: (spaceId: string) =>
       db.select({
         ...getTableColumns(devices),
@@ -479,6 +457,7 @@ export class OrgScopedDb {
         rawEventType: events.rawEventType,
         connectorId: events.connectorId,
         // Joined Device fields (nullable)
+        deviceInternalId: devices.id,
         deviceName: devices.name,
         rawDeviceType: devices.type,
         // Joined Connector fields (nullable)
@@ -528,6 +507,7 @@ export class OrgScopedDb {
         rawEventType: events.rawEventType,
         connectorId: events.connectorId,
         // Joined Device fields
+        deviceInternalId: devices.id,
         deviceName: devices.name,
         rawDeviceType: devices.type,
         // Joined Connector fields
@@ -570,6 +550,7 @@ export class OrgScopedDb {
         rawPayload: events.rawPayload,
         rawEventType: events.rawEventType,
         // Joined Device fields
+        deviceInternalId: devices.id,
         deviceName: devices.name,
         rawDeviceType: devices.type,
         // Joined Connector fields
@@ -610,6 +591,7 @@ export class OrgScopedDb {
         standardizedPayload: events.standardizedPayload,
         rawPayload: events.rawPayload,
         rawEventType: events.rawEventType,
+        deviceInternalId: devices.id,
         deviceName: devices.name,
         connectorName: connectors.name,
         connectorCategory: connectors.category,

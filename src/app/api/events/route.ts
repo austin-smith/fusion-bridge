@@ -23,6 +23,7 @@ interface OrgEnrichedEvent {
   rawPayload: unknown;
   rawEventType: string | null;
   connectorId: string;
+  deviceInternalId: string | null;
   deviceName: string | null;
   rawDeviceType: string | null;
   connectorName: string | null;
@@ -47,6 +48,7 @@ interface ApiEnrichedEvent {
   id: number;
   eventUuid: string;
   deviceId: string;
+  deviceInternalId?: string;
   deviceName?: string;
   connectorId: string;
   connectorName?: string;
@@ -223,6 +225,7 @@ async function getSingleEvent(eventUuid: string, orgDb: any): Promise<ApiEnriche
       id: event.id,
       eventUuid: event.eventUuid,
       deviceId: event.deviceId,
+      deviceInternalId: event.deviceInternalId ?? undefined,
       deviceName: event.deviceName ?? undefined,
       connectorId: event.connectorId,
       connectorName: event.connectorName ?? undefined,
@@ -394,6 +397,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
         id: event.id,
         eventUuid: event.eventUuid,
         deviceId: event.deviceId,
+        deviceInternalId: event.deviceInternalId ?? undefined,
         deviceName: event.deviceName ?? undefined,
         connectorId: event.connectorId,
         connectorName: event.connectorName ?? undefined,

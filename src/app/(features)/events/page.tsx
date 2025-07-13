@@ -618,20 +618,20 @@ export default function EventsPage() {
             // default displayValue (Nodeunique/Nodename) will be used.
         }
 
-        // Render as button only if deviceId exists and it's *not* a NetBox event 
+        // Render as button only if deviceInternalId exists and it's *not* a NetBox event 
         // (since the name is composite and doesn't map to a single device record for the dialog)
-        if (event.deviceId && event.connectorCategory !== 'netbox') {
+        if (event.deviceInternalId && event.connectorCategory !== 'netbox') {
           return (
             <Button
               variant="link"
               className="p-0 h-auto text-left whitespace-normal text-foreground"
-              onClick={() => fetchDeviceDetails(event.deviceId)}
+              onClick={() => fetchDeviceDetails(event.deviceInternalId!)}
             >
               {displayValue}
             </Button>
           );
         }
-        // Otherwise, just render the text (covers NetBox events and events without deviceId)
+        // Otherwise, just render the text (covers NetBox events and events without deviceInternalId)
         return <span>{displayValue}</span>;
       },
     },

@@ -124,12 +124,12 @@ async function getDevicesCount(
 }
 
 // GET /api/devices – returns devices with connector information
-// Optionally filters by deviceId query parameter or returns count with count=true
+// Optionally filters by id query parameter or returns count with count=true
 export const GET = withOrganizationAuth(async (request, authContext: OrganizationAuthContext) => {
   try {
     const orgDb = createOrgScopedDb(authContext.organizationId);
     const { searchParams } = new URL(request.url);
-    const requestedDeviceId = searchParams.get('deviceId');
+    const requestedDeviceId = searchParams.get('id');
     const countOnly = searchParams.get('count') === 'true';
     
     // Parse filter parameters
@@ -157,8 +157,8 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
     }
 
     if (requestedDeviceId) {
-      // Fetch single device by external deviceId
-      const deviceResult = await orgDb.devices.findByExternalId(requestedDeviceId);
+      // Fetch single device by internal device ID
+      const deviceResult = await orgDb.devices.findById(requestedDeviceId);
       
       if (deviceResult.length === 0) {
         return NextResponse.json({ success: false, error: 'Device not found' }, { status: 404 });

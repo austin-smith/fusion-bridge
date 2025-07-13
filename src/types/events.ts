@@ -51,6 +51,7 @@ export interface EnrichedEvent {
   payload?: Record<string, unknown> | null; 
   rawPayload?: Record<string, any> | null; 
   deviceId: string;
+  deviceInternalId?: string;
   deviceName?: string;
   connectorName?: string;
   deviceTypeInfo: TypedDeviceInfo;
