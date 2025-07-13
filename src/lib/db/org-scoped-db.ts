@@ -443,6 +443,10 @@ export class OrgScopedDb {
         conditions.push(eq(locations.id, filters.locationId));
       }
 
+      if (filters?.spaceId && filters.spaceId.toLowerCase() !== 'all' && filters.spaceId !== '') {
+        conditions.push(eq(spaces.id, filters.spaceId));
+      }
+
       return db.select({
         // Event fields
         id: events.id,

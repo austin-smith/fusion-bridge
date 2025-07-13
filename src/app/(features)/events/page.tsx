@@ -3,7 +3,6 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from "@/components/ui/input";
 import { format, formatDistanceToNow } from 'date-fns';
 import {
   Table,
@@ -13,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Play, Loader2, ListTree, Maximize, Minimize, Gamepad } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Play, Loader2, ListTree, Maximize, Minimize, Gamepad, Plug } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -89,6 +88,7 @@ import { EventsTableView } from '@/components/features/events/EventsTableView';
 import type { EnrichedEvent } from '@/types/events';
 import { EventCardView } from '@/components/features/events/EventCardView';
 import { EventCardViewSkeleton } from '@/components/features/events/event-card-view-skeleton';
+import { LocationSpaceSelector } from '@/components/common/LocationSpaceSelector';
 
 
 // --- Interface for Pagination Metadata from API ---
@@ -178,6 +178,8 @@ export default function EventsPage() {
   const [tablePageCount, setTablePageCount] = useState<number>(0);
   const [connectorCategoryFilter, setConnectorCategoryFilter] = useState('all');
   const [locationFilter, setLocationFilter] = useState('all');
+  const [spaceFilter, setSpaceFilter] = useState('all');
+  const [locationSpaceSearchTerm, setLocationSpaceSearchTerm] = useState('');
   const initialEventCategories = Object.keys(EVENT_CATEGORY_DISPLAY_MAP).filter(
     categoryKey => categoryKey !== EventCategory.DIAGNOSTICS
   );
@@ -186,15 +188,14 @@ export default function EventsPage() {
   // State for view mode with localStorage persistence
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table'); // Default to table view, consistent with server
 
-  // --- ADDED: Refs for managing fetch logic ---
+  // --- Refs for managing fetch logic ---
   const isInitialLoadRef = useRef(true);
   const prevPageIndexRef = useRef(pagination.pageIndex);
   const prevPageSizeRef = useRef(pagination.pageSize);
-  // --- ADDED: Refs for previous filter states ---
   const prevEventCategoryFilterRef = useRef(eventCategoryFilter);
   const prevConnectorCategoryFilterRef = useRef(connectorCategoryFilter);
   const prevLocationFilterRef = useRef(locationFilter);
-  // --- END ADDED ---
+  const prevSpaceFilterRef = useRef(spaceFilter);
 
   // Effect to load and set viewMode from localStorage after initial render
   useEffect(() => {
@@ -203,20 +204,6 @@ export default function EventsPage() {
       setViewMode(storedPreference);
     }
   }, []); // Empty dependency array ensures this runs only once on mount
-
-  // Handler for natural language query results
-  const handleNaturalLanguageResults = useCallback((results: any) => {
-    console.log('[EventsPage] Natural language query results received:', results);
-    
-    // The AI chat now returns data directly
-    if (results) {
-      // Display a simple success message since the AI response is shown in the chat
-      toast.success('Query processed successfully');
-      
-      // Results are now handled in the chat UI itself
-      // This callback is just for any additional UI updates if needed
-    }
-  }, []);
 
   const [isCardViewFullScreen, setIsCardViewFullScreen] = useState(false);
   const cardViewContainerRef = useRef<HTMLDivElement>(null);
@@ -274,7 +261,8 @@ export default function EventsPage() {
     isInitialLoad = false,
     currentEventCategories: string[],
     currentConnectorCategory: string,
-    currentLocationFilter: string
+    currentLocationFilter: string,
+    currentSpaceFilter: string
   ): Promise<{ pagination: PaginationMetadata | null; actualDataLength: number } | null> => {
     try {
       const params = new URLSearchParams();
@@ -290,8 +278,8 @@ export default function EventsPage() {
       if (currentLocationFilter && currentLocationFilter.toLowerCase() !== 'all') {
         params.append('locationId', currentLocationFilter);
       }
-      if (currentLocationFilter && currentLocationFilter.toLowerCase() !== 'all') {
-        params.append('locationId', currentLocationFilter);
+      if (currentSpaceFilter && currentSpaceFilter.toLowerCase() !== 'all') {
+        params.append('spaceId', currentSpaceFilter);
       }
 
       const response = await fetch(`/api/events?${params.toString()}`);
@@ -391,7 +379,7 @@ export default function EventsPage() {
 
     setLoading(true);
     console.log('[EventsPage] Initial/Polling useEffect: Fetching initial data.');
-            fetchEvents(pagination.pageIndex + 1, pagination.pageSize, true, eventCategoryFilter, connectorCategoryFilter, locationFilter)
+            fetchEvents(pagination.pageIndex + 1, pagination.pageSize, true, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter)
       .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
         if (fetchResult && fetchResult.pagination) {
           const pMeta = fetchResult.pagination;
@@ -412,6 +400,8 @@ export default function EventsPage() {
         prevPageSizeRef.current = pagination.pageSize;
         prevEventCategoryFilterRef.current = eventCategoryFilter;
         prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
+        prevLocationFilterRef.current = locationFilter;
+        prevSpaceFilterRef.current = spaceFilter;
       })
       .finally(() => {
         setLoading(false); 
@@ -420,7 +410,7 @@ export default function EventsPage() {
     const intervalId = setInterval(() => {
       if (!tableRef.current || isLoadingConnectors || isLoadingSpaces || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
       console.log('[EventsPage] Polling useEffect: Polling for data.');
-      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter)
+      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter)
         .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
           if (fetchResult && fetchResult.pagination) {
             const pMeta = fetchResult.pagination;
@@ -441,7 +431,7 @@ export default function EventsPage() {
       clearInterval(intervalId);
       isInitialLoadRef.current = true;
     };
-  }, [fetchEvents, pagination.pageIndex, pagination.pageSize, eventCategoryFilter, connectorCategoryFilter, locationFilter, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
+  }, [fetchEvents, pagination.pageIndex, pagination.pageSize, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
   // --- END REVISED ---
 
   // --- REVISED: useEffect for actual pagination OR filter changes by the user ---
@@ -457,12 +447,14 @@ export default function EventsPage() {
     const eventCategoriesChanged = JSON.stringify(eventCategoryFilter) !== JSON.stringify(prevEventCategoryFilterRef.current);
     const connectorCategoryChanged = connectorCategoryFilter !== prevConnectorCategoryFilterRef.current;
     const locationFilterChanged = locationFilter !== prevLocationFilterRef.current;
+    const spaceFilterChanged = spaceFilter !== prevSpaceFilterRef.current;
 
-    if (eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged) {
+    if (eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged || spaceFilterChanged) {
       console.log('[EventsPage] Filter change detected.');
       prevEventCategoryFilterRef.current = eventCategoryFilter;
       prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
       prevLocationFilterRef.current = locationFilter;
+      prevSpaceFilterRef.current = spaceFilter;
       if (pagination.pageIndex !== 0) {
         console.log('[EventsPage] Resetting to page 0 due to filter change.');
         tableRef.current.setPageIndex(0);
@@ -470,12 +462,12 @@ export default function EventsPage() {
       }
     }
 
-    if (pageIndexChanged || pageSizeChanged || ((eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged) && pagination.pageIndex === 0)) {
+    if (pageIndexChanged || pageSizeChanged || ((eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged || spaceFilterChanged) && pagination.pageIndex === 0)) {
       setLoading(true); 
       console.log('[EventsPage] Pagination/Filter useEffect: Change requiring fetch. Fetching data.', 
-                  { pageIndex: pagination.pageIndex, pageSize: pagination.pageSize, eventCategories: eventCategoryFilter, connectorCategory: connectorCategoryFilter });
+                  { pageIndex: pagination.pageIndex, pageSize: pagination.pageSize, eventCategories: eventCategoryFilter, connectorCategory: connectorCategoryFilter, locationFilter: locationFilter, spaceFilter: spaceFilter });
       
-      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter)
+      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter)
         .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
           if (fetchResult && fetchResult.pagination) {
             const pMeta = fetchResult.pagination;
@@ -496,12 +488,13 @@ export default function EventsPage() {
           prevEventCategoryFilterRef.current = eventCategoryFilter;
           prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
           prevLocationFilterRef.current = locationFilter;
+          prevSpaceFilterRef.current = spaceFilter;
         })
         .finally(() => {
           setLoading(false); 
         });
     }
-  }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter, locationFilter, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
+  }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
   // --- END REVISED ---
 
   // Effect to save viewMode to localStorage when it changes
@@ -1003,24 +996,41 @@ export default function EventsPage() {
           </Tooltip>
         </TooltipProvider>
       )}
+      <LocationSpaceSelector
+        locationFilter={locationFilter}
+        spaceFilter={spaceFilter}
+        searchTerm={locationSpaceSearchTerm}
+        locations={locations}
+        spaces={spaces}
+        onLocationChange={setLocationFilter}
+        onSpaceChange={setSpaceFilter}
+        onSearchChange={setLocationSpaceSearchTerm}
+      />
       <Select
         value={connectorCategoryFilter}
         onValueChange={(value) => setConnectorCategoryFilter(value)}
       >
-        <SelectTrigger className="w-full sm:w-[180px] h-9">
+        <SelectTrigger className="w-full sm:w-[120px] h-9">
           <div className="flex items-center gap-2 flex-1">
-            {connectorCategoryFilter !== 'all' && (
+            {connectorCategoryFilter === 'all' ? (
+              <Plug className="h-4 w-4" />
+            ) : (
               <ConnectorIcon connectorCategory={connectorCategoryFilter} size={16} />
             )}
             <span>
               {connectorCategoryFilter === 'all' 
-                ? 'All Connectors' 
+                ? 'All' 
                 : formatConnectorCategory(connectorCategoryFilter)}
             </span>
           </div>
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All Connectors</SelectItem>
+          <SelectItem value="all">
+            <div className="flex items-center gap-2">
+              <Plug className="h-4 w-4" />
+              All
+            </div>
+          </SelectItem>
           {connectorCategories.map(category => (
             <SelectItem key={category} value={category}>
               <div className="flex items-center gap-2">
@@ -1031,28 +1041,9 @@ export default function EventsPage() {
           ))}
         </SelectContent>
       </Select>
-      <Select
-        value={locationFilter}
-        onValueChange={(value) => setLocationFilter(value)}
-      >
-        <SelectTrigger className="w-full sm:w-[180px] h-9">
-          <SelectValue placeholder="Select location..." />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Locations</SelectItem>
-          {locations
-            .slice()
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map(location => (
-              <SelectItem key={location.id} value={location.id}>
-                {location.name}
-              </SelectItem>
-            ))}
-        </SelectContent>
-      </Select>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" className="w-full sm:w-[180px] h-9 justify-between">
+          <Button variant="outline" className="w-full sm:w-[150px] h-9 justify-between">
             <span>
               Categories ({eventCategoryFilter.length === Object.keys(EVENT_CATEGORY_DISPLAY_MAP).length
                 ? 'All' 

@@ -284,6 +284,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
     const eventCategoriesRaw = searchParams.get('eventCategories');
     const connectorCategory = searchParams.get('connectorCategory') || undefined;
     const locationId = searchParams.get('locationId') || undefined;
+    const spaceId = searchParams.get('spaceId') || undefined;
     const deviceNames = searchParams.get('deviceNames')?.split(',').map(n => n.trim()).filter(n => n.length > 0);
 
     let eventCategories: string[] | undefined = undefined;
@@ -297,7 +298,8 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
     const filters = {
       eventCategories: eventCategories,
       connectorCategory: connectorCategory,
-      locationId: locationId
+      locationId: locationId,
+      spaceId: spaceId
     };
 
     // If count is requested, return count only
