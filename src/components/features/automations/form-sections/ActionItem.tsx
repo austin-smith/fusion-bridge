@@ -184,7 +184,7 @@ export function ActionItem({
     } else if (newType === AutomationActionType.CREATE_BOOKMARK) { 
         newActionParams = { nameTemplate: '', descriptionTemplate: '', durationMsTemplate: '5000', tagsTemplate: '', targetConnectorId: '' };
     } else if (newType === AutomationActionType.SEND_HTTP_REQUEST) { 
-        newActionParams = { urlTemplate: '', method: 'GET', headers: [], contentType: 'text/plain', bodyTemplate: '' };
+        newActionParams = { urlTemplate: '', method: 'GET', headers: [], contentType: 'application/json', bodyTemplate: '' };
     } else if (newType === AutomationActionType.SET_DEVICE_STATE) {
         newActionParams = {
             targetDeviceInternalId: sortedAvailableTargetDevices.length > 0 ? sortedAvailableTargetDevices[0].id : '',

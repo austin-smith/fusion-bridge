@@ -2,14 +2,6 @@
 import { TypedDeviceInfo } from '@/lib/mappings/definitions';
 import { ArmedState } from '@/lib/mappings/definitions'; // <-- Import the enum
 import { DisplayState } from '@/lib/mappings/definitions'; // <-- Import DisplayState
-// import { ConnectorCategory } from '@/lib/mappings/connector-categories'; // <-- Removed potentially incorrect import
-// import { PikoServer } from './piko'; // <-- Removed potentially incorrect import
-import { YoLinkConfig } from '@/services/drivers/yolink'; // Example config type
-// import { NetboxConfig } from '@/services/drivers/netbox'; // <-- Removed potentially incorrect import
-
-// ====================================
-// LEGACY TYPES (Phase 1 Compatible)
-// ====================================
 
 // Connector type for the database entities
 export interface Connector {

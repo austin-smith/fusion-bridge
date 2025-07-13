@@ -213,7 +213,7 @@ export default function AutomationForm({
             }
             if (action.type === 'sendHttpRequest' && typeof params === 'object' && params !== null) {
                  let headersArray = params.headers || [];
-                 const currentContentType = params.contentType || 'text/plain';
+                 const currentContentType = params.contentType || 'application/json';
                  if (typeof params.headersTemplate === 'string') {
                      headersArray = params.headersTemplate.split('\n')
                         .map((line: string) => line.trim()).filter((line: string) => line && line.includes(':')).map((line: string) => {
