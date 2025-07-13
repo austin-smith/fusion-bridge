@@ -436,7 +436,6 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
                   event.eventId
                 );
                 console.log(`[EventProcessor] Alarm zone ${deviceZone.id} set to TRIGGERED due to event ${event.eventId} from device ${event.deviceId}.`);
-                // TODO: Trigger notifications here (e.g., send email, push notification)
               }
             } else {
               // Zone is DISARMED or already TRIGGERED - no action needed

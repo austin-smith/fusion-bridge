@@ -4,7 +4,7 @@ import { toast } from 'sonner'; // <-- Import toast
 import { PikoServer } from '@/types';
 import type { StandardizedEvent } from '@/types/events';
 import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, ArmedState, ActionableState, ON, OFF } from '@/lib/mappings/definitions';
-import type { DeviceWithConnector, ConnectorWithConfig, Location, Space, AlarmZone, ApiResponse, ArmingSchedule } from '@/types/index';
+import type { DeviceWithConnector, ConnectorWithConfig, Location, Space, AlarmZone, ApiResponse, ArmingSchedule, AlarmZoneTriggerOverride, CreateTriggerOverrideData } from '@/types/index';
 // Re-export the ArmingSchedule type
 export type { ArmingSchedule } from '@/types/index';
 import { YoLinkConfig } from '@/services/drivers/yolink';
@@ -275,6 +275,10 @@ interface FusionState {
   // --- Bulk Alarm Zone Device Assignment Actions ---
   bulkAssignDevicesToAlarmZone: (zoneId: string, deviceIds: string[]) => Promise<boolean>;
   bulkRemoveDevicesFromAlarmZone: (zoneId: string, deviceIds: string[]) => Promise<boolean>;
+  
+  // --- Alarm Zone Trigger Override Actions ---
+  fetchAlarmZoneTriggerOverrides: (zoneId: string) => Promise<AlarmZoneTriggerOverride[]>;
+  saveAlarmZoneTriggerOverrides: (zoneId: string, overrides: CreateTriggerOverrideData[]) => Promise<boolean>;
 
   // NEW: Fetch all devices 
   fetchAllDevices: () => Promise<void>;
@@ -1089,6 +1093,65 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error(`Error bulk removing devices from alarm zone ${zoneId}:`, message);
+      set({ errorAlarmZones: message });
+      return false;
+    }
+  },
+  
+  // --- Alarm Zone Trigger Override Actions ---
+  fetchAlarmZoneTriggerOverrides: async (zoneId: string) => {
+    try {
+      const response = await fetch(`/api/alarm-zones/${zoneId}/trigger-overrides`);
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch trigger overrides');
+      }
+      return data.data || [];
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error fetching trigger overrides for zone ${zoneId}:`, message);
+      set({ errorAlarmZones: message });
+      return [];
+    }
+  },
+
+  saveAlarmZoneTriggerOverrides: async (zoneId: string, overrides: CreateTriggerOverrideData[]) => {
+    try {
+      // Process each override individually using the REST API
+      for (const override of overrides) {
+        if (override.shouldTrigger) {
+          // Add or update the override
+          const response = await fetch(`/api/alarm-zones/${zoneId}/trigger-overrides`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              eventType: override.eventType,
+              shouldTrigger: override.shouldTrigger
+            })
+          });
+          const data = await response.json();
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || `Failed to save override for ${override.eventType}`);
+          }
+        } else {
+          // Remove the override (falling back to default behavior)
+          const response = await fetch(`/api/alarm-zones/${zoneId}/trigger-overrides`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              eventType: override.eventType
+            })
+          });
+          const data = await response.json();
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || `Failed to remove override for ${override.eventType}`);
+          }
+        }
+      }
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`Error saving trigger overrides for zone ${zoneId}:`, message);
       set({ errorAlarmZones: message });
       return false;
     }

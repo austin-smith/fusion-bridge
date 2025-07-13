@@ -1241,7 +1241,6 @@ export class OrganizationAutomationContext {
       })
       .where(eq(automationExecutions.id, executionId));
     
-    // TODO: Implement organization-specific error notification
     console.error(`[Automation Context][${this.organizationId}] Execution ${executionId} failed: ${errorMessage}`);
   }
 

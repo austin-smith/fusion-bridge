@@ -164,6 +164,11 @@ export interface AlarmZoneTriggerOverride {
   createdAt: Date;
 }
 
+export interface CreateTriggerOverrideData {
+  eventType: string;
+  shouldTrigger: boolean;
+}
+
 // Represents an audit log entry for alarm zone actions
 export interface AlarmZoneAuditLogEntry {
   id: string;
