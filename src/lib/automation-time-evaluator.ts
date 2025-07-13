@@ -189,8 +189,14 @@ export function isTimeInRange(
     
     // Parse the time strings for today in the target timezone
     const todayStr = formatInTimeZone(currentLocal, timezone, 'yyyy-MM-dd');
-    const startDateTime = parse(`${todayStr} ${startTime}`, 'yyyy-MM-dd HH:mm', new Date());
-    const endDateTime = parse(`${todayStr} ${endTime}`, 'yyyy-MM-dd HH:mm', new Date());
+    const startDateTime = fromZonedTime(
+      parse(`${todayStr} ${startTime}`, 'yyyy-MM-dd HH:mm', new Date()), 
+      timezone
+    );
+    const endDateTime = fromZonedTime(
+      parse(`${todayStr} ${endTime}`, 'yyyy-MM-dd HH:mm', new Date()), 
+      timezone
+    );
     
     // Handle overnight ranges (e.g., 22:00 to 06:00)
     if (isAfter(startDateTime, endDateTime)) {
@@ -224,8 +230,14 @@ export function isTimeInSunRange(
     // Sun times are stored as "HH:mm" in local timezone
     // Parse them for today in the local timezone
     const todayStr = formatInTimeZone(currentTime, timezone, 'yyyy-MM-dd');
-    const sunriseDate = parse(`${todayStr} ${sunTimes.sunrise}`, 'yyyy-MM-dd HH:mm', new Date());
-    const sunsetDate = parse(`${todayStr} ${sunTimes.sunset}`, 'yyyy-MM-dd HH:mm', new Date());
+    const sunriseDate = fromZonedTime(
+      parse(`${todayStr} ${sunTimes.sunrise}`, 'yyyy-MM-dd HH:mm', new Date()), 
+      timezone
+    );
+    const sunsetDate = fromZonedTime(
+      parse(`${todayStr} ${sunTimes.sunset}`, 'yyyy-MM-dd HH:mm', new Date()), 
+      timezone
+    );
     
     // Apply offsets
     const adjustedSunrise = new Date(sunriseDate.getTime() + (sunriseOffsetMinutes * 60 * 1000));

@@ -24,7 +24,7 @@ import type { ThumbnailContext } from '@/types/automation-thumbnails';
 import { createEmptyThumbnailContext } from '@/types/automation-thumbnails';
 import { evaluateAutomationTimeFilter } from '@/lib/automation-time-evaluator';
 import { CronExpressionParser } from 'cron-parser';
-import { formatInTimeZone, toZonedTime } from 'date-fns-tz';
+import { formatInTimeZone, toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { parse, format } from 'date-fns';
 
 export interface OrganizationAutomation {
@@ -936,7 +936,10 @@ export class OrganizationAutomationContext {
       const todayStr = formatInTimeZone(currentTimeInTimezone, timezone, 'yyyy-MM-dd');
       
       // Parse the sun time for today in the target timezone
-      const sunTimeToday = parse(`${todayStr} ${sunTimeStr}`, 'yyyy-MM-dd HH:mm', new Date());
+      const sunTimeToday = fromZonedTime(
+        parse(`${todayStr} ${sunTimeStr}`, 'yyyy-MM-dd HH:mm', new Date()), 
+        timezone
+      );
       
       // Apply offset to get the actual scheduled time
       const scheduledTime = new Date(sunTimeToday.getTime() + (offsetMinutes * 60 * 1000));
