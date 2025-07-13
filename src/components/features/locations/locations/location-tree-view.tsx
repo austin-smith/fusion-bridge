@@ -227,7 +227,7 @@ export function LocationTreeView({
     const rootLocations = grouped['root'] || [];
 
     return (
-        <div className="w-64 border-r bg-muted/25 flex flex-col">
+        <div className="w-64 border-r flex flex-col">
             <div className="p-4">
                 <h3 className="font-semibold text-sm">Navigation</h3>
                 <div className="border-b mt-3 mr-1"></div>

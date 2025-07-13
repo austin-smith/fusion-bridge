@@ -822,7 +822,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to assign device to space');
         }
-        // Don't refetch here - let bulk operations handle the refresh
+        // Refresh spaces to update device assignments
+        await get().fetchSpaces();
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
@@ -842,7 +843,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
          if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to remove device from space');
         }
-        // Don't refetch here - let bulk operations handle the refresh
+        // Refresh spaces to update device assignments
+        await get().fetchSpaces();
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
@@ -1023,7 +1025,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to assign device to alarm zone');
         }
-        // Don't refetch here - let bulk operations handle the refresh
+        // Refresh alarm zones to update device assignments
+        await get().fetchAlarmZones();
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
@@ -1043,7 +1046,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
          if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to remove device from alarm zone');
         }
-        // Don't refetch here - let bulk operations handle the refresh
+        // Refresh alarm zones to update device assignments
+        await get().fetchAlarmZones();
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
