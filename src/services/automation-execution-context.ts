@@ -25,7 +25,6 @@ import { createEmptyThumbnailContext } from '@/types/automation-thumbnails';
 import { evaluateAutomationTimeFilter } from '@/lib/automation-time-evaluator';
 import { CronExpressionParser } from 'cron-parser';
 import { formatInTimeZone, toZonedTime, fromZonedTime } from 'date-fns-tz';
-import { parse, format } from 'date-fns';
 
 export interface OrganizationAutomation {
   id: string;
@@ -929,28 +928,19 @@ export class OrganizationAutomationContext {
     timezone: string
   ): boolean {
     try {
-      // Convert UTC time from cron job to the target timezone
-      const currentTimeInTimezone = toZonedTime(currentTime, timezone);
-      
-      // Get today's date in the target timezone
-      const todayStr = formatInTimeZone(currentTimeInTimezone, timezone, 'yyyy-MM-dd');
-      
-      // Parse the sun time for today in the target timezone
-      const sunTimeToday = fromZonedTime(
-        parse(`${todayStr} ${sunTimeStr}`, 'yyyy-MM-dd HH:mm', new Date()), 
-        timezone
-      );
+      // Create scheduled time for today in the target timezone
+      const todayStr = formatInTimeZone(currentTime, timezone, 'yyyy-MM-dd');
+      const sunTimeToday = fromZonedTime(`${todayStr} ${sunTimeStr}`, timezone);
       
       // Apply offset to get the actual scheduled time
       const scheduledTime = new Date(sunTimeToday.getTime() + (offsetMinutes * 60 * 1000));
       
       // Check if current time is within 1 minute of the scheduled time
-      // Both times are now properly in the target timezone
-      const timeDiff = Math.abs(currentTimeInTimezone.getTime() - scheduledTime.getTime());
+      const timeDiff = Math.abs(currentTime.getTime() - scheduledTime.getTime());
       const shouldExecute = timeDiff < 60000; // Within 1 minute
       
       if (shouldExecute) {
-        console.log(`[Schedule Evaluation] ${scheduleType} schedule triggered: ${sunTimeStr} + ${offsetMinutes}min = ${format(scheduledTime, 'HH:mm')} (current: ${formatInTimeZone(currentTimeInTimezone, timezone, 'HH:mm')}, timezone: ${timezone})`);
+        console.log(`[Schedule Evaluation] ${scheduleType} schedule triggered: ${sunTimeStr} + ${offsetMinutes}min = ${formatInTimeZone(scheduledTime, timezone, 'HH:mm')} (current: ${formatInTimeZone(currentTime, timezone, 'HH:mm')}, timezone: ${timezone})`);
       }
       
       return shouldExecute;

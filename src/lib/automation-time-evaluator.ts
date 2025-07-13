@@ -184,30 +184,20 @@ export function isTimeInRange(
   timezone: string
 ): boolean {
   try {
-    // Convert current time to the target timezone
-    const currentLocal = toZonedTime(currentTime, timezone);
-    
-    // Parse the time strings for today in the target timezone
-    const todayStr = formatInTimeZone(currentLocal, timezone, 'yyyy-MM-dd');
-    const startDateTime = fromZonedTime(
-      parse(`${todayStr} ${startTime}`, 'yyyy-MM-dd HH:mm', new Date()), 
-      timezone
-    );
-    const endDateTime = fromZonedTime(
-      parse(`${todayStr} ${endTime}`, 'yyyy-MM-dd HH:mm', new Date()), 
-      timezone
-    );
+    // Create start and end times for today in the target timezone
+    const todayStr = formatInTimeZone(currentTime, timezone, 'yyyy-MM-dd');
+    const startDateTime = fromZonedTime(`${todayStr} ${startTime}`, timezone);
+    const endDateTime = fromZonedTime(`${todayStr} ${endTime}`, timezone);
     
     // Handle overnight ranges (e.g., 22:00 to 06:00)
     if (isAfter(startDateTime, endDateTime)) {
-      // If start > end, it's an overnight range
-      // Current time should be after start OR before end (next day)
+      // Overnight range: after start OR before end (next day)
       const nextDayEndDateTime = new Date(endDateTime.getTime() + 24 * 60 * 60 * 1000);
-      return isAfter(currentLocal, startDateTime) || isBefore(currentLocal, nextDayEndDateTime);
+      return isAfter(currentTime, startDateTime) || isBefore(currentTime, nextDayEndDateTime);
     } else {
-      // Normal range within the same day
-      return (isAfter(currentLocal, startDateTime) || isEqual(currentLocal, startDateTime)) &&
-             (isBefore(currentLocal, endDateTime) || isEqual(currentLocal, endDateTime));
+      // Normal range: between start and end
+      return (isAfter(currentTime, startDateTime) || isEqual(currentTime, startDateTime)) &&
+             (isBefore(currentTime, endDateTime) || isEqual(currentTime, endDateTime));
     }
   } catch (error) {
     console.error(`[Time Evaluator] Error checking time range:`, error);
@@ -227,17 +217,10 @@ export function isTimeInSunRange(
   isDayTime: boolean = true
 ): boolean {
   try {
-    // Sun times are stored as "HH:mm" in local timezone
-    // Parse them for today in the local timezone
+    // Create sunrise and sunset times for today in the target timezone
     const todayStr = formatInTimeZone(currentTime, timezone, 'yyyy-MM-dd');
-    const sunriseDate = fromZonedTime(
-      parse(`${todayStr} ${sunTimes.sunrise}`, 'yyyy-MM-dd HH:mm', new Date()), 
-      timezone
-    );
-    const sunsetDate = fromZonedTime(
-      parse(`${todayStr} ${sunTimes.sunset}`, 'yyyy-MM-dd HH:mm', new Date()), 
-      timezone
-    );
+    const sunriseDate = fromZonedTime(`${todayStr} ${sunTimes.sunrise}`, timezone);
+    const sunsetDate = fromZonedTime(`${todayStr} ${sunTimes.sunset}`, timezone);
     
     // Apply offsets
     const adjustedSunrise = new Date(sunriseDate.getTime() + (sunriseOffsetMinutes * 60 * 1000));
