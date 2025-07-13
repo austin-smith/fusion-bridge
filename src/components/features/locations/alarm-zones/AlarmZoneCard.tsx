@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Shield, MoreHorizontal, Link, Pencil, Trash2, ShieldCheck, ShieldOff, Settings, Loader2, FileText, Cctv } from 'lucide-react';
+import { ChevronDown, ChevronRight, Shield, MoreHorizontal, Link, Pencil, Trash2, ShieldCheck, ShieldOff, ShieldMinus, Settings, Loader2, FileText, Cctv, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ArmedState, ArmedStateDisplayNames, DeviceType } from "@/lib/mappings/definitions";
 import type { AlarmZone, DeviceWithConnector } from '@/types/index';
@@ -122,32 +122,41 @@ export const AlarmZoneCard: React.FC<AlarmZoneCardProps> = ({
                    </Button>
                  </DropdownMenuTrigger>
                  <DropdownMenuContent align="end" className="w-48">
-                   <DropdownMenuItem 
-                     key={`arm-${zone.id}`}
-                     onClick={(e) => { e.stopPropagation(); onArmAction(zone, ArmedState.ARMED); }}
-                     disabled={state === ArmedState.ARMED || locationArmLoading}
-                   >
-                     <ShieldCheck className="h-4 w-4 mr-2" />
-                     Arm Zone
-                   </DropdownMenuItem>
-                   <DropdownMenuSeparator />
-                   <DropdownMenuItem 
-                     key={`disarm-${zone.id}`}
-                     onClick={(e) => { e.stopPropagation(); onArmAction(zone, ArmedState.DISARMED); }}
-                     disabled={state === ArmedState.DISARMED || locationArmLoading}
-                   >
-                     <ShieldOff className="h-4 w-4 mr-2" />
-                     Disarm Zone
-                   </DropdownMenuItem>
-                   {state === ArmedState.TRIGGERED && (
+                   {state === ArmedState.TRIGGERED ? (
                      <>
-                       <DropdownMenuSeparator />
                        <DropdownMenuItem 
-                         key={`acknowledge-${zone.id}`}
+                         key={`clear-${zone.id}`}
+                         onClick={(e) => { e.stopPropagation(); onArmAction(zone, ArmedState.ARMED); }}
+                       >
+                         <ShieldMinus className="h-4 w-4 mr-2" />
+                         Clear
+                       </DropdownMenuItem>
+                       <DropdownMenuItem 
+                         key={`clear-disarm-${zone.id}`}
                          onClick={(e) => { e.stopPropagation(); onArmAction(zone, ArmedState.DISARMED); }}
                        >
                          <ShieldOff className="h-4 w-4 mr-2" />
-                         Acknowledge & Disarm
+                         Clear & Disarm
+                       </DropdownMenuItem>
+                     </>
+                   ) : (
+                     <>
+                       <DropdownMenuItem 
+                         key={`arm-${zone.id}`}
+                         onClick={(e) => { e.stopPropagation(); onArmAction(zone, ArmedState.ARMED); }}
+                         disabled={state === ArmedState.ARMED || locationArmLoading}
+                       >
+                         <ShieldCheck className="h-4 w-4 mr-2" />
+                         Arm Zone
+                       </DropdownMenuItem>
+                       <DropdownMenuSeparator />
+                       <DropdownMenuItem 
+                         key={`disarm-${zone.id}`}
+                         onClick={(e) => { e.stopPropagation(); onArmAction(zone, ArmedState.DISARMED); }}
+                         disabled={state === ArmedState.DISARMED || locationArmLoading}
+                       >
+                         <ShieldOff className="h-4 w-4 mr-2" />
+                         Disarm Zone
                        </DropdownMenuItem>
                      </>
                    )}
@@ -205,7 +214,7 @@ export const AlarmZoneCard: React.FC<AlarmZoneCardProps> = ({
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={(e) => {e.stopPropagation(); onManageTriggerRules(zone);}}>
-                  <Settings className="h-4 w-4 mr-2" />
+                  <ShieldAlert className="h-4 w-4 mr-2" />
                   Trigger Rules
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={(e) => {e.stopPropagation(); onViewAuditLog(zone);}}>
@@ -231,7 +240,7 @@ export const AlarmZoneCard: React.FC<AlarmZoneCardProps> = ({
       {/* Trigger Behavior Info */}
       <div className="px-4 py-2 text-xs border-t bg-muted/10 flex items-center justify-between">
         <div className="flex items-center">
-          <Settings className="h-3 w-3 mr-1" />
+          <ShieldAlert className="h-3 w-3 mr-1" />
           <span className="font-medium">Trigger Behavior:</span>
           <span className="ml-1 text-muted-foreground capitalize">{zone.triggerBehavior}</span>
           {zone.triggerBehavior === 'custom' && (

@@ -29,77 +29,6 @@ interface AuditLogEntry {
   createdAt: string;
 }
 
-// Mock audit log data for demonstration
-const mockAuditLogs: AuditLogEntry[] = [
-  {
-    id: '1',
-    zoneId: 'zone-1',
-    userId: 'user-1',
-    userName: 'John Smith',
-    userEmail: 'john.smith@example.com',
-    action: 'triggered',
-    previousState: ArmedState.ARMED,
-    newState: ArmedState.TRIGGERED,
-    reason: 'security_event',
-    triggerEventId: 'event-123',
-    metadata: {
-      ipAddress: '192.168.1.100',
-      deviceName: 'Front Door Sensor',
-      eventType: 'DOOR_FORCED_OPEN'
-    },
-    createdAt: '2024-01-15T14:30:00Z'
-  },
-  {
-    id: '2',
-    zoneId: 'zone-1',
-    userId: 'user-2',
-    userName: 'Sarah Johnson',
-    userEmail: 'sarah.johnson@example.com',
-    action: 'disarmed',
-    previousState: ArmedState.TRIGGERED,
-    newState: ArmedState.DISARMED,
-    reason: 'manual',
-    metadata: {
-      ipAddress: '192.168.1.101',
-      location: 'Management Office'
-    },
-    createdAt: '2024-01-15T14:25:00Z'
-  },
-  {
-    id: '3',
-    zoneId: 'zone-1',
-    userId: 'user-1',
-    userName: 'John Smith',
-    userEmail: 'john.smith@example.com',
-    action: 'armed',
-    previousState: ArmedState.DISARMED,
-    newState: ArmedState.ARMED,
-    reason: 'scheduled',
-    metadata: {
-      ipAddress: '192.168.1.100',
-      scheduleId: 'schedule-456',
-      scheduleName: 'Evening Security'
-    },
-    createdAt: '2024-01-15T18:00:00Z'
-  },
-  {
-    id: '4',
-    zoneId: 'zone-1',
-    userId: 'user-3',
-    userName: 'Mike Davis',
-    userEmail: 'mike.davis@example.com',
-    action: 'disarmed',
-    previousState: ArmedState.ARMED,
-    newState: ArmedState.DISARMED,
-    reason: 'automation',
-    metadata: {
-      automationId: 'automation-789',
-      automationName: 'Morning Disarm'
-    },
-    createdAt: '2024-01-16T08:00:00Z'
-  },
-];
-
 interface AlarmZoneAuditLogDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -120,18 +49,22 @@ export const AlarmZoneAuditLogDialog: React.FC<AlarmZoneAuditLogDialogProps> = (
     setError(null);
     
     try {
-      // TODO: Replace with actual API call
-      // const response = await fetch(`/api/alarm-zones/${zone.id}/audit-log`);
-      // const data = await response.json();
-      // setAuditLogs(data.logs || []);
+      const response = await fetch(`/api/alarm-zones/${zone?.id}/audit-log`);
       
-      // For now, use mock data
-      await new Promise(resolve => setTimeout(resolve, 500)); // Simulate loading
-      const zoneAuditLogs = mockAuditLogs.filter(log => log.zoneId === zone?.id);
-      setAuditLogs(zoneAuditLogs);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to load audit logs');
+      }
+      
+      setAuditLogs(data.data || []);
     } catch (err) {
       console.error('Error loading audit logs:', err);
-      setError('Failed to load audit logs');
+      setError(err instanceof Error ? err.message : 'Failed to load audit logs');
     } finally {
       setIsLoading(false);
     }

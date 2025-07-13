@@ -11,7 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Settings, Shield, CheckCircle, XCircle, Info, AlertTriangle, Loader2 } from 'lucide-react';
+import { Shield, CheckCircle, XCircle, Info, AlertTriangle, Loader2, ShieldAlert } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { toast } from 'sonner';
 import type { AlarmZone, AlarmZoneTriggerOverride, CreateTriggerOverrideData } from '@/types/index';
@@ -183,7 +183,7 @@ export const AlarmZoneTriggerRulesDialog: React.FC<AlarmZoneTriggerRulesDialogPr
       <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Settings className="h-5 w-5" />
+            <ShieldAlert className="h-5 w-5" />
             Trigger Rules for &quot;{zone.name}&quot;
           </DialogTitle>
           <DialogDescription>

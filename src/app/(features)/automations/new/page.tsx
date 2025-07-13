@@ -122,9 +122,22 @@ async function getAllSpaces(orgDb: ReturnType<typeof createOrgScopedDb>): Promis
     }));
 }
 
-async function getAllAlarmZones(): Promise<AlarmZone[]> {
-    // TODO: Implement when org-scoped-db supports alarm zones
-    return [];
+async function getAllAlarmZones(orgDb: ReturnType<typeof createOrgScopedDb>): Promise<AlarmZone[]> {
+    const dbAlarmZones = await orgDb.alarmZones.findAll();
+    
+    return dbAlarmZones.map((zone: any) => ({
+        id: zone.id,
+        locationId: zone.locationId,
+        name: zone.name,
+        description: zone.description,
+        armedState: zone.armedState,
+        lastArmedStateChangeReason: zone.lastArmedStateChangeReason,
+        triggerBehavior: zone.triggerBehavior,
+        createdAt: zone.createdAt,
+        updatedAt: zone.updatedAt,
+        // Don't include partial location data - let the component fetch full location if needed
+        location: undefined
+    }));
 }
 
 function getSourceDeviceTypeOptions(): MultiSelectOption[] {
@@ -178,7 +191,7 @@ export default async function NewAutomationPage() {
     getDevicesForConditions(orgDb),
     getAllLocations(orgDb),
     getAllSpaces(orgDb),
-    getAllAlarmZones()
+    getAllAlarmZones(orgDb)
   ]);
 
   const initialData: AutomationFormData = {

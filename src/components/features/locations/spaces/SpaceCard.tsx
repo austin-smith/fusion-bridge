@@ -105,7 +105,7 @@ export const SpaceCard: React.FC<SpaceCardProps> = ({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={(e) => {e.stopPropagation(); onAssignDevice(space);}}>
                   <Link className="h-4 w-4 mr-2" />
-                  Assign Device
+                  Assign Devices
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={(e) => {e.stopPropagation(); onEditSpace(space);}}>
                   <Pencil className="h-4 w-4 mr-2" />

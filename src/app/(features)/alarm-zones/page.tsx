@@ -392,11 +392,7 @@ export default function AlarmZonesPage() {
           </SelectItem>
         </SelectContent>
       </Select>
-      {!isFilteredEmptyState && (
-        <Button variant="outline" onClick={() => handleOpenZoneDialog(null)} size="sm">
-          <Plus className="h-4 w-4" /> Add Zone
-        </Button>
-      )}
+
     </>
   );
 
@@ -450,6 +446,15 @@ export default function AlarmZonesPage() {
                         <Building className="h-5 w-5 flex-shrink-0" />
                         <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
                       </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handleOpenZoneDialog(null, location.id)}
+                        className="h-7 text-xs"
+                      >
+                        <Plus className="h-3 w-3" /> 
+                        Add Zone
+                      </Button>
                     </CardHeader>
                     <CardContent className="pt-3">
                       {filteredZones.length > 0 ? (

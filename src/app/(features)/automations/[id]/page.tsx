@@ -74,13 +74,15 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
     availableConnectorsResult, 
     allDevicesResult, 
     allLocationsResult, 
-    allSpacesResult
+    allSpacesResult,
+    allAlarmZonesResult
   ] = await Promise.all([
     orgDb.automations.findById(id),
     orgDb.connectors.findAll(),
     orgDb.devices.findAll(),
     orgDb.locations.findAll(),
-    orgDb.spaces.findAll()
+    orgDb.spaces.findAll(),
+    orgDb.alarmZones.findAll()
   ]);
 
   // Check if automation exists in this organization
@@ -114,7 +116,19 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
     createdAt: space.createdAt,
     updatedAt: space.updatedAt
   }));
-  const formAllAlarmZones: AlarmZone[] = []; // TODO: Add alarm zones when org-scoped-db supports them
+  const formAllAlarmZones: AlarmZone[] = allAlarmZonesResult.map((zone: any) => ({
+    id: zone.id,
+    locationId: zone.locationId,
+    name: zone.name,
+    description: zone.description,
+    armedState: zone.armedState,
+    lastArmedStateChangeReason: zone.lastArmedStateChangeReason,
+    triggerBehavior: zone.triggerBehavior,
+    createdAt: zone.createdAt,
+    updatedAt: zone.updatedAt,
+    // Don't include partial location data - let the component fetch full location if needed
+    location: undefined
+  }));
   
   let processedConfigJson: AutomationConfig;
 
