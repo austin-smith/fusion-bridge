@@ -8,7 +8,7 @@ import { getDisplayStateIcon, getBatteryIcon, getBatteryColorClass } from '@/lib
 import { getDeviceTypeIcon } from "@/lib/mappings/presentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon, PowerIcon, PowerOffIcon, X, Building, Box, ShieldCheck } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon, PowerIcon, PowerOffIcon, X, Building, Box, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   DialogHeader,
@@ -910,7 +910,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                 label="Alarm Zone" 
                 value={
                   <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                    <ShieldCheck className="h-3 w-3 text-muted-foreground" />
+                    <Shield className="h-3 w-3 text-muted-foreground" />
                     <span className="text-xs">{deviceAlarmZone.name}</span>
                   </Badge>
                 }
