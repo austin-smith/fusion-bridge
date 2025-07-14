@@ -22,7 +22,6 @@ import { Separator } from "@/components/ui/separator";
 import { SeverityLevel, getGroupSeverity } from '@/lib/mappings/severity'; // <-- Added severity imports
 import { Button } from "@/components/ui/button";
 import { ImagePreviewDialog } from './image-preview-dialog'; // <-- Import the new dialog
-import { VideoPlaybackDialog, type VideoPlaybackDialogProps } from './video-playback-dialog'; // <-- Import VideoPlaybackDialog and its props type
 import { toast } from 'react-hot-toast';
 import { getThumbnailSource, findSpaceCameras, buildThumbnailUrl } from '@/services/event-thumbnail-resolver';
 
@@ -45,6 +44,7 @@ interface EventGroupCardProps {
   spaces: Space[];
   isRecentGroup: boolean;
   cardSize: CardSize;
+  onPlayVideo?: (bestShotEvent: EnrichedEvent | undefined, spacePikoCamera: DeviceWithConnector | null, allDevices: DeviceWithConnector[]) => void;
 }
 
 // --- Device Summary Logic --- 
@@ -82,7 +82,7 @@ const calculatePriority = (summary: Omit<DeviceSummary, 'priorityScore'>): numbe
 };
 // --- End Device Summary Logic ---
 
-export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevices, isRecentGroup, cardSize }) => {
+export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevices, isRecentGroup, cardSize, onPlayVideo }) => {
   // Destructure group properties first
   const { spaceId, spaceName, startTime, endTime, events, groupKey } = group; 
   const eventCount = events.length;
@@ -247,8 +247,6 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
   // --- END Severity Calculation --- 
   
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [isVideoPlayerOpen, setIsVideoPlayerOpen] = useState(false);
-  const [videoPlayerProps, setVideoPlayerProps] = useState<Omit<VideoPlaybackDialogProps, 'isOpen' | 'onOpenChange'> | null>(null);
 
   // Calculate bestShotEvent once, as it's used in multiple places
   const bestShotEvent = useMemo(() => {
@@ -262,45 +260,11 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
   }, [events]);
 
   const handlePlayVideo = () => {
-    let targetConnectorId: string | undefined;
-    let targetPikoSystemId: string | undefined;
-    let targetCameraId: string | undefined;
-    let targetPositionMs: number | undefined;
-    let targetDeviceName: string | undefined;
-
-    // Use the memoized bestShotEvent
-    if (bestShotEvent && bestShotEvent.bestShotUrlComponents) {
-      targetConnectorId = bestShotEvent.bestShotUrlComponents.connectorId;
-      targetPikoSystemId = bestShotEvent.bestShotUrlComponents.pikoSystemId;
-      targetCameraId = bestShotEvent.bestShotUrlComponents.cameraId;
-      targetPositionMs = bestShotEvent.timestamp - 5000; // Start 5s before event
-      targetDeviceName = bestShotEvent.deviceName;
-      console.log("[EventGroupCard] Playing from Best Shot event context", { targetConnectorId, targetCameraId, targetPositionMs});
-    } else if (spacePikoCamera) {
-      // Fallback to space camera for live view if no specific event context
-      targetConnectorId = spacePikoCamera.connectorId;
-      // Attempt to get pikoSystemId from the allDevices list using the spacePikoCamera's internal ID
-      const fullSpaceCameraDetails = allDevices.find(d => d.id === spacePikoCamera.id);
-      targetPikoSystemId = fullSpaceCameraDetails?.pikoServerDetails?.systemId;
-      targetCameraId = spacePikoCamera.deviceId;
-      targetPositionMs = undefined; // Live view
-      targetDeviceName = spacePikoCamera.name;
-      console.log("[EventGroupCard] Playing live from space camera context", { targetConnectorId, targetCameraId });
-    }
-
-    if (targetConnectorId && targetCameraId) {
-      setVideoPlayerProps({
-        connectorId: targetConnectorId,
-        pikoSystemId: targetPikoSystemId,
-        cameraId: targetCameraId,
-        positionMs: targetPositionMs,
-        title: targetPositionMs ? `Event Playback - ${targetDeviceName || targetCameraId}` : `Live View - ${targetDeviceName || targetCameraId}`,
-        deviceName: targetDeviceName || targetCameraId
-      });
-      setIsVideoPlayerOpen(true);
+    if (onPlayVideo) {
+      onPlayVideo(bestShotEvent, spacePikoCamera, allDevices);
     } else {
-      console.warn("[EventGroupCard] Could not determine video playback parameters.");
-      toast.error("Video playback parameters not found.");
+      console.warn("[EventGroupCard] onPlayVideo prop not provided.");
+      toast.error("Video playback handler not available.");
     }
   };
 
@@ -565,15 +529,6 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         imageAlt={`${spaceName ?? 'Event'} - Preview`} 
         title={`Preview: ${spaceName ?? groupKey}`}
       />
-
-      {/* Video Playback Dialog */}
-      {videoPlayerProps && (
-        <VideoPlaybackDialog 
-          isOpen={isVideoPlayerOpen} 
-          onOpenChange={setIsVideoPlayerOpen} 
-          {...videoPlayerProps}
-        />
-      )}
     </>
   );
 }; 

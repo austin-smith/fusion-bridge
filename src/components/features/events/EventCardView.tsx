@@ -20,6 +20,7 @@ interface EventCardViewProps {
   allDevices: DeviceWithConnector[];
   spaces: Space[];
   cardSize: CardSize;
+  onPlayVideo?: (bestShotEvent: EnrichedEvent | undefined, spacePikoCamera: DeviceWithConnector | null, allDevices: DeviceWithConnector[]) => void;
 }
 
 // Define the structure for a group of events (matching EventGroupCard's expectation)
@@ -34,7 +35,7 @@ interface EventGroup {
 
 const GROUPING_TIME_WINDOW_MS = 60 * 1000; // 1 minute
 
-export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices, spaces, cardSize }) => {
+export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices, spaces, cardSize, onPlayVideo }) => {
 
   // Grid layout classes based on card size
   const gridClasses = useMemo(() => {
@@ -145,6 +146,7 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices
                       spaces={spaces}
                       isRecentGroup={segment.label === 'Recent'}
                       cardSize={cardSize}
+                      onPlayVideo={onPlayVideo}
                     />
                   );
                 })}

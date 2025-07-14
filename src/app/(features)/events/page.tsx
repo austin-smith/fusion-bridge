@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Activity, ChevronDown, Play, Loader2, ListTree, Maximize, Minimize, Gamepad, Plug, CircleX } from 'lucide-react';
+import { Activity, ChevronDown, Play, Loader2, ListTree, Maximize, Minimize, Gamepad, Plug, CircleX, Video, X as XIcon } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -90,6 +90,8 @@ import type { EnrichedEvent } from '@/types/events';
 import { EventCardView } from '@/components/features/events/EventCardView';
 import { EventCardViewSkeleton } from '@/components/features/events/event-card-view-skeleton';
 import { LocationSpaceSelector } from '@/components/common/LocationSpaceSelector';
+import { VideoPlaybackDialog, type VideoPlaybackDialogProps } from '@/components/features/events/video-playback-dialog';
+import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
 
 
 // --- Interface for Pagination Metadata from API ---
@@ -178,6 +180,58 @@ export default function EventsPage() {
   });
   const [tablePageCount, setTablePageCount] = useState<number>(0);
   const [locationSpaceSearchTerm, setLocationSpaceSearchTerm] = useState('');
+  
+  // Video dialog state - centralized for both normal and full screen modes
+  const [isVideoPlayerOpen, setIsVideoPlayerOpen] = useState(false);
+  const [videoPlayerProps, setVideoPlayerProps] = useState<Omit<VideoPlaybackDialogProps, 'isOpen' | 'onOpenChange'> | null>(null);
+
+  // Unified video handler for both normal and full screen modes
+  const handlePlayVideo = useCallback((
+    bestShotEvent: EnrichedEvent | undefined,
+    spacePikoCamera: DeviceWithConnector | null,
+    allDevices: DeviceWithConnector[]
+  ) => {
+    let targetConnectorId: string | undefined;
+    let targetPikoSystemId: string | undefined;
+    let targetCameraId: string | undefined;
+    let targetPositionMs: number | undefined;
+    let targetDeviceName: string | undefined;
+
+    // Use the bestShotEvent if available
+    if (bestShotEvent && bestShotEvent.bestShotUrlComponents) {
+      targetConnectorId = bestShotEvent.bestShotUrlComponents.connectorId;
+      targetPikoSystemId = bestShotEvent.bestShotUrlComponents.pikoSystemId;
+      targetCameraId = bestShotEvent.bestShotUrlComponents.cameraId;
+      targetPositionMs = bestShotEvent.timestamp - 5000; // Start 5s before event
+      targetDeviceName = bestShotEvent.deviceName;
+      console.log("[EventsPage] Playing from Best Shot event context", { targetConnectorId, targetCameraId, targetPositionMs});
+    } else if (spacePikoCamera) {
+      // Fallback to space camera for live view if no specific event context
+      targetConnectorId = spacePikoCamera.connectorId;
+      // Attempt to get pikoSystemId from the allDevices list using the spacePikoCamera's internal ID
+      const fullSpaceCameraDetails = allDevices.find(d => d.id === spacePikoCamera.id);
+      targetPikoSystemId = fullSpaceCameraDetails?.pikoServerDetails?.systemId;
+      targetCameraId = spacePikoCamera.deviceId;
+      targetPositionMs = undefined; // Live view
+      targetDeviceName = spacePikoCamera.name;
+      console.log("[EventsPage] Playing live from space camera context", { targetConnectorId, targetCameraId });
+    }
+
+    if (targetConnectorId && targetCameraId) {
+      setVideoPlayerProps({
+        connectorId: targetConnectorId,
+        pikoSystemId: targetPikoSystemId,
+        cameraId: targetCameraId,
+        positionMs: targetPositionMs,
+        title: targetPositionMs ? `Event Playback - ${targetDeviceName || targetCameraId}` : `Live View - ${targetDeviceName || targetCameraId}`,
+        deviceName: targetDeviceName || targetCameraId
+      });
+      setIsVideoPlayerOpen(true);
+    } else {
+      console.warn("[EventsPage] Could not determine video playback parameters.");
+      toast.error("Video playback parameters not found.");
+    }
+  }, []);
   
   // Use store for view preferences instead of local state
   const viewMode = useFusionStore(state => state.eventsViewMode);
@@ -543,13 +597,16 @@ export default function EventsPage() {
   // Effect to listen for browser fullscreen changes (e.g., Esc key)
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsCardViewFullScreen(!!document.fullscreenElement);
+      // Update events page fullscreen state when user exits fullscreen
+      if (isCardViewFullScreen && !document.fullscreenElement) {
+        setIsCardViewFullScreen(false);
+      }
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, []);
+  }, [isCardViewFullScreen]);
 
   // Define columns for TanStack Table
   const columns = useMemo<ColumnDef<EnrichedEvent>[]>(() => [
@@ -560,9 +617,6 @@ export default function EventsPage() {
       enableSorting: true,
       enableColumnFilter: true,
       filterFn: (row, columnId, filterValue) => {
-        // ADDED: Log filterFn execution
-        console.log(`[EventsPage] filterFn for '${columnId}': filterValue='${filterValue}', rowValue='${row.original.connectorName || 'System'}'`);
-        // END ADDED
         const name = row.original.connectorName || 'System';
         const filterText = String(filterValue || '').toLowerCase();
         if (!filterText) {
@@ -1160,8 +1214,45 @@ export default function EventsPage() {
           </TooltipProvider>
         </div>
         <div className="pt-12 h-full">
-            <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} cardSize={cardSize} />
+            <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} cardSize={cardSize} onPlayVideo={handlePlayVideo} />
         </div>
+        
+        {/* Video Playback Modal - custom modal for fullscreen mode (no portaling) */}
+        {videoPlayerProps && isVideoPlayerOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-background rounded-lg shadow-xl max-w-[80vw] max-h-[90vh] w-full mx-4 flex flex-col">
+              <div className="p-4 pb-2 flex flex-row items-center justify-between space-y-0 flex-shrink-0 border-b">
+                <div className="flex items-center gap-2">
+                  <Video className="h-5 w-5 text-muted-foreground"/>
+                  <h2 className="text-lg font-medium">{videoPlayerProps.title}</h2>
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => setIsVideoPlayerOpen(false)}>
+                  <XIcon className="h-4 w-4" />
+                </Button>
+              </div>
+              {videoPlayerProps.deviceName && (
+                <p className="px-4 pt-6 text-xs text-muted-foreground mb-2">
+                  Camera: {videoPlayerProps.deviceName}
+                </p>
+              )}
+              <div className="relative flex-grow w-full min-h-0 p-4">
+                                 <PikoVideoPlayer 
+                   connectorId={videoPlayerProps.connectorId || ''}
+                   pikoSystemId={videoPlayerProps.pikoSystemId || undefined}
+                   cameraId={videoPlayerProps.cameraId || ''}
+                   positionMs={videoPlayerProps.positionMs || undefined}
+                   className="w-full h-full"
+                   disableFullscreen={true}
+                 />
+              </div>
+              <div className="p-4 border-t flex justify-end">
+                <Button type="button" variant="secondary" onClick={() => setIsVideoPlayerOpen(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1218,11 +1309,21 @@ export default function EventsPage() {
             {viewMode === 'table' ? (
               <EventsTableView table={table} columns={columns} />
             ) : viewMode === 'card' ? (
-              <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} cardSize={cardSize} /> 
+              <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} cardSize={cardSize} onPlayVideo={handlePlayVideo} /> 
             ) : null}
           </div>
         ) : null}
       </TooltipProvider>
+
+      {/* Video Playback Dialog - rendered at page level for normal mode only */}
+      {!isCardViewFullScreen && videoPlayerProps && (
+        <VideoPlaybackDialog 
+          isOpen={isVideoPlayerOpen} 
+          onOpenChange={setIsVideoPlayerOpen} 
+          {...videoPlayerProps}
+          disableFullscreen={false}
+        />
+      )}
     </div>
   );
 }

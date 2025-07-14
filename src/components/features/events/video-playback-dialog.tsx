@@ -22,6 +22,7 @@ export interface VideoPlaybackDialogProps {
   positionMs?: number | null;
   title?: string;
   deviceName?: string | null;
+  disableFullscreen?: boolean;
 }
 
 // Wrap the component with React.memo
@@ -33,7 +34,8 @@ export const VideoPlaybackDialog: React.FC<VideoPlaybackDialogProps> = React.mem
   cameraId, 
   positionMs,
   title = 'Video Playback',
-  deviceName
+  deviceName,
+  disableFullscreen = false
 }) => {
   // Prevent rendering if critical IDs are missing or dialog is not open
   if (!isOpen || !connectorId || !cameraId) return null;
@@ -56,14 +58,20 @@ export const VideoPlaybackDialog: React.FC<VideoPlaybackDialogProps> = React.mem
                 Camera: {deviceName}
             </DialogDescription>
         )}
-        <div className="relative flex-grow w-full min-h-0"> {/* Ensure player can take space and scroll if needed */}
+        <div className="relative flex-grow w-full min-h-0 px-4"> {/* Ensure player can take space and scroll if needed */}
           <PikoVideoPlayer 
             connectorId={connectorId}
             pikoSystemId={pikoSystemId || undefined} // Pass undefined if null
             cameraId={cameraId}
             positionMs={positionMs || undefined} // Pass undefined if null (for live)
             className="w-full h-full" // Player itself will manage aspect ratio
+            disableFullscreen={disableFullscreen}
           />
+        </div>
+        <div className="p-4 border-t flex justify-end">
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

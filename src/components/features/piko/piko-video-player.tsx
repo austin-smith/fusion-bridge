@@ -27,6 +27,7 @@ interface PikoVideoPlayerProps {
   cameraId: string;
   positionMs?: number;
   className?: string;
+  disableFullscreen?: boolean;
 }
 
 export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
@@ -34,7 +35,8 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
   pikoSystemId,
   cameraId,
   positionMs,
-  className
+  className,
+  disableFullscreen = false
 }) => {
   const [isLoadingMediaInfo, setIsLoadingMediaInfo] = useState(true);
   const [mediaInfoError, setMediaInfoError] = useState<string | null>(null);
@@ -313,6 +315,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
             muted
             playsInline
             preload="auto"
+            {...(disableFullscreen && { controlsList: "nofullscreen" })}
             className={`absolute inset-0 w-full h-full z-0 bg-black object-contain ${isLoadingMediaInfo || mediaInfoError || !webrtcLib ? 'opacity-0' : 'opacity-100'}`}
         />
     </div>
