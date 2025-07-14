@@ -9,12 +9,17 @@ import type { DeviceWithConnector, Space } from '@/types/index';
 import { clusterEventsByProximity } from '@/lib/events/contextual-event-grouper';
 import { cn } from '@/lib/utils';
 
+// --- Card Size Type Definition ---
+type CardSize = 'small' | 'medium' | 'large';
+// --- End Card Size Type ---
+
 interface EventCardViewProps {
   events: EnrichedEvent[];
   onSelectEvent?: (event: EnrichedEvent) => void;
   showDeviceName?: boolean;
   allDevices: DeviceWithConnector[];
   spaces: Space[];
+  cardSize: CardSize;
 }
 
 // Define the structure for a group of events (matching EventGroupCard's expectation)
@@ -29,7 +34,20 @@ interface EventGroup {
 
 const GROUPING_TIME_WINDOW_MS = 60 * 1000; // 1 minute
 
-export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices, spaces }) => {
+export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices, spaces, cardSize }) => {
+
+  // Grid layout classes based on card size
+  const gridClasses = useMemo(() => {
+    switch (cardSize) {
+      case 'small':
+        return 'grid grid-cols-1 gap-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8';
+      case 'medium':
+        return 'grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
+      case 'large':
+      default:
+        return 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+    }
+  }, [cardSize]);
 
   const timeSegments = useMemo(() => {
     // 1. Cluster events using the new contextual grouper
@@ -117,7 +135,7 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices
                 </h3>
                 <div className="flex-grow border-t border-border ml-4"></div>
               </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div className={gridClasses}>
                 {segment.groups.map((group) => {
                   return (
                     <EventGroupCard
@@ -126,6 +144,7 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices
                       allDevices={allDevices}
                       spaces={spaces}
                       isRecentGroup={segment.label === 'Recent'}
+                      cardSize={cardSize}
                     />
                   );
                 })}

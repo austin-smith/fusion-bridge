@@ -20,7 +20,7 @@ const stringOperators = ['contains', 'doesNotContain', 'equal', 'in', 'notEqual'
 const numberOperators = ['equal', 'greaterThan', 'greaterThanInclusive', 'lessThan', 'lessThanInclusive', 'notEqual'].sort() as z.infer<typeof JsonRulesEngineOperatorsSchema>[];
 // Add boolean operators if needed
 
-// --- NEW: Operator Display Mapping ---
+// --- Operator Display Mapping ---
 export const OPERATOR_DISPLAY_MAP: Record<z.infer<typeof JsonRulesEngineOperatorsSchema>, string> = {
     equal: '=',
     notEqual: '≠',
@@ -33,7 +33,6 @@ export const OPERATOR_DISPLAY_MAP: Record<z.infer<typeof JsonRulesEngineOperator
     contains: 'contains',
     doesNotContain: 'does not contain',
 };
-// --- END NEW ---
 
 // Define Fact Value Input Types for the UI
 type FactValueInputType = 'select' | 'text' | 'number' | 'multiselect';
@@ -54,7 +53,7 @@ export interface AutomationFact {
     valueInputType: FactValueInputType; // How the user provides the value
     valueOptions?: FactValueOption[]; // Options for 'select' or 'multiselect'
     
-    // NEW: Simplified property for dynamic select options from entity lists
+    // Simplified property for dynamic select options from entity lists
     selectableEntityType?: 'Device' | 'Space' | 'AlarmZone' | 'Location' | 'Connector';
 }
 

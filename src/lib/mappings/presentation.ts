@@ -150,7 +150,7 @@ export function getDisplayStateIcon(state: DisplayState | undefined): LucideIcon
 }
 
 
-// --- NEW: Armed State Icon Mapping ---
+// --- Armed State Icon Mapping ---
 const armedStateIconMap: Record<ArmedState, LucideIcon> = {
   [ArmedState.DISARMED]: ShieldOff,
   [ArmedState.ARMED]: ShieldCheck,
@@ -298,7 +298,7 @@ export function intermediateStateToDisplayString(
     return undefined;
 }
 
-// --- NEW: Severity Level to Badge Variant/Style Mapping ---
+// --- Severity Level to Badge Variant/Style Mapping ---
 
 // Defines return type to allow specific variants or Tailwind classes
 type SeverityStyle = VariantProps<typeof badgeVariants>["variant"] | string;
@@ -325,7 +325,7 @@ export const getSeverityDisplayName = (level: SeverityLevel): string => {
     }
 };
 
-// --- NEW: Severity Level to Card Style Mapping ---
+// --- Severity Level to Card Style Mapping ---
 interface SeverityCardStyle {
     borderClass: string;
     // Add bgClass later if needed

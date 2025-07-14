@@ -22,6 +22,7 @@ export interface RedisEventMessage {
   spaceName?: string;
   alarmZoneId?: string;
   alarmZoneName?: string;
+  isAlarmEvent: boolean;
   event: {
     categoryId: string;
     category: string;

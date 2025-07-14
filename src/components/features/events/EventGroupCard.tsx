@@ -37,11 +37,14 @@ interface EventGroup {
   events: EnrichedEvent[];
 }
 
+type CardSize = 'small' | 'medium' | 'large';
+
 interface EventGroupCardProps {
   group: EventGroup;
   allDevices: DeviceWithConnector[];
   spaces: Space[];
   isRecentGroup: boolean;
+  cardSize: CardSize;
 }
 
 // --- Device Summary Logic --- 
@@ -54,7 +57,7 @@ interface DeviceSummary {
   latestDisplayState?: DisplayState;
   latestStateTimestamp?: number;
   significantEventTypes: Set<EventType>; // Keep this for quick checks maybe
-  significantEvents: EnrichedEvent[]; // <-- NEW: Store the actual events
+  significantEvents: EnrichedEvent[];
   eventCount: number;
   priorityScore: number;
 }
@@ -79,7 +82,7 @@ const calculatePriority = (summary: Omit<DeviceSummary, 'priorityScore'>): numbe
 };
 // --- End Device Summary Logic ---
 
-export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevices, isRecentGroup }) => {
+export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevices, isRecentGroup, cardSize }) => {
   // Destructure group properties first
   const { spaceId, spaceName, startTime, endTime, events, groupKey } = group; 
   const eventCount = events.length;
@@ -155,13 +158,20 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     return spaceCameras[0] || null;
   }, [events, allDevices]);
 
-  // --- Sizing Logic (as before) --- 
+  // --- Sizing Logic - SIMPLIFIED --- 
   const cardSizeClass = useMemo(() => {
-    if (isRecentGroup) {
-      return eventCount > 5 ? "min-h-[220px]" : "min-h-[180px]";
+    switch (cardSize) {
+      case 'small':
+        return "min-h-[80px]";
+      case 'medium':
+        return "min-h-[120px]";
+      case 'large':
+      default:
+        return isRecentGroup 
+          ? (eventCount > 5 ? "min-h-[220px]" : "min-h-[180px]")
+          : (eventCount > 5 ? "min-h-[180px]" : "min-h-[140px]");
     }
-    return eventCount > 5 ? "min-h-[180px]" : "min-h-[140px]";
-  }, [eventCount, isRecentGroup]);
+  }, [eventCount, isRecentGroup, cardSize]);
   const hasThumbnail = !!thumbnailUrl;
 
   // --- Device Summary Calculation (as before) ---
@@ -304,11 +314,13 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         "bg-card" // Standard background
       )}>
         <CardHeader className={cn(
-          "p-3 flex-shrink-0" // Standard padding, no conditional border
+          "p-3 flex-shrink-0"
         )}>
           <div className="flex justify-between items-start gap-2">
             <div className="min-w-0">
-              <CardTitle className="block text-base font-medium mb-0.5 truncate">{spaceName ?? 'Unassigned Space'}</CardTitle>
+              <CardTitle className="text-base font-medium mb-0.5 truncate">
+                {spaceName ?? 'Unassigned Space'}
+              </CardTitle>
               <CardDescription className="text-xs flex items-center">
                 <Clock className="h-3 w-3 mr-1.5 text-muted-foreground" />
                 {timeRangeText}
@@ -317,7 +329,7 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
           </div>
         </CardHeader>
         <CardContent className={cn(
-          "p-3 pt-0 flex-grow flex flex-col min-h-0" // Standard padding
+          "p-3 pt-0 flex-grow flex flex-col min-h-0"
         )}>
           {hasThumbnail ? (
             <div className="aspect-video bg-muted rounded-md relative overflow-hidden group/thumbnail">

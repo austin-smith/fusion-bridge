@@ -22,6 +22,7 @@ This system provides a zone-based security arming/disarming and alarm notificati
     *   Users can manually arm or disarm alarm zones via the UI.
     *   These actions are handled by backend logic (`src/lib/actions/alarm-zone-actions.ts`) and reflected in the Zustand store (`src/stores/store.ts`).
     *   All state changes are logged in an audit trail with user, timestamp, and reason.
+    *   Real-time notifications of zone state changes are broadcast via Server-Sent Events (SSE) to all connected clients.
 
 1.  **Scheduled Zone Control** *(Infrastructure Available, Currently Inactive)*:
     *   Complete arming schedule infrastructure exists (`armingSchedules` table, API endpoints, UI components).
@@ -43,7 +44,7 @@ This system provides a zone-based security arming/disarming and alarm notificati
         *   Uses `shouldTriggerAlarm()` function (`src/lib/alarm-event-types.ts`) to determine if an event should trigger an alarm.
         *   For `standard` zones: Uses predefined alarm event types (STATE_CHANGED, INTRUSION, etc.).
         *   For `custom` zones: Checks trigger overrides table for per-zone event type configuration.
-        *   If triggered, updates the zone's `armedState` to `TRIGGERED` with audit logging.
+        *   If triggered, updates the zone's `armedState` to `TRIGGERED` with audit logging and real-time SSE notifications.
 
 4.  **User Interface**:
 
@@ -81,6 +82,7 @@ This system provides a zone-based security arming/disarming and alarm notificati
         *   Evaluates trigger conditions based on zone's trigger behavior.
         *   If conditions are met, updates the zone's `armedState` to `TRIGGERED`.
         *   Creates audit log entry with triggering event details.
+        *   Broadcasts real-time zone state change via SSE to all connected clients.
     *   Passes the event to the `AutomationService` for any configured automations.
 
 ### Trigger Configuration
@@ -100,6 +102,17 @@ This system provides a zone-based security arming/disarming and alarm notificati
     *   Reason for change (manual, automation, security_event_trigger)
     *   Triggering event ID (for security-triggered alarms)
     *   Additional metadata (IP address, automation ID, etc.)
+
+### Real-time Notifications
+
+*   **Server-Sent Events (SSE)**: All alarm zone state changes are broadcast in real-time to connected clients via the `/api/events/stream` endpoint.
+*   **Arming Messages**: Dedicated SSE message type (`arming`) for zone state changes including:
+    *   Zone identification (ID, name, location)
+    *   Previous and current armed states with display names
+    *   Timestamp of change
+    *   Organization context for multi-tenant isolation
+*   **Message Delivery**: Arming messages bypass event filters and are delivered to all connected clients for the organization.
+*   **Channel Support**: Messages are published to both regular and thumbnail SSE channels when subscribers exist.
 
 ### Current Scheduling Options
 

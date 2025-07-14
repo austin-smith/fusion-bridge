@@ -16,7 +16,7 @@ import { authClient } from '@/lib/auth/client'; // Import authClient
 // Enable Immer plugin for Map/Set support
 enableMapSet();
 
-// --- NEW: Automation Types ---
+// --- Automation Types ---
 export interface Automation {
   id: string;
   name: string;
@@ -147,27 +147,27 @@ interface FusionState {
   isLoadingAllDevices: boolean;
   errorAllDevices: string | null;
 
-  // --- NEW: Locations State ---
+  // --- Locations State ---
   locations: Location[];
   isLoadingLocations: boolean;
   errorLocations: string | null;
 
-  // --- NEW: Spaces State ---
+  // --- Spaces State ---
   spaces: Space[];
   isLoadingSpaces: boolean;
   errorSpaces: string | null;
   
-  // --- NEW: Alarm Zones State ---
+  // --- Alarm Zones State ---
   alarmZones: AlarmZone[];
   isLoadingAlarmZones: boolean;
   errorAlarmZones: string | null;
   
-  // --- NEW: Arming Schedules State ---
+  // --- Arming Schedules State ---
   armingSchedules: ArmingSchedule[];
   isLoadingArmingSchedules: boolean;
   errorArmingSchedules: string | null;
   
-  // --- NEW: Event Dashboard State ---
+  // --- Event Dashboard State ---
   dashboardEvents: DashboardEvent[];
   isLoadingDashboardEvents: boolean;
   errorDashboardEvents: string | null;
@@ -175,42 +175,46 @@ interface FusionState {
   // --- Current User State ---
   currentUser: UserProfile | null;
   
-  // --- NEW: Device Action Loading State ---
+  // --- Device Action Loading State ---
   deviceActionLoading: Map<string, boolean>; // Key: internalDeviceId, Value: true if loading
   
-  // --- NEW: User List Refresh State ---
+  // --- User List Refresh State ---
   lastUserListUpdateTimestamp: number | null;
   
-  // --- NEW: PIN Management State ---
+  // --- PIN Management State ---
   pinStates: Map<string, { hasPin: boolean; setAt: Date | null }>; // Key: userId
   
-  // --- NEW: Organization State ---
+  // --- Organization State ---
   organizations: Organization[];
   isLoadingOrganizations: boolean;
   errorOrganizations: string | null;
   
-  // --- NEW: Organization Members State ---
+  // --- Organization Members State ---
   organizationMembers: OrganizationMember[];
   isLoadingMembers: boolean;
   errorMembers: string | null;
   
-  // --- NEW: Organization Invitations State ---
+  // --- Organization Invitations State ---
   organizationInvitations: OrganizationInvitation[];
   isLoadingInvitations: boolean;
   errorInvitations: string | null;
   
-  // --- NEW: Active Organization Tracking ---
+  // --- Active Organization Tracking ---
   activeOrganizationId: string | null;
   
-  // --- NEW: Automations State ---
+  // --- Automations State ---
   automations: Automation[];
   isLoadingAutomations: boolean;
   errorAutomations: string | null;
   
-  // --- NEW: OpenAI Service State ---
+  // --- OpenAI Service State ---
   openAiEnabled: boolean;
   isLoadingOpenAi: boolean;
   errorOpenAi: string | null;
+  
+  // --- User View Preferences ---
+  eventsViewMode: 'table' | 'card';
+  eventsCardSize: 'small' | 'medium' | 'large';
   
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
@@ -247,13 +251,13 @@ interface FusionState {
   setDeviceStatesFromSync: (syncedDevices: DeviceWithConnector[]) => void;
   fetchConnectors: () => Promise<void>;
 
-  // --- NEW: Location Actions ---
+  // --- Location Actions ---
   fetchLocations: () => Promise<void>;
   addLocation: (data: { name: string; parentId?: string | null }) => Promise<Location | null>;
   updateLocation: (id: string, data: { name?: string; parentId?: string | null }) => Promise<Location | null>;
   deleteLocation: (id: string) => Promise<boolean>;
 
-  // --- NEW: Space Actions ---
+  // --- Space Actions ---
   fetchSpaces: (locationId?: string | null) => Promise<void>;
   addSpace: (data: { name: string; locationId: string; description?: string; metadata?: Record<string, any> }) => Promise<Space | null>;
   updateSpace: (id: string, data: { name?: string; locationId?: string; description?: string; metadata?: Record<string, any> }) => Promise<Space | null>;
@@ -263,7 +267,7 @@ interface FusionState {
   bulkAssignDevicesToSpace: (spaceId: string, deviceIds: string[]) => Promise<boolean>;
   bulkRemoveDevicesFromSpace: (spaceId: string, deviceIds: string[]) => Promise<boolean>;
   
-  // --- NEW: Alarm Zone Actions ---
+  // --- Alarm Zone Actions ---
   fetchAlarmZones: (locationId?: string | null) => Promise<void>;
   addAlarmZone: (data: { name: string; locationId: string; description?: string; triggerBehavior: 'standard' | 'custom' }) => Promise<AlarmZone | null>;
   updateAlarmZone: (id: string, data: { name?: string; locationId?: string; description?: string; triggerBehavior?: 'standard' | 'custom' }) => Promise<AlarmZone | null>;
@@ -280,67 +284,72 @@ interface FusionState {
   fetchAlarmZoneTriggerOverrides: (zoneId: string) => Promise<AlarmZoneTriggerOverride[]>;
   saveAlarmZoneTriggerOverrides: (zoneId: string, overrides: CreateTriggerOverrideData[]) => Promise<boolean>;
 
-  // NEW: Fetch all devices 
+  // Fetch all devices 
   fetchAllDevices: () => Promise<void>;
 
-  // NEW: Fetch dashboard events
+  // Fetch dashboard events
   fetchDashboardEvents: () => Promise<void>;
 
   // --- Current User Actions ---
   setCurrentUser: (user: UserProfile | null) => void;
 
-  // --- NEW: Action to manually update a single device's state ---
+  // --- Action to manually update a single device's state ---
   updateSingleDeviceState: (internalDeviceId: string, newDisplayState: DisplayState) => void;
 
-  // --- NEW: Centralized Action to execute device state change ---
+  // --- Centralized Action to execute device state change ---
   executeDeviceAction: (internalDeviceId: string, newState: ActionableState) => Promise<void>;
 
-  // --- NEW: User List Refresh Action ---
+  // --- User List Refresh Action ---
   triggerUserListRefresh: () => void;
 
-  // --- NEW: Arming Schedule Actions ---
+  // --- Arming Schedule Actions ---
   fetchArmingSchedules: () => Promise<void>;
   addArmingSchedule: (scheduleData: NewArmingScheduleData) => Promise<ArmingSchedule | null>;
   updateArmingSchedule: (id: string, scheduleData: UpdateArmingScheduleData) => Promise<ArmingSchedule | null>;
   deleteArmingSchedule: (id: string) => Promise<boolean>;
 
-  // --- NEW: Keypad PIN Management Actions ---
+  // --- Keypad PIN Management Actions ---
   setPinStatus: (userId: string, hasPin: boolean, setAt?: Date | null) => void;
   getPinStatus: (userId: string) => { hasPin: boolean; setAt: Date | null };
   setUserPin: (userId: string, pin: string) => Promise<boolean>;
   removeUserPin: (userId: string) => Promise<boolean>;
   validatePin: (pin: string) => Promise<{ valid: boolean; userId?: string }>;
   
-  // --- NEW: Organization Actions ---
+  // --- Organization Actions ---
   fetchOrganizations: () => Promise<void>;
   createOrganization: (data: NewOrganizationData) => Promise<Organization | null>;
   updateOrganization: (id: string, data: Partial<NewOrganizationData>) => Promise<Organization | null>;
   deleteOrganization: (id: string) => Promise<boolean>;
   
-  // --- NEW: Organization Member Actions ---
+  // --- Organization Member Actions ---
   fetchOrganizationMembers: (organizationId?: string) => Promise<void>;
   inviteMember: (email: string, role: string, organizationId?: string) => Promise<OrganizationInvitation | null>;
   updateMemberRole: (memberId: string, role: string) => Promise<boolean>;
   removeMember: (memberIdOrEmail: string, organizationId?: string) => Promise<boolean>;
   
-  // --- NEW: Organization Invitation Actions ---
+  // --- Organization Invitation Actions ---
   fetchOrganizationInvitations: (organizationId?: string) => Promise<void>;
   acceptInvitation: (invitationId: string) => Promise<boolean>;
   cancelInvitation: (invitationId: string) => Promise<boolean>;
   rejectInvitation: (invitationId: string) => Promise<boolean>;
   
-  // --- NEW: Active Organization Actions ---
+  // --- Active Organization Actions ---
   setActiveOrganizationId: (organizationId: string | null) => void;
   
-  // --- NEW: Automations Actions ---
+  // --- Automations Actions ---
   fetchAutomations: () => Promise<void>;
   createAutomation: (data: NewAutomationData) => Promise<Automation | null>;
   updateAutomation: (id: string, data: Partial<NewAutomationData>) => Promise<Automation | null>;
   deleteAutomation: (id: string) => Promise<boolean>;
   cloneAutomation: (id: string) => Promise<Automation | null>;
   
-  // --- NEW: OpenAI Service Actions ---
+  // --- OpenAI Service Actions ---
   fetchOpenAiStatus: () => Promise<void>;
+  
+  // --- User View Preferences Actions ---
+  setEventsViewMode: (mode: 'table' | 'card') => void;
+  setEventsCardSize: (size: 'small' | 'medium' | 'large') => void;
+  initializeViewPreferences: () => void;
 }
 
 // Initial state for MQTT (default)
@@ -388,32 +397,32 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   // Initial Device State map
   deviceStates: new Map<string, DeviceStateInfo>(),
   
-  // NEW: All Devices State
+  // All Devices State
   allDevices: [], 
   isLoadingAllDevices: false,
   errorAllDevices: null,
 
-  // NEW: Location State
+  // Location State
   locations: [],
   isLoadingLocations: false,
   errorLocations: null,
 
-  // NEW: Space State
+  // Space State
   spaces: [],
   isLoadingSpaces: false,
   errorSpaces: null,
   
-  // NEW: Alarm Zone State
+  // Alarm Zone State
   alarmZones: [],
   isLoadingAlarmZones: false,
   errorAlarmZones: null,
   
-  // --- NEW: Arming Schedules Initial State ---
+  // --- Arming Schedules Initial State ---
   armingSchedules: [],
   isLoadingArmingSchedules: false,
   errorArmingSchedules: null,
   
-  // --- NEW: Event Dashboard Initial State ---
+  // --- Event Dashboard Initial State ---
   dashboardEvents: [],
   isLoadingDashboardEvents: false,
   errorDashboardEvents: null,
@@ -421,42 +430,46 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   // --- Current User Initial State ---
   currentUser: null,
   
-  // --- NEW: Device Action Loading Initial State ---
+  // --- Device Action Loading Initial State ---
   deviceActionLoading: new Map<string, boolean>(),
   
-  // --- NEW: User List Refresh Initial State ---
+  // --- User List Refresh Initial State ---
   lastUserListUpdateTimestamp: null,
   
-  // --- NEW: PIN Management Initial State ---
+  // --- PIN Management Initial State ---
   pinStates: new Map<string, { hasPin: boolean; setAt: Date | null }>(),
   
-  // --- NEW: Organization State ---
+  // --- Organization State ---
   organizations: [],
   isLoadingOrganizations: false,
   errorOrganizations: null,
   
-  // --- NEW: Organization Members State ---
+  // --- Organization Members State ---
   organizationMembers: [],
   isLoadingMembers: false,
   errorMembers: null,
   
-  // --- NEW: Organization Invitations State ---
+  // --- Organization Invitations State ---
   organizationInvitations: [],
   isLoadingInvitations: false,
   errorInvitations: null,
   
-  // --- NEW: Active Organization Tracking ---
+  // --- Active Organization Tracking ---
   activeOrganizationId: null,
   
-  // --- NEW: Automations State ---
+  // --- Automations State ---
   automations: [],
   isLoadingAutomations: false,
   errorAutomations: null,
   
-  // --- NEW: OpenAI Service State ---
+  // --- OpenAI Service State ---
   openAiEnabled: false,
   isLoadingOpenAi: false,
   errorOpenAi: null,
+  
+  // --- User View Preferences ---
+  eventsViewMode: 'table',
+  eventsCardSize: 'medium',
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -643,7 +656,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: Location Actions ---
+  // --- Location Actions ---
   fetchLocations: async () => {
     set({ isLoadingLocations: true, errorLocations: null });
     try {
@@ -731,7 +744,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: Space Actions ---
+  // --- Space Actions ---
   fetchSpaces: async (locationId) => {
     set({ isLoadingSpaces: true, errorSpaces: null });
     try {
@@ -854,7 +867,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // NEW: Bulk space device operations
+  // Bulk space device operations
   bulkAssignDevicesToSpace: async (spaceId: string, deviceIds: string[]) => {
     try {
       const response = await fetch(`/api/spaces/${spaceId}/devices`, {
@@ -899,7 +912,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: Alarm Zone Actions ---
+  // --- Alarm Zone Actions ---
   fetchAlarmZones: async (locationId) => {
     set({ isLoadingAlarmZones: true, errorAlarmZones: null });
     try {
@@ -1123,33 +1136,19 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     try {
       // Process each override individually using the REST API
       for (const override of overrides) {
-        if (override.shouldTrigger) {
-          // Add or update the override
-          const response = await fetch(`/api/alarm-zones/${zoneId}/trigger-overrides`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              eventType: override.eventType,
-              shouldTrigger: override.shouldTrigger
-            })
-          });
-          const data = await response.json();
-          if (!response.ok || !data.success) {
-            throw new Error(data.error || `Failed to save override for ${override.eventType}`);
-          }
-        } else {
-          // Remove the override (falling back to default behavior)
-          const response = await fetch(`/api/alarm-zones/${zoneId}/trigger-overrides`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              eventType: override.eventType
-            })
-          });
-          const data = await response.json();
-          if (!response.ok || !data.success) {
-            throw new Error(data.error || `Failed to remove override for ${override.eventType}`);
-          }
+        // Always save the override, regardless of shouldTrigger value
+        // The override represents a customization from standard behavior
+        const response = await fetch(`/api/alarm-zones/${zoneId}/trigger-overrides`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventType: override.eventType,
+            shouldTrigger: override.shouldTrigger
+          })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || `Failed to save override for ${override.eventType}`);
         }
       }
       return true;
@@ -1161,7 +1160,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // NEW: Fetch all devices 
+  // Fetch all devices 
   fetchAllDevices: async () => {
     set({ isLoadingAllDevices: true, errorAllDevices: null });
     try {
@@ -1218,7 +1217,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // NEW: Fetch dashboard events
+  // Fetch dashboard events
   fetchDashboardEvents: async () => {
     set({ isLoadingDashboardEvents: true, errorDashboardEvents: null });
     try {
@@ -1248,7 +1247,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   // --- Current User Actions ---
   setCurrentUser: (user) => set({ currentUser: user }),
 
-  // --- NEW: Action to manually update a single device's state ---
+  // --- Action to manually update a single device's state ---
   updateSingleDeviceState: (internalDeviceId: string, newDisplayState: DisplayState) => {
     console.log(`[Store] updateSingleDeviceState called for internal ID: ${internalDeviceId}, New State: ${newDisplayState}`);
     set(produce((draft: Draft<FusionState>) => {
@@ -1278,7 +1277,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }));
   },
 
-  // --- NEW: Centralized Action to execute device state change ---
+  // --- Centralized Action to execute device state change ---
   executeDeviceAction: async (internalDeviceId: string, newState: ActionableState) => {
     const stateDesc = newState === ActionableState.SET_ON ? 'on' : 'off';
     // 1. Set Loading State
@@ -1323,10 +1322,10 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: User List Refresh Action ---
+  // --- User List Refresh Action ---
   triggerUserListRefresh: () => set({ lastUserListUpdateTimestamp: Date.now() }),
 
-  // --- NEW: Arming Schedule Actions ---
+  // --- Arming Schedule Actions ---
   fetchArmingSchedules: async () => {
     set({ isLoadingArmingSchedules: true, errorArmingSchedules: null });
     try {
@@ -1434,7 +1433,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: Keypad PIN Management Actions ---
+  // --- Keypad PIN Management Actions ---
   setPinStatus: (userId: string, hasPin: boolean, setAt?: Date | null) => 
     set(produce((draft: Draft<FusionState>) => {
       draft.pinStates.set(userId, { 
@@ -1536,7 +1535,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: Organization Actions ---
+  // --- Organization Actions ---
   fetchOrganizations: async () => {
     set({ isLoadingOrganizations: true, errorOrganizations: null });
     try {
@@ -1642,7 +1641,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: Organization Member Actions ---
+  // --- Organization Member Actions ---
   fetchOrganizationMembers: async (organizationId?: string) => {
     set({ isLoadingMembers: true, errorMembers: null });
     try {
@@ -1740,7 +1739,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: Organization Invitation Actions ---
+  // --- Organization Invitation Actions ---
   fetchOrganizationInvitations: async (organizationId?: string) => {
     set({ isLoadingInvitations: true, errorInvitations: null });
     try {
@@ -1834,7 +1833,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: Active Organization Actions ---
+  // --- Active Organization Actions ---
   setActiveOrganizationId: (organizationId: string | null) => {
     const currentOrgId = get().activeOrganizationId;
     
@@ -1855,7 +1854,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         dashboardEvents: [],
         organizationMembers: [],
         organizationInvitations: [],
-        automations: [], // NEW: Clear automations
+        automations: [], // Clear automations
         // Reset loading states
         isLoading: false,
         isLoadingLocations: false,
@@ -1866,8 +1865,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         isLoadingDashboardEvents: false,
         isLoadingMembers: false,
         isLoadingInvitations: false,
-        isLoadingAutomations: false, // NEW: Reset automations loading
-        isLoadingOpenAi: false, // NEW: Reset OpenAI loading
+        isLoadingAutomations: false, // Reset automations loading
+        isLoadingOpenAi: false, // Reset OpenAI loading
         // Clear errors
         error: null,
         errorLocations: null,
@@ -1878,10 +1877,10 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         errorDashboardEvents: null,
         errorMembers: null,
         errorInvitations: null,
-        errorAutomations: null, // NEW: Clear automations error
-        errorOpenAi: null, // NEW: Clear OpenAI error
+        errorAutomations: null, // Clear automations error
+        errorOpenAi: null, // Clear OpenAI error
         // Reset OpenAI state
-        openAiEnabled: false, // NEW: Reset OpenAI enabled state
+        openAiEnabled: false, // Reset OpenAI enabled state
       });
       
       // Auto-refetch data for new organization if we have one
@@ -1895,8 +1894,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         get().fetchAllDevices(); // This now also populates deviceStates
         get().fetchArmingSchedules();
         get().fetchDashboardEvents();
-        get().fetchAutomations(); // NEW: Fetch automations
-        get().fetchOpenAiStatus(); // NEW: Fetch OpenAI status
+        get().fetchAutomations(); // Fetch automations
+        get().fetchOpenAiStatus(); // Fetch OpenAI status
       }
     } else {
       // Same organization, just update the ID (shouldn't happen but safe)
@@ -1904,7 +1903,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: Automations Actions ---
+  // --- Automations Actions ---
   fetchAutomations: async () => {
     set({ isLoadingAutomations: true, errorAutomations: null });
     try {
@@ -2027,7 +2026,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- NEW: OpenAI Service Actions ---
+  // --- OpenAI Service Actions ---
   fetchOpenAiStatus: async () => {
     set({ isLoadingOpenAi: true, errorOpenAi: null });
     try {
@@ -2048,9 +2047,44 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
+  // --- User View Preferences Actions ---
+  setEventsViewMode: (mode: 'table' | 'card') => {
+    set({ eventsViewMode: mode });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('eventsViewModePreference', mode);
+    }
+  },
+  setEventsCardSize: (size: 'small' | 'medium' | 'large') => {
+    set({ eventsCardSize: size });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('eventsCardSizePreference', size);
+    }
+  },
+  initializeViewPreferences: () => {
+    if (typeof window !== 'undefined') {
+      // Load from localStorage with fallbacks
+      const storedViewMode = localStorage.getItem('eventsViewModePreference');
+      const storedCardSize = localStorage.getItem('eventsCardSizePreference');
+      
+      const viewMode = (storedViewMode === 'table' || storedViewMode === 'card') 
+        ? storedViewMode 
+        : 'table';
+        
+      const cardSize = (storedCardSize === 'small' || storedCardSize === 'medium' || storedCardSize === 'large')
+        ? storedCardSize
+        : 'medium';
+        
+      set({ eventsViewMode: viewMode, eventsCardSize: cardSize });
+      console.log('[FusionStore] View preferences loaded from localStorage:', { viewMode, cardSize });
+    } else {
+      // Server-side fallback
+      set({ eventsViewMode: 'table', eventsCardSize: 'medium' });
+    }
+  },
+
 })); 
 
-// --- NEW: Organization Types ---
+// --- Organization Types ---
 export interface Organization {
   id: string;
   name: string;

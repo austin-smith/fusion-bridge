@@ -51,12 +51,13 @@ export const GET = withOrganizationAuth(async (
   const eventCategories = searchParams.get('eventCategories')?.split(',').map(c => c.trim()).filter(Boolean);
   const eventTypes = searchParams.get('eventTypes')?.split(',').map(t => t.trim()).filter(Boolean);
   const includeThumbnails = searchParams.get('includeThumbnails') === 'true'; // Default false
+  const alarmEventsOnly = searchParams.get('alarmEventsOnly') === 'true'; // Default false
   
   // Create a unique connection ID
   const connectionId = crypto.randomUUID();
   const startTime = new Date();
   
-  console.log(`[SSE] New connection: ${connectionId} for org: ${organizationId}, thumbnails: ${includeThumbnails}, filters:`, { eventCategories, eventTypes });
+  console.log(`[SSE] New connection: ${connectionId} for org: ${organizationId}, thumbnails: ${includeThumbnails}, alarmOnly: ${alarmEventsOnly}, filters:`, { eventCategories, eventTypes });
 
   // Track this connection
   const redis = getRedisClient();
@@ -87,6 +88,7 @@ export const GET = withOrganizationAuth(async (
         controller,
         eventCategories,
         eventTypes,
+        alarmEventsOnly,
         connectedAt: startTime,
         includeThumbnails
       });

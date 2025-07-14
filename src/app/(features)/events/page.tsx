@@ -27,6 +27,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import {
   flexRender,
@@ -185,8 +186,12 @@ export default function EventsPage() {
   );
   const [eventCategoryFilter, setEventCategoryFilter] = useState<string[]>(initialEventCategories);
   
-  // State for view mode with localStorage persistence
-  const [viewMode, setViewMode] = useState<'table' | 'card'>('table'); // Default to table view, consistent with server
+  // Use store for view preferences instead of local state
+  const viewMode = useFusionStore(state => state.eventsViewMode);
+  const cardSize = useFusionStore(state => state.eventsCardSize);
+  const setViewMode = useFusionStore(state => state.setEventsViewMode);
+  const setCardSize = useFusionStore(state => state.setEventsCardSize);
+  const initializeViewPreferences = useFusionStore(state => state.initializeViewPreferences);
 
   // --- Refs for managing fetch logic ---
   const isInitialLoadRef = useRef(true);
@@ -197,13 +202,10 @@ export default function EventsPage() {
   const prevLocationFilterRef = useRef(locationFilter);
   const prevSpaceFilterRef = useRef(spaceFilter);
 
-  // Effect to load and set viewMode from localStorage after initial render
+  // Initialize view preferences from localStorage (following app pattern)
   useEffect(() => {
-    const storedPreference = localStorage.getItem('eventsViewModePreference');
-    if (storedPreference === 'table' || storedPreference === 'card') {
-      setViewMode(storedPreference);
-    }
-  }, []); // Empty dependency array ensures this runs only once on mount
+    initializeViewPreferences();
+  }, [initializeViewPreferences]);
 
   const [isCardViewFullScreen, setIsCardViewFullScreen] = useState(false);
   const cardViewContainerRef = useRef<HTMLDivElement>(null);
@@ -496,13 +498,6 @@ export default function EventsPage() {
     }
   }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
   // --- END REVISED ---
-
-  // Effect to save viewMode to localStorage when it changes
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('eventsViewModePreference', viewMode);
-    }
-  }, [viewMode]);
 
   const toggleCardViewFullScreen = () => { // Simpler toggle, actual API calls in useEffect
     if (!document.fullscreenElement) {
@@ -981,7 +976,7 @@ export default function EventsPage() {
   // Define page actions
   const pageActions = (
     <>
-      <EventViewToggle viewMode={viewMode} onViewModeChange={setViewMode} />
+      <EventViewToggle viewMode={viewMode} onViewModeChange={setViewMode} cardSize={cardSize} onCardSizeChange={setCardSize} />
       {viewMode === 'card' && (
         <TooltipProvider delayDuration={100}>
           <Tooltip>
@@ -1006,41 +1001,46 @@ export default function EventsPage() {
         onSpaceChange={setSpaceFilter}
         onSearchChange={setLocationSpaceSearchTerm}
       />
-      <Select
-        value={connectorCategoryFilter}
-        onValueChange={(value) => setConnectorCategoryFilter(value)}
-      >
-        <SelectTrigger className="w-full sm:w-[120px] h-9">
-          <div className="flex items-center gap-2 flex-1">
-            {connectorCategoryFilter === 'all' ? (
-              <Plug className="h-4 w-4" />
-            ) : (
-              <ConnectorIcon connectorCategory={connectorCategoryFilter} size={16} />
-            )}
-            <span>
-              {connectorCategoryFilter === 'all' 
-                ? 'All' 
-                : formatConnectorCategory(connectorCategoryFilter)}
-            </span>
-          </div>
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" className="w-full sm:w-[120px] h-9 justify-between">
+            <div className="flex items-center gap-2 flex-1">
+              {connectorCategoryFilter === 'all' ? (
+                <Plug className="h-4 w-4" />
+              ) : (
+                <ConnectorIcon connectorCategory={connectorCategoryFilter} size={16} />
+              )}
+              <span>
+                {connectorCategoryFilter === 'all' 
+                  ? 'All' 
+                  : formatConnectorCategory(connectorCategoryFilter)}
+              </span>
+            </div>
+            <ChevronDown className="h-4 w-4 opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-56">
+          <DropdownMenuLabel>Connector Type</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setConnectorCategoryFilter('all')}>
             <div className="flex items-center gap-2">
               <Plug className="h-4 w-4" />
               All
             </div>
-          </SelectItem>
+          </DropdownMenuItem>
           {connectorCategories.map(category => (
-            <SelectItem key={category} value={category}>
+            <DropdownMenuItem 
+              key={category} 
+              onClick={() => setConnectorCategoryFilter(category)}
+            >
               <div className="flex items-center gap-2">
                 <ConnectorIcon connectorCategory={category} size={16} />
                 <span>{formatConnectorCategory(category)}</span>
               </div>
-            </SelectItem>
+            </DropdownMenuItem>
           ))}
-        </SelectContent>
-      </Select>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" className="w-full sm:w-[150px] h-9 justify-between">
@@ -1053,7 +1053,7 @@ export default function EventsPage() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-56">
-          <DropdownMenuLabel>Filter by Event Category</DropdownMenuLabel>
+          <DropdownMenuLabel>Event Category</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {Object.entries(EVENT_CATEGORY_DISPLAY_MAP).map(([categoryKey, displayName]) => (
             <DropdownMenuCheckboxItem
@@ -1121,7 +1121,7 @@ export default function EventsPage() {
           </TooltipProvider>
         </div>
         <div className="pt-12 h-full">
-            <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} />
+            <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} cardSize={cardSize} />
         </div>
       </div>
     );
@@ -1163,7 +1163,7 @@ export default function EventsPage() {
         <div className="flex-shrink-0">
            {loading ? (
             viewMode === 'card' 
-              ? <EventCardViewSkeleton segmentCount={2} cardsPerSegment={4} />
+              ? <EventCardViewSkeleton segmentCount={2} cardsPerSegment={4} cardSize={cardSize} />
               : <EventsTableSkeleton rowCount={15} columnCount={columns.length} />
           ) : null}
         </div>
@@ -1179,7 +1179,7 @@ export default function EventsPage() {
             {viewMode === 'table' ? (
               <EventsTableView table={table} columns={columns} />
             ) : viewMode === 'card' ? (
-              <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} /> 
+              <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} cardSize={cardSize} /> 
             ) : null}
           </div>
         ) : null}

@@ -8,6 +8,7 @@ interface SSEConnection {
   controller: ReadableStreamDefaultController;
   eventCategories?: string[];
   eventTypes?: string[];
+  alarmEventsOnly?: boolean;
   connectedAt: Date;
   includeThumbnails?: boolean;
 }
@@ -125,6 +126,11 @@ class SSEConnectionManager {
   }
 
   private shouldSendEvent(conn: SSEConnection, event: RedisEventMessage): boolean {
+    // Apply alarm events filter first (most specific)
+    if (conn.alarmEventsOnly && !event.isAlarmEvent) {
+      return false;
+    }
+    
     // Apply event category filter
     if (conn.eventCategories && !conn.eventCategories.includes(event.event.category)) {
       return false;

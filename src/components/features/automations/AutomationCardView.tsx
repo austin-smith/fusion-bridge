@@ -99,7 +99,7 @@ interface TargetDevice {
   iconName: string;
 }
 
-// --- NEW: Add Location, Space, and Alarm Zone types ---
+// --- Add Location, Space, and Alarm Zone types ---
 interface Location {
   id: string;
   name: string;
@@ -194,10 +194,10 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
     }));
   }, [allDevices]);
 
-  // --- NEW: State for last runs ---
+  // --- State for last runs ---
   const [lastRuns, setLastRuns] = useState<Map<string, AutomationExecutionSummary>>(new Map());
   // --- END NEW ---
-  // --- NEW: State for execution details modal ---
+  // --- State for execution details modal ---
   const [selectedExecution, setSelectedExecution] = useState<AutomationExecutionSummary | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   // --- END NEW ---
@@ -233,7 +233,7 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
     fetchLastRuns();
   }, [fetchAutomations, fetchLastRuns]);
 
-  // --- NEW: Function to open execution details modal ---
+  // --- Function to open execution details modal ---
   const openExecutionDetails = (execution: AutomationExecutionSummary) => {
     setSelectedExecution(execution);
     setModalOpen(true);
@@ -520,7 +520,7 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
   // Get the actions data safely
   const actions = automation.configJson?.actions || [];
   
-  // --- NEW: Derive currentRuleLocationScope ---
+  // --- Derive currentRuleLocationScope ---
   const currentRuleLocationScope = automation.locationScopeId && safeLocations.length > 0
     ? safeLocations.find(loc => loc.id === automation.locationScopeId)
     : null;

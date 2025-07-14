@@ -179,7 +179,7 @@ export function EditOrganizationDialog({
                 Cancel
               </Button>
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Saving...' : 'Save Changes'}
+                {isSubmitting ? 'Saving...' : 'Save'}
               </Button>
             </DialogFooter>
           </form>

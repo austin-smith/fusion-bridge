@@ -165,7 +165,7 @@ export const automationsRelations = relations(automations, ({ one }) => ({
 }));
 // --- END ADDED ---
 
-// --- NEW: Locations Table ---
+// --- Locations Table ---
 export const locations = sqliteTable("locations", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   parentId: text("parent_id").references((): AnySQLiteColumn => locations.id, { onDelete: 'cascade' }), 
@@ -217,7 +217,7 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
 }));
 
 
-// --- NEW: ArmingSchedules Table ---
+// --- ArmingSchedules Table ---
 export const armingSchedules = sqliteTable("arming_schedules", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text("name").notNull(), // Nullable, for identifying the schedule e.g., "Weekday Evenings"
@@ -458,7 +458,7 @@ export const userRelations = relations(user, ({ many, one }) => ({
   apiKeys: many(apikey),
   memberOf: many(member), // ADDED: User is member of organizations
   sentInvitations: many(invitation), // ADDED: User can send invitations
-  keypadPins: many(keypadPins), // NEW: User keypad PINs across organizations
+  keypadPins: many(keypadPins), // User keypad PINs across organizations
 }));
 
 export const accountRelations = relations(account, ({ one }) => ({
@@ -501,7 +501,7 @@ export const twoFactorRelations = relations(twoFactor, ({ one }) => ({
     }),
 }));
 
-// --- NEW: Keypad PINs Table ---
+// --- Keypad PINs Table ---
 export const keypadPins = sqliteTable("keypad_pins", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
@@ -531,7 +531,7 @@ export const keypadPinsRelations = relations(keypadPins, ({ one }) => ({
   }),
 }));
 
-// --- NEW: Service Configurations Table ---
+// --- Service Configurations Table ---
 export const serviceConfigurations = sqliteTable("service_configurations", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   type: text("type").notNull(),
@@ -541,7 +541,7 @@ export const serviceConfigurations = sqliteTable("service_configurations", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
-// --- NEW: Automation Audit Trail Tables ---
+// --- Automation Audit Trail Tables ---
 
 // Table for tracking automation executions
 export const automationExecutions = sqliteTable("automation_executions", {
@@ -705,9 +705,9 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   invitations: many(invitation),
   locations: many(locations), // Organization has many locations
   connectors: many(connectors), // Organization has many connectors
-  automations: many(automations), // NEW: Organization has many automations
+  automations: many(automations), // Organization has many automations
   sessions: many(session), // For activeOrganizationId reference
-  keypadPins: many(keypadPins), // NEW: Organization keypad PINs
+  keypadPins: many(keypadPins), // Organization keypad PINs
 }));
 
 export const memberRelations = relations(member, ({ one }) => ({

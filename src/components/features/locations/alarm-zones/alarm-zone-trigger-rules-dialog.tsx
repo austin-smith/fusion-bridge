@@ -200,7 +200,38 @@ export const AlarmZoneTriggerRulesDialog: React.FC<AlarmZoneTriggerRulesDialogPr
             <CardContent>
               <RadioGroup
                 value={triggerBehavior}
-                onValueChange={(value) => setTriggerBehavior(value as 'standard' | 'custom')}
+                onValueChange={async (value) => {
+                  const newBehavior = value as 'standard' | 'custom';
+                  setTriggerBehavior(newBehavior);
+                  
+                  // If switching TO custom mode, load existing overrides from database
+                  if (newBehavior === 'custom' && zone) {
+                    setIsLoadingCustomRules(true);
+                    try {
+                      const overrides = await fetchAlarmZoneTriggerOverrides(zone.id);
+                      const rulesMap = {} as Record<EventType, boolean>;
+                      // Start with standard alarm events as the base
+                      Object.values(EventType).forEach(eventType => {
+                        rulesMap[eventType] = isStandardAlarmEvent(eventType);
+                      });
+                      // Apply existing custom overrides from database
+                      overrides.forEach((override: AlarmZoneTriggerOverride) => {
+                        rulesMap[override.eventType as EventType] = override.shouldTrigger;
+                      });
+                      setCustomTriggerRules(rulesMap);
+                    } catch (error) {
+                      console.error('Error loading existing trigger overrides:', error);
+                      // Fallback to standard rules if loading fails
+                      const initialRules = {} as Record<EventType, boolean>;
+                      Object.values(EventType).forEach(eventType => {
+                        initialRules[eventType] = isStandardAlarmEvent(eventType);
+                      });
+                      setCustomTriggerRules(initialRules);
+                    } finally {
+                      setIsLoadingCustomRules(false);
+                    }
+                  }
+                }}
                 className="space-y-3"
               >
                 <div className="flex items-center space-x-2">
@@ -371,7 +402,7 @@ export const AlarmZoneTriggerRulesDialog: React.FC<AlarmZoneTriggerRulesDialogPr
             onClick={handleSubmit}
             disabled={isSubmitting || !hasChanges || isLoadingCustomRules}
           >
-            {isSubmitting ? 'Saving...' : 'Save Changes'}
+            {isSubmitting ? 'Saving...' : 'Save'}
           </Button>
         </DialogFooter>
       </DialogContent>

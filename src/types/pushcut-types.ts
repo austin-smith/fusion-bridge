@@ -79,10 +79,6 @@ export type PushcutDefinedNotification = z.infer<typeof PushcutDefinedNotificati
 export const PushcutGetNotificationsApiResponseSchema = z.array(PushcutDefinedNotificationSchema);
 export type PushcutGetNotificationsApiResponse = z.infer<typeof PushcutGetNotificationsApiResponseSchema>;
 
-// --- End new types ---
-
-// --- New types for GET /devices endpoint ---
-
 // Schema for a single active device from Pushcut
 export const PushcutDeviceSchema = z.object({
   id: z.string().describe("The name/identifier of the active device"),
@@ -93,8 +89,6 @@ export type PushcutDevice = z.infer<typeof PushcutDeviceSchema>;
 // Schema for the response when getting all active devices (array of them)
 export const PushcutGetDevicesApiResponseSchema = z.array(PushcutDeviceSchema);
 export type PushcutGetDevicesApiResponse = z.infer<typeof PushcutGetDevicesApiResponseSchema>;
-
-// --- End new types for devices ---
 
 // Helper type for parameters sent to the driver function
 // This includes the notificationName which is a path parameter for the API call

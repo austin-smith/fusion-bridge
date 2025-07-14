@@ -230,7 +230,7 @@ export const AutomationActionSchema = z.discriminatedUnion("type", [
 // Type helper for a single action
 export type AutomationAction = z.infer<typeof AutomationActionSchema>;
 
-// --- NEW: Schema for Temporal Conditions --- 
+// --- Schema for Temporal Conditions --- 
 export const TemporalConditionSchema = z.object({
     id: z.string().uuid().default(() => crypto.randomUUID()), // Internal ID for the condition in the UI list
     type: z.enum([
@@ -243,10 +243,10 @@ export const TemporalConditionSchema = z.object({
         'eventCountGreaterThanOrEqual'
     ]), 
     
-    // --- NEW: Add expected count ---
+    // --- Add expected count ---
     expectedEventCount: z.number().int().min(0).optional(), // Required for count-based types
     
-    // --- NEW: Scoping definition --- 
+    // --- Scoping definition --- 
     scoping: z.enum(['anywhere', 'sameSpace', 'sameLocation', 'sameZone']).default('anywhere'),
     eventFilter: JsonRuleGroupSchema, // Use the same rule builder structure
     
@@ -274,7 +274,7 @@ export const TemporalConditionSchema = z.object({
 // Type helper for a single temporal condition (automatically updated)
 export type TemporalCondition = z.infer<typeof TemporalConditionSchema>;
 
-// --- NEW: Time-of-Day Filter Schema ---
+// --- Time-of-Day Filter Schema ---
 export const TimeOfDayFilterSchema = z.discriminatedUnion("type", [
   // Any time - no restrictions
   z.object({
@@ -305,7 +305,7 @@ export const TimeOfDayFilterSchema = z.discriminatedUnion("type", [
 
 export type TimeOfDayFilter = z.infer<typeof TimeOfDayFilterSchema>;
 
-// --- NEW: Automation Trigger Schema (Discriminated Union) ---
+// --- Automation Trigger Schema (Discriminated Union) ---
 // Inserted BEFORE the original AutomationConfigSchema
 // Base scheduled trigger schema
 const BaseScheduledTriggerSchema = z.object({
