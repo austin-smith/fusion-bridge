@@ -16,6 +16,7 @@ import { eq, and, InferSelectModel } from 'drizzle-orm';
 import { ArmedState, EventType, EVENT_CATEGORY_DISPLAY_MAP, EVENT_TYPE_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP, DeviceType } from '@/lib/mappings/definitions';
 import { shouldTriggerAlarm } from '@/lib/alarm-event-types';
 import { createAlarmZonesRepository } from '@/data/repositories/alarm-zones';
+import { internalSetAlarmZoneArmedState } from '@/lib/actions/alarm-zone-actions';
 import { processEvent as processEventForAutomations } from '@/services/automation-service'; // Import automation service
 import { getRedisPubClient } from '@/lib/redis/client';
 import { getEventChannelName, getEventThumbnailChannelName, type RedisEventMessage } from '@/lib/redis/types';
@@ -427,13 +428,13 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
               }
               
               if (shouldTrigger) {
-                // Trigger the alarm zone with audit logging
-                await alarmZonesRepo.setArmedState(
+                // Trigger the alarm zone with audit logging and SSE publishing
+                await internalSetAlarmZoneArmedState(
                   deviceZone.id,
                   ArmedState.TRIGGERED,
                   undefined, // No user ID for system-triggered events
                   'alarm_event_trigger',
-                  event.eventId
+                  event.eventId // Include the triggering event ID
                 );
                 console.log(`[EventProcessor] Alarm zone ${deviceZone.id} set to TRIGGERED due to event ${event.eventId} from device ${event.deviceId}.`);
               }

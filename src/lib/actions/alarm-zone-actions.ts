@@ -5,25 +5,8 @@ import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AlarmZone } from '@/types/index';
 import { getRedisPubClient } from '@/lib/redis/client';
-import { getEventChannelName, getEventThumbnailChannelName } from '@/lib/redis/types';
+import { getEventChannelName, getEventThumbnailChannelName, type SSEArmingMessage } from '@/lib/redis/types';
 import { createAlarmZonesRepository } from '@/data/repositories/alarm-zones';
-
-// Define SSE message type for alarm zone state changes
-interface SSEAlarmZoneMessage {
-  type: 'alarm_zone_arming';
-  organizationId: string;
-  timestamp: string;
-  zone: {
-    id: string;
-    name: string;
-    locationId: string;
-    locationName: string;
-    previousState: ArmedState;
-    previousStateDisplayName: string;
-    currentState: ArmedState;
-    currentStateDisplayName: string;
-  };
-}
 
 // Zod schemas for validation
 const zUUID = z.string().uuid();
@@ -37,7 +20,8 @@ export async function internalSetAlarmZoneArmedState(
   zoneId: string,
   armedState: ArmedState,
   userId?: string,
-  reason?: string
+  reason?: string,
+  triggerEventId?: string
 ): Promise<AlarmZone | null> {
   // Validate inputs
   const validatedZoneId = zUUID.parse(zoneId);
@@ -92,7 +76,8 @@ export async function internalSetAlarmZoneArmedState(
       validatedZoneId,
       validatedArmedState,
       userId,
-      reason || 'manual'
+      reason || 'manual',
+      triggerEventId
     );
 
     if (!updatedZone) {
@@ -103,11 +88,11 @@ export async function internalSetAlarmZoneArmedState(
     // Publish alarm zone state change message to Redis
     if (zoneWithLocation.location.organizationId) {
       try {
-        const alarmZoneMessage: SSEAlarmZoneMessage = {
-          type: 'alarm_zone_arming',
+        const alarmZoneMessage: SSEArmingMessage = {
+          type: 'arming',
           organizationId: zoneWithLocation.location.organizationId,
           timestamp: new Date().toISOString(),
-          zone: {
+          alarmZone: {
             id: updatedZone.id,
             name: updatedZone.name,
             locationId: updatedZone.locationId,

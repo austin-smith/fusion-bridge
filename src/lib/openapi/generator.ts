@@ -265,8 +265,8 @@ data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2024-01-0
 event: event
 data: {"eventUuid":"550e8400-e29b-41d4-a716-446655440001","timestamp":"2024-01-01T00:01:00.000Z","organizationId":"org-123","deviceId":"side-gate-sensor","deviceName":"Side Gate Sensor","connectorId":"netbox-001","connectorName":"NetBox Controller","locationId":"home-location-456","locationName":"Main House","spaceId":"perimeter-space-124","spaceName":"Side Gate","event":{"categoryId":"security","category":"Security","typeId":"door_opened","type":"Door Opened","motion":true,"zone":"side_entrance"},"rawEvent":{"event_type":"door","sensor_id":"side-gate-sensor","state":"open","timestamp":"2024-01-01T00:01:00Z"}}
 
-event: alarm-zone
-data: {"type":"alarm-zone","organizationId":"org-123","timestamp":"2024-01-01T00:02:00.000Z","alarmZone":{"id":"perimeter-zone-123","name":"Perimeter Security","locationId":"home-location-456","locationName":"Main House","previousState":"DISARMED","previousStateDisplayName":"Disarmed","currentState":"ARMED","currentStateDisplayName":"Armed"}}
+event: arming
+data: {"type":"arming","organizationId":"org-123","timestamp":"2024-01-01T00:02:00.000Z","alarmZone":{"id":"perimeter-zone-123","name":"Perimeter Security","locationId":"home-location-456","locationName":"Main House","previousState":"DISARMED","previousStateDisplayName":"Disarmed","currentState":"ARMED","currentStateDisplayName":"Armed"}}
 
 event: heartbeat
 data: {"type":"heartbeat","timestamp":"2024-01-01T00:00:30.000Z"}

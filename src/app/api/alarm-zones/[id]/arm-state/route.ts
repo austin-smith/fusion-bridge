@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
-import { createAlarmZonesRepository } from '@/data/repositories/alarm-zones';
+import { internalSetAlarmZoneArmedState } from '@/lib/actions/alarm-zone-actions';
 import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
 import { setZoneArmedStateSchema } from '@/lib/schemas/api-schemas';
 
@@ -25,10 +25,9 @@ export const PUT = withOrganizationAuth(async (request: NextRequest, authContext
     }
 
     const { armedState } = validation.data;
-    const alarmZonesRepo = createAlarmZonesRepository(authContext.organizationId);
 
-    // Set armed state with audit logging - reason is automatically determined as "manual" for API calls
-    const updatedZone = await alarmZonesRepo.setArmedState(
+    // Set armed state with audit logging and SSE publishing
+    const updatedZone = await internalSetAlarmZoneArmedState(
       id,
       armedState,
       authContext.userId,

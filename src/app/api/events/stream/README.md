@@ -201,8 +201,33 @@ The SSE stream sends different event types:
 
 1. **connection**: Initial connection confirmation
 2. **event**: Actual device/system events
-3. **heartbeat**: Keep-alive messages every 30 seconds
-4. **system**: Redis connection status updates
+3. **arming**: Alarm zone armed state changes (arm/disarm/triggered)
+4. **heartbeat**: Keep-alive messages every 30 seconds
+5. **system**: Redis connection status updates
+
+### Arming Message Format
+
+Alarm zone state changes are sent with the `arming` event type:
+
+```json
+{
+  "type": "arming",
+  "organizationId": "org_123",
+  "timestamp": "2024-01-10T14:30:00.000Z",
+  "alarmZone": {
+    "id": "zone_456",
+    "name": "Perimeter Security",
+    "locationId": "loc_789",
+    "locationName": "Main Building",
+    "previousState": "DISARMED",
+    "previousStateDisplayName": "Disarmed",
+    "currentState": "ARMED",
+    "currentStateDisplayName": "Armed"
+  }
+}
+```
+
+**Note**: Arming messages bypass all event category and event type filters - they are always sent to all connected clients for the organization.
 
 ## Client Examples
 
@@ -236,6 +261,18 @@ eventSource.addEventListener('event', (e) => {
       break;
     // ... other event types
   }
+});
+
+// Handle alarm zone arming changes
+eventSource.addEventListener('arming', (e) => {
+  const armingData = JSON.parse(e.data);
+  console.log('Alarm zone state changed:', armingData);
+  
+  const { alarmZone } = armingData;
+  console.log(`Zone "${alarmZone.name}" changed from ${alarmZone.previousStateDisplayName} to ${alarmZone.currentStateDisplayName}`);
+  
+  // Update UI based on zone state
+  updateAlarmZoneUI(alarmZone.id, alarmZone.currentState);
 });
 
 // Handle heartbeats
