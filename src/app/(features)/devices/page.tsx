@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from "@/components/ui/input";
 import { toast } from 'sonner';
-import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network, PowerIcon, PowerOffIcon, HelpCircle, MoreHorizontal, InfoIcon } from 'lucide-react';
+import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network, PowerIcon, PowerOffIcon, HelpCircle, MoreHorizontal, InfoIcon, ChevronDown, Plug } from 'lucide-react';
 import { DeviceWithConnector, ConnectorWithConfig, PikoServer } from '@/types';
 import { getDeviceTypeIcon, getDisplayStateIcon } from "@/lib/mappings/presentation";
 import { 
@@ -48,6 +48,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
+import {
   flexRender,
   getCoreRowModel,
   getSortedRowModel,
@@ -69,13 +76,7 @@ import type { DeviceDetailProps } from "@/components/features/devices/device-det
 import { getDeviceTypeInfo } from "@/lib/mappings/identification";
 import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu"
+import { LocationSpaceSelector } from '@/components/common/LocationSpaceSelector';
 
 // Define the shape of data expected by the table, combining store data
 interface DisplayedDevice extends Omit<DeviceWithConnector, 'status' | 'type' | 'pikoServerDetails' | 'id'> { // Also omit original id
@@ -212,11 +213,18 @@ export default function DevicesPage() {
   // Use store loading state
   const isLoadingAllDevices = useFusionStore(state => state.isLoadingAllDevices);
   
+  // Fetch locations and spaces from store
+  const locations = useFusionStore(state => state.locations);
+  const spaces = useFusionStore(state => state.spaces);
+  
   // const [devices, setDevices] = useState<DeviceWithConnector[]>([]); // Remove local state
   const [error, setError] = useState<string | null>(null); // Keep local error for sync/fetch errors
   const [sorting, setSorting] = useState<SortingState>([ /* Default sort */ ]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [locationFilter, setLocationFilter] = useState<string>('all');
+  const [spaceFilter, setSpaceFilter] = useState<string>('all');
+  const [locationSpaceSearchTerm, setLocationSpaceSearchTerm] = useState('');
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [pagination, setPagination] = useState<PaginationState>({
@@ -304,16 +312,31 @@ export default function DevicesPage() {
     return mappedData;
   }, [deviceStates, connectors, allDevices]); // Restore deviceStates dependency
 
-  // Filter devices based on the category toggle
+  // Filter devices based on the category, location, and space filters
   const filteredTableData = useMemo<DisplayedDevice[]>(() => {
-    if (categoryFilter === 'all') {
-      return tableData;
+    let filtered = tableData;
+
+    if (categoryFilter !== 'all') {
+      filtered = filtered.filter(device => 
+        device.connectorCategory?.toLowerCase() === categoryFilter
+      );
     }
-    const filtered = tableData.filter(device => 
-      device.connectorCategory?.toLowerCase() === categoryFilter
-    );
+
+    if (spaceFilter !== 'all') {
+      filtered = filtered.filter(device => 
+        device.spaceId === spaceFilter
+      );
+    } else if (locationFilter !== 'all') {
+      // If no specific space is selected but location is, filter by location
+      const locationSpaces = spaces.filter(space => space.locationId === locationFilter);
+      const locationSpaceIds = locationSpaces.map(space => space.id);
+      filtered = filtered.filter(device => 
+        device.spaceId && locationSpaceIds.includes(device.spaceId)
+      );
+    }
+
     return filtered;
-  }, [tableData, categoryFilter]);
+  }, [tableData, categoryFilter, locationFilter, spaceFilter, spaces]);
 
   // --- Keep syncDevices but update messaging --- 
   const syncDevices = useCallback(async () => {
@@ -595,31 +618,55 @@ export default function DevicesPage() {
   // Define the actions separately for clarity
   const pageActions = (
     <>
-      <Select
-        defaultValue="all"
-        value={categoryFilter}
-        onValueChange={(value) => setCategoryFilter(value)}
-      >
-        <SelectTrigger className="sm:w-[180px] h-9"> 
-          <SelectValue placeholder="Filter by connector" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">
-            <div className="flex items-center gap-2">
-              <span>All Connectors</span>
+      <LocationSpaceSelector
+        locationFilter={locationFilter}
+        spaceFilter={spaceFilter}
+        searchTerm={locationSpaceSearchTerm}
+        locations={locations}
+        spaces={spaces}
+        onLocationChange={setLocationFilter}
+        onSpaceChange={setSpaceFilter}
+        onSearchChange={setLocationSpaceSearchTerm}
+      />
+      
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" className="w-full sm:w-[120px] h-9 justify-between">
+            <div className="flex items-center gap-2 flex-1">
+              {categoryFilter === 'all' ? (
+                <Plug className="h-4 w-4" />
+              ) : (
+                <ConnectorIcon connectorCategory={categoryFilter} size={16} />
+              )}
+              <span>
+                {categoryFilter === 'all' 
+                  ? 'All' 
+                  : formatConnectorCategory(categoryFilter)}
+              </span>
             </div>
-          </SelectItem>
-          
+            <ChevronDown className="h-4 w-4 opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-56">
+          <DropdownMenuItem onClick={() => setCategoryFilter('all')}>
+            <div className="flex items-center gap-2">
+              <Plug className="h-4 w-4" />
+              All
+            </div>
+          </DropdownMenuItem>
           {connectorCategories.map(category => (
-            <SelectItem key={category} value={category}>
+            <DropdownMenuItem 
+              key={category} 
+              onClick={() => setCategoryFilter(category)}
+            >
               <div className="flex items-center gap-2">
                 <ConnectorIcon connectorCategory={category} size={16} />
                 <span>{formatConnectorCategory(category)}</span>
               </div>
-            </SelectItem>
+            </DropdownMenuItem>
           ))}
-        </SelectContent>
-      </Select>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <Dialog>
         <TooltipProvider>
