@@ -27,40 +27,12 @@ import { AutomationThumbnailAnalyzer } from '@/services/automation-thumbnail-ana
 import { createThumbnailContext } from '@/types/automation-thumbnails';
 import { getThumbnailSource } from '@/services/event-thumbnail-resolver';
 import { buildEventWithContext } from '@/services/automation-execution-context-builder';
+import { shouldStandardizedEventTriggerAlarmInZone } from '@/lib/alarm-event-evaluation';
 
 // Infer types from schemas
 type Device = InferSelectModel<typeof devicesTableSchema>;
 
-/**
- * Determines if an event should trigger an alarm based on the zone's specific rules
- * This is the shared logic used for both alarm triggering and isAlarmEvent determination
- */
-async function shouldEventTriggerAlarmInZone(
-  event: StandardizedEvent,
-  deviceZone: { triggerBehavior: 'standard' | 'custom'; id: string },
-  alarmZonesRepo: ReturnType<typeof createAlarmZonesRepository>
-): Promise<boolean> {
-  if (deviceZone.triggerBehavior === 'standard') {
-    // Use standard trigger logic from alarm-event-types.ts
-    const displayState = (event.payload as any)?.displayState;
-    return shouldTriggerAlarm(event.type, event.subtype, displayState);
-  } else if (deviceZone.triggerBehavior === 'custom') {
-    // Check trigger overrides first, fallback to standard behavior
-    const overrides = await alarmZonesRepo.getTriggerOverrides(deviceZone.id);
-    const override = overrides.find(o => o.eventType === event.type);
-    
-    if (override) {
-      // Use custom override
-      return override.shouldTrigger;
-    } else {
-      // Fallback to standard behavior
-      const displayState = (event.payload as any)?.displayState;
-      return shouldTriggerAlarm(event.type, event.subtype, displayState);
-    }
-  }
-  
-  return false;
-}
+
 
 /**
  * Creates an enriched Redis message with location and space information
@@ -128,8 +100,7 @@ async function createEnrichedRedisMessage(
   let isAlarmEvent = false;
   if (deviceZone && connector?.organizationId) {
     try {
-      const alarmZonesRepo = createAlarmZonesRepository(connector.organizationId);
-      isAlarmEvent = await shouldEventTriggerAlarmInZone(event, deviceZone, alarmZonesRepo);
+      isAlarmEvent = await shouldStandardizedEventTriggerAlarmInZone(event, deviceZone, connector.organizationId);
     } catch (alarmEventError) {
       console.warn(`[EventProcessor] Failed to determine alarm event status for device ${deviceInfo.id}:`, alarmEventError);
       // Fallback to false for safety
@@ -458,10 +429,10 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
             // Only process alarm triggers for ARMED zones
             if (deviceZone.armedState === ArmedState.ARMED) {
               // Use shared alarm trigger logic
-              const shouldTrigger = await shouldEventTriggerAlarmInZone(event, {
+              const shouldTrigger = await shouldStandardizedEventTriggerAlarmInZone(event, {
                 id: deviceZone.id,
                 triggerBehavior: deviceZone.triggerBehavior as 'standard' | 'custom'
-              }, alarmZonesRepo);
+              }, connector.organizationId);
               
               if (shouldTrigger) {
                 // Trigger the alarm zone with audit logging and SSE publishing

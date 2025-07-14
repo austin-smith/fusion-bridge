@@ -447,7 +447,8 @@ export class OrgScopedDb {
         conditions.push(eq(spaces.id, filters.spaceId));
       }
 
-      return db.select({
+      // Base query structure
+      const query = db.select({
         // Event fields
         id: events.id,
         eventUuid: events.eventUuid,
@@ -475,6 +476,10 @@ export class OrgScopedDb {
         locationId: spaces.locationId,
         locationName: locations.name,
         locationPath: locations.path,
+        // Alarm zone fields (nullable) - include when alarm filtering is needed
+        alarmZoneId: alarmZoneDevices.zoneId,
+        alarmZoneName: alarmZones.name,
+        alarmZoneTriggerBehavior: alarmZones.triggerBehavior,
       })
       .from(events)
       // Event -> Connector (organization filter applied in WHERE clause)
@@ -490,10 +495,16 @@ export class OrgScopedDb {
       .leftJoin(spaces, eq(spaces.id, spaceDevices.spaceId))
       // Space -> Location (optional)
       .leftJoin(locations, eq(locations.id, spaces.locationId))
+      // Device -> AlarmZoneDevices (optional) - include for alarm evaluation
+      .leftJoin(alarmZoneDevices, eq(alarmZoneDevices.deviceId, devices.id))
+      // AlarmZoneDevices -> AlarmZones (optional)
+      .leftJoin(alarmZones, eq(alarmZones.id, alarmZoneDevices.zoneId))
       .where(and(...conditions))
       .orderBy(desc(events.timestamp))
       .limit(limit + 1) // Fetch one extra to determine hasNextPage
       .offset(offset);
+
+      return query;
     },
       
     findById: (eventUuid: string) =>

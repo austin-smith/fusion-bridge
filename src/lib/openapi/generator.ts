@@ -58,7 +58,9 @@ const eventsQuerySchema = z.object({
   eventCategories: z.string().optional().describe('Comma-separated event categories to filter by'),
   connectorCategory: z.string().optional().describe('Filter by connector category'),
   locationId: z.string().uuid().optional().describe('Filter by location UUID'),
+  spaceId: z.string().uuid().optional().describe('Filter by space UUID'),
   deviceNames: z.string().optional().describe('Comma-separated device names to filter by'),
+  alarmEventsOnly: z.enum(['true', 'false']).optional().describe('Filter to show only events that would trigger alarms based on zone-specific rules (default: false)'),
   timeStart: z.string().optional().describe('Start time for filtering (ISO date string)'),
   timeEnd: z.string().optional().describe('End time for filtering (ISO date string)'),
 }).openapi('EventsQuery');
@@ -223,6 +225,7 @@ const sseStreamQuerySchema = z.object({
   eventCategories: z.string().optional().describe('Comma-separated event categories to filter by'),
   eventTypes: z.string().optional().describe('Comma-separated event types to filter by'),
   includeThumbnails: z.boolean().optional().describe('Include Piko thumbnails for applicable events (default: false)'),
+  alarmEventsOnly: z.boolean().optional().describe('Filter to show only events that would trigger alarms based on zone-specific rules (default: false)'),
 }).openapi('SSEStreamQuery');
 
 const sseStatsResponseSchema = z.object({

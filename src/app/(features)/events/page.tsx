@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowUpDown, ArrowUp, ArrowDown, X, Activity, Layers, List, ChevronDown, ChevronRight, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Play, Loader2, ListTree, Maximize, Minimize, Gamepad, Plug } from 'lucide-react';
+import { Activity, ChevronDown, Play, Loader2, ListTree, Maximize, Minimize, Gamepad, Plug, CircleX } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -177,14 +177,7 @@ export default function EventsPage() {
     pageSize: 50,
   });
   const [tablePageCount, setTablePageCount] = useState<number>(0);
-  const [connectorCategoryFilter, setConnectorCategoryFilter] = useState('all');
-  const [locationFilter, setLocationFilter] = useState('all');
-  const [spaceFilter, setSpaceFilter] = useState('all');
   const [locationSpaceSearchTerm, setLocationSpaceSearchTerm] = useState('');
-  const initialEventCategories = Object.keys(EVENT_CATEGORY_DISPLAY_MAP).filter(
-    categoryKey => categoryKey !== EventCategory.DIAGNOSTICS
-  );
-  const [eventCategoryFilter, setEventCategoryFilter] = useState<string[]>(initialEventCategories);
   
   // Use store for view preferences instead of local state
   const viewMode = useFusionStore(state => state.eventsViewMode);
@@ -192,6 +185,20 @@ export default function EventsPage() {
   const setViewMode = useFusionStore(state => state.setEventsViewMode);
   const setCardSize = useFusionStore(state => state.setEventsCardSize);
   const initializeViewPreferences = useFusionStore(state => state.initializeViewPreferences);
+  
+  // Use store for filter preferences
+  const locationFilter = useFusionStore(state => state.eventsLocationFilter);
+  const spaceFilter = useFusionStore(state => state.eventsSpaceFilter);
+  const connectorCategoryFilter = useFusionStore(state => state.eventsConnectorCategoryFilter);
+  const eventCategoryFilter = useFusionStore(state => state.eventsEventCategoryFilter);
+  const alarmEventsOnly = useFusionStore(state => state.eventsAlarmEventsOnly);
+  const setLocationFilter = useFusionStore(state => state.setEventsLocationFilter);
+  const setSpaceFilter = useFusionStore(state => state.setEventsSpaceFilter);
+  const setConnectorCategoryFilter = useFusionStore(state => state.setEventsConnectorCategoryFilter);
+  const setEventCategoryFilter = useFusionStore(state => state.setEventsEventCategoryFilter);
+  const setAlarmEventsOnly = useFusionStore(state => state.setEventsAlarmEventsOnly);
+  const initializeFilterPreferences = useFusionStore(state => state.initializeFilterPreferences);
+  const resetFiltersToDefaults = useFusionStore(state => state.resetFiltersToDefaults);
 
   // --- Refs for managing fetch logic ---
   const isInitialLoadRef = useRef(true);
@@ -201,11 +208,13 @@ export default function EventsPage() {
   const prevConnectorCategoryFilterRef = useRef(connectorCategoryFilter);
   const prevLocationFilterRef = useRef(locationFilter);
   const prevSpaceFilterRef = useRef(spaceFilter);
+  const prevAlarmEventsOnlyRef = useRef(alarmEventsOnly);
 
-  // Initialize view preferences from localStorage (following app pattern)
+  // Initialize view and filter preferences from localStorage (following app pattern)
   useEffect(() => {
     initializeViewPreferences();
-  }, [initializeViewPreferences]);
+    initializeFilterPreferences();
+  }, [initializeViewPreferences, initializeFilterPreferences]);
 
   const [isCardViewFullScreen, setIsCardViewFullScreen] = useState(false);
   const cardViewContainerRef = useRef<HTMLDivElement>(null);
@@ -264,7 +273,8 @@ export default function EventsPage() {
     currentEventCategories: string[],
     currentConnectorCategory: string,
     currentLocationFilter: string,
-    currentSpaceFilter: string
+    currentSpaceFilter: string,
+    currentAlarmEventsOnly: boolean
   ): Promise<{ pagination: PaginationMetadata | null; actualDataLength: number } | null> => {
     try {
       const params = new URLSearchParams();
@@ -282,6 +292,9 @@ export default function EventsPage() {
       }
       if (currentSpaceFilter && currentSpaceFilter.toLowerCase() !== 'all') {
         params.append('spaceId', currentSpaceFilter);
+      }
+      if (currentAlarmEventsOnly) {
+        params.append('alarmEventsOnly', 'true');
       }
 
       const response = await fetch(`/api/events?${params.toString()}`);
@@ -380,8 +393,8 @@ export default function EventsPage() {
     if (!tableRef.current || isLoadingConnectors || isLoadingSpaces || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
 
     setLoading(true);
-    console.log('[EventsPage] Initial/Polling useEffect: Fetching initial data.');
-            fetchEvents(pagination.pageIndex + 1, pagination.pageSize, true, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter)
+            console.log('[EventsPage] Initial/Polling useEffect: Fetching initial data.');
+            fetchEvents(pagination.pageIndex + 1, pagination.pageSize, true, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly)
       .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
         if (fetchResult && fetchResult.pagination) {
           const pMeta = fetchResult.pagination;
@@ -404,6 +417,7 @@ export default function EventsPage() {
         prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
         prevLocationFilterRef.current = locationFilter;
         prevSpaceFilterRef.current = spaceFilter;
+        prevAlarmEventsOnlyRef.current = alarmEventsOnly;
       })
       .finally(() => {
         setLoading(false); 
@@ -412,7 +426,7 @@ export default function EventsPage() {
     const intervalId = setInterval(() => {
       if (!tableRef.current || isLoadingConnectors || isLoadingSpaces || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
       console.log('[EventsPage] Polling useEffect: Polling for data.');
-      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter)
+      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly)
         .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
           if (fetchResult && fetchResult.pagination) {
             const pMeta = fetchResult.pagination;
@@ -433,7 +447,7 @@ export default function EventsPage() {
       clearInterval(intervalId);
       isInitialLoadRef.current = true;
     };
-  }, [fetchEvents, pagination.pageIndex, pagination.pageSize, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
+  }, [fetchEvents, pagination.pageIndex, pagination.pageSize, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
   // --- END REVISED ---
 
   // --- REVISED: useEffect for actual pagination OR filter changes by the user ---
@@ -450,13 +464,15 @@ export default function EventsPage() {
     const connectorCategoryChanged = connectorCategoryFilter !== prevConnectorCategoryFilterRef.current;
     const locationFilterChanged = locationFilter !== prevLocationFilterRef.current;
     const spaceFilterChanged = spaceFilter !== prevSpaceFilterRef.current;
+    const alarmFilterChanged = alarmEventsOnly !== prevAlarmEventsOnlyRef.current;
 
-    if (eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged || spaceFilterChanged) {
+    if (eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged || spaceFilterChanged || alarmFilterChanged) {
       console.log('[EventsPage] Filter change detected.');
       prevEventCategoryFilterRef.current = eventCategoryFilter;
       prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
       prevLocationFilterRef.current = locationFilter;
       prevSpaceFilterRef.current = spaceFilter;
+      prevAlarmEventsOnlyRef.current = alarmEventsOnly;
       if (pagination.pageIndex !== 0) {
         console.log('[EventsPage] Resetting to page 0 due to filter change.');
         tableRef.current.setPageIndex(0);
@@ -464,12 +480,12 @@ export default function EventsPage() {
       }
     }
 
-    if (pageIndexChanged || pageSizeChanged || ((eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged || spaceFilterChanged) && pagination.pageIndex === 0)) {
+    if (pageIndexChanged || pageSizeChanged || ((eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged || spaceFilterChanged || alarmFilterChanged) && pagination.pageIndex === 0)) {
       setLoading(true); 
       console.log('[EventsPage] Pagination/Filter useEffect: Change requiring fetch. Fetching data.', 
-                  { pageIndex: pagination.pageIndex, pageSize: pagination.pageSize, eventCategories: eventCategoryFilter, connectorCategory: connectorCategoryFilter, locationFilter: locationFilter, spaceFilter: spaceFilter });
+                  { pageIndex: pagination.pageIndex, pageSize: pagination.pageSize, eventCategories: eventCategoryFilter, connectorCategory: connectorCategoryFilter, locationFilter: locationFilter, spaceFilter: spaceFilter, alarmEventsOnly: alarmEventsOnly });
       
-      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter)
+      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly)
         .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
           if (fetchResult && fetchResult.pagination) {
             const pMeta = fetchResult.pagination;
@@ -491,12 +507,13 @@ export default function EventsPage() {
           prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
           prevLocationFilterRef.current = locationFilter;
           prevSpaceFilterRef.current = spaceFilter;
+          prevAlarmEventsOnlyRef.current = alarmEventsOnly;
         })
         .finally(() => {
           setLoading(false); 
         });
     }
-  }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
+  }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
   // --- END REVISED ---
 
   const toggleCardViewFullScreen = () => { // Simpler toggle, actual API calls in useEffect
@@ -1053,26 +1070,48 @@ export default function EventsPage() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-56">
-          <DropdownMenuLabel>Event Category</DropdownMenuLabel>
+          <DropdownMenuLabel>Event Filters</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuCheckboxItem
+            checked={alarmEventsOnly}
+            onCheckedChange={setAlarmEventsOnly}
+            onSelect={(e) => e.preventDefault()}
+          >
+            Alarm events only
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Event Categories</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {Object.entries(EVENT_CATEGORY_DISPLAY_MAP).map(([categoryKey, displayName]) => (
             <DropdownMenuCheckboxItem
               key={categoryKey}
               checked={eventCategoryFilter.includes(categoryKey)}
               onCheckedChange={(checked) => {
-                setEventCategoryFilter(prev => 
-                  checked 
-                    ? [...prev, categoryKey] 
-                    : prev.filter(item => item !== categoryKey)
-                );
+                const newCategories = checked 
+                  ? [...eventCategoryFilter, categoryKey] 
+                  : eventCategoryFilter.filter(item => item !== categoryKey);
+                setEventCategoryFilter(newCategories);
               }}
               onSelect={(e) => e.preventDefault()}
             >
               {displayName}
             </DropdownMenuCheckboxItem>
           ))}
-        </DropdownMenuContent>
+                </DropdownMenuContent>
       </DropdownMenu>
+      <TooltipProvider delayDuration={100}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="icon" className="h-8 w-8 flex-shrink-0" onClick={resetFiltersToDefaults}>
+              <CircleX className="h-4 w-4" />
+              <span className="sr-only">Reset filters to defaults</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Reset filters to defaults</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <Dialog open={isHierarchyDialogOpen} onOpenChange={setIsHierarchyDialogOpen}>
         <TooltipProvider delayDuration={100}>
           <Tooltip>

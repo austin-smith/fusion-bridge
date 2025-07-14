@@ -9,6 +9,7 @@ import { TypedDeviceInfo, DisplayState, DeviceType, EventCategory, EventSubtype 
 import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
 import { PikoConfig } from '@/services/drivers/piko';
 import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
+import { shouldApiEventTriggerAlarmInZone } from '@/lib/alarm-event-evaluation';
 
 // Define the enriched event structure returned by organization-scoped queries
 interface OrgEnrichedEvent {
@@ -34,6 +35,10 @@ interface OrgEnrichedEvent {
   locationId: string | null;
   locationName: string | null;
   locationPath: string | null;
+  // Alarm zone fields (nullable)
+  alarmZoneId: string | null;
+  alarmZoneName: string | null;
+  alarmZoneTriggerBehavior: string | null;
 }
 
 // Modified Pagination Metadata Interface
@@ -286,6 +291,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
     const locationId = searchParams.get('locationId') || undefined;
     const spaceId = searchParams.get('spaceId') || undefined;
     const deviceNames = searchParams.get('deviceNames')?.split(',').map(n => n.trim()).filter(n => n.length > 0);
+    const alarmEventsOnly = searchParams.get('alarmEventsOnly') === 'true';
 
     let eventCategories: string[] | undefined = undefined;
     if (eventCategoriesRaw) {
@@ -314,11 +320,58 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
     // Use organization-scoped event query
     const recentEnrichedEvents: OrgEnrichedEvent[] = await orgDb.events.findRecent(limit, offset, filters);
 
-    // Determine if there is a next page
-    const hasNextPage = recentEnrichedEvents.length > limit;
+    // Apply alarm filtering if requested
+    let filteredEvents = recentEnrichedEvents;
+    if (alarmEventsOnly) {
+      console.log(`[API] Applying alarm-only filtering to ${recentEnrichedEvents.length} events`);
+      const alarmFilterPromises = recentEnrichedEvents.map(async (event) => {
+        // Only events from devices assigned to alarm zones can be alarm events
+        if (!event.alarmZoneId || !event.alarmZoneTriggerBehavior) {
+          return null; // Not an alarm event - device not in alarm zone
+        }
+
+        try {
+          // Parse payload for alarm evaluation
+          let payload: Record<string, any> | null = null;
+          try {
+            if (typeof event.standardizedPayload === 'string' && event.standardizedPayload) {
+              payload = JSON.parse(event.standardizedPayload);
+            } else {
+              payload = event.standardizedPayload as Record<string, any> | null;
+            }
+          } catch (e) {
+            console.warn(`Failed to parse payload for alarm evaluation on event ${event.eventUuid}:`, e);
+          }
+
+          // Use shared alarm evaluation logic
+          const wouldTriggerAlarm = await shouldApiEventTriggerAlarmInZone(
+            event.standardizedEventType,
+            event.standardizedEventSubtype,
+            payload,
+            {
+              id: event.alarmZoneId,
+              triggerBehavior: event.alarmZoneTriggerBehavior as 'standard' | 'custom'
+            },
+            authContext.organizationId
+          );
+
+          return wouldTriggerAlarm ? event : null;
+        } catch (error) {
+          console.warn(`Error evaluating alarm status for event ${event.eventUuid}:`, error);
+          return null; // Exclude on error for safety
+        }
+      });
+
+      const alarmFilterResults = await Promise.all(alarmFilterPromises);
+      filteredEvents = alarmFilterResults.filter((event): event is OrgEnrichedEvent => event !== null);
+      console.log(`[API] Alarm filtering: ${recentEnrichedEvents.length} -> ${filteredEvents.length} events`);
+    }
+
+    // Determine if there is a next page based on filtered results
+    const hasNextPage = filteredEvents.length > limit;
 
     // Slice the array to return only the requested number of items
-    const eventsForCurrentPage = recentEnrichedEvents.slice(0, limit);
+    const eventsForCurrentPage = filteredEvents.slice(0, limit);
 
     // Map the organization-scoped results to the API response structure
     const apiEvents = eventsForCurrentPage.map((event: OrgEnrichedEvent): ApiEnrichedEvent => {

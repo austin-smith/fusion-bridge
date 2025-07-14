@@ -3,7 +3,7 @@ import { produce, Draft, enableMapSet } from 'immer';
 import { toast } from 'sonner'; // <-- Import toast
 import { PikoServer } from '@/types';
 import type { StandardizedEvent } from '@/types/events';
-import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, ArmedState, ActionableState, ON, OFF } from '@/lib/mappings/definitions';
+import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, ArmedState, ActionableState, ON, OFF, EVENT_CATEGORY_DISPLAY_MAP } from '@/lib/mappings/definitions';
 import type { DeviceWithConnector, ConnectorWithConfig, Location, Space, AlarmZone, ApiResponse, ArmingSchedule, AlarmZoneTriggerOverride, CreateTriggerOverrideData } from '@/types/index';
 // Re-export the ArmingSchedule type
 export type { ArmingSchedule } from '@/types/index';
@@ -15,6 +15,13 @@ import { authClient } from '@/lib/auth/client'; // Import authClient
 
 // Enable Immer plugin for Map/Set support
 enableMapSet();
+
+// Helper function for default event categories
+const getDefaultEventCategories = (): string[] => {
+  return Object.keys(EVENT_CATEGORY_DISPLAY_MAP).filter(
+    categoryKey => categoryKey !== EventCategory.DIAGNOSTICS
+  );
+};
 
 // --- Automation Types ---
 export interface Automation {
@@ -212,9 +219,14 @@ interface FusionState {
   isLoadingOpenAi: boolean;
   errorOpenAi: string | null;
   
-  // --- User View Preferences ---
+  // --- Events Page Preferences ---
   eventsViewMode: 'table' | 'card';
   eventsCardSize: 'small' | 'medium' | 'large';
+  eventsLocationFilter: string;
+  eventsSpaceFilter: string;
+  eventsConnectorCategoryFilter: string;
+  eventsEventCategoryFilter: string[];
+  eventsAlarmEventsOnly: boolean;
   
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
@@ -346,10 +358,17 @@ interface FusionState {
   // --- OpenAI Service Actions ---
   fetchOpenAiStatus: () => Promise<void>;
   
-  // --- User View Preferences Actions ---
+  // --- Events Page Preferences Actions ---
   setEventsViewMode: (mode: 'table' | 'card') => void;
   setEventsCardSize: (size: 'small' | 'medium' | 'large') => void;
+  setEventsLocationFilter: (locationId: string) => void;
+  setEventsSpaceFilter: (spaceId: string) => void;
+  setEventsConnectorCategoryFilter: (category: string) => void;
+  setEventsEventCategoryFilter: (categories: string[]) => void;
+  setEventsAlarmEventsOnly: (alarmOnly: boolean) => void;
   initializeViewPreferences: () => void;
+  initializeFilterPreferences: () => void;
+  resetFiltersToDefaults: () => void;
 }
 
 // Initial state for MQTT (default)
@@ -470,6 +489,13 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   // --- User View Preferences ---
   eventsViewMode: 'table',
   eventsCardSize: 'medium',
+  
+  // --- Events Page Preferences Initial Values ---
+  eventsLocationFilter: 'all',
+  eventsSpaceFilter: 'all', 
+  eventsConnectorCategoryFilter: 'all',
+  eventsEventCategoryFilter: getDefaultEventCategories(),
+  eventsAlarmEventsOnly: false,
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -2047,7 +2073,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
-  // --- User View Preferences Actions ---
+  // --- Events Page Preferences Actions ---
   setEventsViewMode: (mode: 'table' | 'card') => {
     set({ eventsViewMode: mode });
     if (typeof window !== 'undefined') {
@@ -2080,6 +2106,105 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       // Server-side fallback
       set({ eventsViewMode: 'table', eventsCardSize: 'medium' });
     }
+  },
+
+  setEventsLocationFilter: (locationId: string) => {
+    set({ eventsLocationFilter: locationId });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('eventsLocationFilterPreference', locationId);
+    }
+  },
+  setEventsSpaceFilter: (spaceId: string) => {
+    set({ eventsSpaceFilter: spaceId });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('eventsSpaceFilterPreference', spaceId);
+    }
+  },
+  setEventsConnectorCategoryFilter: (category: string) => {
+    set({ eventsConnectorCategoryFilter: category });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('eventsConnectorCategoryFilterPreference', category);
+    }
+  },
+  setEventsEventCategoryFilter: (categories: string[]) => {
+    set({ eventsEventCategoryFilter: categories });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('eventsEventCategoryFilterPreference', JSON.stringify(categories));
+    }
+  },
+  setEventsAlarmEventsOnly: (alarmOnly: boolean) => {
+    set({ eventsAlarmEventsOnly: alarmOnly });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('eventsAlarmEventsOnlyPreference', alarmOnly.toString());
+    }
+  },
+  initializeFilterPreferences: () => {
+    if (typeof window !== 'undefined') {
+      // Load from localStorage with fallbacks
+      const storedLocationFilter = localStorage.getItem('eventsLocationFilterPreference') || 'all';
+      const storedSpaceFilter = localStorage.getItem('eventsSpaceFilterPreference') || 'all';
+      const storedConnectorCategoryFilter = localStorage.getItem('eventsConnectorCategoryFilterPreference') || 'all';
+      const storedEventCategoryFilter = localStorage.getItem('eventsEventCategoryFilterPreference');
+      const storedAlarmEventsOnly = localStorage.getItem('eventsAlarmEventsOnlyPreference');
+      
+             // Parse event categories with fallback to default (all except diagnostics)
+       let eventCategoryFilter: string[] = getDefaultEventCategories();
+       if (storedEventCategoryFilter) {
+         try {
+           eventCategoryFilter = JSON.parse(storedEventCategoryFilter);
+         } catch (e) {
+           console.warn('[FusionStore] Failed to parse stored event category filter, using defaults');
+         }
+       }
+      
+      const alarmEventsOnly = storedAlarmEventsOnly === 'true';
+      
+      set({ 
+        eventsLocationFilter: storedLocationFilter,
+        eventsSpaceFilter: storedSpaceFilter,
+        eventsConnectorCategoryFilter: storedConnectorCategoryFilter,
+        eventsEventCategoryFilter: eventCategoryFilter,
+        eventsAlarmEventsOnly: alarmEventsOnly
+      });
+      
+      console.log('[FusionStore] Filter preferences loaded from localStorage:', { 
+        storedLocationFilter, 
+        storedSpaceFilter, 
+        storedConnectorCategoryFilter, 
+        eventCategoryFilter: eventCategoryFilter.length,
+        alarmEventsOnly 
+      });
+         } else {
+       // Server-side fallback
+       set({ 
+         eventsLocationFilter: 'all',
+         eventsSpaceFilter: 'all',
+         eventsConnectorCategoryFilter: 'all', 
+         eventsEventCategoryFilter: getDefaultEventCategories(),
+         eventsAlarmEventsOnly: false
+       });
+     }
+  },
+  resetFiltersToDefaults: () => {
+    const defaultEventCategories = getDefaultEventCategories();
+    
+    set({
+      eventsLocationFilter: 'all',
+      eventsSpaceFilter: 'all', 
+      eventsConnectorCategoryFilter: 'all',
+      eventsEventCategoryFilter: defaultEventCategories,
+      eventsAlarmEventsOnly: false
+    });
+    
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('eventsLocationFilterPreference', 'all');
+      localStorage.setItem('eventsSpaceFilterPreference', 'all');
+      localStorage.setItem('eventsConnectorCategoryFilterPreference', 'all');
+      localStorage.setItem('eventsEventCategoryFilterPreference', JSON.stringify(defaultEventCategories));
+      localStorage.setItem('eventsAlarmEventsOnlyPreference', 'false');
+    }
+    
+    console.log('[FusionStore] Filters reset to defaults');
   },
 
 })); 

@@ -114,7 +114,6 @@ interface AlarmZone {
   id: string;
   name: string;
 }
-// --- END NEW ---
 
 // Update the skeleton for a single-column layout
 function AutomationCardSkeleton() {
@@ -196,11 +195,10 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
 
   // --- State for last runs ---
   const [lastRuns, setLastRuns] = useState<Map<string, AutomationExecutionSummary>>(new Map());
-  // --- END NEW ---
+
   // --- State for execution details modal ---
   const [selectedExecution, setSelectedExecution] = useState<AutomationExecutionSummary | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  // --- END NEW ---
   const router = useRouter();
 
   // Fetch last runs for all automations
@@ -238,7 +236,6 @@ export function AutomationCardView({ selectedLocationId, selectedTags = [] }: Au
     setSelectedExecution(execution);
     setModalOpen(true);
   };
-  // --- END NEW ---
 
   if (loading) {
     return <AutomationCardSkeleton />;
@@ -524,7 +521,6 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
   const currentRuleLocationScope = automation.locationScopeId && safeLocations.length > 0
     ? safeLocations.find(loc => loc.id === automation.locationScopeId)
     : null;
-  // --- END NEW ---
 
   // Get status color class based on enabled state
   const getStatusColorClass = (enabled: boolean): string => {
