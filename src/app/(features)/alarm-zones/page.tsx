@@ -38,6 +38,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DndContext,
+  DragEndEvent,
+  useSensor,
+  useSensors,
+  PointerSensor,
+  KeyboardSensor,
+  closestCenter,
+  useDroppable
+} from '@dnd-kit/core';
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 
 export default function AlarmZonesPage() {
   // Set page title
@@ -108,6 +119,18 @@ export default function AlarmZonesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [locationFilter, setLocationFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  // dnd-kit sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     fetchLocations();
@@ -225,6 +248,68 @@ export default function AlarmZonesPage() {
     }
   };
 
+  // Droppable wrapper for alarm zone cards
+  const AlarmZoneCardWrapper = ({ zone, children }: { zone: AlarmZone; children: React.ReactNode }) => {
+    const { setNodeRef, isOver } = useDroppable({
+      id: zone.id,
+      data: { type: 'alarm-zone' }
+    });
+
+    return (
+      <div
+        ref={setNodeRef}
+        id={`alarm-zone-${zone.id}`}
+        className="mb-3 last:mb-0"
+      >
+        {React.cloneElement(children as React.ReactElement, { isOver })}
+      </div>
+    );
+  };
+
+  // Drag and Drop handler
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id && active.data.current?.type === 'device' && over.data.current?.type === 'alarm-zone') {
+      const deviceId = active.id as string;
+      const targetZoneId = over.id as string;
+      const sourceZoneId = active.data.current?.sourceZoneId as string | undefined;
+
+      // Find details for potential toast messages
+      const device = allDevices.find(d => d.id === deviceId);
+      const targetZone = alarmZones.find(z => z.id === targetZoneId);
+
+      if (!deviceId || !targetZoneId || !targetZone) {
+        console.error("DragEnd: Missing device ID, target zone ID, or target zone not found.", { deviceId, targetZoneId, sourceZoneId });
+        toast.error("Failed to move device: Invalid data.");
+        return;
+      }
+      
+      if (sourceZoneId === targetZoneId) {
+        console.log("DragEnd: Source and target zone are the same. No action taken.");
+        return;
+      }
+
+      try {
+        // For alarm zones, we assign the device to the new zone (which automatically removes it from the old one)
+        const success = await assignDeviceToAlarmZone(targetZoneId, deviceId);
+        
+        if (success) {
+          toast.success(`Moved ${device?.name ?? 'device'} to ${targetZone.name}.`);
+          console.log(`Device ${deviceId} moved to alarm zone ${targetZoneId}.`);
+        } else {
+          toast.error(`Failed to move ${device?.name ?? 'device'} to ${targetZone.name}.`);
+          console.warn(`Failed to move device ${deviceId} to alarm zone ${targetZoneId}.`);
+        }
+      } catch (error) { 
+        console.error("Error moving device:", error);
+        toast.error(`An error occurred while moving ${device?.name ?? 'device'}.`);
+      }
+    } else {
+      console.log("DragEnd: Invalid drop target or condition not met", { active, over });
+    }
+  };
+
   // Skeleton Component for Alarm Zones Page - Matches Real AlarmZoneCard Structure
   const AlarmZonesPageSkeleton = ({ locationCount = 2, zonesPerLocation = 2 }: { locationCount?: number; zonesPerLocation?: number }) => {
     return (
@@ -305,35 +390,30 @@ export default function AlarmZonesPage() {
     return grouped;
   }, [alarmZones]);
 
-  // Filter locations and zones based on search, location, and status filters
+  // Filter locations and zones separately for stability (like locations page)
   const filteredSortedLocations = useMemo(() => {
     const lowerSearchTerm = searchTerm.toLowerCase();
     
-    // Filter locations
+    // First filter locations
     let filteredLocations = locations;
     if (locationFilter !== 'all') {
       filteredLocations = locations.filter(location => location.id === locationFilter);
     }
     
-    // Filter by search term and status
-    if (searchTerm || statusFilter !== 'all') {
-      filteredLocations = filteredLocations.filter(location => {
-        const locationNameMatch = location.name.toLowerCase().includes(lowerSearchTerm);
-        const locationZones = zonesByLocation[location.id] || [];
-        
-        // Filter zones by status and search
-        const filteredZones = locationZones.filter(zone => {
-          const nameMatch = zone.name.toLowerCase().includes(lowerSearchTerm);
-          const statusMatch = statusFilter === 'all' || zone.armedState === statusFilter;
-          return nameMatch && statusMatch;
-        });
-        
-        return locationNameMatch || filteredZones.length > 0;
-      });
+    if (!searchTerm) {
+      return [...filteredLocations].sort((a, b) => a.name.localeCompare(b.name));
     }
     
-    return [...filteredLocations].sort((a, b) => a.name.localeCompare(b.name));
-  }, [locations, searchTerm, locationFilter, statusFilter, zonesByLocation]);
+    // Filter locations by name OR if they contain zones that match the search
+    const filtered = filteredLocations.filter(location => 
+      location.name.toLowerCase().includes(lowerSearchTerm) ||
+      (zonesByLocation[location.id] || []).some(zone => 
+        zone.name.toLowerCase().includes(lowerSearchTerm)
+      )
+    );
+    
+    return filtered.sort((a, b) => a.name.localeCompare(b.name));
+  }, [locations, searchTerm, locationFilter, zonesByLocation]);
 
   const isFilteredEmptyState = !isLoadingLocations && !isLoadingAlarmZones && 
                                filteredSortedLocations.length === 0 && 
@@ -397,7 +477,8 @@ export default function AlarmZonesPage() {
   );
 
   return (
-    <div className="flex flex-col h-full"> 
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <div className="flex flex-col h-full"> 
       <div className="p-4 border-b flex-shrink-0">
         <PageHeader 
           title="Alarm Zones"
@@ -427,18 +508,20 @@ export default function AlarmZonesPage() {
             <div className="space-y-6">
               {filteredSortedLocations.map(location => {
                 const locationZones = zonesByLocation[location.id] || [];
-                const filteredZones = searchTerm || statusFilter !== 'all'
-                  ? locationZones.filter(zone => {
-                      const nameMatch = zone.name.toLowerCase().includes(searchTerm.toLowerCase());
-                      const statusMatch = statusFilter === 'all' || zone.armedState === statusFilter;
-                      return nameMatch && statusMatch;
-                    })
-                  : locationZones;
-                  
-                if (filteredZones.length === 0 && (searchTerm || statusFilter !== 'all')) {
-                  return null; // Hide locations with no matching zones when filtering
-                }
+                const lowerSearchTerm = searchTerm.toLowerCase();
                 
+                // Filter zones by status and search (like locations page pattern)
+                const filteredZones = locationZones.filter(zone => {
+                  const nameMatch = zone.name.toLowerCase().includes(lowerSearchTerm);
+                  const statusMatch = statusFilter === 'all' || zone.armedState === statusFilter;
+                  return nameMatch && statusMatch;
+                });
+                
+                // Hide locations with no matching zones when searching (unless location name matches)
+                if (filteredZones.length === 0 && searchTerm && !location.name.toLowerCase().includes(lowerSearchTerm)) {
+                  return null;
+                }
+
                 return (
                   <Card key={location.id} className="overflow-visible">
                     <CardHeader className="flex flex-row items-center justify-between pb-3 bg-muted/25">
@@ -459,7 +542,7 @@ export default function AlarmZonesPage() {
                     <CardContent className="pt-3">
                       {filteredZones.length > 0 ? (
                         filteredZones.map(zone => (
-                          <div key={zone.id} className="mb-3 last:mb-0">
+                          <AlarmZoneCardWrapper key={zone.id} zone={zone}>
                             <AlarmZoneCard 
                               zone={zone}
                               allDevices={allDevices}
@@ -473,7 +556,7 @@ export default function AlarmZonesPage() {
                               onViewAuditLog={handleViewAuditLog}
                               onViewCameras={handleViewCameras}
                             />
-                          </div>
+                          </AlarmZoneCardWrapper>
                         ))
                       ) : (
                         <div className="px-4 py-6 text-center">
@@ -501,7 +584,7 @@ export default function AlarmZonesPage() {
                   </CardHeader>
                   <CardContent>
                     {zonesByLocation['unassigned'].map(zone => (
-                      <div key={zone.id} className="mb-3 last:mb-0">
+                      <AlarmZoneCardWrapper key={zone.id} zone={zone}>
                         <AlarmZoneCard 
                           zone={zone}
                           allDevices={allDevices}
@@ -515,7 +598,7 @@ export default function AlarmZonesPage() {
                           onViewAuditLog={handleViewAuditLog}
                           onViewCameras={handleViewCameras}
                         />
-                      </div>
+                      </AlarmZoneCardWrapper>
                     ))}
                   </CardContent>
                 </Card>
@@ -618,6 +701,7 @@ export default function AlarmZonesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+      </div>
+    </DndContext>
   );
 } 

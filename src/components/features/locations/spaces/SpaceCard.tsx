@@ -17,7 +17,7 @@ interface SpaceCardProps {
   isOver?: boolean;     // Is a draggable item hovering over this space?
   isDevicesExpanded: boolean;
   onToggleDetails: (spaceId: string) => void;
-  onAssignDevice: (space: Space) => void;
+  onAssignDevices: (space: Space) => void;
   onEditSpace: (space: Space) => void;
   onDeleteSpace: (space: Space) => void;
   onViewCameras: (space: Space) => void; // Callback to open the camera wall
@@ -30,7 +30,7 @@ export const SpaceCard: React.FC<SpaceCardProps> = ({
   isOver,
   isDevicesExpanded,
   onToggleDetails,
-  onAssignDevice,
+  onAssignDevices,
   onEditSpace,
   onDeleteSpace,
   onViewCameras,
@@ -75,7 +75,7 @@ export const SpaceCard: React.FC<SpaceCardProps> = ({
            }
           <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <CardTitle className="text-base font-medium truncate" title={space.name}>{space.name}</CardTitle>
-          <Badge variant={hasDevices ? "default" : "outline"} className="font-normal px-1.5 py-0.5 text-xs ml-2 flex-shrink-0">
+          <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs ml-2 flex-shrink-0">
             {hasDevices ? `${deviceCount} Device${deviceCount !== 1 ? 's' : ''}` : 'No Devices'}
           </Badge>
          </div>
@@ -103,7 +103,7 @@ export const SpaceCard: React.FC<SpaceCardProps> = ({
                 </Tooltip>
               </TooltipProvider>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={(e) => {e.stopPropagation(); onAssignDevice(space);}}>
+                <DropdownMenuItem onClick={(e) => {e.stopPropagation(); onAssignDevices(space);}}>
                   <Link className="h-4 w-4 mr-2" />
                   Assign Devices
                 </DropdownMenuItem>
@@ -156,7 +156,7 @@ export const SpaceCard: React.FC<SpaceCardProps> = ({
               <SpaceDevicesSubRow
                 space={space}
                 allDevices={allDevices}
-                onAssignDevice={onAssignDevice}
+                onAssignDevices={onAssignDevices}
               />
           </CardContent>
       )}

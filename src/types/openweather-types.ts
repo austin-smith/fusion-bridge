@@ -46,7 +46,31 @@ export const OpenWeatherOneCallResponseSchema = z.object({
   current: OpenWeatherCurrentWeatherSchema,
 });
 
-// Our processed sunrise/sunset result
+// Weather condition data from OpenWeather
+export interface WeatherCondition {
+  id: number;
+  main: string;
+  description: string;
+  icon: string;
+}
+
+// Our processed weather result including sunrise/sunset
+export interface WeatherData {
+  latitude: number;
+  longitude: number;
+  timezone: string;
+  timezoneOffset: number; // seconds from UTC
+  currentTime: Date;
+  sunrise: Date;
+  sunset: Date;
+  temperature: number;
+  feelsLike: number;
+  humidity: number;
+  pressure: number;
+  weather: WeatherCondition[];
+}
+
+// Legacy interface for backward compatibility
 export interface SunriseSunsetData {
   latitude: number;
   longitude: number;

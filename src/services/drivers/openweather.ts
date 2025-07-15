@@ -2,24 +2,25 @@ import { z } from 'zod';
 import { 
   OpenWeatherOneCallResponseSchema,
   type SunriseSunsetData,
+  type WeatherData,
 } from '@/types/openweather-types';
 
 // Base URL for OpenWeather One Call API 3.0
 const OPENWEATHER_ONECALL_URL = 'https://api.openweathermap.org/data/3.0/onecall';
 
 /**
- * Gets current weather data including sunrise/sunset using OpenWeather's One Call API 3.0
+ * Gets complete weather data including current conditions, sunrise/sunset using OpenWeather's One Call API 3.0
  * 
  * @param apiKey OpenWeather API key
  * @param latitude Latitude coordinate
  * @param longitude Longitude coordinate
- * @returns Promise resolving to sunrise/sunset data or null if failed
+ * @returns Promise resolving to complete weather data or null if failed
  */
-export async function getCurrentWeatherData(
+export async function getWeatherData(
   apiKey: string,
   latitude: number,
   longitude: number
-): Promise<SunriseSunsetData | null> {
+): Promise<WeatherData | null> {
   const logPrefix = '[OpenWeather One Call API]';
   
   if (!apiKey) {
@@ -41,6 +42,7 @@ export async function getCurrentWeatherData(
   url.searchParams.set('lat', latitude.toString());
   url.searchParams.set('lon', longitude.toString());
   url.searchParams.set('exclude', 'minutely,hourly,daily'); // Only get current data with sunrise/sunset
+  url.searchParams.set('units', 'imperial'); // Get temperature in Fahrenheit
   url.searchParams.set('appid', apiKey);
 
   console.log(`${logPrefix} Getting weather data for: ${latitude}, ${longitude}`);
@@ -73,8 +75,8 @@ export async function getCurrentWeatherData(
 
     const weatherData = parseResult.data;
 
-    // Convert Unix timestamps to Date objects
-    const result: SunriseSunsetData = {
+    // Convert Unix timestamps to Date objects and extract weather information
+    const result: WeatherData = {
       latitude: weatherData.lat,
       longitude: weatherData.lon,
       timezone: weatherData.timezone,
@@ -82,12 +84,23 @@ export async function getCurrentWeatherData(
       currentTime: new Date(weatherData.current.dt * 1000),
       sunrise: new Date(weatherData.current.sunrise * 1000),
       sunset: new Date(weatherData.current.sunset * 1000),
+      temperature: weatherData.current.temp,
+      feelsLike: weatherData.current.feels_like,
+      humidity: weatherData.current.humidity,
+      pressure: weatherData.current.pressure,
+      weather: weatherData.current.weather.map(w => ({
+        id: w.id,
+        main: w.main,
+        description: w.description,
+        icon: w.icon,
+      })),
     };
 
     console.log(`${logPrefix} Successfully processed weather data:`);
     console.log(`${logPrefix} Timezone: ${result.timezone}`);
     console.log(`${logPrefix} Sunrise: ${result.sunrise.toISOString()}`);
     console.log(`${logPrefix} Sunset: ${result.sunset.toISOString()}`);
+    console.log(`${logPrefix} Weather: ${result.weather[0]?.main} (${result.weather[0]?.description})`);
 
     return result;
 
@@ -95,6 +108,38 @@ export async function getCurrentWeatherData(
     console.error(`${logPrefix} Network or parsing error:`, error);
     return null;
   }
+}
+
+/**
+ * Gets current weather data including sunrise/sunset using OpenWeather's One Call API 3.0
+ * 
+ * @param apiKey OpenWeather API key
+ * @param latitude Latitude coordinate
+ * @param longitude Longitude coordinate
+ * @returns Promise resolving to sunrise/sunset data or null if failed
+ * @deprecated Use getWeatherData instead for complete weather information
+ */
+export async function getCurrentWeatherData(
+  apiKey: string,
+  latitude: number,
+  longitude: number
+): Promise<SunriseSunsetData | null> {
+  const weatherData = await getWeatherData(apiKey, latitude, longitude);
+  
+  if (!weatherData) {
+    return null;
+  }
+  
+  // Convert to legacy format
+  return {
+    latitude: weatherData.latitude,
+    longitude: weatherData.longitude,
+    timezone: weatherData.timezone,
+    timezoneOffset: weatherData.timezoneOffset,
+    currentTime: weatherData.currentTime,
+    sunrise: weatherData.sunrise,
+    sunset: weatherData.sunset,
+  };
 }
 
 /**
@@ -126,7 +171,7 @@ export async function testApiKey(
   console.log(`${logPrefix} Testing API key with coordinates: ${latitude}, ${longitude}`);
 
   try {
-    const result = await getCurrentWeatherData(apiKey, latitude, longitude);
+    const result = await getWeatherData(apiKey, latitude, longitude);
 
     if (result) {
       return {

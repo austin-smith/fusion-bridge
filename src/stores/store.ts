@@ -861,8 +861,27 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to assign device to space');
         }
-        // Refresh spaces to update device assignments
-        await get().fetchSpaces();
+        
+        set((state) => ({
+          spaces: state.spaces.map(space => {
+            if (space.id === spaceId) {
+              // Add device to target space
+              const newDeviceIds = space.deviceIds || [];
+              return {
+                ...space,
+                deviceIds: newDeviceIds.includes(deviceId) ? newDeviceIds : [...newDeviceIds, deviceId]
+              };
+            } else if (space.deviceIds?.includes(deviceId)) {
+              // Remove device from other spaces
+              return {
+                ...space,
+                deviceIds: space.deviceIds.filter(id => id !== deviceId)
+              };
+            }
+            return space;
+          })
+        }));
+        
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
@@ -882,8 +901,15 @@ export const useFusionStore = create<FusionState>((set, get) => ({
          if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to remove device from space');
         }
-        // Refresh spaces to update device assignments
-        await get().fetchSpaces();
+        
+        set((state) => ({
+          spaces: state.spaces.map(space => 
+            space.id === spaceId 
+              ? { ...space, deviceIds: space.deviceIds?.filter(id => id !== deviceId) || [] }
+              : space
+          )
+        }));
+        
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
@@ -905,8 +931,22 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to assign devices to space');
       }
-      // Refresh spaces to update device assignments
-      await get().fetchSpaces();
+      
+      set((state) => ({
+        spaces: state.spaces.map(space => {
+          if (space.id === spaceId) {
+            // Add devices to target space
+            const existingIds = space.deviceIds || [];
+            const newIds = deviceIds.filter(id => !existingIds.includes(id));
+            return { ...space, deviceIds: [...existingIds, ...newIds] };
+          } else if (space.deviceIds?.some(id => deviceIds.includes(id))) {
+            // Remove devices from other spaces
+            return { ...space, deviceIds: space.deviceIds.filter(id => !deviceIds.includes(id)) };
+          }
+          return space;
+        })
+      }));
+      
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -927,8 +967,15 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to remove devices from space');
       }
-      // Refresh spaces to update device assignments
-      await get().fetchSpaces();
+      
+      set((state) => ({
+        spaces: state.spaces.map(space => 
+          space.id === spaceId 
+            ? { ...space, deviceIds: space.deviceIds?.filter(id => !deviceIds.includes(id)) || [] }
+            : space
+        )
+      }));
+      
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -1064,8 +1111,27 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to assign device to alarm zone');
         }
-        // Refresh alarm zones to update device assignments
-        await get().fetchAlarmZones();
+        
+        set((state) => ({
+          alarmZones: state.alarmZones.map(zone => {
+            if (zone.id === zoneId) {
+              // Add device to target zone
+              const newDeviceIds = zone.deviceIds || [];
+              return {
+                ...zone,
+                deviceIds: newDeviceIds.includes(deviceId) ? newDeviceIds : [...newDeviceIds, deviceId]
+              };
+            } else if (zone.deviceIds?.includes(deviceId)) {
+              // Remove device from other zones
+              return {
+                ...zone,
+                deviceIds: zone.deviceIds.filter(id => id !== deviceId)
+              };
+            }
+            return zone;
+          })
+        }));
+        
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
@@ -1085,8 +1151,15 @@ export const useFusionStore = create<FusionState>((set, get) => ({
          if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to remove device from alarm zone');
         }
-        // Refresh alarm zones to update device assignments
-        await get().fetchAlarmZones();
+        
+        set((state) => ({
+          alarmZones: state.alarmZones.map(zone => 
+            zone.id === zoneId 
+              ? { ...zone, deviceIds: zone.deviceIds?.filter(id => id !== deviceId) || [] }
+              : zone
+          )
+        }));
+        
         return true;
     } catch (err) {
        const message = err instanceof Error ? err.message : 'Unknown error';
@@ -1108,8 +1181,22 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to assign devices to alarm zone');
       }
-      // Refresh alarm zones to update device assignments
-      await get().fetchAlarmZones();
+      
+      set((state) => ({
+        alarmZones: state.alarmZones.map(zone => {
+          if (zone.id === zoneId) {
+            // Add devices to target zone
+            const existingIds = zone.deviceIds || [];
+            const newIds = deviceIds.filter(id => !existingIds.includes(id));
+            return { ...zone, deviceIds: [...existingIds, ...newIds] };
+          } else if (zone.deviceIds?.some(id => deviceIds.includes(id))) {
+            // Remove devices from other zones
+            return { ...zone, deviceIds: zone.deviceIds.filter(id => !deviceIds.includes(id)) };
+          }
+          return zone;
+        })
+      }));
+      
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -1130,8 +1217,15 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to remove devices from alarm zone');
       }
-      // Refresh alarm zones to update device assignments
-      await get().fetchAlarmZones();
+      
+      set((state) => ({
+        alarmZones: state.alarmZones.map(zone => 
+          zone.id === zoneId 
+            ? { ...zone, deviceIds: zone.deviceIds?.filter(id => !deviceIds.includes(id)) || [] }
+            : zone
+        )
+      }));
+      
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';

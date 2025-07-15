@@ -135,8 +135,6 @@ export const AlarmZoneDevicesSubRow: React.FC<AlarmZoneDevicesSubRowProps> = ({
   allDevices,
   onAssignDevices,
 }) => {
-  console.log(`[AlarmZoneDevicesSubRow] Rendering for Zone: ${zone.name} (${zone.id})`, { deviceIds: zone.deviceIds });
-
   const assignedDeviceIds = useMemo(() => new Set(zone.deviceIds || []), [zone.deviceIds]);
 
   const assignedDevicesInZone = useMemo(() => {
@@ -144,7 +142,6 @@ export const AlarmZoneDevicesSubRow: React.FC<AlarmZoneDevicesSubRowProps> = ({
   }, [allDevices, assignedDeviceIds]);
 
   const groupedDevices = useMemo(() => {
-    console.log(`[AlarmZoneDevicesSubRow] Recalculating groupedDevices for Zone: ${zone.name}`);
     const groups: Record<string, DeviceWithConnector[]> = {};
     assignedDevicesInZone.forEach(device => {
         const type = device.deviceTypeInfo?.type ?? "Unknown";
@@ -154,7 +151,7 @@ export const AlarmZoneDevicesSubRow: React.FC<AlarmZoneDevicesSubRowProps> = ({
     Object.values(groups).forEach(group => group.sort((a, b) => a.name.localeCompare(b.name)));
     const sortedGroupEntries = Object.entries(groups).sort(([typeA], [typeB]) => typeA.localeCompare(typeB));
     return Object.fromEntries(sortedGroupEntries);
-  }, [assignedDevicesInZone, zone.name]);
+  }, [assignedDevicesInZone]);
 
   const totalDeviceCount = assignedDevicesInZone.length;
 

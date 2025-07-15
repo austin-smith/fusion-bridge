@@ -4,7 +4,9 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box } from 'lucide-react';
+import { WeatherIcon } from '@/components/ui/weather-icon';
 import { LocationEditDialog } from '@/components/features/locations/locations/location-edit-dialog';
+import { LocationWeatherIcon } from '@/components/features/locations/locations/location-weather-icon';
 import { SpaceEditDialog } from '@/components/features/locations/spaces/space-edit-dialog';
 import { SpaceDeviceAssignmentDialog } from '@/components/features/locations/spaces/space-device-assignment-dialog';
 import { CameraWallDialog } from '@/components/features/common/camera-wall-dialog';
@@ -553,6 +555,9 @@ export default function LocationsPage() {
                                          <div className="flex items-center gap-2 min-w-0">
                                            <Building className="h-5 w-5 flex-shrink-0" />
                                            <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
+                                           {location.latitude && location.longitude && (
+                                             <LocationWeatherIcon locationId={location.id} />
+                                           )}
                                          </div>
                                          <div className="flex items-center gap-1 flex-shrink-0">
                                              <DropdownMenu>
@@ -593,7 +598,7 @@ export default function LocationsPage() {
                                                      allDevices={allDevices}
                                                      isDevicesExpanded={expandedSpaceDevices[space.id] ?? false}
                                                      onToggleDetails={toggleSpaceDevices}
-                                                     onAssignDevice={handleOpenAssignDeviceDialog}
+                                                     onAssignDevices={handleOpenAssignDeviceDialog}
                                                      onEditSpace={handleOpenSpaceDialog}
                                                      onDeleteSpace={handleOpenSpaceDeleteDialog}
                                                      onViewCameras={handleViewCameras}
@@ -635,7 +640,7 @@ export default function LocationsPage() {
                                            allDevices={allDevices}
                                            isDevicesExpanded={expandedSpaceDevices[space.id] ?? false}
                                            onToggleDetails={toggleSpaceDevices}
-                                           onAssignDevice={handleOpenAssignDeviceDialog}
+                                           onAssignDevices={handleOpenAssignDeviceDialog}
                                            onEditSpace={handleOpenSpaceDialog}
                                            onDeleteSpace={handleOpenSpaceDeleteDialog}
                                            onViewCameras={handleViewCameras}
