@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { WeatherIcon } from '@/components/ui/weather-icon';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Badge } from '@/components/ui/badge';
 import type { WeatherData } from '@/types/openweather-types';
 
 interface LocationWeatherIconProps {
@@ -54,17 +55,22 @@ export function LocationWeatherIcon({ locationId }: LocationWeatherIconProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex items-center gap-1">
+        <Badge variant="outline" className="gap-2">
           <WeatherIcon
             iconCode={primaryWeather?.icon}
             size="md"
             isLoading={isLoading}
             hasError={!!error}
           />
-          <span className="text-sm text-muted-foreground">
+          <span className="font-medium">
             {Math.round(weatherData.temperature)}°F
           </span>
-        </div>
+          {primaryWeather?.main && (
+            <span className="text-muted-foreground">
+              {primaryWeather.main}
+            </span>
+          )}
+        </Badge>
       </TooltipTrigger>
       <TooltipContent>
         <div className="text-center">
