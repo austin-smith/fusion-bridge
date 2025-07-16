@@ -554,10 +554,22 @@ export default function LocationsPage() {
                                      <CardHeader className="flex flex-row items-center justify-between pb-3 bg-muted/25">
                                          <div className="flex items-center gap-2 min-w-0">
                                            <Building className="h-5 w-5 flex-shrink-0" />
-                                           <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
-                                           {location.latitude && location.longitude && (
-                                             <LocationWeatherIcon locationId={location.id} />
-                                           )}
+                                           <div className="flex flex-col min-w-0">
+                                             <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
+                                             {(location.addressCity || location.addressState || (location.latitude && location.longitude)) && (
+                                               <CardDescription className="text-sm text-muted-foreground truncate flex items-center gap-2">
+                                                 {(location.addressCity || location.addressState) && (
+                                                   <span>{[location.addressCity, location.addressState].filter(Boolean).join(', ')}</span>
+                                                 )}
+                                                 {(location.addressCity || location.addressState) && location.latitude && location.longitude && (
+                                                   <span className="text-muted-foreground/50">|</span>
+                                                 )}
+                                                 {location.latitude && location.longitude && (
+                                                   <LocationWeatherIcon locationId={location.id} />
+                                                 )}
+                                               </CardDescription>
+                                             )}
+                                           </div>
                                          </div>
                                          <div className="flex items-center gap-1 flex-shrink-0">
                                              <DropdownMenu>

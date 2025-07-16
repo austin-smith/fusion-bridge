@@ -4,6 +4,28 @@ import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
 import { getWeatherData } from '@/services/drivers/openweather';
 import { getOpenWeatherConfiguration } from '@/data/repositories/service-configurations';
+import type { WeatherData } from '@/types/openweather-types';
+
+// In-memory weather cache
+const weatherCache = new Map<string, {
+  data: WeatherData;
+  expiry: number;
+}>();
+
+// Clean up expired cache entries every hour
+setInterval(() => {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const [key, entry] of weatherCache.entries()) {
+    if (entry.expiry <= now) {
+      weatherCache.delete(key);
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) {
+    console.log(`[Weather Cache] Cleaned up ${cleaned} expired entries`);
+  }
+}, 60 * 60 * 1000); // Run every hour
 
 export const GET = withOrganizationAuth(async (req: NextRequest, authContext: OrganizationAuthContext, context: RouteContext<{ id: string }>) => {
   try {
@@ -65,18 +87,40 @@ export const GET = withOrganizationAuth(async (req: NextRequest, authContext: Or
       );
     }
 
-    // Get weather data
-    const weatherData = await getWeatherData(
-      openWeatherConfig.apiKey,
-      latitude,
-      longitude
-    );
-
-    if (!weatherData) {
-      return NextResponse.json(
-        { success: false, error: 'Failed to fetch weather data' },
-        { status: 500 }
+    // Check cache first
+    const cacheKey = `${latitude.toFixed(4)}-${longitude.toFixed(4)}`;
+    const cached = weatherCache.get(cacheKey);
+    
+    let weatherData: WeatherData | null = null;
+    
+    if (cached && cached.expiry > Date.now()) {
+      // Cache hit
+      weatherData = cached.data;
+      console.log(`[Weather Cache] Cache hit for ${cacheKey}`);
+    } else {
+      // Cache miss - fetch fresh data
+      console.log(`[Weather Cache] Cache miss for ${cacheKey}, fetching fresh data`);
+      
+      weatherData = await getWeatherData(
+        openWeatherConfig.apiKey,
+        latitude,
+        longitude
       );
+
+      if (!weatherData) {
+        return NextResponse.json(
+          { success: false, error: 'Failed to fetch weather data' },
+          { status: 500 }
+        );
+      }
+
+      // Store in cache with 10-minute expiry
+      weatherCache.set(cacheKey, {
+        data: weatherData,
+        expiry: Date.now() + (10 * 60 * 1000) // 10 minutes
+      });
+      
+      console.log(`[Weather Cache] Cached weather data for ${cacheKey} (expires in 10 min)`);
     }
 
     return NextResponse.json({

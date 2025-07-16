@@ -40,14 +40,13 @@ export function LocationWeatherIcon({ locationId }: LocationWeatherIconProps) {
   }, [locationId]);
 
   if (!weatherData || error) {
-    return (
+    return isLoading ? (
       <div className="flex items-center gap-1">
-        <div className="h-6 w-6 bg-muted/50 rounded-sm" />
-        {isLoading && (
-          <span className="text-sm text-muted-foreground">--°F</span>
-        )}
+        <div className="h-4 w-4 bg-muted/50 rounded-sm animate-pulse" />
+        <div className="h-4 w-8 bg-muted/50 rounded animate-pulse" />
+        <div className="h-4 w-12 bg-muted/50 rounded animate-pulse" />
       </div>
-    );
+    ) : null;
   }
 
   const primaryWeather = weatherData.weather[0];
@@ -55,10 +54,10 @@ export function LocationWeatherIcon({ locationId }: LocationWeatherIconProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Badge variant="outline" className="gap-2">
+        <div className="flex items-center gap-1">
           <WeatherIcon
             iconCode={primaryWeather?.icon}
-            size="md"
+            size="sm"
             isLoading={isLoading}
             hasError={!!error}
           />
@@ -70,7 +69,7 @@ export function LocationWeatherIcon({ locationId }: LocationWeatherIconProps) {
               {primaryWeather.main}
             </span>
           )}
-        </Badge>
+        </div>
       </TooltipTrigger>
       <TooltipContent>
         <div className="text-center">
