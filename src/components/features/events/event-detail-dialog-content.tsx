@@ -33,7 +33,7 @@ import { cn, formatConnectorCategory } from "@/lib/utils";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import Image from 'next/image';
-import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
+import { CameraMediaSection } from '@/components/features/common/CameraMediaSection';
 
 // MODIFIED: Interface matching the updated API structure
 interface EventData {
@@ -78,61 +78,10 @@ const DetailRow = ({label, value, monospace = false, breakAll = false}: {label: 
   </div>
 );
 
-// Simple Image Component with Loading/Error states and Play Button
-const EventMediaThumbnail: React.FC<{ src: string; onPlayClick: () => void }> = ({ src, onPlayClick }) => {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
 
-  const handleLoad = () => setLoading(false);
-  const handleError = () => {
-    setLoading(false);
-    setError(true);
-  };
-
-  return (
-    <div className="relative w-full aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center group">
-      {/* Skeleton Loader */}
-      {loading && (
-        <Skeleton className="absolute inset-0 animate-pulse" />
-      )}
-      {/* Error Message */}
-      {!loading && error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-destructive text-xs p-2">
-          <AlertCircle className="h-6 w-6 mb-1" />
-          <span>Could not load image</span>
-        </div>
-      )}
-      {/* Image Component */}
-      <Image
-        src={src}
-        alt="Event Media Thumbnail"
-        width={100}
-        height={100}
-        className={cn(
-          "absolute inset-0 w-full h-full object-contain transition-opacity duration-300",
-          loading || error ? 'opacity-0' : 'opacity-100'
-        )}
-        onLoad={handleLoad}
-        onError={handleError}
-        unoptimized
-      />
-      {/* Play Button Overlay - Show only when image is loaded and not in error */} 
-      {!loading && !error && (
-          <button 
-            onClick={onPlayClick}
-            className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer z-10"
-            aria-label="Play video"
-          >
-              <PlayIcon className="h-12 w-12 text-white/80 fill-white/60" />
-          </button>
-      )}
-    </div>
-  );
-};
 
 export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> = ({ event }) => {
   const [isCopied, setIsCopied] = useState(false);
-  const [showVideoPlayer, setShowVideoPlayer] = useState(false);
   
   const handleCopy = async (text: string) => {
     try {
@@ -185,10 +134,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
     }
   }
 
-  // Handle clicking the play button - Now fetches media info first
-  const handlePlayMediaClick = () => {
-    setShowVideoPlayer(true); // Simply show the player area
-  }
+
 
   // MODIFIED: Prepare props for PikoVideoPlayer, handle potential undefined or local type
   const pikoVideoProps = {
@@ -249,34 +195,20 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
             <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-4">
               {/* MEDIA THUMBNAIL/PLAYER */} 
               {mediaThumbnailUrl && (
-                <div className="mb-4">
-                  <div className="flex items-center space-x-2 py-2">
-                    <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-xs font-medium text-muted-foreground">MEDIA</span>
-                    <div className="h-px grow bg-border"></div>
-                  </div>
-                  {/* Conditionally render Player or Thumbnail */}
-                  {showVideoPlayer ? (
-                    pikoVideoProps.connectorId &&
-                    event.bestShotUrlComponents &&
-                    event.bestShotUrlComponents.cameraId &&
-                    pikoVideoProps.positionMs !== undefined ? (
-                      <PikoVideoPlayer 
-                        connectorId={pikoVideoProps.connectorId}
-                        pikoSystemId={pikoVideoProps.pikoSystemId}
-                        cameraId={event.bestShotUrlComponents.cameraId} 
-                        positionMs={pikoVideoProps.positionMs}
-                      />
-                    ) : (
-                      <div className="aspect-video bg-muted rounded-md flex items-center justify-center text-destructive p-4 text-center">
-                         <AlertCircle className="h-8 w-8 mb-2" />
-                         <span className="text-sm">Cannot load video: Missing required event information (IDs or timestamp).</span>
-                      </div>
-                    )
-                  ) : (
-                     <EventMediaThumbnail src={mediaThumbnailUrl} onPlayClick={handlePlayMediaClick} />
-                  )}
-                </div>
+                <CameraMediaSection
+                  thumbnailMode="static-url"
+                  thumbnailUrl={mediaThumbnailUrl}
+                  videoConfig={{
+                    connectorId: pikoVideoProps.connectorId,
+                    cameraId: event.bestShotUrlComponents?.cameraId || '',
+                    pikoSystemId: pikoVideoProps.pikoSystemId,
+                    positionMs: pikoVideoProps.positionMs
+                  }}
+                  showManualRefresh={false}
+                  showTimeAgo={false}
+                  className="mb-4"
+                  title="MEDIA"
+                />
               )}
 
               {/* Existing Details Section (wrapped in a div for spacing) */}
