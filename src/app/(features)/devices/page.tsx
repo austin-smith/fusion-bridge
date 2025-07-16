@@ -299,6 +299,7 @@ export default function DevicesPage() {
                 updatedAt: new Date(fullDevice.updatedAt), 
                 spaceId: fullDevice.spaceId ?? undefined, // Get from fullDevice
                 spaceName: fullDevice.spaceName ?? undefined, // Get from fullDevice
+                rawDeviceData: fullDevice.rawDeviceData ?? undefined, // Get from fullDevice
             };
             acc.push(displayDevice);
         } else {
@@ -532,6 +533,7 @@ export default function DevicesPage() {
             updatedAt: device.updatedAt, // Assuming these exist on DisplayedDevice
             spaceId: device.spaceId ?? undefined, // Include space ID
             spaceName: device.spaceName ?? undefined, // Include space name
+            rawDeviceData: device.rawDeviceData ?? undefined, // Include raw device data
           };
           
           return (

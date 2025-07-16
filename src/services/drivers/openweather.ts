@@ -63,7 +63,7 @@ export async function getWeatherData(
     }
 
     const data = await response.json();
-    console.log(`${logPrefix} Raw OpenWeather API response:`, JSON.stringify(data, null, 2));
+    console.log(`${logPrefix} Successfully received response from OpenWeather API`);
 
     // Validate response structure
     const parseResult = OpenWeatherOneCallResponseSchema.safeParse(data);

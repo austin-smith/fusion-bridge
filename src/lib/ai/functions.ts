@@ -100,7 +100,7 @@ export const openAIFunctions = [
   },
   {
     name: "list_devices",
-    description: "List and search ALL devices. Use this when users want to see, list, or check status of devices. Shows all matching devices regardless of controllability.",
+    description: "List and search ALL devices. Use this when users want to see, list, or check status of devices. Shows all matching devices regardless of controllability. Can filter by space names and alarm zone names.",
     parameters: {
       type: "object",
       properties: {
@@ -111,6 +111,8 @@ export const openAIFunctions = [
             types: { type: "array", items: { type: "string" } },
             connectorCategories: { type: "array", items: { type: "string" }, description: "Filter by connector categories like 'piko', 'yolink', 'genea', etc." },
             locations: { type: "array", items: { type: "string" } },
+            spaces: { type: "array", items: { type: "string" } },
+            alarmZones: { type: "array", items: { type: "string" } },
             statuses: { type: "array", items: { type: "string" } }
           }
         },
@@ -127,6 +129,14 @@ export const openAIFunctions = [
         searchTerm: { 
           type: "string", 
           description: "Search term to find controllable devices. Searches device names, types, and categories automatically. Examples: 'lights', 'office lights', 'switches', 'outlets'" 
+        },
+        spaceName: {
+          type: "string",
+          description: "Optional: filter devices to a specific space name"
+        },
+        alarmZoneName: {
+          type: "string",
+          description: "Optional: filter devices to a specific alarm zone name"
         },
         actionIntent: {
           type: "string",
@@ -632,6 +642,20 @@ async function listDevices(orgDb: any, args: any): Promise<FunctionExecutionResu
     );
   }
   
+  if (deviceFilter?.spaces?.length) {
+    const spaceSet = new Set(deviceFilter.spaces.map((s: string) => s.toLowerCase()));
+    filteredDevices = filteredDevices.filter((d: any) => 
+      d.spaceName && spaceSet.has(d.spaceName.toLowerCase())
+    );
+  }
+
+  if (deviceFilter?.alarmZones?.length) {
+    const alarmZoneSet = new Set(deviceFilter.alarmZones.map((z: string) => z.toLowerCase()));
+    filteredDevices = filteredDevices.filter((d: any) => 
+      d.alarmZoneName && alarmZoneSet.has(d.alarmZoneName.toLowerCase())
+    );
+  }
+
   if (deviceFilter?.statuses?.length) {
     const statusSet = new Set(deviceFilter.statuses.map((s: string) => s.toLowerCase()));
     filteredDevices = filteredDevices.filter((d: any) => {
@@ -684,9 +708,9 @@ async function listDevices(orgDb: any, args: any): Promise<FunctionExecutionResu
 
 // Find controllable devices
 async function findControllableDevices(orgDb: any, args: any): Promise<FunctionExecutionResult> {
-  const { searchTerm, actionIntent = "list_all" } = args;
+  const { searchTerm, spaceName, alarmZoneName, actionIntent = "list_all" } = args;
   
-  console.log('[findControllableDevices] Called with args:', JSON.stringify(args, null, 2));
+  console.log(`[findControllableDevices] Called - searchTerm: "${searchTerm}", spaceName: "${spaceName}", alarmZoneName: "${alarmZoneName}", actionIntent: "${actionIntent}"`);
   
   // Get all devices
   const devices = await orgDb.devices.findAll();
@@ -756,6 +780,24 @@ async function findControllableDevices(orgDb: any, args: any): Promise<FunctionE
       }
       
       filteredDevices = matches;
+    }
+    
+    // Apply space filter if provided
+    if (spaceName && spaceName.trim()) {
+      const lowerCaseSpaceName = spaceName.toLowerCase().trim();
+      filteredDevices = filteredDevices.filter((d: any) => 
+        d.spaceName && d.spaceName.toLowerCase() === lowerCaseSpaceName
+      );
+      console.log(`[findControllableDevices] After space filter "${spaceName}": ${filteredDevices.length} devices`);
+    }
+    
+    // Apply alarm zone filter if provided
+    if (alarmZoneName && alarmZoneName.trim()) {
+      const lowerCaseAlarmZoneName = alarmZoneName.toLowerCase().trim();
+      filteredDevices = filteredDevices.filter((d: any) => 
+        d.alarmZoneName && d.alarmZoneName.toLowerCase() === lowerCaseAlarmZoneName
+      );
+      console.log(`[findControllableDevices] After alarm zone filter "${alarmZoneName}": ${filteredDevices.length} devices`);
     }
     
     console.log(`[findControllableDevices] Total filtered devices: ${filteredDevices.length}`);
@@ -936,17 +978,26 @@ async function listSpaces(orgDb: any, args: any): Promise<FunctionExecutionResul
     );
   }
   
+  // Get device counts for each space
+  const spacesWithDevices = await Promise.all(
+    filteredSpaces.map(async (space: any) => {
+      const devices = await orgDb.devices.findBySpace(space.id);
+      return {
+        id: space.id,
+        name: space.name,
+        description: space.description,
+        locationId: space.locationId,
+        deviceIds: devices.map((d: any) => d.id),
+        deviceCount: devices.length
+      };
+    })
+  );
+
   // Return space data (no actions for spaces, they're just physical containers)
   return {
     aiData: {
       totalCount: filteredSpaces.length,
-      spaces: filteredSpaces.map((s: any) => ({
-        id: s.id,
-        name: s.name,
-        description: s.description,
-        locationId: s.locationId,
-        deviceIds: s.deviceIds || []
-      }))
+      spaces: spacesWithDevices
     }
   };
 }

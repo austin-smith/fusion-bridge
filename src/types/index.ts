@@ -61,10 +61,9 @@ export type DeviceWithConnector = {
   serverName?: string | null;
   pikoServerDetails?: any | null;
   locationId?: string | null; 
-
+  rawDeviceData?: Record<string, unknown> | null;
   deviceTypeInfo?: TypedDeviceInfo;
   displayState?: DisplayState;
-  // Space information
   spaceId?: string | null;
   spaceName?: string | null;
 };

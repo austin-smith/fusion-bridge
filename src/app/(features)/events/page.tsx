@@ -395,7 +395,7 @@ export default function EventsPage() {
     setSelectedDeviceForDialog(null); // Clear previous device
     setIsDetailDialogOpen(true); // Open dialog immediately
     try {
-      const response = await fetch(`/api/devices?deviceId=${deviceId}`);
+      const response = await fetch(`/api/devices?id=${deviceId}`);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to fetch device details');
@@ -421,7 +421,8 @@ export default function EventsPage() {
           serverId: deviceData.serverId ?? undefined,
           // Ensure required object props have fallbacks
           deviceTypeInfo: deviceData.deviceTypeInfo ?? getDeviceTypeInfo('unknown', 'unknown'),
-          internalId: deviceData.id // Use the internal DB ID
+          internalId: deviceData.id, // Use the internal DB ID
+          rawDeviceData: deviceData.rawDeviceData ?? undefined // Include raw device data
         };
         setSelectedDeviceForDialog(deviceForDialog);
       } else {

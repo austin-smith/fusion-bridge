@@ -76,7 +76,7 @@ export async function geocodeAddress(
     }
 
     const data = await response.json();
-    console.log(`${logPrefix} Raw Census API response:`, JSON.stringify(data, null, 2));
+    console.log(`${logPrefix} Successfully received response from Census API`);
 
     // Validate response structure
     const parseResult = CensusApiResponseSchema.safeParse(data);

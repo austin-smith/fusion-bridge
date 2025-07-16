@@ -17,6 +17,12 @@ import {
   DialogClose,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { type VariantProps } from "class-variance-authority";
 import { badgeVariants } from "@/components/ui/badge";
 import { toast } from 'sonner';
@@ -54,6 +60,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import type { PikoConfig } from '@/services/drivers/piko'; // Import PikoConfig type
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 
 // Define the shape of the expected prop, compatible with DisplayedDevice from page.tsx
@@ -81,7 +89,7 @@ export interface DeviceDetailProps {
   updatedAt: Date;
   spaceId?: string | null; // Add space ID
   spaceName?: string | null; // Add space name
-  // Add lastStateEvent / lastStatusEvent if needed in dialog?
+  rawDeviceData?: Record<string, unknown> | null;
 }
 
 // Define the component's Props interface using the new type
@@ -512,16 +520,18 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   // --- Copy State & Handler ---
   const [isCopied, setIsCopied] = useState(false);
 
-  const handleCopy = async (text: string) => {
+  const handleCopy = async (text: string, type: 'id' | 'json' = 'id') => {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
       setIsCopied(true);
-      toast.success("Copied ID to clipboard!");
+      const message = type === 'json' ? "Copied JSON to clipboard!" : "Copied ID to clipboard!";
+      toast.success(message);
       setTimeout(() => setIsCopied(false), 2000); // Reset icon after 2 seconds
     } catch (err) {
-      console.error('Failed to copy ID: ', err);
-      toast.error("Failed to copy ID.");
+      console.error(`Failed to copy ${type}: `, err);
+      const errorMessage = type === 'json' ? "Failed to copy JSON." : "Failed to copy ID.";
+      toast.error(errorMessage);
     }
   };
 
@@ -754,266 +764,312 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         </DialogDescription>
       </DialogHeader>
       
-      <div className="py-4 space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-        {/* Power Control Section - REMOVED */}
-        
-        {/* --- START: Piko Camera Media Section --- */}
-        {device.connectorCategory === 'piko' && device.deviceTypeInfo?.type === 'Camera' && (
-           <div className="mb-4">
-             <div className="flex items-center space-x-2 py-2">
-               <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
-               <span className="text-xs font-medium text-muted-foreground">LIVE VIEW</span>
-               <div className="h-px grow bg-border"></div>
-             </div>
-             {/* Conditionally render Player or Thumbnail */}
-             {showLiveVideo ? (
-                <div className="relative">
-                  <PikoVideoPlayer
-                    connectorId={device.connectorId}
-                    cameraId={device.deviceId}
-                    pikoSystemId={pikoSystemIdForVideo}
-                    className="w-full"
-                  />
-                  {/* Back to thumbnail button */}
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="absolute top-2 left-2 gap-1 text-xs opacity-80 hover:opacity-100"
-                    onClick={() => setShowLiveVideo(false)}
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      className="w-3.5 h-3.5"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M18 10a.75.75 0 01-.75.75H4.66l2.1 1.95a.75.75 0 11-1.02 1.1l-3.5-3.25a.75.75 0 010-1.1l3.5-3.25a.75.75 0 111.02 1.1l-2.1 1.95h12.59A.75.75 0 0118 10z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    Back to thumbnail
-                  </Button>
-                </div>
-             ) : (
-                <div className="relative">
-                  {/* MediaThumbnail without TimeAgo */}
-                  <MediaThumbnail 
-                    src={thumbnailUrl || ''} 
-                    isLoading={isThumbnailLoading && !thumbnailUrl}
-                    error={thumbnailError}
-                    onPlayClick={!isPikoLocalConnection ? handleThumbnailClick : undefined}
-                    isPlayDisabled={isPikoLocalConnection}
-                  />
-                  
-                  {/* TimeAgo badge rendered separately from MediaThumbnail */}
-                  {lastThumbnailRefreshTime && (
-                    <div className="absolute bottom-1 left-1 z-50 px-1.5 py-0.5 rounded bg-black/50 text-white text-[10px] font-medium min-w-[50px] text-center pointer-events-none">
-                      <TimeAgoText refreshTime={lastThumbnailRefreshTime} />
-                    </div>
+             <Tabs defaultValue="device-details" className="mt-4">
+         <TabsList className="grid w-full grid-cols-2">
+           <TabsTrigger value="device-details">Device Details</TabsTrigger>
+           <TabsTrigger value="raw-json">Raw JSON</TabsTrigger>
+         </TabsList>
+
+         <TabsContent value="device-details" className="mt-4">
+           <div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+             {/* Power Control Section - REMOVED */}
+             
+             {/* --- START: Piko Camera Media Section --- */}
+             {device.connectorCategory === 'piko' && device.deviceTypeInfo?.type === 'Camera' && (
+                <div className="mb-4">
+                  <div className="flex items-center space-x-2 py-2">
+                    <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs font-medium text-muted-foreground">LIVE VIEW</span>
+                    <div className="h-px grow bg-border"></div>
+                  </div>
+                  {/* Conditionally render Player or Thumbnail */}
+                  {showLiveVideo ? (
+                     <div className="relative">
+                       <PikoVideoPlayer
+                         connectorId={device.connectorId}
+                         cameraId={device.deviceId}
+                         pikoSystemId={pikoSystemIdForVideo}
+                         className="w-full"
+                       />
+                       {/* Back to thumbnail button */}
+                       <Button
+                         variant="secondary"
+                         size="sm"
+                         className="absolute top-2 left-2 gap-1 text-xs opacity-80 hover:opacity-100"
+                         onClick={() => setShowLiveVideo(false)}
+                       >
+                         <svg
+                           xmlns="http://www.w3.org/2000/svg"
+                           viewBox="0 0 20 20"
+                           fill="currentColor"
+                           className="w-3.5 h-3.5"
+                         >
+                           <path
+                             fillRule="evenodd"
+                             d="M18 10a.75.75 0 01-.75.75H4.66l2.1 1.95a.75.75 0 11-1.02 1.1l-3.5-3.25a.75.75 0 010-1.1l3.5-3.25a.75.75 0 111.02 1.1l-2.1 1.95h12.59A.75.75 0 0118 10z"
+                             clipRule="evenodd"
+                           />
+                         </svg>
+                         Back to thumbnail
+                       </Button>
+                     </div>
+                  ) : (
+                     <div className="relative">
+                       {/* MediaThumbnail without TimeAgo */}
+                       <MediaThumbnail 
+                         src={thumbnailUrl || ''} 
+                         isLoading={isThumbnailLoading && !thumbnailUrl}
+                         error={thumbnailError}
+                         onPlayClick={!isPikoLocalConnection ? handleThumbnailClick : undefined}
+                         isPlayDisabled={isPikoLocalConnection}
+                       />
+                       
+                       {/* TimeAgo badge rendered separately from MediaThumbnail */}
+                       {lastThumbnailRefreshTime && (
+                         <div className="absolute bottom-1 left-1 z-50 px-1.5 py-0.5 rounded bg-black/50 text-white text-[10px] font-medium min-w-[50px] text-center pointer-events-none">
+                           <TimeAgoText refreshTime={lastThumbnailRefreshTime} />
+                         </div>
+                       )}
+                     </div>
                   )}
                 </div>
              )}
+             {/* --- END: Piko Camera Media Section --- */}
+
+             {/* Device Information Section - Always Visible */}
+             <div>
+               <h3 className="mb-2 text-sm font-medium text-muted-foreground">Device Information</h3>
+               <div className="rounded-md border text-sm">
+                 <div className="py-2">
+                   <div className="flex items-center space-x-2">
+                     <span className="text-xs font-medium text-muted-foreground pl-2">GENERAL</span>
+                     <div className="h-px grow bg-border"></div>
+                   </div>
+                 </div>
+                
+                 <DetailRow label="Name" value={device.name} />
+                 {/* Combined Type / Subtype with Icon - Conditional Rendering */}
+                 <DetailRow 
+                     label="Type" 
+                     value={device.deviceTypeInfo?.type ? ( 
+                       <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                         <IconComponent className="h-3 w-3 text-muted-foreground" /> 
+                         <span className="text-xs">
+                           {device.deviceTypeInfo.type}
+                           {device.deviceTypeInfo.subtype && (
+                             <span className="text-muted-foreground ml-1">/ {device.deviceTypeInfo.subtype}</span>
+                           )}
+                         </span>
+                       </Badge>
+                     ) : (
+                       <span className="text-muted-foreground">Unknown</span>
+                     )}
+                 />
+                 {/* Battery Information - Conditional Rendering */}
+                 {device.batteryPercentage !== null && device.batteryPercentage !== undefined && (
+                   <DetailRow 
+                     label="Battery" 
+                     value={
+                       <Tooltip>
+                         <TooltipTrigger asChild>
+                           <span className="inline-flex items-center cursor-default">
+                             {(() => {
+                               const BatteryIcon = getBatteryIcon(device.batteryPercentage);
+                               const colorClass = getBatteryColorClass(device.batteryPercentage);
+                               return <BatteryIcon className={`h-6 w-6 ${colorClass}`} />;
+                             })()}
+                           </span>
+                         </TooltipTrigger>
+                         <TooltipContent 
+                           side="top" 
+                           align="center"
+                           sideOffset={5}
+                           alignOffset={0}
+                           avoidCollisions={false}
+                         >
+                           <p>{device.batteryPercentage}%</p>
+                         </TooltipContent>
+                       </Tooltip>
+                     }
+                   />
+                 )}
+                 <DetailRow label="Model" value={device.model || "—"} />
+                 {device.connectorCategory === 'piko' && device.vendor && (
+                   <DetailRow label="Vendor" value={device.vendor} />
+                 )}
+                 {/* Location Information - Conditional Rendering */}
+                 {deviceLocation && (
+                   <DetailRow 
+                     label="Location" 
+                     value={
+                       <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                         <Building className="h-3 w-3 text-muted-foreground" />
+                         <span className="text-xs">{deviceLocation.name}</span>
+                       </Badge>
+                     }
+                   />
+                 )}
+                 {/* Space Information - Conditional Rendering */}
+                 {deviceSpace && (
+                   <DetailRow 
+                     label="Space" 
+                     value={
+                       <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                         <Box className="h-3 w-3 text-muted-foreground" />
+                         <span className="text-xs">{deviceSpace.name}</span>
+                       </Badge>
+                     }
+                   />
+                 )}
+                 {/* Alarm Zone Information - Conditional Rendering */}
+                 {deviceAlarmZone && (
+                   <DetailRow 
+                     label="Alarm Zone" 
+                     value={
+                       <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                         <Shield className="h-3 w-3 text-muted-foreground" />
+                         <span className="text-xs">{deviceAlarmZone.name}</span>
+                       </Badge>
+                     }
+                   />
+                 )}
+                 
+                 <div className="py-2">
+                   <div className="flex items-center space-x-2">
+                     <span className="text-xs font-medium text-muted-foreground pl-2">EXTERNAL IDENTIFIERS</span>
+                     <div className="h-px grow bg-border"></div>
+                   </div>
+                 </div>
+
+                 {/* Raw Identifier */}
+                 <DetailRow label="Device Type ID" value={device.type} monospace />
+                 {/* External ID with Copy Button */}
+                 <DetailRow 
+                   label="Device ID" 
+                   monospace breakAll 
+                   value={( 
+                     <div className="flex items-center justify-between gap-2 w-full"> 
+                       <span className="flex-grow break-all">{device.deviceId}</span> 
+                       <Button 
+                         variant="ghost" 
+                         size="icon" 
+                         className="h-6 w-6 shrink-0" 
+                         onClick={() => handleCopy(device.deviceId)} 
+                         disabled={isCopied} 
+                       > 
+                         {isCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />} 
+                         <span className="sr-only">{isCopied ? 'Copied' : 'Copy ID'}</span> 
+                       </Button> 
+                     </div> 
+                   )} 
+                 />
+
+                 <DetailRow 
+                     label="Last Seen" 
+                     value={device.lastSeen ? new Date(device.lastSeen).toLocaleString() : 'Never'} 
+                 />
+               </div>
+             </div>
+
+             {/* Accordion for other sections */}
+             <Accordion type="single" collapsible className="w-full">
+
+               {/* Piko Server Details Section (Conditional) */}
+               {device.connectorCategory === 'piko' && device.pikoServerDetails && (
+                 <AccordionItem value="piko-server">
+                   <AccordionTrigger className="text-sm font-medium">
+                     Piko Server Details
+                   </AccordionTrigger>
+                   <AccordionContent>
+                     <div className="space-y-0.5 rounded-md border">
+                       <DetailRow 
+                         label="Server Name" 
+                         value={device.pikoServerDetails.name || device.serverName || "—"} 
+                       />
+                       
+                       {device.pikoServerDetails.status && (
+                         <DetailRow 
+                           label="Server Status" 
+                           value={<Badge variant={getStatusBadgeStyle(device.pikoServerDetails.status, 'server') as any}>{device.pikoServerDetails.status}</Badge>}
+                         />
+                       )}
+                       
+                       {device.pikoServerDetails.version && (
+                         <DetailRow 
+                           label="Server Version" 
+                           value={device.pikoServerDetails.version} 
+                         />
+                       )}
+                       
+                       {device.pikoServerDetails.osPlatform && (
+                         <DetailRow 
+                           label="Server OS" 
+                           value={`${device.pikoServerDetails.osPlatform}${device.pikoServerDetails.osVariantVersion ? ` (${device.pikoServerDetails.osVariantVersion})` : ''}`} 
+                         />
+                       )}
+                       
+                       {device.pikoServerDetails.url && (
+                         <DetailRow 
+                           label="Server URL" 
+                           value={device.pikoServerDetails.url} 
+                           breakAll 
+                         />
+                       )}
+                       
+                       {device.serverId && (
+                         <DetailRow 
+                           label="Server ID" 
+                           value={device.serverId} 
+                           monospace
+                           breakAll 
+                         />
+                       )}
+                     </div>
+                   </AccordionContent>
+                 </AccordionItem>
+               )}
+             </Accordion>
            </div>
-        )}
-        {/* --- END: Piko Camera Media Section --- */}
+         </TabsContent>
 
-        {/* Device Information Section - Always Visible */}
-        <div>
-          <h3 className="mb-2 text-sm font-medium text-muted-foreground">Device Information</h3>
-          <div className="rounded-md border text-sm">
-            <div className="py-2">
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-medium text-muted-foreground pl-2">GENERAL</span>
-                <div className="h-px grow bg-border"></div>
-              </div>
-            </div>
-            
-            <DetailRow label="Name" value={device.name} />
-            {/* Combined Type / Subtype with Icon - Conditional Rendering */}
-            <DetailRow 
-                label="Type" 
-                value={device.deviceTypeInfo?.type ? ( 
-                  <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                    <IconComponent className="h-3 w-3 text-muted-foreground" /> 
-                    <span className="text-xs">
-                      {device.deviceTypeInfo.type}
-                      {device.deviceTypeInfo.subtype && (
-                        <span className="text-muted-foreground ml-1">/ {device.deviceTypeInfo.subtype}</span>
-                      )}
-                    </span>
-                  </Badge>
-                ) : (
-                  <span className="text-muted-foreground">Unknown</span>
-                )}
-            />
-            {/* Battery Information - Conditional Rendering */}
-            {device.batteryPercentage !== null && device.batteryPercentage !== undefined && (
-              <DetailRow 
-                label="Battery" 
-                value={
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex items-center cursor-default">
-                        {(() => {
-                          const BatteryIcon = getBatteryIcon(device.batteryPercentage);
-                          const colorClass = getBatteryColorClass(device.batteryPercentage);
-                          return <BatteryIcon className={`h-6 w-6 ${colorClass}`} />;
-                        })()}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent 
-                      side="top" 
-                      align="center"
-                      sideOffset={5}
-                      alignOffset={0}
-                      avoidCollisions={false}
-                    >
-                      <p>{device.batteryPercentage}%</p>
-                    </TooltipContent>
-                  </Tooltip>
-                }
-              />
-            )}
-            <DetailRow label="Model" value={device.model || "—"} />
-            {device.connectorCategory === 'piko' && device.vendor && (
-              <DetailRow label="Vendor" value={device.vendor} />
-            )}
-            {/* Location Information - Conditional Rendering */}
-            {deviceLocation && (
-              <DetailRow 
-                label="Location" 
-                value={
-                  <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                    <Building className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-xs">{deviceLocation.name}</span>
-                  </Badge>
-                }
-              />
-            )}
-            {/* Space Information - Conditional Rendering */}
-            {deviceSpace && (
-              <DetailRow 
-                label="Space" 
-                value={
-                  <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                    <Box className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-xs">{deviceSpace.name}</span>
-                  </Badge>
-                }
-              />
-            )}
-            {/* Alarm Zone Information - Conditional Rendering */}
-            {deviceAlarmZone && (
-              <DetailRow 
-                label="Alarm Zone" 
-                value={
-                  <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                    <Shield className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-xs">{deviceAlarmZone.name}</span>
-                  </Badge>
-                }
-              />
-            )}
-            
-            <div className="py-2">
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-medium text-muted-foreground pl-2">EXTERNAL IDENTIFIERS</span>
-                <div className="h-px grow bg-border"></div>
-              </div>
-            </div>
+         <TabsContent value="raw-json" className="mt-4">
+           <div className="relative">
+                           <Button
+                size="icon"
+                variant="ghost"
+                className="absolute top-2 right-2 h-7 w-7 z-50"
+                onClick={() => handleCopy(JSON.stringify(device.rawDeviceData || {}, null, 2), 'json')}
+                disabled={isCopied}
+              >
+               {isCopied ?
+                 <Check className="h-4 w-4 text-green-500" /> :
+                 <Copy className="h-4 w-4 text-neutral-400" />
+               }
+               <span className="sr-only">{isCopied ? 'Copied' : 'Copy JSON'}</span>
+             </Button>
+             <SyntaxHighlighter
+               language="json"
+               style={atomDark}
+               wrapLongLines={true}
+               codeTagProps={{
+                 style: {
+                   whiteSpace: 'pre-wrap',
+                   wordBreak: 'break-all',
+                 }
+               }}
+               customStyle={{
+                 maxHeight: '24rem',
+                 overflowY: 'auto',
+                 borderRadius: '6px',
+                 fontSize: '13px',
+               }}
+             >
+               {JSON.stringify(device.rawDeviceData || {}, null, 2)}
+             </SyntaxHighlighter>
+           </div>
+         </TabsContent>
+       </Tabs>
 
-            {/* Raw Identifier */}
-            <DetailRow label="Device Type ID" value={device.type} monospace />
-            {/* External ID with Copy Button */}
-            <DetailRow 
-              label="Device ID" 
-              monospace breakAll 
-              value={( 
-                <div className="flex items-center justify-between gap-2 w-full"> 
-                  <span className="flex-grow break-all">{device.deviceId}</span> 
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-6 w-6 shrink-0" 
-                    onClick={() => handleCopy(device.deviceId)} 
-                    disabled={isCopied} 
-                  > 
-                    {isCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />} 
-                    <span className="sr-only">{isCopied ? 'Copied' : 'Copy ID'}</span> 
-                  </Button> 
-                </div> 
-              )} 
-            />
-
-            <DetailRow 
-                label="Last Seen" 
-                value={device.lastSeen ? new Date(device.lastSeen).toLocaleString() : 'Never'} 
-            />
-          </div>
-        </div>
-
-        {/* Accordion for other sections */}
-        <Accordion type="single" collapsible className="w-full">
-
-          {/* Piko Server Details Section (Conditional) */}
-          {device.connectorCategory === 'piko' && device.pikoServerDetails && (
-            <AccordionItem value="piko-server">
-              <AccordionTrigger className="text-sm font-medium">
-                Piko Server Details
-              </AccordionTrigger>
-              <AccordionContent>
-                <div className="space-y-0.5 rounded-md border">
-                  <DetailRow 
-                    label="Server Name" 
-                    value={device.pikoServerDetails.name || device.serverName || "—"} 
-                  />
-                  
-                  {device.pikoServerDetails.status && (
-                    <DetailRow 
-                      label="Server Status" 
-                      value={<Badge variant={getStatusBadgeStyle(device.pikoServerDetails.status, 'server') as any}>{device.pikoServerDetails.status}</Badge>}
-                    />
-                  )}
-                  
-                  {device.pikoServerDetails.version && (
-                    <DetailRow 
-                      label="Server Version" 
-                      value={device.pikoServerDetails.version} 
-                    />
-                  )}
-                  
-                  {device.pikoServerDetails.osPlatform && (
-                    <DetailRow 
-                      label="Server OS" 
-                      value={`${device.pikoServerDetails.osPlatform}${device.pikoServerDetails.osVariantVersion ? ` (${device.pikoServerDetails.osVariantVersion})` : ''}`} 
-                    />
-                  )}
-                  
-                  {device.pikoServerDetails.url && (
-                    <DetailRow 
-                      label="Server URL" 
-                      value={device.pikoServerDetails.url} 
-                      breakAll 
-                    />
-                  )}
-                  
-                  {device.serverId && (
-                    <DetailRow 
-                      label="Server ID" 
-                      value={device.serverId} 
-                      monospace
-                      breakAll 
-                    />
-                  )}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          )}
-        </Accordion>
-      </div>
-      
       <DialogFooter className="pt-4 border-t">
         <DialogClose asChild>
           <Button type="button" variant="secondary">Close</Button>

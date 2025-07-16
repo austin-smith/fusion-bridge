@@ -88,7 +88,8 @@ const DraggableDeviceItem: React.FC<DraggableDeviceItemProps> = ({ device, sourc
               model: device.model ?? undefined,
               vendor: device.vendor ?? undefined,
               serverName: device.serverName ?? undefined,
-              serverId: device.serverId ?? undefined
+              serverId: device.serverId ?? undefined,
+              rawDeviceData: device.rawDeviceData ?? undefined
             }} />
           </DialogContent>
         </Dialog>

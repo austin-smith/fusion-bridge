@@ -204,6 +204,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
         locationId: deviceRow.locationId,
         spaceId: deviceRow.spaceId,
         spaceName: deviceRow.spaceName,
+        rawDeviceData: deviceRow.rawDeviceData ?? undefined,
       };
 
       return NextResponse.json({ success: true, data: singleDevice });
@@ -262,6 +263,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
           locationId: deviceRow.locationId,
           spaceId: deviceRow.spaceId,
           spaceName: deviceRow.spaceName,
+          rawDeviceData: deviceRow.rawDeviceData ?? undefined,
         } satisfies DeviceWithConnector;
       });
 
@@ -402,6 +404,7 @@ async function fetchDevicesForOrganization(orgDb: any): Promise<DeviceWithConnec
       locationId: deviceRow.locationId,
       spaceId: deviceRow.spaceId,
       spaceName: deviceRow.spaceName,
+      rawDeviceData: deviceRow.rawDeviceData ?? undefined,
     } satisfies DeviceWithConnector;
   });
 }
