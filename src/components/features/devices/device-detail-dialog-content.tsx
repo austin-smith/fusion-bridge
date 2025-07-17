@@ -57,6 +57,7 @@ import { Label } from "@/components/ui/label";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { CameraMediaSection } from '@/components/features/common/CameraMediaSection';
+import { useDeviceCameraConfig } from '@/hooks/use-device-camera-config';
 
 
 // Define the shape of the expected prop, compatible with DisplayedDevice from page.tsx
@@ -116,7 +117,6 @@ const getStatusBadgeStyle = (
     case 'unauthorized': return 'destructive';
     case 'notdefined': return 'outline'; 
     default: 
-      console.warn(`Unexpected status value encountered: ${status} for ${entityType}`);
       return 'outline'; 
   }
 };
@@ -132,36 +132,19 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   // Get store state and actions
   const connectors = useFusionStore((state) => state.connectors);
   const deviceStates = useFusionStore((state) => state.deviceStates);
+  const allDevices = useFusionStore((state) => state.allDevices);
   const { executeDeviceAction, deviceActionLoading } = useFusionStore(state => ({
     executeDeviceAction: state.executeDeviceAction,
     deviceActionLoading: state.deviceActionLoading,
   }));
 
-  // Get spaces and alarm zones to find device associations
+  // Get spaces, alarm zones, and locations for UI display
   const spaces = useFusionStore((state) => state.spaces);
   const alarmZones = useFusionStore((state) => state.alarmZones);
   const locations = useFusionStore((state) => state.locations);
-  const allDevices = useFusionStore((state) => state.allDevices);
 
-  // --- START: Logic to get Piko System ID and Connection Type ---
-  let pikoSystemIdForVideo: string | undefined = undefined;
-  let isPikoLocalConnection = false; // Flag for local connection
-  if (device.connectorCategory === 'piko') {
-      const connector = connectors.find(c => c.id === device.connectorId);
-      if (connector && connector.config) {
-          try {
-              const pikoConfig = connector.config as PikoConfig;
-              if (pikoConfig.type === 'cloud') {
-                  pikoSystemIdForVideo = pikoConfig.selectedSystem;
-              } else if (pikoConfig.type === 'local') {
-                  isPikoLocalConnection = true; // Set the flag
-              }
-          } catch (e) {
-              console.error("Error parsing connector config:", e);
-          }
-      }
-  }
-  // --- END: Logic ---
+  // Find the actual device object from store
+  const actualDevice = allDevices.find(d => d.id === device.internalId);
 
   // Find which space contains this device
   const deviceSpace = spaces.find(space => space.deviceIds?.includes(device.internalId));
@@ -176,89 +159,24 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
       ? locations.find(loc => loc.id === deviceAlarmZone.locationId)
       : null;
 
-  // Find Piko cameras in the same space or alarm zone as this device
-  const associatedCameras = useMemo(() => {
-    const cameras: typeof allDevices = [];
-    
-    // Check for cameras in the same space
-    if (deviceSpace) {
-      const spaceCameras = allDevices.filter(d => 
-        deviceSpace.deviceIds?.includes(d.id) &&
-        d.connectorCategory === 'piko' && 
-        d.deviceTypeInfo?.type === 'Camera'
-      );
-      cameras.push(...spaceCameras);
-    }
-    
-    // Check for cameras in the same alarm zone
-    if (deviceAlarmZone) {
-      const alarmZoneCameras = allDevices.filter(d => 
-        deviceAlarmZone.deviceIds?.includes(d.id) &&
-        d.connectorCategory === 'piko' && 
-        d.deviceTypeInfo?.type === 'Camera'
-      );
-      cameras.push(...alarmZoneCameras);
-    }
-    
-    // Remove duplicates (in case a camera is in both space and alarm zone)
-    return cameras.filter((camera, index, self) => 
-      self.findIndex(c => c.id === camera.id) === index
-    );
-  }, [deviceSpace, deviceAlarmZone, allDevices]);
-  
-  // Determine if we should show media section
-  const shouldShowMedia = 
-    // Case 1: This device is a Piko camera
-    (device.connectorCategory === 'piko' && device.deviceTypeInfo?.type === 'Camera') ||
-    // Case 2: This device is in a space or alarm zone with Piko cameras
-    associatedCameras.length > 0;
-  
-  // Determine media configuration
-  const mediaConfig = useMemo(() => {
-    if (device.connectorCategory === 'piko' && device.deviceTypeInfo?.type === 'Camera') {
-      // Use this camera device directly
-      return {
-        connectorId: device.connectorId,
-        cameraId: device.deviceId,
-        pikoSystemId: pikoSystemIdForVideo,
-        title: "LIVE VIEW",
-        titleElement: undefined
-      };
-    } else if (associatedCameras.length > 0) {
-      // Use first available associated camera
-      const associatedCamera = associatedCameras[0];
-      
-      // Get the associated camera's system ID
-      let associatedCameraPikoSystemId: string | undefined = undefined;
-      const associatedCameraConnector = connectors.find(c => c.id === associatedCamera.connectorId);
-      if (associatedCameraConnector?.config) {
-        try {
-          const associatedCameraPikoConfig = associatedCameraConnector.config as PikoConfig;
-          if (associatedCameraPikoConfig.type === 'cloud') {
-            associatedCameraPikoSystemId = associatedCameraPikoConfig.selectedSystem;
-          }
-        } catch (e) {
-          console.error("Error parsing associated camera connector config:", e);
-        }
+  // Use shared hook for camera configuration
+  const { shouldShowMedia, mediaConfig } = useDeviceCameraConfig(actualDevice || null, {
+    spaceName: deviceSpace?.name || null
+  });
+
+  // Check if this is a local Piko connection (for disabling video play)
+  let isPikoLocalConnection = false;
+  if (device.connectorCategory === 'piko') {
+    const connector = connectors.find(c => c.id === device.connectorId);
+    if (connector?.config) {
+      try {
+        const pikoConfig = connector.config as PikoConfig;
+        isPikoLocalConnection = pikoConfig.type === 'local';
+      } catch (e) {
+        console.error("Error parsing connector config:", e);
       }
-      
-      return {
-        connectorId: associatedCamera.connectorId,
-        cameraId: associatedCamera.deviceId,
-        pikoSystemId: associatedCameraPikoSystemId,
-        title: undefined, // Using titleElement instead
-        titleElement: (
-          <span className="flex items-center gap-1.5">
-            SPACE VIEW
-            <span className="opacity-50">•</span>
-            <Box className="h-3 w-3 opacity-70" />
-            {associatedCamera.name}
-          </span>
-        )
-      };
     }
-    return null;
-  }, [device, associatedCameras, pikoSystemIdForVideo, connectors]);
+  }
 
   // Subscribe to device state changes from the store
   const deviceStateKey = `${device.connectorId}:${device.deviceId}`;
@@ -421,18 +339,14 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
              {/* --- START: Media Section --- */}
              {shouldShowMedia && mediaConfig && (
                 <CameraMediaSection
-                  thumbnailMode="live-auto-refresh"
+                  thumbnailMode={mediaConfig.thumbnailMode}
+                  thumbnailUrl={mediaConfig.thumbnailUrl}
                   connectorId={mediaConfig.connectorId}
                   cameraId={mediaConfig.cameraId}
-                  refreshInterval={10000}
-                  videoConfig={{
-                    connectorId: mediaConfig.connectorId,
-                    cameraId: mediaConfig.cameraId,
-                    pikoSystemId: mediaConfig.pikoSystemId,
-                    positionMs: undefined // Live video
-                  }}
+                  refreshInterval={mediaConfig.refreshInterval}
+                  videoConfig={mediaConfig.videoConfig}
                   showManualRefresh={false}
-                  showTimeAgo={true}
+                  showTimeAgo={mediaConfig.thumbnailMode === 'live-auto-refresh'}
                   isPlayDisabled={isPikoLocalConnection}
                   className="mb-4"
                   title={mediaConfig.title}

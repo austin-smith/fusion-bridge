@@ -410,11 +410,13 @@ export const CameraMediaSection: React.FC<CameraMediaSectionProps> = ({
       )}
 
       <div className="flex items-center space-x-2 py-2">
-        <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
         {titleElement ? (
           <div className="text-xs font-medium text-muted-foreground">{titleElement}</div>
         ) : (
-          <span className="text-xs font-medium text-muted-foreground">{title}</span>
+          <>
+            <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-xs font-medium text-muted-foreground">{title}</span>
+          </>
         )}
         <div className="h-px grow bg-border"></div>
       </div>

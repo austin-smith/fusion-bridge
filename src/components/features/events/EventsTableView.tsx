@@ -91,7 +91,6 @@ export function EventsTableView<TData extends TableEventData>({ table, columns }
                           <DebouncedInput
                             value={(header.column.getFilterValue() ?? '') as string}
                             onChange={value => {
-                              console.log(`[EventsTableView] DebouncedInput onChange for column '${header.column.id}', value: '${value}'`); 
                               header.column.setFilterValue(value)
                             }}
                             placeholder=""

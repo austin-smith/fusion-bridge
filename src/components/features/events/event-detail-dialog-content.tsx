@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, EyeIcon, Image as ImageIcon, AlertCircle, Loader2, PlayIcon, Gamepad } from "lucide-react";
+import { Check, Copy, EyeIcon, Image as ImageIcon, AlertCircle, Loader2, PlayIcon, Gamepad, Box, Building, Shield } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +34,8 @@ import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import Image from 'next/image';
 import { CameraMediaSection } from '@/components/features/common/CameraMediaSection';
+import { useDeviceCameraConfig } from '@/hooks/use-device-camera-config';
+import { useFusionStore } from '@/stores/store';
 
 // MODIFIED: Interface matching the updated API structure
 interface EventData {
@@ -70,7 +72,7 @@ const DetailRow = ({label, value, monospace = false, breakAll = false}: {label: 
   <div className="flex flex-row py-1.5 border-b border-muted/40 last:border-0">
     <div className="w-1/3 font-medium text-muted-foreground pl-2">{label}</div>
     <div className={cn("w-2/3 pr-2",
-      monospace && "font-mono text-xs",
+      monospace && "font-mono text-xs", 
       breakAll && "break-all"
     )}>
       {value}
@@ -82,16 +84,50 @@ const DetailRow = ({label, value, monospace = false, breakAll = false}: {label: 
 
 export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> = ({ event }) => {
   const [isCopied, setIsCopied] = useState(false);
+
+  // Get store data for location/space/alarm zone lookup
+  const spaces = useFusionStore((state) => state.spaces);
+  const alarmZones = useFusionStore((state) => state.alarmZones);
+  const locations = useFusionStore((state) => state.locations);
+  const allDevices = useFusionStore((state) => state.allDevices);
+
+  // Find the device in store using deviceId and connectorId
+  const eventDevice = useMemo(() => {
+    return allDevices.find(d => d.deviceId === event.deviceId && d.connectorId === event.connectorId);
+  }, [allDevices, event.deviceId, event.connectorId]);
+
+  // Find which space contains this device
+  const deviceSpace = useMemo(() => {
+    if (!eventDevice) return null;
+    return spaces.find(space => space.deviceIds?.includes(eventDevice.id));
+  }, [spaces, eventDevice]);
+  
+  // Find which alarm zone contains this device
+  const deviceAlarmZone = useMemo(() => {
+    if (!eventDevice) return null;
+    return alarmZones.find(zone => zone.deviceIds?.includes(eventDevice.id));
+  }, [alarmZones, eventDevice]);
+  
+  // Get location information from space or alarm zone
+  const deviceLocation = useMemo(() => {
+    if (deviceSpace) {
+      return locations.find(loc => loc.id === deviceSpace.locationId);
+    } else if (deviceAlarmZone) {
+      return locations.find(loc => loc.id === deviceAlarmZone.locationId);
+    }
+    return null;
+  }, [deviceSpace, deviceAlarmZone, locations]);
   
   const handleCopy = async (text: string) => {
+    if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
       setIsCopied(true);
-      toast.success("Copied JSON to clipboard!");
+      toast.success("Copied to clipboard!");
       setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy text: ', err);
-      toast.error("Failed to copy JSON.");
+      toast.error("Failed to copy text");
     }
   };
 
@@ -104,46 +140,56 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
   const DeviceIcon = getDeviceTypeIcon(typeInfo.type);
   const StateIcon = event.displayState ? getDisplayStateIcon(event.displayState) : null;
 
-  // MODIFIED: Construct Media Thumbnail URL to point to our API route
+  // Construct Media Thumbnail URL if best shot is available
   let mediaThumbnailUrl: string | null = null;
   if (event.bestShotUrlComponents) {
-    // Destructure all components, including the new 'type' and optional 'pikoSystemId'
     const { type, pikoSystemId, connectorId, objectTrackId, cameraId } = event.bestShotUrlComponents;
     
-    // Core components are always required
     if (connectorId && objectTrackId && cameraId) {
-        // Construct the base URL for our backend proxy API route
-        const apiUrl = new URL('/api/piko/best-shot', window.location.origin); // Use relative path
-        
-        // Always append the core IDs
-        apiUrl.searchParams.append('connectorId', connectorId);
-        apiUrl.searchParams.append('objectTrackId', objectTrackId);
-        apiUrl.searchParams.append('cameraId', cameraId);
-        
-        // Conditionally append pikoSystemId ONLY if it's a cloud event
-        if (type === 'cloud' && pikoSystemId) {
-            apiUrl.searchParams.append('pikoSystemId', pikoSystemId);
-        }
-        // Note: We don't explicitly pass 'type=local'. The backend proxy
-        // will infer the type based on the presence/absence of pikoSystemId 
-        // or by looking up the connector config using connectorId.
-        
-        mediaThumbnailUrl = apiUrl.toString();
+      const apiUrl = new URL('/api/piko/best-shot', window.location.origin);
+      
+      apiUrl.searchParams.append('connectorId', connectorId);
+      apiUrl.searchParams.append('objectTrackId', objectTrackId);
+      apiUrl.searchParams.append('cameraId', cameraId);
+      
+      if (type === 'cloud' && pikoSystemId) {
+        apiUrl.searchParams.append('pikoSystemId', pikoSystemId);
+      }
+      
+      mediaThumbnailUrl = apiUrl.toString();
     } else {
-        console.warn("Missing core components required for Media Thumbnail URL:", event.bestShotUrlComponents);
+      console.error("Missing core components required for Media Thumbnail URL:", event.bestShotUrlComponents);
     }
   }
 
+  // Build camera configuration for events
+  const eventCameraOptions = useMemo(() => {
+    const options: any = {};
+    
+    // Handle best shot events
+    if (event.bestShotUrlComponents) {
+      options.bestShotUrlComponents = event.bestShotUrlComponents;
+      options.staticThumbnailUrl = `/api/piko/best-shot?connectorId=${event.bestShotUrlComponents.connectorId}&cameraId=${event.bestShotUrlComponents.cameraId}&objectTrackId=${event.bestShotUrlComponents.objectTrackId}`;
+    }
+    
+    // Always include timestamp for video positioning
+    options.timestamp = event.timestamp;
+    
+    // Pass the already-available space name
+    options.spaceName = deviceSpace?.name || null;
+    
+    return options;
+  }, [event, deviceSpace]);
+
+  // Use the shared hook to determine camera configuration
+  const { shouldShowMedia, mediaConfig } = useDeviceCameraConfig(
+    eventDevice || null,
+    eventCameraOptions
+  );
 
 
-  // MODIFIED: Prepare props for PikoVideoPlayer, handle potential undefined or local type
-  const pikoVideoProps = {
-      connectorId: event.connectorId,
-      // Pass pikoSystemId only if it's a cloud event and exists
-      pikoSystemId: event.bestShotUrlComponents?.type === 'cloud' ? event.bestShotUrlComponents?.pikoSystemId : undefined,
-      cameraId: event.bestShotUrlComponents?.cameraId,
-      positionMs: event.timestamp
-  };
+
+
 
   return (
     <Dialog>
@@ -194,22 +240,21 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
           <TabsContent value="details" className="mt-4">
             <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-4">
               {/* MEDIA THUMBNAIL/PLAYER */} 
-              {mediaThumbnailUrl && (
-                <CameraMediaSection
-                  thumbnailMode="static-url"
-                  thumbnailUrl={mediaThumbnailUrl}
-                  videoConfig={{
-                    connectorId: pikoVideoProps.connectorId,
-                    cameraId: event.bestShotUrlComponents?.cameraId || '',
-                    pikoSystemId: pikoVideoProps.pikoSystemId,
-                    positionMs: pikoVideoProps.positionMs
-                  }}
-                  showManualRefresh={false}
-                  showTimeAgo={false}
-                  className="mb-4"
-                  title="MEDIA"
-                />
-              )}
+                              {shouldShowMedia && mediaConfig && (
+                  <CameraMediaSection
+                    thumbnailMode={mediaConfig.thumbnailMode}
+                    thumbnailUrl={mediaConfig.thumbnailUrl}
+                    connectorId={mediaConfig.connectorId}
+                    cameraId={mediaConfig.cameraId}
+                    refreshInterval={mediaConfig.refreshInterval}
+                    videoConfig={mediaConfig.videoConfig}
+                    showManualRefresh={false}
+                    showTimeAgo={mediaConfig.thumbnailMode === "live-auto-refresh"}
+                    className="mb-4"
+                    title={mediaConfig.title}
+                    titleElement={mediaConfig.titleElement}
+                  />
+                )}
 
               {/* Existing Details Section (wrapped in a div for spacing) */}
               <div className="rounded-md border p-0 text-sm">
@@ -253,6 +298,45 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                             monospace: true,
                             breakAll: true
                         });
+                    }
+
+                    // Add Location Information - Conditional Rendering (same as device detail modal)
+                    if (deviceLocation) {
+                      deviceInfoEntries.push({
+                        key: 'Location',
+                        value: (
+                          <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                            <Building className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-xs">{deviceLocation.name}</span>
+                          </Badge>
+                        )
+                      });
+                    }
+
+                    // Add Space Information - Conditional Rendering (same as device detail modal)
+                    if (deviceSpace) {
+                      deviceInfoEntries.push({
+                        key: 'Space',
+                        value: (
+                          <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                            <Box className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-xs">{deviceSpace.name}</span>
+                          </Badge>
+                        )
+                      });
+                    }
+
+                    // Add Alarm Zone Information - Conditional Rendering (same as device detail modal)
+                    if (deviceAlarmZone) {
+                      deviceInfoEntries.push({
+                        key: 'Alarm Zone',
+                        value: (
+                          <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                            <Shield className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-xs">{deviceAlarmZone.name}</span>
+                          </Badge>
+                        )
+                      });
                     }
 
                     let payloadEntries: { key: string, value: unknown }[] = [];

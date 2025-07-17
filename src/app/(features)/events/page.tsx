@@ -204,7 +204,6 @@ export default function EventsPage() {
       targetCameraId = bestShotEvent.bestShotUrlComponents.cameraId;
       targetPositionMs = bestShotEvent.timestamp - 5000; // Start 5s before event
       targetDeviceName = bestShotEvent.deviceName;
-      console.log("[EventsPage] Playing from Best Shot event context", { targetConnectorId, targetCameraId, targetPositionMs});
     } else if (spacePikoCamera) {
       // Fallback to space camera for live view if no specific event context
       targetConnectorId = spacePikoCamera.connectorId;
@@ -214,7 +213,6 @@ export default function EventsPage() {
       targetCameraId = spacePikoCamera.deviceId;
       targetPositionMs = undefined; // Live view
       targetDeviceName = spacePikoCamera.name;
-      console.log("[EventsPage] Playing live from space camera context", { targetConnectorId, targetCameraId });
     }
 
     if (targetConnectorId && targetCameraId) {
@@ -228,7 +226,6 @@ export default function EventsPage() {
       });
       setIsVideoPlayerOpen(true);
     } else {
-      console.warn("[EventsPage] Could not determine video playback parameters.");
       toast.error("Video playback parameters not found.");
     }
   }, []);
@@ -312,7 +309,6 @@ export default function EventsPage() {
   useEffect(() => {
     // Only trigger if we have organization data but no events yet and we're not loading
     if (connectors.length > 0 && events.length === 0 && !loading && !isLoadingConnectors && !isLoadingSpaces && !isLoadingDevices && !isLoadingLocations) {
-      console.log('[EventsPage] Triggering initial events fetch');
       // This will trigger the main useEffect above to fetch events
       setLoading(true);
       setTimeout(() => setLoading(false), 100); // Reset loading state to trigger the main effect
@@ -379,8 +375,6 @@ export default function EventsPage() {
       const displayMessage = error instanceof Error ? error.message : 'An unknown error occurred while fetching events';
       if (isInitialLoad) {
          toast.error(displayMessage);
-      } else {
-         console.warn(`Background fetch failed: ${displayMessage}`);
       }
       return null; // Return null on error
     } finally {
@@ -448,7 +442,6 @@ export default function EventsPage() {
     if (!tableRef.current || isLoadingConnectors || isLoadingSpaces || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
 
     setLoading(true);
-            console.log('[EventsPage] Initial/Polling useEffect: Fetching initial data.');
             fetchEvents(pagination.pageIndex + 1, pagination.pageSize, true, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly)
       .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
         if (fetchResult && fetchResult.pagination) {
@@ -463,7 +456,7 @@ export default function EventsPage() {
             setTablePageCount(pageCountForNoMeta);
           }
         } else {
-          console.warn('[EventsPage] Initial fetch: fetchEvents returned null.');
+          // Handle case where fetchEvents returns null
         }
         isInitialLoadRef.current = false;
         prevPageIndexRef.current = pagination.pageIndex;
@@ -480,7 +473,6 @@ export default function EventsPage() {
 
     const intervalId = setInterval(() => {
       if (!tableRef.current || isLoadingConnectors || isLoadingSpaces || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
-      console.log('[EventsPage] Polling useEffect: Polling for data.');
       fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly)
         .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
           if (fetchResult && fetchResult.pagination) {
@@ -522,14 +514,12 @@ export default function EventsPage() {
     const alarmFilterChanged = alarmEventsOnly !== prevAlarmEventsOnlyRef.current;
 
     if (eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged || spaceFilterChanged || alarmFilterChanged) {
-      console.log('[EventsPage] Filter change detected.');
       prevEventCategoryFilterRef.current = eventCategoryFilter;
       prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
       prevLocationFilterRef.current = locationFilter;
       prevSpaceFilterRef.current = spaceFilter;
       prevAlarmEventsOnlyRef.current = alarmEventsOnly;
       if (pagination.pageIndex !== 0) {
-        console.log('[EventsPage] Resetting to page 0 due to filter change.');
         tableRef.current.setPageIndex(0);
         return;
       }
@@ -537,8 +527,6 @@ export default function EventsPage() {
 
     if (pageIndexChanged || pageSizeChanged || ((eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged || spaceFilterChanged || alarmFilterChanged) && pagination.pageIndex === 0)) {
       setLoading(true); 
-      console.log('[EventsPage] Pagination/Filter useEffect: Change requiring fetch. Fetching data.', 
-                  { pageIndex: pagination.pageIndex, pageSize: pagination.pageSize, eventCategories: eventCategoryFilter, connectorCategory: connectorCategoryFilter, locationFilter: locationFilter, spaceFilter: spaceFilter, alarmEventsOnly: alarmEventsOnly });
       
       fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly)
         .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
@@ -554,7 +542,7 @@ export default function EventsPage() {
               setTablePageCount(pageCountForNoMeta);
             }
           } else {
-            console.warn('[EventsPage] Pagination/Filter fetch: fetchEvents returned null.');
+            // Handle case where fetchEvents returns null
           }
           prevPageIndexRef.current = pagination.pageIndex;
           prevPageSizeRef.current = pagination.pageSize;

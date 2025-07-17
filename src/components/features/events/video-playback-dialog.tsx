@@ -40,8 +40,6 @@ export const VideoPlaybackDialog: React.FC<VideoPlaybackDialogProps> = React.mem
   // Prevent rendering if critical IDs are missing or dialog is not open
   if (!isOpen || !connectorId || !cameraId) return null;
 
-  console.log('[VideoPlaybackDialog] Rendering. isOpen:', isOpen, 'ConnectorId:', connectorId, 'CameraId:', cameraId);
-
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       {/* Increased width for video, aspect ratio handled by player */}

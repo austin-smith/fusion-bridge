@@ -83,7 +83,6 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
   }, []);
 
   useEffect(() => {
-    console.log("PikoVideoPlayer: Fetching connection details. ConnectorID:", connectorId, "CameraID:", cameraId, "Retry:", retryAttempt);
     setIsLoadingMediaInfo(true);
     setMediaInfoError(null);
     setFetchedPikoSystemId(undefined);
@@ -91,7 +90,6 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
     setFetchedConnectionType(null);
 
     if (!connectorId || !cameraId) {
-      console.error("PikoVideoPlayer: Missing connectorId or cameraId for fetching details.");
       setMediaInfoError("Required information missing for video playback.");
       setIsLoadingMediaInfo(false);
       return;
@@ -114,20 +112,18 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
           throw new Error(responsePayload.error || "API request failed or returned invalid data.");
         }
         const details: WebRTCConnectionDetails = responsePayload.data;
-        console.log("PikoVideoPlayer: Connection details received:", details);
         
         setFetchedPikoSystemId(details.pikoSystemId);
         setFetchedAccessToken(details.accessToken);
         setFetchedConnectionType(details.connectionType);
 
         if (details.connectionType === 'cloud' && !details.pikoSystemId) {
-            console.error("PikoVideoPlayer: Cloud connection type but API did not return pikoSystemId.");
             throw new Error("Configuration error: System ID for cloud playback is missing.");
         }
 
       } catch (error) {
         if (isFetchCancelled) return;
-        console.error("PikoVideoPlayer: Error fetching connection details:", error);
+        console.error("Error fetching connection details:", error);
         const errorMsg = error instanceof Error ? error.message : "Unknown error fetching details.";
         setMediaInfoError(errorMsg);
         toast.error(`Error preparing video: ${errorMsg}`);
@@ -140,18 +136,15 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
     fetchDetails();
     return () => {
       isFetchCancelled = true;
-      console.log("PikoVideoPlayer: [FetchDetailsEffect] Aborted/Cancelled fetching details.");
     };
   }, [connectorId, cameraId, retryAttempt]);
 
   useEffect(() => {
     if (!videoRef.current || !fetchedAccessToken || !cameraId || !webrtcLib) {
-      console.log("PikoVideoPlayer: [StreamManagerEffect] Waiting for video ref, access token, camera ID, or WebRTC library.");
       return;
     }
 
     if (!fetchedConnectionType) {
-      console.log("PikoVideoPlayer: [StreamManagerEffect] Waiting for connection type to be determined from API.");
       if (!isLoadingMediaInfo) {
         setMediaInfoError("Connection type could not be determined from server.");
       }
@@ -159,7 +152,6 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
     }
 
     if (fetchedConnectionType === 'local') {
-      console.warn("PikoVideoPlayer: [StreamManagerEffect] Local Piko connections: Gracefully indicating not supported.");
       setMediaInfoError("Video playback for local Piko connection is not supported.");
       setIsLoadingMediaInfo(false);
       return;
@@ -167,7 +159,6 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
 
     if (fetchedConnectionType === 'cloud') {
       if (!fetchedPikoSystemId) {
-        console.error("PikoVideoPlayer: [StreamManagerEffect] Cloud connection type, but fetchedPikoSystemId is MISSING. Cannot connect.");
         setMediaInfoError("Configuration error: System ID for cloud video stream is missing or invalid.");
         setIsLoadingMediaInfo(false);
         return;
@@ -175,9 +166,6 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
 
       const systemIdForLib: string = fetchedPikoSystemId;
       const currentVideoElement = videoRef.current;
-
-      console.log("PikoVideoPlayer: [StreamManagerEffect] Proceeding with CLOUD connection. SystemId:",
-        systemIdForLib, "cameraId:", cameraId, "tokenExists:", !!fetchedAccessToken, "positionMs:", positionMs);
 
       const webRtcConfig: WebRtcUrlConfig = {
         systemId: systemIdForLib,
@@ -190,10 +178,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
       
       setMediaInfoError(null);
 
-      console.log("PikoVideoPlayer: [StreamManagerEffect] Calling WebRTCStreamManager.connect with config:", webRtcConfig);
-      
       if (streamManagerSubscriptionRef.current) {
-        console.log("PikoVideoPlayer: [StreamManagerEffect] Unsubscribing from previous stream manager subscription before new attempt.");
         streamManagerSubscriptionRef.current.unsubscribe();
       }
       if (currentVideoElement) {
@@ -210,27 +195,21 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
             (data: [MediaStream | null, any | null, any | null]) => {
               const [stream, error, manager] = data;
               if (stream && currentVideoElement) {
-                console.log("PikoVideoPlayer: Stream received from WebRTCStreamManager. Manager instance:", manager, "Current Stream ID:", stream.id);
                 if (currentVideoElement.srcObject !== stream) {
-                  console.log("PikoVideoPlayer: Attaching new stream to video element.");
                   currentVideoElement.srcObject = stream;
                   connectedStream = stream;
                   currentVideoElement.muted = true;
                   currentVideoElement.play().then(() => {
-                    console.log("PikoVideoPlayer: video.play() Promise resolved for stream:", stream.id);
                     setMediaInfoError(null);
                   }).catch(e => {
-                    console.warn("PikoVideoPlayer: video.play() Promise rejected for stream:", stream.id, e);
                     if (connectedStream === stream) {
                        setMediaInfoError(`Playback failed: ${e.message}`);
                     }
                   });
-                } else {
-                  console.log("PikoVideoPlayer: Stream received is same as current srcObject. No action taken.");
                 }
               }
               if (error) {
-                console.error("PikoVideoPlayer: Error reported by WebRTCStreamManager:", error);
+                console.error("WebRTCStreamManager error:", error);
                 const message = (error as any)?.message || 
                   (typeof error === 'number' && (webrtcLib.ConnectionError as any)[error]) || 
                   "Unknown error from library.";
@@ -243,30 +222,28 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
               }
             },
             (err: any) => {
-              console.error("PikoVideoPlayer: Observable error from WebRTCStreamManager:", err);
+              console.error("WebRTCStreamManager observable error:", err);
               const errorMsg = err.message || "Observable failed.";
               setMediaInfoError(errorMsg);
               toast.error(`Video Error: ${errorMsg}`);
             },
             () => {
-              console.log("PikoVideoPlayer: WebRTCStreamManager observable completed.");
+              // Observable completed - no logging needed
             }
           );
       } catch (e) {
-        console.error("PikoVideoPlayer: [StreamManagerEffect] Sync error calling WebRTCStreamManager.connect:", e);
+        console.error("Error calling WebRTCStreamManager.connect:", e);
         const errorMsg = e instanceof Error ? e.message : "Failed to initiate library connection.";
         setMediaInfoError(errorMsg);
         toast.error(errorMsg);
       }
 
       return () => {
-        console.log("PikoVideoPlayer: [StreamManagerEffect] CLEANUP for cloud connection. Unsubscribing.");
         if (streamManagerSubscriptionRef.current) {
           streamManagerSubscriptionRef.current.unsubscribe();
           streamManagerSubscriptionRef.current = null;
         }
         if (currentVideoElement) {
-          console.log("PikoVideoPlayer: [StreamManagerEffect] CLEANUP. Resetting video element.");
           currentVideoElement.srcObject = null;
           if (currentVideoElement.hasAttribute('src')) {
               currentVideoElement.removeAttribute('src');
@@ -276,7 +253,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
         connectedStream = null; 
       };
     } else {
-      console.error(`PikoVideoPlayer: [StreamManagerEffect] Unhandled connection type: ${fetchedConnectionType}. Cannot connect.`);
+      console.error(`Unsupported Piko connection type: ${fetchedConnectionType}`);
       setMediaInfoError(`Unsupported Piko connection type: ${fetchedConnectionType}.`);
       setIsLoadingMediaInfo(false);
       return;
@@ -300,7 +277,6 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
               size="sm"
               className="mt-4"
               onClick={() => {
-                console.log("PikoVideoPlayer: Retry button clicked.");
                 setRetryAttempt(prev => prev + 1);
               }}
             >
