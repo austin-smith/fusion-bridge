@@ -30,11 +30,8 @@ import {
     PikoAuthManager // Correctly import PikoAuthManager
 } from '@/services/drivers/piko';
 import { parsePikoEvent } from '@/lib/event-parsers/piko';
-import * as eventsRepository from '@/data/repositories/events';
 import { useFusionStore } from '@/stores/store';
 import { processAndPersistEvent } from '@/lib/events/eventProcessor';
-import { StandardizedEvent } from '@/types/events';
-import { ConnectorCategory, EventCategory, EventType } from '@/lib/mappings/definitions';
 
 // === Constants ===
 const CONNECTION_TIMEOUT_MS = 15000;
@@ -766,8 +763,12 @@ function scheduleReconnect(connectorId: string): void {
         try {
             await initPikoWebSocket(connectorId, undefined, 0, tokenExpired);
         } catch (err) {
-            console.error(`[${connectorId}] Reconnection attempt via initPikoWebSocket failed in scheduleReconnect:`, err);
-             // Error handling within init should manage state
+            // Improved error logging to show actual error details
+            const errorDetails = err instanceof Error 
+                ? `${err.name}: ${err.message}${err.stack ? `\nStack: ${err.stack}` : ''}`
+                : JSON.stringify(err, null, 2);
+            console.error(`[${connectorId}] Reconnection attempt via initPikoWebSocket failed in scheduleReconnect:`, errorDetails);
+            // Error handling within init should manage state
         }
     }, delay);
 

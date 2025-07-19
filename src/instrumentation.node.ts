@@ -66,6 +66,8 @@ function setupGracefulShutdown() {
           sseConnectionManager.notifyShutdown(5000),
           new Promise((_, reject) => setTimeout(() => reject(new Error('SSE timeout')), 2000))
         ]);
+        // Stop periodic cleanup
+        sseConnectionManager.stopPeriodicCleanup();
       } catch (error) {
         console.error('[Instrumentation Node] SSE notification failed:', error);
       }

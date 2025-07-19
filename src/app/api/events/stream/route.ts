@@ -82,16 +82,29 @@ export const GET = withOrganizationAuth(async (
       }
       
       // Register connection with the global manager (this handles all Redis subscription)
-      await sseConnectionManager.addConnection({
-        id: connectionId,
-        organizationId,
-        controller,
-        eventCategories,
-        eventTypes,
-        alarmEventsOnly,
-        connectedAt: startTime,
-        includeThumbnails
-      });
+      try {
+        await sseConnectionManager.addConnection({
+          id: connectionId,
+          organizationId,
+          controller,
+          eventCategories,
+          eventTypes,
+          alarmEventsOnly,
+          connectedAt: startTime,
+          lastActivity: startTime,
+          includeThumbnails
+        });
+      } catch (error) {
+        console.error(`[SSE] Failed to register connection with manager: ${error}`);
+        // Connection tracking was already done, so we need to clean it up
+        if (connectionTracked) {
+          await redis.decr(connectionCountKey);
+          connectionTracked = false;
+        }
+        // Close the controller and rethrow
+        controller.close();
+        throw error;
+      }
       
       // Send initial connection message immediately
       const connectionMessage: SSEConnectionMessage = {
@@ -131,27 +144,55 @@ export const GET = withOrganizationAuth(async (
 
   // Clean up on disconnect
   const cleanup = async () => {
-    // Clear heartbeat interval
+    console.log(`[SSE] Starting cleanup for connection: ${connectionId}`);
+    const cleanupErrors: string[] = [];
+    
+    // Clear heartbeat interval (synchronous, safe)
     if (heartbeatInterval) {
       clearInterval(heartbeatInterval);
       heartbeatInterval = null;
+      console.log(`[SSE] Cleared heartbeat interval for: ${connectionId}`);
     }
     
-    // Remove connection from the manager (this handles Redis unsubscription)
-    await sseConnectionManager.removeConnection(connectionId);
+    // Remove connection from the manager (handles Redis unsubscription)
+    try {
+      await sseConnectionManager.removeConnection(connectionId);
+      console.log(`[SSE] Removed from connection manager: ${connectionId}`);
+    } catch (error) {
+      const errorMsg = `Failed to remove from connection manager: ${error}`;
+      console.error(`[SSE] ${errorMsg}`);
+      cleanupErrors.push(errorMsg);
+    }
     
-    // Clean up connection tracking
+    // Clean up connection tracking in Redis
     if (connectionTracked) {
-      await redis.decr(connectionCountKey);
-      connectionTracked = false;
-      const duration = Date.now() - startTime.getTime();
-      console.log(`[SSE] Connection cleaned up: ${connectionId}, duration: ${duration}ms`);
+      try {
+        await redis.decr(connectionCountKey);
+        connectionTracked = false;
+        console.log(`[SSE] Decremented Redis connection count for: ${connectionId}`);
+      } catch (error) {
+        const errorMsg = `Failed to decrement Redis counter: ${error}`;
+        console.error(`[SSE] ${errorMsg}`);
+        cleanupErrors.push(errorMsg);
+        // Don't reset connectionTracked on failure - we'll try again if cleanup is called again
+      }
     }
     
+    // Close the controller (safest operation, already wrapped but let's be explicit)
     try {
       controller.close();
+      console.log(`[SSE] Closed controller for: ${connectionId}`);
     } catch (error) {
-      // Controller might already be closed
+      // Controller might already be closed - this is usually safe to ignore
+      console.log(`[SSE] Controller already closed for: ${connectionId}`);
+    }
+    
+    // Log final cleanup status
+    const duration = Date.now() - startTime.getTime();
+    if (cleanupErrors.length > 0) {
+      console.error(`[SSE] Cleanup completed with ${cleanupErrors.length} errors for ${connectionId} (duration: ${duration}ms):`, cleanupErrors);
+    } else {
+      console.log(`[SSE] Cleanup completed successfully for ${connectionId} (duration: ${duration}ms)`);
     }
   };
 
