@@ -253,6 +253,24 @@ function handleSmartFobButtonPress({ event, timestamp, connectorId, deviceInfo }
     return standardizedEvents;
 }
 
+function handleSoundDetection({ event, timestamp, connectorId, deviceInfo }: EventContext): StandardizedEvent[] {
+    const payload = {
+        rawEventData: event.data
+    };
+    
+    return [{
+        eventId: crypto.randomUUID(),
+        timestamp: new Date(event.data!.time!),
+        connectorId: connectorId,
+        deviceId: event.deviceId,
+        deviceInfo: deviceInfo,
+        category: EventCategory.ANALYTICS,
+        type: EventType.SOUND_DETECTED,
+        payload: payload,
+        originalEvent: event,
+    }];
+}
+
 function handleGenericStateChange({ event, timestamp, connectorId, deviceInfo }: EventContext): StandardizedEvent[] {
     if (deviceInfo.type === DeviceType.Unmapped) {
         console.warn(`[YoLink Parser] State Change event '${event.event}' for unmapped device ${event.deviceId}. Cannot process state.`);
@@ -362,6 +380,17 @@ const EVENT_HANDLERS: EventHandler[] = [
     {
         condition: ({ event }) => event.event.endsWith('.powerReport'),
         handler: handlePowerReport
+    },
+    
+    // YoLink camera sound detection
+    {
+        condition: ({ event, deviceInfo }) => {
+            return deviceInfo.type === DeviceType.Camera && 
+                   event.event === 'IPCamera.Alert' && 
+                   typeof event.data?.event === 'string' &&
+                   event.data.event === 'sound_detected';
+        },
+        handler: handleSoundDetection
     },
     
     // SmartFob button presses (specific device type + StatusChange events only)

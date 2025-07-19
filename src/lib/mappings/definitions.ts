@@ -297,6 +297,7 @@ export enum EventType {
   OBJECT_DETECTED = 'OBJECT_DETECTED',         // Generic object detection (Use EventSubtype for class)
   OBJECT_REMOVED = 'OBJECT_REMOVED',           // Object removal detection
   MOTION_DETECTED = 'MOTION_DETECTED',         // Camera motion detection (analytics)
+  SOUND_DETECTED = 'SOUND_DETECTED',           // Camera sound detection (analytics)
   LOITERING = 'LOITERING',
   LINE_CROSSING = 'LINE_CROSSING',
   ARMED_PERSON = 'ARMED_PERSON',
@@ -379,6 +380,7 @@ export const EVENT_SUBTYPE_DISPLAY_MAP: Record<EventSubtype, string> = {
 export const OBJECT_DETECTED_DISPLAY = 'Object Detected';
 export const OBJECT_REMOVED_DISPLAY = 'Object Removed';
 export const MOTION_DETECTED_DISPLAY = 'Motion Detected';
+export const SOUND_DETECTED_DISPLAY = 'Sound Detected';
 export const LOITERING_DISPLAY = 'Loitering';
 export const LINE_CROSSING_DISPLAY = 'Line Crossing';
 export const ARMED_PERSON_DISPLAY = 'Armed Person Detected';
@@ -415,6 +417,7 @@ export const EVENT_TYPE_DISPLAY_MAP = {
   [EventType.OBJECT_DETECTED]: OBJECT_DETECTED_DISPLAY,
   [EventType.OBJECT_REMOVED]: OBJECT_REMOVED_DISPLAY,
   [EventType.MOTION_DETECTED]: MOTION_DETECTED_DISPLAY,
+  [EventType.SOUND_DETECTED]: SOUND_DETECTED_DISPLAY,
   [EventType.LOITERING]: LOITERING_DISPLAY,
   [EventType.LINE_CROSSING]: LINE_CROSSING_DISPLAY,
   [EventType.ARMED_PERSON]: ARMED_PERSON_DISPLAY,
@@ -450,6 +453,7 @@ export const EVENT_TYPE_TO_CATEGORY_MAP: Record<EventType, EventCategory> = {
   [EventType.OBJECT_DETECTED]: EventCategory.ANALYTICS,
   [EventType.OBJECT_REMOVED]: EventCategory.ANALYTICS,
   [EventType.MOTION_DETECTED]: EventCategory.ANALYTICS,
+  [EventType.SOUND_DETECTED]: EventCategory.ANALYTICS,
   [EventType.LOITERING]: EventCategory.ANALYTICS,
   [EventType.LINE_CROSSING]: EventCategory.ANALYTICS,
   [EventType.ARMED_PERSON]: EventCategory.ANALYTICS,
