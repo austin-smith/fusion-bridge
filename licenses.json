@@ -1,0 +1,669 @@
+{
+  "@asteasolutions/zod-to-openapi@7.3.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/asteasolutions/zod-to-openapi",
+    "publisher": "Astea Solutions",
+    "email": "info@asteasolutions.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@asteasolutions/zod-to-openapi",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@asteasolutions/zod-to-openapi/LICENSE"
+  },
+  "@dnd-kit/core@6.3.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/clauderic/dnd-kit",
+    "publisher": "Claudéric Demers",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@dnd-kit/core",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@dnd-kit/core/LICENSE"
+  },
+  "@dnd-kit/sortable@10.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/clauderic/dnd-kit",
+    "publisher": "Claudéric Demers",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@dnd-kit/sortable",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@dnd-kit/sortable/LICENSE"
+  },
+  "@dnd-kit/utilities@3.2.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/clauderic/dnd-kit",
+    "publisher": "Claudéric Demers",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@dnd-kit/utilities",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@dnd-kit/utilities/LICENSE"
+  },
+  "@hookform/resolvers@3.10.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/react-hook-form/resolvers",
+    "publisher": "bluebill1049",
+    "email": "bluebill1049@hotmail.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@hookform/resolvers",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@hookform/resolvers/LICENSE"
+  },
+  "@libsql/client@0.15.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/libsql/libsql-client-ts",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@libsql/client",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@libsql/client/README.md"
+  },
+  "@networkoptix/webrtc-stream-manager@0.1.27": {
+    "licenses": "MPL-2.0",
+    "publisher": "Network Optix",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@networkoptix/webrtc-stream-manager",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@networkoptix/webrtc-stream-manager/README.md"
+  },
+  "@radix-ui/react-accordion@1.2.8": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-accordion",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-accordion/LICENSE"
+  },
+  "@radix-ui/react-alert-dialog@1.1.11": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-alert-dialog",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-alert-dialog/LICENSE"
+  },
+  "@radix-ui/react-avatar@1.1.7": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-avatar",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-avatar/LICENSE"
+  },
+  "@radix-ui/react-checkbox@1.2.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-checkbox",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-checkbox/LICENSE"
+  },
+  "@radix-ui/react-collapsible@1.1.8": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-collapsible",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-collapsible/LICENSE"
+  },
+  "@radix-ui/react-dialog@1.1.11": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-dialog",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-dialog/LICENSE"
+  },
+  "@radix-ui/react-dropdown-menu@2.1.12": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-dropdown-menu",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-dropdown-menu/LICENSE"
+  },
+  "@radix-ui/react-label@2.1.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-label",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-label/LICENSE"
+  },
+  "@radix-ui/react-popover@1.1.11": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-popover",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-popover/LICENSE"
+  },
+  "@radix-ui/react-radio-group@1.3.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-radio-group",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-radio-group/LICENSE"
+  },
+  "@radix-ui/react-scroll-area@1.2.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-scroll-area",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-scroll-area/LICENSE"
+  },
+  "@radix-ui/react-select@2.2.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-select",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-select/LICENSE"
+  },
+  "@radix-ui/react-separator@1.1.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-separator",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-separator/LICENSE"
+  },
+  "@radix-ui/react-slider@1.3.5": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-slider",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-slider/LICENSE"
+  },
+  "@radix-ui/react-slot@1.2.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-slot",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-slot/README.md"
+  },
+  "@radix-ui/react-switch@1.2.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-switch",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-switch/LICENSE"
+  },
+  "@radix-ui/react-tabs@1.1.9": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-tabs",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-tabs/LICENSE"
+  },
+  "@radix-ui/react-toggle-group@1.1.7": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-toggle-group",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-toggle-group/LICENSE"
+  },
+  "@radix-ui/react-toggle@1.1.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-toggle",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-toggle/LICENSE"
+  },
+  "@radix-ui/react-tooltip@1.2.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/radix-ui/primitives",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-tooltip",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-tooltip/LICENSE"
+  },
+  "@scalar/api-reference-react@0.7.7": {
+    "licenses": "MIT",
+    "repository": "https://github.com/scalar/scalar",
+    "publisher": "Scalar",
+    "url": "https://github.com/scalar",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@scalar/api-reference-react",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@scalar/api-reference-react/LICENSE"
+  },
+  "@scalar/nextjs-api-reference@0.8.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/scalar/scalar",
+    "publisher": "Scalar",
+    "url": "https://github.com/scalar",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@scalar/nextjs-api-reference",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@scalar/nextjs-api-reference/LICENSE"
+  },
+  "@tanstack/react-query@5.76.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/TanStack/query",
+    "publisher": "tannerlinsley",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@tanstack/react-query",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@tanstack/react-query/LICENSE"
+  },
+  "@tanstack/react-table@8.21.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/TanStack/table",
+    "publisher": "Tanner Linsley",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@tanstack/react-table",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@tanstack/react-table/LICENSE"
+  },
+  "@types/lodash-es@4.17.12": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/lodash-es",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/lodash-es/LICENSE"
+  },
+  "@types/lodash@4.17.16": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/lodash",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/lodash/LICENSE"
+  },
+  "@types/minimatch@5.1.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/minimatch",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/minimatch/LICENSE"
+  },
+  "@types/node-cron@3.0.11": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/node-cron",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/node-cron/LICENSE"
+  },
+  "@types/react-syntax-highlighter@15.5.13": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/react-syntax-highlighter",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/react-syntax-highlighter/LICENSE"
+  },
+  "@types/uuid@10.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/uuid",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/uuid/LICENSE"
+  },
+  "@types/websocket@1.0.10": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/websocket",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@types/websocket/LICENSE"
+  },
+  "ai@4.3.16": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/vercel/ai",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/ai",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/ai/LICENSE"
+  },
+  "better-auth@1.2.7": {
+    "licenses": "MIT*",
+    "repository": "https://github.com/better-auth/better-auth",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/better-auth",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/better-auth/LICENSE.md"
+  },
+  "better-sqlite3@9.6.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/WiseLibs/better-sqlite3",
+    "publisher": "Joshua Wise",
+    "email": "joshuathomaswise@gmail.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/better-sqlite3",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/better-sqlite3/LICENSE"
+  },
+  "class-variance-authority@0.7.1": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/joe-bell/cva",
+    "publisher": "Joe Bell",
+    "url": "https://joebell.co.uk",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/class-variance-authority",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/class-variance-authority/LICENSE"
+  },
+  "clsx@2.1.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lukeed/clsx",
+    "publisher": "Luke Edwards",
+    "email": "luke.edwards05@gmail.com",
+    "url": "https://lukeed.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/clsx",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/clsx/license"
+  },
+  "cmdk@1.1.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/pacocoursey/cmdk",
+    "publisher": "Paco",
+    "url": "https://github.com/pacocoursey",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/cmdk",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/cmdk/LICENSE.md"
+  },
+  "countries-and-timezones@3.8.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/manuelmhtr/countries-and-timezones",
+    "publisher": "Manuel de la Torre",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/countries-and-timezones",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/countries-and-timezones/LICENSE"
+  },
+  "cron-parser@5.2.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/harrisiirak/cron-parser",
+    "publisher": "Harri Siirak",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/cron-parser",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/cron-parser/LICENSE"
+  },
+  "date-fns-tz@3.2.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/marnusw/date-fns-tz",
+    "publisher": "Marnus Weststrate",
+    "email": "marnusw@gmail.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/date-fns-tz",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/date-fns-tz/LICENSE.md"
+  },
+  "date-fns@4.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/date-fns/date-fns",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/date-fns",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/date-fns/LICENSE.md"
+  },
+  "drizzle-orm@0.43.1": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/drizzle-team/drizzle-orm",
+    "publisher": "Drizzle Team",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/drizzle-orm",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/drizzle-orm/README.md"
+  },
+  "framer-motion@11.18.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/motiondivision/motion",
+    "publisher": "Matt Perry",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/framer-motion",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/framer-motion/LICENSE.md"
+  },
+  "frimousse@0.2.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/liveblocks/frimousse",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/frimousse",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/frimousse/LICENSE"
+  },
+  "fusion-bridge@0.1.0": {
+    "licenses": "UNLICENSED",
+    "private": true,
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/README.md",
+    "noticeFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/NOTICE.md"
+  },
+  "hls.js@1.6.2": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/video-dev/hls.js",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/hls.js",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/hls.js/LICENSE"
+  },
+  "immer@10.1.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/immerjs/immer",
+    "publisher": "Michel Weststrate",
+    "email": "info@michel.codes",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/immer",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/immer/LICENSE"
+  },
+  "input-otp@1.4.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/guilhermerodz/input-otp",
+    "publisher": "Guilherme Rodz",
+    "email": "g@rodz.dev",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/input-otp",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/input-otp/README.md"
+  },
+  "ioredis@5.6.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/luin/ioredis",
+    "publisher": "Zihua Li",
+    "email": "i@zihua.li",
+    "url": "http://zihua.li",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/ioredis",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/ioredis/LICENSE"
+  },
+  "json-rules-engine@7.3.1": {
+    "licenses": "ISC",
+    "repository": "https://github.com/cachecontrol/json-rules-engine",
+    "publisher": "Cache Hamm",
+    "email": "cache.hamm@gmail.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/json-rules-engine",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/json-rules-engine/LICENSE"
+  },
+  "lodash-es@4.17.21": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lodash/lodash",
+    "publisher": "John-David Dalton",
+    "email": "john.david.dalton@gmail.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/lodash-es",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/lodash-es/LICENSE"
+  },
+  "lodash@4.17.21": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lodash/lodash",
+    "publisher": "John-David Dalton",
+    "email": "john.david.dalton@gmail.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/lodash",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/lodash/LICENSE"
+  },
+  "lucide-react@0.503.0": {
+    "licenses": "ISC",
+    "repository": "https://github.com/lucide-icons/lucide",
+    "publisher": "Eric Fennis",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/lucide-react",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/lucide-react/LICENSE"
+  },
+  "minimatch@10.0.1": {
+    "licenses": "ISC",
+    "repository": "https://github.com/isaacs/minimatch",
+    "publisher": "Isaac Z. Schlueter",
+    "email": "i@izs.me",
+    "url": "http://blog.izs.me",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/minimatch",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/minimatch/LICENSE"
+  },
+  "mqtt@5.12.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/mqttjs/MQTT.js",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/mqtt",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/mqtt/LICENSE.md"
+  },
+  "next-themes@0.4.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/pacocoursey/next-themes",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/next-themes",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/next-themes/license.md"
+  },
+  "next@15.3.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vercel/next.js",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/next",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/next/license.md"
+  },
+  "node-cron@4.0.5": {
+    "licenses": "ISC",
+    "repository": "https://github.com/merencia/node-cron",
+    "publisher": "Lucas Merencia",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/node-cron",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/node-cron/LICENSE.md"
+  },
+  "openai@5.8.3": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/openai/openai-node",
+    "publisher": "OpenAI",
+    "email": "support@openai.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/openai",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/openai/LICENSE"
+  },
+  "p-retry@6.2.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/sindresorhus/p-retry",
+    "publisher": "Sindre Sorhus",
+    "email": "sindresorhus@gmail.com",
+    "url": "https://sindresorhus.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/p-retry",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/p-retry/license"
+  },
+  "pluralize@8.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/blakeembrey/pluralize",
+    "publisher": "Blake Embrey",
+    "email": "hello@blakeembrey.com",
+    "url": "http://blakeembrey.me",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/pluralize",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/pluralize/LICENSE"
+  },
+  "react-dom@18.3.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/facebook/react",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-dom",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-dom/LICENSE"
+  },
+  "react-grid-layout@1.5.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/STRML/react-grid-layout",
+    "publisher": "Samuel Reed",
+    "email": "samuel.trace.reed@gmail.com",
+    "url": "http://strml.net/",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-grid-layout",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-grid-layout/LICENSE"
+  },
+  "react-hook-form@7.56.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/react-hook-form/react-hook-form",
+    "publisher": "Beier",
+    "email": "bluebill1049@hotmail.com",
+    "url": "Bill",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-hook-form",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-hook-form/LICENSE"
+  },
+  "react-hot-toast@2.5.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/timolins/react-hot-toast",
+    "publisher": "Timo Lins",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-hot-toast",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-hot-toast/LICENSE"
+  },
+  "react-icons@5.5.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/react-icons/react-icons",
+    "publisher": "Goran Gajic",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-icons",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-icons/LICENSE"
+  },
+  "react-markdown@10.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/remarkjs/react-markdown",
+    "publisher": "Espen Hovlandsdal",
+    "email": "espen@hovlandsdal.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-markdown",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-markdown/license"
+  },
+  "react-qr-code@2.0.15": {
+    "licenses": "MIT",
+    "repository": "https://github.com/rosskhanas/react-qr-code",
+    "publisher": "Ross Khanas",
+    "email": "rtkhanas@gmail.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-qr-code",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-qr-code/LICENSE"
+  },
+  "react-resizable-panels@2.1.9": {
+    "licenses": "MIT",
+    "repository": "https://github.com/bvaughn/react-resizable-panels",
+    "publisher": "Brian Vaughn",
+    "email": "brian.david.vaughn@gmail.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-resizable-panels",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-resizable-panels/LICENSE"
+  },
+  "react-resizable@3.0.5": {
+    "licenses": "MIT",
+    "repository": "https://github.com/react-grid-layout/react-resizable",
+    "publisher": "Samuel Reed",
+    "email": "samuel.trace.reed@gmail.com",
+    "url": "http://strml.net/",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-resizable",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-resizable/LICENSE"
+  },
+  "react-router-dom@7.5.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/remix-run/react-router",
+    "publisher": "Remix Software",
+    "email": "hello@remix.run",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-router-dom",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-router-dom/LICENSE.md"
+  },
+  "react-syntax-highlighter@15.6.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/react-syntax-highlighter/react-syntax-highlighter",
+    "publisher": "Conor Hastings",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-syntax-highlighter",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-syntax-highlighter/LICENSE"
+  },
+  "react@18.3.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/facebook/react",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react/LICENSE"
+  },
+  "remark-gfm@4.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/remarkjs/remark-gfm",
+    "publisher": "Titus Wormer",
+    "email": "tituswormer@gmail.com",
+    "url": "https://wooorm.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/remark-gfm",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/remark-gfm/license"
+  },
+  "remeda@2.24.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/remeda/remeda",
+    "publisher": "Łukasz Sentkiewicz",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/remeda",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/remeda/README.md"
+  },
+  "rxjs@7.8.1": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/reactivex/rxjs",
+    "publisher": "Ben Lesh",
+    "email": "ben@benlesh.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/rxjs",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/rxjs/LICENSE.txt"
+  },
+  "server-only@0.0.1": {
+    "licenses": "MIT",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/server-only"
+  },
+  "shiki@1.29.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/shikijs/shiki",
+    "publisher": "Pine Wu",
+    "email": "octref@gmail.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/shiki",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/shiki/LICENSE"
+  },
+  "sonner@2.0.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/emilkowalski/sonner",
+    "publisher": "Emil Kowalski",
+    "email": "e@emilkowal.ski",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/sonner",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/sonner/LICENSE.md"
+  },
+  "states-us@1.1.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/justinlettau/states-us",
+    "publisher": "Justin Lettau",
+    "email": "me@justinlettau.com",
+    "url": "https://justinlettau.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/states-us",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/states-us/LICENSE"
+  },
+  "tailwind-merge@2.6.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/dcastil/tailwind-merge",
+    "publisher": "Dany Castillo",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/tailwind-merge",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/tailwind-merge/LICENSE.md"
+  },
+  "tailwindcss-animate@1.0.7": {
+    "licenses": "MIT",
+    "publisher": "Jamie Kyle",
+    "email": "me@thejameskyle.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/tailwindcss-animate",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/tailwindcss-animate/LICENSE"
+  },
+  "use-debounce@10.0.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/xnimorz/use-debounce",
+    "publisher": "Nik",
+    "url": "nik@xnim.me",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/use-debounce",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/use-debounce/LICENSE"
+  },
+  "uuid@11.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/uuidjs/uuid",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/uuid",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/uuid/LICENSE.md"
+  },
+  "websocket@1.0.35": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/theturtle32/WebSocket-Node",
+    "publisher": "Brian McKelvey",
+    "email": "theturtle32@gmail.com",
+    "url": "https://github.com/theturtle32",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/websocket",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/websocket/LICENSE"
+  },
+  "xlsx@0.18.5": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/SheetJS/sheetjs",
+    "publisher": "sheetjs",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/xlsx",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/xlsx/LICENSE"
+  },
+  "zod@3.24.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/colinhacks/zod",
+    "publisher": "Colin McDonnell",
+    "email": "colin@colinhacks.com",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/zod",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/zod/LICENSE"
+  },
+  "zustand@4.5.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/pmndrs/zustand",
+    "publisher": "Paul Henschel",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/zustand",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/zustand/LICENSE"
+  }
+}

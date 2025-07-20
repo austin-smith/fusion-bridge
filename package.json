@@ -4,10 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "npm run migrate",
+    "prebuild": "npm run migrate && npm run generate-licenses",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "generate-licenses": "license-checker --production --json --out licenses.json",
     "db:studio": "drizzle-kit studio",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
@@ -109,6 +110,7 @@
     "use-debounce": "^10.0.4",
     "uuid": "^11.1.0",
     "websocket": "^1.0.35",
+    "xlsx": "^0.18.5",
     "zod": "^3.24.3",
     "zustand": "^4.4.7"
   },
@@ -134,6 +136,7 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.0.0",
     "husky": "^9.0.7",
+    "license-checker": "^25.0.1",
     "next-postman": "^0.0.1",
     "postcss": "^8.4.35",
     "prettier": "^3.2.5",

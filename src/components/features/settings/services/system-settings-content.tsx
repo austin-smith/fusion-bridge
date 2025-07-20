@@ -2,9 +2,10 @@
 
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Settings, Key, BookOpen, ExternalLink } from 'lucide-react';
+import { Settings, Key, BookOpen, ExternalLink, Award } from 'lucide-react';
 import { ServicesSettingsClientPageContent } from './services-settings-client-page';
-import { AdminApiKeysContent } from '../../../../components/api-keys/admin-api-keys-content'; // New client component
+import { AdminApiKeysContent } from '../../../../components/api-keys/admin-api-keys-content';
+import { AttributionContent } from './attribution-content';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -23,6 +24,11 @@ const systemSettingsTabs = [
     id: 'api-docs',
     label: 'API Documentation',
     icon: BookOpen,
+  },
+  {
+    id: 'attribution',
+    label: 'Attribution',
+    icon: Award,
   },
 ];
 
@@ -82,6 +88,8 @@ function ApiDocumentationContent() {
   );
 }
 
+
+
 interface SystemSettingsContentProps {
   initialPushoverConfig: any;
   initialPushcutConfig: any;
@@ -112,6 +120,8 @@ export function SystemSettingsContent({
         return <AdminApiKeysContent />;
       case 'api-docs':
         return <ApiDocumentationContent />;
+      case 'attribution':
+        return <AttributionContent />;
       default:
         return (
           <ServicesSettingsClientPageContent
@@ -131,19 +141,21 @@ export function SystemSettingsContent({
         <nav className="flex flex-col space-y-1 sm:flex-row sm:space-y-0 sm:space-x-2 xl:flex-col xl:space-x-0 xl:space-y-1">
           {systemSettingsTabs.map((tab) => {
             const Icon = tab.icon;
+            const buttonClasses = cn(
+              'flex items-center justify-start rounded-md px-3 py-2 text-sm font-medium transition-colors',
+              'hover:bg-accent hover:text-accent-foreground',
+              'sm:justify-center xl:justify-start',
+              'whitespace-nowrap',
+              activeTab === tab.id
+                ? 'bg-accent text-accent-foreground'
+                : 'transparent'
+            );
+
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  'flex items-center justify-start rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                  'hover:bg-accent hover:text-accent-foreground',
-                  'sm:justify-center xl:justify-start',
-                  'whitespace-nowrap',
-                  activeTab === tab.id
-                    ? 'bg-accent text-accent-foreground'
-                    : 'transparent'
-                )}
+                className={buttonClasses}
               >
                 <Icon className="mr-2 h-4 w-4 flex-shrink-0" />
                 <span className="truncate">{tab.label}</span>

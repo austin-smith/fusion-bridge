@@ -93,7 +93,7 @@ import { LocationSpaceSelector } from '@/components/common/LocationSpaceSelector
 import { VideoPlaybackDialog, type VideoPlaybackDialogProps } from '@/components/features/events/video-playback-dialog';
 import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
 import { TimeFilterDropdown } from '@/components/features/events/TimeFilterDropdown';
-
+import { ExportButton } from '@/components/features/events/ExportButton';
 
 // --- Interface for Pagination Metadata from API ---
 interface PaginationMetadata {
@@ -1077,16 +1077,50 @@ export default function EventsPage() {
     pageCount: tablePageCount,
   });
 
+  
 
-
-  const displayedEvents = useMemo(() => {
+    const displayedEvents = useMemo(() => {
     return events;
   }, [events]);
-  // --- END MODIFIED ---
+  
+  // Create filter parameters for export to get ALL filtered events from API
+  const exportFilterParams = useMemo(() => {
+    const params = new URLSearchParams();
+    
+    if (eventCategoryFilter.length > 0 && eventCategoryFilter.length !== Object.keys(EVENT_CATEGORY_DISPLAY_MAP).length) {
+      params.set('eventCategories', eventCategoryFilter.join(','));
+    }
+    if (connectorCategoryFilter && connectorCategoryFilter.toLowerCase() !== 'all') {
+      params.set('connectorCategory', connectorCategoryFilter);
+    }
+    if (locationFilter && locationFilter.toLowerCase() !== 'all') {
+      params.set('locationId', locationFilter);
+    }
+    if (spaceFilter && spaceFilter.toLowerCase() !== 'all') {
+      params.set('spaceId', spaceFilter);
+    }
+    if (alarmEventsOnly) {
+      params.set('alarmEventsOnly', 'true');
+    }
+    if (viewMode === 'table') {
+      if (deviceNameFilter?.trim()) params.set('deviceNameFilter', deviceNameFilter);
+      if (eventTypeFilter?.trim()) params.set('eventTypeFilter', eventTypeFilter);
+      if (deviceTypeFilter?.trim()) params.set('deviceTypeFilter', deviceTypeFilter);
+      if (connectorNameFilter?.trim()) params.set('connectorNameFilter', connectorNameFilter);
+    }
+    if (timeStart) params.set('timeStart', timeStart);
+    if (timeEnd) params.set('timeEnd', timeEnd);
+    
+    return params;
+  }, [eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly, viewMode, deviceNameFilter, eventTypeFilter, deviceTypeFilter, connectorNameFilter, timeStart, timeEnd]);
 
-  // Define page actions
+  // Define page actions  
   const pageActions = (
     <>
+      <ExportButton 
+        currentEvents={displayedEvents}
+        filterParams={exportFilterParams}
+      />
       <EventViewToggle viewMode={viewMode} onViewModeChange={setViewMode} cardSize={cardSize} onCardSizeChange={setCardSize} />
       {viewMode === 'card' && (
         <TooltipProvider delayDuration={100}>
