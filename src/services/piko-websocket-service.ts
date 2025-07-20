@@ -16,6 +16,7 @@ try {
 // --- End dynamic import --- 
 
 import { client as WebSocketClient, connection as WebSocketConnection, Message } from 'websocket'; 
+import pRetry from 'p-retry';
 
 import { db } from '@/data/db';
 import { connectors } from '@/data/db/schema';
@@ -32,16 +33,13 @@ import {
 import { parsePikoEvent } from '@/lib/event-parsers/piko';
 import { useFusionStore } from '@/stores/store';
 import { processAndPersistEvent } from '@/lib/events/eventProcessor';
+import { StandardizedEvent } from '@/types/events';
+import { ConnectorCategory, EventCategory, EventType } from '@/lib/mappings/definitions';
 
 // === Constants ===
 const CONNECTION_TIMEOUT_MS = 15000;
 const DEVICE_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const MAX_REDIRECTS = 3;
-
-// Reconnection timing constants
-const RECONNECT_BASE_DELAY_MS = 5000; // Base delay for exponential backoff
-const RECONNECT_MAX_DELAY_MS = 60000; // Maximum delay cap
-const RECONNECT_BACKOFF_FACTOR = 2; // Exponential backoff multiplier
 
 // Cleanup timeout constants
 const CLEANUP_TIMEOUT_MS = 2000; // Timeout for graceful cleanup operations
@@ -708,7 +706,7 @@ async function _handlePikoMessage(connectorId: string, message: Message): Promis
     }
 }
 
-// --- Adjusted scheduleReconnect with proper timeout cleanup ---
+// --- Adjusted scheduleReconnect with p-retry ---
 function scheduleReconnect(connectorId: string): void {
      const state = connections.get(connectorId);
      // Check isAttemptingConnection flag instead of isConnecting
@@ -726,53 +724,80 @@ function scheduleReconnect(connectorId: string): void {
         state.reconnectTimeoutId = null;
     }
 
-    state.reconnectAttempts++;
-    const delay = Math.min(RECONNECT_BASE_DELAY_MS * Math.pow(RECONNECT_BACKOFF_FACTOR, state.reconnectAttempts - 1), RECONNECT_MAX_DELAY_MS); 
-    console.log(`[${connectorId}] Scheduling reconnection attempt ${state.reconnectAttempts} in ${delay}ms`);
-    state.connectionError = `Connection lost. Reconnecting (attempt ${state.reconnectAttempts})...`;
+    console.log(`[${connectorId}] Starting reconnection with p-retry...`);
+    state.reconnectAttempts = 1; // Set to indicate reconnection in progress
+    state.connectionError = `Connection lost. Reconnecting...`;
+    connections.set(connectorId, state);
 
-    // Store the timeout ID for proper cleanup
-    state.reconnectTimeoutId = setTimeout(async () => {
+    // Use p-retry for robust reconnection with exponential backoff
+    pRetry(async (attemptNumber) => {
         const currentState = connections.get(connectorId);
-        // Clear the timeout ID since it's firing
-        if (currentState) {
-            currentState.reconnectTimeoutId = null;
-        }
-
-        // Re-check conditions before attempting reconnect
-        if (!currentState || currentState.disabled || currentState.connection?.connected || currentState.isAttemptingConnection || currentState.reconnectAttempts === 0) {
-            console.log(`[scheduleReconnect][${connectorId}] Skipping reconnect attempt: State changed or reset.`);
-             if (currentState && currentState.connection?.connected) currentState.reconnectAttempts = 0; // Reset if connected
-             if (currentState) connections.set(connectorId, currentState);
+        
+        // Check if we should still be reconnecting
+        if (!currentState || currentState.disabled || currentState.connection?.connected) {
+            console.log(`[scheduleReconnect][${connectorId}] Stopping reconnection: State changed.`);
+            if (currentState) {
+                currentState.reconnectAttempts = 0;
+                connections.set(connectorId, currentState);
+            }
+            // Return success to stop p-retry
             return;
         }
 
-        console.log(`[scheduleReconnect][${connectorId}] Timeout fired. Checking token expiration before reconnect...`);
+        console.log(`[scheduleReconnect][${connectorId}] Reconnection attempt ${attemptNumber}...`);
         
+        // Update state for this attempt
+        currentState.reconnectAttempts = attemptNumber;
+        currentState.connectionError = `Connection lost. Reconnecting (attempt ${attemptNumber})...`;
+        connections.set(connectorId, currentState);
+
         // Check if token is expired and force refresh if needed
         const tokenExpired = currentState?.tokenInfo?.expiresAt 
             ? Date.now() >= currentState.tokenInfo.expiresAt 
             : true; // Treat missing expiration as expired
         
         if (tokenExpired) {
-            console.log(`[scheduleReconnect][${connectorId}] Token is expired, forcing refresh on reconnect attempt.`);
+            console.log(`[scheduleReconnect][${connectorId}] Token is expired, forcing refresh on attempt ${attemptNumber}.`);
         } else {
-            console.log(`[scheduleReconnect][${connectorId}] Token is still valid, reconnecting with existing token.`);
+            console.log(`[scheduleReconnect][${connectorId}] Token is still valid, reconnecting with existing token on attempt ${attemptNumber}.`);
         }
 
-        try {
-            await initPikoWebSocket(connectorId, undefined, 0, tokenExpired);
-        } catch (err) {
-            // Improved error logging to show actual error details
-            const errorDetails = err instanceof Error 
-                ? `${err.name}: ${err.message}${err.stack ? `\nStack: ${err.stack}` : ''}`
-                : JSON.stringify(err, null, 2);
-            console.error(`[${connectorId}] Reconnection attempt via initPikoWebSocket failed in scheduleReconnect:`, errorDetails);
-            // Error handling within init should manage state
+        // Attempt reconnection - if this throws, p-retry will handle it
+        await initPikoWebSocket(connectorId, undefined, 0, tokenExpired);
+        
+        console.log(`[${connectorId}] Reconnection successful on attempt ${attemptNumber}!`);
+    }, {
+        // No retry limit - keep trying forever until device comes back
+        factor: 2, // Exponential backoff factor
+        minTimeout: 5000, // Start with 5 seconds
+        maxTimeout: 60000, // Cap at 60 seconds
+        randomize: true, // Add jitter to prevent thundering herd
+        onFailedAttempt: (error) => {
+            const errorDetails = error instanceof Error 
+                ? `${error.name}: ${error.message}`
+                : String(error);
+            console.error(`[${connectorId}] Reconnection attempt ${error.attemptNumber} failed: ${errorDetails}`);
+            console.log(`[${connectorId}] Will retry indefinitely until device comes back online...`);
         }
-    }, delay);
-
-    connections.set(connectorId, state);
+    }).then(() => {
+        // Reconnection succeeded
+        const finalState = connections.get(connectorId);
+        if (finalState) {
+            finalState.reconnectAttempts = 0;
+            finalState.connectionError = null;
+            connections.set(connectorId, finalState);
+        }
+        console.log(`[${connectorId}] Reconnection completed successfully.`);
+    }).catch((error) => {
+        // This should only catch non-retry related errors (e.g., programming errors)
+        console.error(`[${connectorId}] Unexpected error during reconnection process:`, error);
+        const finalState = connections.get(connectorId);
+        if (finalState) {
+            finalState.reconnectAttempts = 0;
+            finalState.connectionError = `Unexpected reconnection error: ${error instanceof Error ? error.message : String(error)}`;
+            connections.set(connectorId, finalState);
+        }
+    });
 }
 
 // --- Adjusted disconnectPikoWebSocket ---
