@@ -3,6 +3,7 @@ import 'server-only'; // Mark this module as server-only
 // Remove module init log: console.log(`[${new Date().toISOString()}] --- MQTT Service Module Initializing ---`);
 
 import * as mqtt from 'mqtt';
+import pRetry from 'p-retry';
 import { getHomeInfo, getRefreshedYoLinkToken, YoLinkConfig as DriverYoLinkConfig } from '@/services/drivers/yolink';
 import { db } from '@/data/db';
 import { connectors } from '@/data/db/schema';
@@ -20,11 +21,6 @@ import { updateConnectorConfig } from '@/data/repositories/connectors'; // <-- I
 // Connection timeout constants
 const MQTT_CONNECTION_TIMEOUT_MS = 15000; // MQTT connection timeout
 const MQTT_CONNECT_TIMEOUT_MS = 10000; // mqtt.connect timeout option
-
-// Reconnection timing constants  
-const RECONNECT_BASE_DELAY_MS = 5000; // Base delay for exponential backoff
-const RECONNECT_MAX_DELAY_MS = 60000; // Maximum delay cap
-const RECONNECT_BACKOFF_FACTOR = 2; // Exponential backoff multiplier
 
 // Cleanup timeout constants
 const MQTT_GRACEFUL_CLOSE_TIMEOUT_MS = 2000; // Timeout for graceful MQTT client close
@@ -435,8 +431,33 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
               connection.client.on('offline', () => {
                   // console.log(`[${currentHomeId}] MQTT client is offline.`);
                   if (connections.has(currentHomeId)) {
-                      const conn = connections.get(currentHomeId)!; conn.connectionError = 'Connection offline'; conn.isConnected = false;
+                      const conn = connections.get(currentHomeId)!; 
+                      conn.connectionError = 'Connection offline'; 
+                      conn.isConnected = false;
                       connections.set(currentHomeId, conn);
+                      
+                      // Trigger reconnection if not disabled
+                      if (!conn.disabled) {
+                          console.log(`[${currentHomeId}] MQTT client went offline. Scheduling reconnection...`);
+                          scheduleReconnect(currentHomeId);
+                      }
+                  }
+              });
+
+              // Persistent error handler for ongoing connection issues
+              connection.client.on('error', (err) => {
+                  console.error(`[${currentHomeId}] MQTT client error:`, err.message);
+                  if (connections.has(currentHomeId)) {
+                      const conn = connections.get(currentHomeId)!;
+                      conn.connectionError = `MQTT error: ${err.message}`;
+                      conn.isConnected = false;
+                      connections.set(currentHomeId, conn);
+                      
+                      // Trigger reconnection if not disabled
+                      if (!conn.disabled) {
+                          console.log(`[${currentHomeId}] MQTT client error occurred. Scheduling reconnection...`);
+                          scheduleReconnect(currentHomeId);
+                      }
                   }
               });
 
@@ -463,16 +484,13 @@ export async function initMqttService(connectorId: string): Promise<boolean> {
 // Schedule a reconnection attempt for a specific HOME ID
 function scheduleReconnect(homeId: string): void {
   if (!connections.has(homeId)) {
-      // console.log(`[scheduleReconnect][${homeId}] Aborted: No connection found in map.`);
       return; // Should not happen if called from event handlers
   }
   const connection = connections.get(homeId)!;
   if (connection.reconnectAttempts > 0) {
-      // console.log(`[scheduleReconnect][${homeId}] Aborted: Reconnect already in progress.`);
-      return; 
+      return; // Reconnect already in progress
   }
-  if (connection.disabled) { // Check internal state first
-      // console.log(`[scheduleReconnect][${homeId}] Aborted: Connection state is disabled.`);
+  if (connection.disabled) {
       return;
   }
   
@@ -488,65 +506,69 @@ function scheduleReconnect(homeId: string): void {
       connection.reconnectTimeoutId = null;
   }
 
-  // Ensure attempts don't race
-  connection.reconnectAttempts++;
-  connections.set(homeId, connection); // Save increased attempt count immediately
+  console.log(`[${homeId}] Starting reconnection with p-retry...`);
+  connection.reconnectAttempts = 1; // Set to indicate reconnection in progress
+  connection.connectionError = `Connection lost. Reconnecting...`;
+  connections.set(homeId, connection);
 
-  // Now check DB state before scheduling timeout
-  // console.log(`[scheduleReconnect][${homeId}] Checking DB state for connector ${connectorId}...`);
-  loadDisabledState(connectorId).then(isDisabled => {
-      // Re-fetch connection state in case it changed during async DB check
-      if (!connections.has(homeId)) return; // Connection removed
-      const currentConnection = connections.get(homeId)!;
-
-      if (currentConnection.reconnectAttempts === 0) { // Check if reset elsewhere (e.g., explicit disconnect/enable)
-        // console.log(`[scheduleReconnect][${homeId}] Aborted: Reconnect attempts were reset.`);
-        return; 
-      }
-      if (currentConnection.disabled || isDisabled) {
-        // console.log(`[scheduleReconnect][${homeId}] Aborted: Connector ${connectorId} is disabled (state: ${currentConnection.disabled}, db: ${isDisabled}). Resetting attempts.`);
-        currentConnection.reconnectAttempts = 0;
-        currentConnection.connectionError = null;
-        currentConnection.disabled = true;
-        currentConnection.isConnected = false;
-        if(currentConnection.client) { try{ currentConnection.client.end(true); } catch(e){} finally { currentConnection.client = null; } }
-        connections.set(homeId, currentConnection);
-        return;
-      }
-            
-      // Exponential backoff using configurable constants
-      const delay = Math.min(RECONNECT_BASE_DELAY_MS * Math.pow(RECONNECT_BACKOFF_FACTOR, currentConnection.reconnectAttempts - 1), RECONNECT_MAX_DELAY_MS);
-      console.log(`[${homeId}] Scheduling reconnection attempt ${currentConnection.reconnectAttempts} for connector ${connectorId} in ${delay}ms`);
-      currentConnection.connectionError = `Connection lost. Reconnecting (attempt ${currentConnection.reconnectAttempts})...`;
+  // Use p-retry for robust reconnection with exponential backoff
+  pRetry(async (attemptNumber) => {
+      const currentConnection = connections.get(homeId);
       
-      // Store the timeout ID for proper cleanup
-      currentConnection.reconnectTimeoutId = setTimeout(() => {
-        if (!connections.has(homeId)) return; // Connection removed
-        const checkConnection = connections.get(homeId)!;
-
-        // Clear the timeout ID since it's firing
-        checkConnection.reconnectTimeoutId = null;
-
-        if (checkConnection.disabled || checkConnection.isConnected || checkConnection.reconnectAttempts === 0) { // Check again before attempting
-          // console.log(`[scheduleReconnect][${homeId}] Skipping reconnect attempt: Disabled=${checkConnection.disabled}, Connected=${checkConnection.isConnected}, Attempts=${checkConnection.reconnectAttempts}`);
-          if (checkConnection.isConnected) checkConnection.reconnectAttempts = 0; // Reset if connected
-          connections.set(homeId, checkConnection);
+      // Check if we should still be reconnecting
+      if (!currentConnection || currentConnection.disabled || currentConnection.isConnected) {
+          console.log(`[scheduleReconnect][${homeId}] Stopping reconnection: State changed.`);
+          if (currentConnection) {
+              currentConnection.reconnectAttempts = 0;
+              connections.set(homeId, currentConnection);
+          }
+          // Return success to stop p-retry
           return;
-        }
+      }
 
-        // console.log(`[scheduleReconnect][${homeId}] Timeout fired. Attempting initMqttService for connector ${connectorId}...`);
-        initMqttService(connectorId).catch(err => {
-          console.error(`[${homeId}][${connectorId}] Reconnection attempt via initMqttService failed:`, err);
-          // Don't reset attempts here, let the error/close handler trigger the *next* scheduleReconnect
-        });
-      }, delay);
+      console.log(`[scheduleReconnect][${homeId}] Reconnection attempt ${attemptNumber}...`);
       
-      connections.set(homeId, currentConnection); // Save error message and timeout ID
-    }).catch(err => {
-      console.error(`[${homeId}][${connectorId}] CRITICAL: Failed to check DB state for reconnection:`, err); 
-      // Reset attempts on DB error to allow future triggers
-      if (connections.has(homeId)) { connections.get(homeId)!.reconnectAttempts = 0; connections.set(homeId, connections.get(homeId)!); }
-    });
+      // Update state for this attempt
+      currentConnection.reconnectAttempts = attemptNumber;
+      currentConnection.connectionError = `Connection lost. Reconnecting (attempt ${attemptNumber})...`;
+      connections.set(homeId, currentConnection);
+
+      // Attempt reconnection - if this throws, p-retry will handle it
+      await initMqttService(connectorId);
+      
+      console.log(`[${homeId}] Reconnection successful on attempt ${attemptNumber}!`);
+  }, {
+      // No retry limit - keep trying forever until device comes back
+      factor: 2, // Exponential backoff factor
+      minTimeout: 5000, // Start with 5 seconds
+      maxTimeout: 60000, // Cap at 60 seconds
+      randomize: true, // Add jitter to prevent thundering herd
+      onFailedAttempt: (error) => {
+          const errorDetails = error instanceof Error 
+              ? `${error.name}: ${error.message}`
+              : String(error);
+          console.error(`[${homeId}] Reconnection attempt ${error.attemptNumber} failed: ${errorDetails}`);
+          console.log(`[${homeId}] Will retry indefinitely until device comes back online...`);
+      }
+  }).then(() => {
+      // Reconnection succeeded
+      const finalConnection = connections.get(homeId);
+      if (finalConnection) {
+          finalConnection.reconnectAttempts = 0;
+          finalConnection.connectionError = null;
+          connections.set(homeId, finalConnection);
+      }
+      console.log(`[${homeId}] Reconnection completed successfully.`);
+  }).catch((error) => {
+      // This should only catch non-retry related errors (e.g., programming errors)
+      console.error(`[${homeId}] Unexpected error during reconnection process:`, error);
+      const finalConnection = connections.get(homeId);
+      if (finalConnection) {
+          finalConnection.reconnectAttempts = 0;
+          finalConnection.connectionError = `Unexpected reconnection error: ${error instanceof Error ? error.message : String(error)}`;
+          connections.set(homeId, finalConnection);
+      }
+  });
 }
 
 // Disconnect from the MQTT broker for a specific HOME ID

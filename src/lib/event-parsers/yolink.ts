@@ -253,7 +253,19 @@ function handleSmartFobButtonPress({ event, timestamp, connectorId, deviceInfo }
     return standardizedEvents;
 }
 
-function handleSoundDetection({ event, timestamp, connectorId, deviceInfo }: EventContext): StandardizedEvent[] {
+function handleIPCameraEvents({ event, timestamp, connectorId, deviceInfo }: EventContext): StandardizedEvent[] {
+    const eventString = event.data!.event as string;
+    let eventType: EventType;
+    
+    if (eventString === 'sound_detected') {
+        eventType = EventType.SOUND_DETECTED;
+    } else if (eventString === 'motion_detected') {
+        eventType = EventType.MOTION_DETECTED;
+    } else {
+        console.warn(`[YoLink Parser] Unknown IPCamera event: ${eventString}`);
+        return [];
+    }
+    
     const payload = {
         rawEventData: event.data
     };
@@ -265,7 +277,7 @@ function handleSoundDetection({ event, timestamp, connectorId, deviceInfo }: Eve
         deviceId: event.deviceId,
         deviceInfo: deviceInfo,
         category: EventCategory.ANALYTICS,
-        type: EventType.SOUND_DETECTED,
+        type: eventType,
         payload: payload,
         originalEvent: event,
     }];
@@ -382,15 +394,15 @@ const EVENT_HANDLERS: EventHandler[] = [
         handler: handlePowerReport
     },
     
-    // YoLink camera sound detection
+    // YoLink camera analytics (sound/motion detection)
     {
         condition: ({ event, deviceInfo }) => {
             return deviceInfo.type === DeviceType.Camera && 
                    event.event === 'IPCamera.Alert' && 
                    typeof event.data?.event === 'string' &&
-                   event.data.event === 'sound_detected';
+                   (event.data.event === 'sound_detected' || event.data.event === 'motion_detected');
         },
-        handler: handleSoundDetection
+        handler: handleIPCameraEvents
     },
     
     // SmartFob button presses (specific device type + StatusChange events only)
