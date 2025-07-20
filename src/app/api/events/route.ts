@@ -293,6 +293,12 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
     const deviceNames = searchParams.get('deviceNames')?.split(',').map(n => n.trim()).filter(n => n.length > 0);
     const alarmEventsOnly = searchParams.get('alarmEventsOnly') === 'true';
 
+    // Column filter parameters (server-side filtering for table columns)
+    const deviceNameFilter = searchParams.get('deviceNameFilter') || undefined;
+    const eventTypeFilter = searchParams.get('eventTypeFilter') || undefined;
+    const deviceTypeFilter = searchParams.get('deviceTypeFilter') || undefined;
+    const connectorNameFilter = searchParams.get('connectorNameFilter') || undefined;
+
     let eventCategories: string[] | undefined = undefined;
     if (eventCategoriesRaw) {
       eventCategories = eventCategoriesRaw.split(',').map(cat => cat.trim()).filter(cat => cat.length > 0);
@@ -305,7 +311,13 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
       eventCategories: eventCategories,
       connectorCategory: connectorCategory,
       locationId: locationId,
-      spaceId: spaceId
+      spaceId: spaceId,
+      deviceNameFilter: deviceNameFilter,
+      eventTypeFilter: eventTypeFilter,
+      deviceTypeFilter: deviceTypeFilter,
+      connectorNameFilter: connectorNameFilter,
+      timeStart: timeStart || undefined,
+      timeEnd: timeEnd || undefined
     };
 
     // If count is requested, return count only

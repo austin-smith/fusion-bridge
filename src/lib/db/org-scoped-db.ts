@@ -1,6 +1,6 @@
 import { db } from '@/data/db';
 import { locations, devices, connectors, events, pikoServers, automations, keypadPins, user, spaces, spaceDevices, alarmZones, alarmZoneDevices } from '@/data/db/schema';
-import { eq, and, exists, getTableColumns, desc, count, inArray, ne, type SQL } from 'drizzle-orm';
+import { eq, and, exists, getTableColumns, desc, count, inArray, ne, like, or, gte, lte, type SQL } from 'drizzle-orm';
 
 /**
  * Organization-scoped database client using proper JOIN-based filtering
@@ -11,6 +11,22 @@ import { eq, and, exists, getTableColumns, desc, count, inArray, ne, type SQL } 
  * organization → connectors → events
  * 
  */
+
+// Interface for event filters (including server-side column filters)
+interface EventSearchFilters {
+  eventCategories?: string[];
+  connectorCategory?: string;
+  locationId?: string;
+  spaceId?: string;
+  // Column filter parameters (server-side versions of existing client-side filters)
+  deviceNameFilter?: string;
+  eventTypeFilter?: string;
+  deviceTypeFilter?: string;
+  connectorNameFilter?: string;
+  // Time range filters
+  timeStart?: string; // ISO date string
+  timeEnd?: string;   // ISO date string
+}
 export class OrgScopedDb {
   constructor(private readonly orgId: string) {}
   
@@ -430,7 +446,7 @@ export class OrgScopedDb {
   
   // Event methods (organization-scoped through connectors)
   readonly events = {
-    findRecent: (limit: number = 100, offset: number = 0, filters?: any) => {
+    findRecent: (limit: number = 100, offset: number = 0, filters?: EventSearchFilters) => {
       // Build dynamic WHERE conditions based on filters
       const conditions: SQL[] = [
         eq(connectors.organizationId, this.orgId)
@@ -450,6 +466,31 @@ export class OrgScopedDb {
 
       if (filters?.spaceId && filters.spaceId.toLowerCase() !== 'all' && filters.spaceId !== '') {
         conditions.push(eq(spaces.id, filters.spaceId));
+      }
+
+      // Column filter conditions (server-side filtering for table columns)
+      if (filters?.deviceNameFilter && filters.deviceNameFilter.trim() !== '') {
+        conditions.push(like(devices.name, `%${filters.deviceNameFilter}%`));
+      }
+
+      if (filters?.eventTypeFilter && filters.eventTypeFilter.trim() !== '') {
+        conditions.push(like(events.standardizedEventType, `%${filters.eventTypeFilter}%`));
+      }
+
+      if (filters?.deviceTypeFilter && filters.deviceTypeFilter.trim() !== '') {
+        conditions.push(like(devices.type, `%${filters.deviceTypeFilter}%`));
+      }
+
+      if (filters?.connectorNameFilter && filters.connectorNameFilter.trim() !== '') {
+        conditions.push(like(connectors.name, `%${filters.connectorNameFilter}%`));
+      }
+
+      // Time range conditions
+      if (filters?.timeStart) {
+        conditions.push(gte(events.timestamp, new Date(filters.timeStart)));
+      }
+      if (filters?.timeEnd) {
+        conditions.push(lte(events.timestamp, new Date(filters.timeEnd)));
       }
 
       // Base query structure

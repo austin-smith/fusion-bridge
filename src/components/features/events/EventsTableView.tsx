@@ -31,7 +31,18 @@ interface TableEventData {
 interface EventsTableViewProps<TData extends TableEventData> {
   table: TanstackTable<TData>;
   columns: ColumnDef<TData, any>[];
-  // Add other necessary props like isLoading if needed for skeleton/messages
+  // Column filter setters for server-side filtering
+  onDeviceNameFilterChange?: (value: string) => void;
+  onEventTypeFilterChange?: (value: string) => void;
+  onDeviceTypeFilterChange?: (value: string) => void;
+  onConnectorNameFilterChange?: (value: string) => void;
+
+  // Column filter values
+  deviceNameFilter?: string;
+  eventTypeFilter?: string;
+  deviceTypeFilter?: string;
+  connectorNameFilter?: string;
+
 }
 
 // Note: DebouncedInput and SortIcon components would need to be 
@@ -39,7 +50,62 @@ interface EventsTableViewProps<TData extends TableEventData> {
 // moved to a shared location and imported here.
 // For now, this assumes they are available via import.
 
-export function EventsTableView<TData extends TableEventData>({ table, columns }: EventsTableViewProps<TData>) {
+export function EventsTableView<TData extends TableEventData>({ 
+  table, 
+  columns, 
+  onDeviceNameFilterChange,
+  onEventTypeFilterChange,
+  onDeviceTypeFilterChange,
+  onConnectorNameFilterChange,
+  deviceNameFilter,
+  eventTypeFilter,
+  deviceTypeFilter,
+  connectorNameFilter
+}: EventsTableViewProps<TData>) {
+  // Helper function to get the appropriate filter component for each column
+  const getColumnFilterComponent = (columnId: string) => {
+    switch (columnId) {
+      case 'deviceName':
+        return (
+          <DebouncedInput
+            value={deviceNameFilter || ''}
+            onChange={onDeviceNameFilterChange || (() => {})}
+            placeholder=""
+            debounce={600}
+          />
+        );
+      case 'eventType':
+        return (
+          <DebouncedInput
+            value={eventTypeFilter || ''}
+            onChange={onEventTypeFilterChange || (() => {})}
+            placeholder=""
+            debounce={600}
+          />
+        );
+      case 'deviceTypeInfo.type':
+        return (
+          <DebouncedInput
+            value={deviceTypeFilter || ''}
+            onChange={onDeviceTypeFilterChange || (() => {})}
+            placeholder=""
+            debounce={600}
+          />
+        );
+      case 'connectorName':
+        return (
+          <DebouncedInput
+            value={connectorNameFilter || ''}
+            onChange={onConnectorNameFilterChange || (() => {})}
+            placeholder=""
+            debounce={600}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <>
       {/* Inner container for scrollable table */}
@@ -87,15 +153,7 @@ export function EventsTableView<TData extends TableEventData>({ table, columns }
                       </TooltipProvider>
                       
                       <div className="mt-1 h-8">
-                        {header.column.getCanFilter() && (
-                          <DebouncedInput
-                            value={(header.column.getFilterValue() ?? '') as string}
-                            onChange={value => {
-                              header.column.setFilterValue(value)
-                            }}
-                            placeholder=""
-                          />
-                        )}
+                        {header.column.getCanFilter() && getColumnFilterComponent(header.column.id)}
                       </div>
                     </TableHead>
                   );

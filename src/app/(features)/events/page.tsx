@@ -92,6 +92,7 @@ import { EventCardViewSkeleton } from '@/components/features/events/event-card-v
 import { LocationSpaceSelector } from '@/components/common/LocationSpaceSelector';
 import { VideoPlaybackDialog, type VideoPlaybackDialogProps } from '@/components/features/events/video-playback-dialog';
 import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
+import { TimeFilterDropdown } from '@/components/features/events/TimeFilterDropdown';
 
 
 // --- Interface for Pagination Metadata from API ---
@@ -172,6 +173,8 @@ export default function EventsPage() {
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'timestamp', desc: true }
   ]);
+  // Request cancellation for search
+  const searchAbortControllerRef = useRef<AbortController | null>(null);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [pagination, setPagination] = useState<PaginationState>({
@@ -250,22 +253,54 @@ export default function EventsPage() {
   const setAlarmEventsOnly = useFusionStore(state => state.setEventsAlarmEventsOnly);
   const initializeFilterPreferences = useFusionStore(state => state.initializeFilterPreferences);
   const resetFiltersToDefaults = useFusionStore(state => state.resetFiltersToDefaults);
+  
+  // Column filter state
+  const deviceNameFilter = useFusionStore(state => state.eventsDeviceNameFilter);
+  const eventTypeFilter = useFusionStore(state => state.eventsEventTypeFilter);
+  const deviceTypeFilter = useFusionStore(state => state.eventsDeviceTypeFilter);
+  const connectorNameFilter = useFusionStore(state => state.eventsConnectorNameFilter);
+  const setDeviceNameFilter = useFusionStore(state => state.setEventsDeviceNameFilter);
+  const setEventTypeFilter = useFusionStore(state => state.setEventsEventTypeFilter);
+  const setDeviceTypeFilter = useFusionStore(state => state.setEventsDeviceTypeFilter);
+  const setConnectorNameFilter = useFusionStore(state => state.setEventsConnectorNameFilter);
+  
+  // Time filter state
+  const timeFilter = useFusionStore(state => state.eventsTimeFilter);
+  const timeStart = useFusionStore(state => state.eventsTimeStart);
+  const timeEnd = useFusionStore(state => state.eventsTimeEnd);
+  const setTimeFilter = useFusionStore(state => state.setEventsTimeFilter);
+  const setTimeStart = useFusionStore(state => state.setEventsTimeStart);
+  const setTimeEnd = useFusionStore(state => state.setEventsTimeEnd);
 
-  // --- Refs for managing fetch logic ---
-  const isInitialLoadRef = useRef(true);
-  const prevPageIndexRef = useRef(pagination.pageIndex);
-  const prevPageSizeRef = useRef(pagination.pageSize);
-  const prevEventCategoryFilterRef = useRef(eventCategoryFilter);
-  const prevConnectorCategoryFilterRef = useRef(connectorCategoryFilter);
-  const prevLocationFilterRef = useRef(locationFilter);
-  const prevSpaceFilterRef = useRef(spaceFilter);
-  const prevAlarmEventsOnlyRef = useRef(alarmEventsOnly);
+  // Simple loading tracking
+  const [hasInitiallyLoaded, setHasInitiallyLoaded] = useState(false);
+  
+
 
   // Initialize view and filter preferences from localStorage (following app pattern)
   useEffect(() => {
     initializeViewPreferences();
     initializeFilterPreferences();
   }, [initializeViewPreferences, initializeFilterPreferences]);
+
+  // Clear column filters when switching to card view
+  useEffect(() => {
+    if (viewMode === 'card') {
+      setDeviceNameFilter('');
+      setEventTypeFilter('');
+      setDeviceTypeFilter('');
+      setConnectorNameFilter('');
+    }
+  }, [viewMode, setDeviceNameFilter, setEventTypeFilter, setDeviceTypeFilter, setConnectorNameFilter]);
+
+  // Cleanup effect to cancel pending requests on unmount
+  useEffect(() => {
+    return () => {
+      if (searchAbortControllerRef.current) {
+        searchAbortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   const [isCardViewFullScreen, setIsCardViewFullScreen] = useState(false);
   const cardViewContainerRef = useRef<HTMLDivElement>(null);
@@ -324,7 +359,14 @@ export default function EventsPage() {
     currentConnectorCategory: string,
     currentLocationFilter: string,
     currentSpaceFilter: string,
-    currentAlarmEventsOnly: boolean
+    currentAlarmEventsOnly: boolean,
+    currentDeviceNameFilter: string,
+    currentEventTypeFilter: string,
+    currentDeviceTypeFilter: string,
+    currentConnectorNameFilter: string,
+    currentTimeStart: string | null,
+    currentTimeEnd: string | null,
+    abortSignal?: AbortSignal
   ): Promise<{ pagination: PaginationMetadata | null; actualDataLength: number } | null> => {
     try {
       const params = new URLSearchParams();
@@ -347,7 +389,31 @@ export default function EventsPage() {
         params.append('alarmEventsOnly', 'true');
       }
 
-      const response = await fetch(`/api/events?${params.toString()}`);
+      // Column filter parameters
+      if (currentDeviceNameFilter && currentDeviceNameFilter.trim() !== '') {
+        params.append('deviceNameFilter', currentDeviceNameFilter);
+      }
+      if (currentEventTypeFilter && currentEventTypeFilter.trim() !== '') {
+        params.append('eventTypeFilter', currentEventTypeFilter);
+      }
+      if (currentDeviceTypeFilter && currentDeviceTypeFilter.trim() !== '') {
+        params.append('deviceTypeFilter', currentDeviceTypeFilter);
+      }
+      if (currentConnectorNameFilter && currentConnectorNameFilter.trim() !== '') {
+        params.append('connectorNameFilter', currentConnectorNameFilter);
+      }
+      
+      // Time filter parameters
+      if (currentTimeStart) {
+        params.append('timeStart', currentTimeStart);
+      }
+      if (currentTimeEnd) {
+        params.append('timeEnd', currentTimeEnd);
+      }
+
+      const response = await fetch(`/api/events?${params.toString()}`, {
+        signal: abortSignal
+      });
 
       if (!response.ok) {
         let errorMessage = `HTTP error! Status: ${response.status}`;
@@ -371,6 +437,11 @@ export default function EventsPage() {
       return { pagination: data.pagination as PaginationMetadata | null, actualDataLength: data.data.length };
 
     } catch (error) {
+      // Don't show errors for cancelled requests
+      if (error instanceof Error && error.name === 'AbortError') {
+        return null;
+      }
+      
       console.error('Error fetching events:', error);
       const displayMessage = error instanceof Error ? error.message : 'An unknown error occurred while fetching events';
       if (isInitialLoad) {
@@ -436,128 +507,109 @@ export default function EventsPage() {
     }
   }, []);
 
-  // --- REVISED: Initial Load and Polling useEffect ---
-  useEffect(() => {
-    // Don't fetch events while store is still loading organization data or if no connectors loaded yet
-    if (!tableRef.current || isLoadingConnectors || isLoadingSpaces || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
-
-    setLoading(true);
-            fetchEvents(pagination.pageIndex + 1, pagination.pageSize, true, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly)
-      .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
-        if (fetchResult && fetchResult.pagination) {
-          const pMeta = fetchResult.pagination;
-          if (tableRef.current) {
-            const newPageCount = pMeta.hasNextPage ? pMeta.currentPage + 1 : pMeta.currentPage;
-            setTablePageCount(newPageCount);
-          }
-        } else if (fetchResult && fetchResult.pagination === null) {
-          if (tableRef.current) {
-            const pageCountForNoMeta = fetchResult.actualDataLength > 0 ? pagination.pageIndex + 1 : Math.max(1, pagination.pageIndex);
-            setTablePageCount(pageCountForNoMeta);
-          }
-        } else {
-          // Handle case where fetchEvents returns null
-        }
-        isInitialLoadRef.current = false;
-        prevPageIndexRef.current = pagination.pageIndex;
-        prevPageSizeRef.current = pagination.pageSize;
-        prevEventCategoryFilterRef.current = eventCategoryFilter;
-        prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
-        prevLocationFilterRef.current = locationFilter;
-        prevSpaceFilterRef.current = spaceFilter;
-        prevAlarmEventsOnlyRef.current = alarmEventsOnly;
-      })
-      .finally(() => {
-        setLoading(false); 
-      });
-
-    const intervalId = setInterval(() => {
-      if (!tableRef.current || isLoadingConnectors || isLoadingSpaces || isLoadingDevices || isLoadingLocations || connectors.length === 0) return;
-      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly)
-        .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
-          if (fetchResult && fetchResult.pagination) {
-            const pMeta = fetchResult.pagination;
-            if (tableRef.current) {
-              const newPageCount = pMeta.hasNextPage ? pMeta.currentPage + 1 : pMeta.currentPage;
-              setTablePageCount(newPageCount);
-            }
-          } else if (fetchResult && fetchResult.pagination === null) {
-            if (tableRef.current) {
-              const pageCountForNoMeta = fetchResult.actualDataLength > 0 ? pagination.pageIndex + 1 : Math.max(1, pagination.pageIndex);
-              setTablePageCount(pageCountForNoMeta);
-            }
-          } 
-        });
-    }, 5000);
-
-    return () => {
-      clearInterval(intervalId);
-      isInitialLoadRef.current = true;
-    };
-  }, [fetchEvents, pagination.pageIndex, pagination.pageSize, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
-  // --- END REVISED ---
-
-  // --- REVISED: useEffect for actual pagination OR filter changes by the user ---
-  useEffect(() => {
-    // Don't execute while store is loading or if no connectors loaded yet
-    if (!tableRef.current || isLoadingConnectors || isLoadingSpaces || isLoadingDevices || isLoadingLocations || connectors.length === 0) return; 
-    if (isInitialLoadRef.current) {
-      return; 
+  // Simple unified data fetcher
+  const loadEvents = useCallback(async () => {
+    if (searchAbortControllerRef.current) {
+      searchAbortControllerRef.current.abort();
     }
+    
+    searchAbortControllerRef.current = new AbortController();
+    
+    setLoading(true);
+    
+    try {
+      const result = await fetchEvents(
+        pagination.pageIndex + 1, 
+        pagination.pageSize, 
+        !hasInitiallyLoaded,
+        eventCategoryFilter, 
+        connectorCategoryFilter, 
+        locationFilter, 
+        spaceFilter, 
+        alarmEventsOnly, 
+        // Only apply column filters in table view
+        viewMode === 'table' ? deviceNameFilter : '', 
+        viewMode === 'table' ? eventTypeFilter : '', 
+        viewMode === 'table' ? deviceTypeFilter : '', 
+        viewMode === 'table' ? connectorNameFilter : '',
+        timeStart,
+        timeEnd,
+        searchAbortControllerRef.current.signal
+      );
+      
+      if (result?.pagination) {
+        const newPageCount = result.pagination.hasNextPage ? 
+          result.pagination.currentPage + 1 : 
+          result.pagination.currentPage;
+        setTablePageCount(newPageCount);
+      }
+      
+      if (!hasInitiallyLoaded) {
+        setHasInitiallyLoaded(true);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    fetchEvents, 
+    pagination.pageIndex, 
+    pagination.pageSize, 
+    hasInitiallyLoaded,
+    eventCategoryFilter, 
+    connectorCategoryFilter, 
+    locationFilter, 
+    spaceFilter, 
+    alarmEventsOnly, 
+    deviceNameFilter, 
+    eventTypeFilter, 
+    deviceTypeFilter, 
+    connectorNameFilter,
+    timeStart,
+    timeEnd,
+    viewMode
+  ]);
 
-    const pageIndexChanged = pagination.pageIndex !== prevPageIndexRef.current;
-    const pageSizeChanged = pagination.pageSize !== prevPageSizeRef.current;
-    const eventCategoriesChanged = JSON.stringify(eventCategoryFilter) !== JSON.stringify(prevEventCategoryFilterRef.current);
-    const connectorCategoryChanged = connectorCategoryFilter !== prevConnectorCategoryFilterRef.current;
-    const locationFilterChanged = locationFilter !== prevLocationFilterRef.current;
-    const spaceFilterChanged = spaceFilter !== prevSpaceFilterRef.current;
-    const alarmFilterChanged = alarmEventsOnly !== prevAlarmEventsOnlyRef.current;
+  // Initial load only
+  useEffect(() => {
+    if (!hasInitiallyLoaded && connectors.length > 0 && !isLoadingConnectors) {
+      loadEvents();
+    }
+  }, [hasInitiallyLoaded, connectors.length, isLoadingConnectors, loadEvents]);
 
-    if (eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged || spaceFilterChanged || alarmFilterChanged) {
-      prevEventCategoryFilterRef.current = eventCategoryFilter;
-      prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
-      prevLocationFilterRef.current = locationFilter;
-      prevSpaceFilterRef.current = spaceFilter;
-      prevAlarmEventsOnlyRef.current = alarmEventsOnly;
+  // Handle pagination changes
+  useEffect(() => {
+    if (hasInitiallyLoaded) {
+      loadEvents();
+    }
+  }, [pagination.pageIndex, pagination.pageSize, hasInitiallyLoaded, loadEvents]);
+
+  // Handle filter changes (search)
+  useEffect(() => {
+    if (hasInitiallyLoaded) {
+      // Reset to first page for filter changes
       if (pagination.pageIndex !== 0) {
-        tableRef.current.setPageIndex(0);
+        setPagination(prev => ({ ...prev, pageIndex: 0 }));
         return;
       }
+      loadEvents();
     }
-
-    if (pageIndexChanged || pageSizeChanged || ((eventCategoriesChanged || connectorCategoryChanged || locationFilterChanged || spaceFilterChanged || alarmFilterChanged) && pagination.pageIndex === 0)) {
-      setLoading(true); 
-      
-      fetchEvents(pagination.pageIndex + 1, pagination.pageSize, false, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly)
-        .then((fetchResult: { pagination: PaginationMetadata | null; actualDataLength: number } | null) => {
-          if (fetchResult && fetchResult.pagination) {
-            const pMeta = fetchResult.pagination;
-            if (tableRef.current) {
-              const newPageCount = pMeta.hasNextPage ? pMeta.currentPage + 1 : pMeta.currentPage;
-              setTablePageCount(newPageCount);
-            }
-          } else if (fetchResult && fetchResult.pagination === null) {
-            if (tableRef.current) {
-              const pageCountForNoMeta = fetchResult.actualDataLength > 0 ? pagination.pageIndex + 1 : Math.max(1, pagination.pageIndex);
-              setTablePageCount(pageCountForNoMeta);
-            }
-          } else {
-            // Handle case where fetchEvents returns null
-          }
-          prevPageIndexRef.current = pagination.pageIndex;
-          prevPageSizeRef.current = pagination.pageSize;
-          prevEventCategoryFilterRef.current = eventCategoryFilter;
-          prevConnectorCategoryFilterRef.current = connectorCategoryFilter;
-          prevLocationFilterRef.current = locationFilter;
-          prevSpaceFilterRef.current = spaceFilter;
-          prevAlarmEventsOnlyRef.current = alarmEventsOnly;
-        })
-        .finally(() => {
-          setLoading(false); 
-        });
-    }
-  }, [pagination.pageIndex, pagination.pageSize, fetchEvents, eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations, connectors.length]);
-  // --- END REVISED ---
+  }, [
+    eventCategoryFilter, 
+    connectorCategoryFilter, 
+    locationFilter, 
+    spaceFilter, 
+    alarmEventsOnly, 
+    deviceNameFilter, 
+    eventTypeFilter, 
+    deviceTypeFilter, 
+    connectorNameFilter,
+    timeStart,
+    timeEnd,
+    viewMode,
+    hasInitiallyLoaded,
+    pagination.pageIndex,
+    loadEvents
+  ]);
 
   const toggleCardViewFullScreen = () => { // Simpler toggle, actual API calls in useEffect
     if (!document.fullscreenElement) {
@@ -685,6 +737,7 @@ export default function EventsPage() {
     },
     {
       accessorKey: 'deviceTypeInfo.type',
+      id: 'deviceTypeInfo.type',
       header: "Device Type",
       enableSorting: true,
       enableColumnFilter: true,
@@ -827,6 +880,9 @@ export default function EventsPage() {
       header: "Time",
       enableSorting: true,
       enableColumnFilter: true,
+      size: 140,
+      minSize: 140,
+      maxSize: 140,
       cell: ({ row }: { row: Row<EnrichedEvent> }) => {
         const timeValue = row.getValue<number>('timestamp');
         if (isNaN(timeValue) || timeValue <= 0) {
@@ -854,8 +910,8 @@ export default function EventsPage() {
         return (
           <TooltipProvider delayDuration={100}>
             <Tooltip>
-              <TooltipTrigger className="flex w-full">
-                <div className="flex flex-col items-start text-left">
+              <TooltipTrigger className="flex w-[140px]">
+                <div className="flex flex-col items-start text-left w-[140px]">
                   <span className="whitespace-nowrap text-sm">
                     {displayTime}
                   </span>
@@ -1017,16 +1073,11 @@ export default function EventsPage() {
     enableMultiSort: true,
     getRowId: (originalRow) => originalRow.eventUuid,
     manualPagination: true,
-    manualFiltering: false,
+    manualFiltering: true,
     pageCount: tablePageCount,
   });
 
-  // --- ADDED: Ref to hold table instance for effects ---
-  const tableRef = useRef(table);
-  useEffect(() => {
-    tableRef.current = table;
-  }, [table]);
-  // --- END ADDED ---
+
 
   const displayedEvents = useMemo(() => {
     return events;
@@ -1142,6 +1193,14 @@ export default function EventsPage() {
           ))}
                 </DropdownMenuContent>
       </DropdownMenu>
+      <TimeFilterDropdown
+        value={timeFilter}
+        timeStart={timeStart}
+        timeEnd={timeEnd}
+        onChange={setTimeFilter}
+        onTimeStartChange={setTimeStart}
+        onTimeEndChange={setTimeEnd}
+      />
       <TooltipProvider delayDuration={100}>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -1279,29 +1338,47 @@ export default function EventsPage() {
           </DialogContent>
         </Dialog>
 
-        <div className="flex-shrink-0">
-           {loading ? (
-            viewMode === 'card' 
+        {/* Only show skeleton during initial load */}
+        {loading && !hasInitiallyLoaded ? (
+          <div className="flex-shrink-0">
+            {viewMode === 'card' 
               ? <EventCardViewSkeleton segmentCount={2} cardsPerSegment={4} cardSize={cardSize} />
-              : <EventsTableSkeleton rowCount={15} columnCount={columns.length} />
-          ) : null}
-        </div>
-
-        {!loading && displayedEvents.length === 0 ? (
-          <p className="text-muted-foreground">
-            No events match your current filters or no events have been received yet.
-          </p>
-        ) : null}
-
-        {!loading && displayedEvents.length > 0 ? (
+              : <EventsTableSkeleton rowCount={15} columnCount={columns.length} />}
+          </div>
+        ) : (
+          /* Always show the table container once initially loaded */
           <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
             {viewMode === 'table' ? (
-              <EventsTableView table={table} columns={columns} />
+              <EventsTableView 
+                table={table} 
+                columns={columns}
+                onDeviceNameFilterChange={setDeviceNameFilter}
+                onEventTypeFilterChange={setEventTypeFilter}
+                onDeviceTypeFilterChange={setDeviceTypeFilter}
+                onConnectorNameFilterChange={setConnectorNameFilter}
+                deviceNameFilter={deviceNameFilter}
+                eventTypeFilter={eventTypeFilter}
+                deviceTypeFilter={deviceTypeFilter}
+                connectorNameFilter={connectorNameFilter}
+              />
             ) : viewMode === 'card' ? (
-              <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} cardSize={cardSize} onPlayVideo={handlePlayVideo} /> 
+              displayedEvents.length > 0 ? (
+                <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} cardSize={cardSize} onPlayVideo={handlePlayVideo} />
+              ) : (
+                <div className="flex-grow flex items-center justify-center p-4">
+                  <div className="text-center">
+                    <p className="text-muted-foreground mb-4">
+                      No events match your current filters.
+                    </p>
+                    <Button variant="outline" onClick={resetFiltersToDefaults}>
+                      Clear All Filters
+                    </Button>
+                  </div>
+                </div>
+              )
             ) : null}
           </div>
-        ) : null}
+        )}
       </TooltipProvider>
 
       {/* Video Playback Dialog - rendered at page level for normal mode only */}
@@ -1313,6 +1390,8 @@ export default function EventsPage() {
           disableFullscreen={false}
         />
       )}
+
+
     </div>
   );
 }

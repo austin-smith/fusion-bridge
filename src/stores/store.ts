@@ -227,6 +227,14 @@ interface FusionState {
   eventsConnectorCategoryFilter: string;
   eventsEventCategoryFilter: string[];
   eventsAlarmEventsOnly: boolean;
+  eventsDeviceNameFilter: string;
+  eventsEventTypeFilter: string;
+  eventsDeviceTypeFilter: string;
+  eventsConnectorNameFilter: string;
+  // Time range filters
+  eventsTimeFilter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom';
+  eventsTimeStart: string | null; // ISO date string for custom range
+  eventsTimeEnd: string | null;   // ISO date string for custom range
   
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
@@ -366,6 +374,14 @@ interface FusionState {
   setEventsConnectorCategoryFilter: (category: string) => void;
   setEventsEventCategoryFilter: (categories: string[]) => void;
   setEventsAlarmEventsOnly: (alarmOnly: boolean) => void;
+  setEventsDeviceNameFilter: (filter: string) => void;
+  setEventsEventTypeFilter: (filter: string) => void;
+  setEventsDeviceTypeFilter: (filter: string) => void;
+  setEventsConnectorNameFilter: (filter: string) => void;
+  // Time filter setters
+  setEventsTimeFilter: (filter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom') => void;
+  setEventsTimeStart: (date: string | null) => void;
+  setEventsTimeEnd: (date: string | null) => void;
   initializeViewPreferences: () => void;
   initializeFilterPreferences: () => void;
   resetFiltersToDefaults: () => void;
@@ -496,6 +512,15 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   eventsConnectorCategoryFilter: 'all',
   eventsEventCategoryFilter: getDefaultEventCategories(),
   eventsAlarmEventsOnly: false,
+  // Column filter initial values
+  eventsDeviceNameFilter: '',
+  eventsEventTypeFilter: '',
+  eventsDeviceTypeFilter: '',
+  eventsConnectorNameFilter: '',
+  // Time filter initial values
+  eventsTimeFilter: 'all',
+  eventsTimeStart: null,
+  eventsTimeEnd: null,
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -2232,6 +2257,51 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       localStorage.setItem('eventsAlarmEventsOnlyPreference', alarmOnly.toString());
     }
   },
+
+  setEventsDeviceNameFilter: (filter: string) => {
+    set({ eventsDeviceNameFilter: filter });
+    // Column filters are session-only - no localStorage persistence
+  },
+  setEventsEventTypeFilter: (filter: string) => {
+    set({ eventsEventTypeFilter: filter });
+    // Column filters are session-only - no localStorage persistence
+  },
+  setEventsDeviceTypeFilter: (filter: string) => {
+    set({ eventsDeviceTypeFilter: filter });
+    // Column filters are session-only - no localStorage persistence
+  },
+  setEventsConnectorNameFilter: (filter: string) => {
+    set({ eventsConnectorNameFilter: filter });
+    // Column filters are session-only - no localStorage persistence
+  },
+  
+  // Time filter setters
+  setEventsTimeFilter: (filter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom') => {
+    set({ eventsTimeFilter: filter });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('eventsTimeFilterPreference', filter);
+    }
+  },
+  setEventsTimeStart: (date: string | null) => {
+    set({ eventsTimeStart: date });
+    if (typeof window !== 'undefined') {
+      if (date) {
+        localStorage.setItem('eventsTimeStartPreference', date);
+      } else {
+        localStorage.removeItem('eventsTimeStartPreference');
+      }
+    }
+  },
+  setEventsTimeEnd: (date: string | null) => {
+    set({ eventsTimeEnd: date });
+    if (typeof window !== 'undefined') {
+      if (date) {
+        localStorage.setItem('eventsTimeEndPreference', date);
+      } else {
+        localStorage.removeItem('eventsTimeEndPreference');
+      }
+    }
+  },
   initializeFilterPreferences: () => {
     if (typeof window !== 'undefined') {
       // Load from localStorage with fallbacks
@@ -2240,6 +2310,16 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       const storedConnectorCategoryFilter = localStorage.getItem('eventsConnectorCategoryFilterPreference') || 'all';
       const storedEventCategoryFilter = localStorage.getItem('eventsEventCategoryFilterPreference');
       const storedAlarmEventsOnly = localStorage.getItem('eventsAlarmEventsOnlyPreference');
+      // Column filters always start empty (session-only, no persistence)
+      // Clean up any old column filter localStorage items 
+      localStorage.removeItem('eventsDeviceNameFilterPreference');
+      localStorage.removeItem('eventsEventTypeFilterPreference');
+      localStorage.removeItem('eventsDeviceTypeFilterPreference');
+      localStorage.removeItem('eventsConnectorNameFilterPreference');
+      // Time filter preferences
+      const storedTimeFilter = localStorage.getItem('eventsTimeFilterPreference') as 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom' || 'all';
+      const storedTimeStart = localStorage.getItem('eventsTimeStartPreference') || null;
+      const storedTimeEnd = localStorage.getItem('eventsTimeEndPreference') || null;
       
              // Parse event categories with fallback to default (all except diagnostics)
        let eventCategoryFilter: string[] = getDefaultEventCategories();
@@ -2258,7 +2338,16 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         eventsSpaceFilter: storedSpaceFilter,
         eventsConnectorCategoryFilter: storedConnectorCategoryFilter,
         eventsEventCategoryFilter: eventCategoryFilter,
-        eventsAlarmEventsOnly: alarmEventsOnly
+        eventsAlarmEventsOnly: alarmEventsOnly,
+        // Column filters (always start empty - session-only)
+        eventsDeviceNameFilter: '',
+        eventsEventTypeFilter: '',
+        eventsDeviceTypeFilter: '',
+        eventsConnectorNameFilter: '',
+        // Time filters
+        eventsTimeFilter: storedTimeFilter,
+        eventsTimeStart: storedTimeStart,
+        eventsTimeEnd: storedTimeEnd
       });
       
       console.log('[FusionStore] Filter preferences loaded from localStorage:', { 
@@ -2287,7 +2376,16 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       eventsSpaceFilter: 'all', 
       eventsConnectorCategoryFilter: 'all',
       eventsEventCategoryFilter: defaultEventCategories,
-      eventsAlarmEventsOnly: false
+      eventsAlarmEventsOnly: false,
+      // Reset column filters
+      eventsDeviceNameFilter: '',
+      eventsEventTypeFilter: '',
+      eventsDeviceTypeFilter: '',
+      eventsConnectorNameFilter: '',
+      // Reset time filters
+      eventsTimeFilter: 'all',
+      eventsTimeStart: null,
+      eventsTimeEnd: null
     });
     
     if (typeof window !== 'undefined') {
@@ -2296,6 +2394,16 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       localStorage.setItem('eventsConnectorCategoryFilterPreference', 'all');
       localStorage.setItem('eventsEventCategoryFilterPreference', JSON.stringify(defaultEventCategories));
       localStorage.setItem('eventsAlarmEventsOnlyPreference', 'false');
+      // Column filters are session-only (no localStorage operations needed)
+      // Clean up any old column filter localStorage items
+      localStorage.removeItem('eventsDeviceNameFilterPreference');
+      localStorage.removeItem('eventsEventTypeFilterPreference');
+      localStorage.removeItem('eventsDeviceTypeFilterPreference');
+      localStorage.removeItem('eventsConnectorNameFilterPreference');
+      // Reset time filter preferences
+      localStorage.setItem('eventsTimeFilterPreference', 'all');
+      localStorage.removeItem('eventsTimeStartPreference');
+      localStorage.removeItem('eventsTimeEndPreference');
     }
     
     console.log('[FusionStore] Filters reset to defaults');
