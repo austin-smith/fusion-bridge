@@ -92,7 +92,7 @@ import { LocationSpaceSelector } from '@/components/common/LocationSpaceSelector
 import { VideoPlaybackDialog, type VideoPlaybackDialogProps } from '@/components/features/events/video-playback-dialog';
 import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
 import { TimeFilterDropdown } from '@/components/features/events/TimeFilterDropdown';
-import { ExportButton } from '@/components/features/events/ExportButton';
+import { ExportButton } from '@/components/common/ExportButton';
 import { EventFiltersDialog } from '@/components/features/events/EventFiltersDialog';
 
 // --- Interface for Pagination Metadata from API ---
@@ -1188,8 +1188,9 @@ export default function EventsPage() {
           {/* Mobile Layout - Visible only on mobile */}
           <div className="flex sm:hidden items-center gap-2">
             <ExportButton 
-              currentEvents={displayedEvents}
+              currentData={displayedEvents}
               filterParams={exportFilterParams}
+              dataTypeName="events"
             />
             
             <EventViewToggle 
@@ -1245,8 +1246,9 @@ export default function EventsPage() {
           {/* Desktop/Tablet Layout - Hidden on mobile */}
           <div className="hidden sm:flex flex-wrap items-center gap-3">
             <ExportButton 
-              currentEvents={displayedEvents}
+              currentData={displayedEvents}
               filterParams={exportFilterParams}
+              dataTypeName="events"
             />
             
             <EventViewToggle 

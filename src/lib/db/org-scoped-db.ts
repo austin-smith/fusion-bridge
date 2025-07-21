@@ -309,6 +309,7 @@ export class OrgScopedDb {
         spaceId: spaceDevices.spaceId,
         spaceName: spaces.name,
         locationId: spaces.locationId,
+        locationName: locations.name,
         // Include alarm zone info through alarmZoneDevices junction
         alarmZoneId: alarmZoneDevices.zoneId,
         alarmZoneName: alarmZones.name
@@ -317,6 +318,7 @@ export class OrgScopedDb {
       .innerJoin(connectors, eq(devices.connectorId, connectors.id))
       .leftJoin(spaceDevices, eq(devices.id, spaceDevices.deviceId))
       .leftJoin(spaces, eq(spaceDevices.spaceId, spaces.id))
+      .leftJoin(locations, eq(spaces.locationId, locations.id))
       .leftJoin(alarmZoneDevices, eq(devices.id, alarmZoneDevices.deviceId))
       .leftJoin(alarmZones, eq(alarmZoneDevices.zoneId, alarmZones.id))
       .where(eq(connectors.organizationId, this.orgId))

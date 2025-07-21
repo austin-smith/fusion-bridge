@@ -171,7 +171,7 @@ export function AttributionContent() {
           {legalNoticesLoading ? (
             <div className="text-sm text-muted-foreground">Loading legal notices...</div>
           ) : legalNotices ? (
-            <div className="max-h-96 overflow-y-auto border rounded-md p-4">
+            <div className="max-h-96 overflow-y-auto border rounded-md p-4 text-sm">
               <MarkdownRenderer>{legalNotices}</MarkdownRenderer>
             </div>
           ) : (

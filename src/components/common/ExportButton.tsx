@@ -10,38 +10,38 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Download, FileX, FileText, FileJson } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { EventsExportService } from '@/services/events-export-service';
-import type { EnrichedEvent } from '@/types/events';
 import { toast } from 'sonner';
+import type { ExportButtonProps, ExportFormat } from '@/lib/export/types';
+import { 
+  buildExportUrl, 
+  parseFilenameFromContentDisposition, 
+  triggerBrowserDownload,
+  generateExportFilename 
+} from '@/lib/export/utils';
 
-interface ExportButtonProps {
-  currentEvents: EnrichedEvent[];
-  filterParams: URLSearchParams;
-}
-
-export function ExportButton({ currentEvents, filterParams }: ExportButtonProps) {
+export function ExportButton<T>({ 
+  currentData, 
+  filterParams, 
+  dataTypeName,
+  disabled = false 
+}: ExportButtonProps<T>) {
   const [isExporting, setIsExporting] = useState(false);
 
-  const handleExport = async (format: 'csv' | 'xlsx' | 'json') => {
+  const handleExport = async (format: ExportFormat) => {
     if (isExporting) return;
     
     setIsExporting(true);
     
     try {
-      // Always use server-side export to get ALL filtered events, not just current page
-      console.log('[ExportButton] Exporting ALL filtered events as', format);
-      const exportUrl = new URL('/api/events/export', window.location.origin);
+      // Always use server-side export to get ALL filtered data, not just current page
+      console.log(`[ExportButton] Exporting ALL filtered data as ${format}`);
       
-      // Set export parameters
-      exportUrl.searchParams.set('format', format);
-      exportUrl.searchParams.set('scope', 'filtered');
-      exportUrl.searchParams.set('columns', 'full'); // Use full preset
-      exportUrl.searchParams.set('includeMetadata', 'true');
-      
-      // Append current filter parameters to get ALL matching events
-      filterParams.forEach((value, key) => {
-        exportUrl.searchParams.set(key, value);
-      });
+      const exportUrl = buildExportUrl(
+        `/api/${dataTypeName}/export`,
+        format,
+        true, // Include metadata
+        filterParams
+      );
 
       // Download via API
       const response = await fetch(exportUrl.toString());
@@ -55,26 +55,13 @@ export function ExportButton({ currentEvents, filterParams }: ExportButtonProps)
       
       // Get filename from headers or create default
       const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = `events-${new Date().toISOString().split('T')[0]}.${format}`;
-      
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
-        if (filenameMatch) {
-          filename = filenameMatch[1];
-        }
-      }
+      const fallbackFilename = generateExportFilename('data', format);
+      const filename = parseFilenameFromContentDisposition(contentDisposition, fallbackFilename);
 
       // Trigger download
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      triggerBrowserDownload(blob, filename);
 
-      toast.success(`Events exported as ${format.toUpperCase()}`);
+      toast.success(`Data exported as ${format.toUpperCase()}`);
     } catch (error) {
       console.error('[ExportButton] Export failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Export failed';
@@ -83,6 +70,8 @@ export function ExportButton({ currentEvents, filterParams }: ExportButtonProps)
       setIsExporting(false);
     }
   };
+
+  const isDisabled = isExporting || currentData.length === 0 || disabled;
 
   return (
     <TooltipProvider delayDuration={100}>
@@ -93,7 +82,7 @@ export function ExportButton({ currentEvents, filterParams }: ExportButtonProps)
               <Button 
                 variant="outline" 
                 size="icon" 
-                disabled={isExporting || currentEvents.length === 0}
+                disabled={isDisabled}
                 className="h-8 w-8"
               >
                 <Download className="h-4 w-4" />

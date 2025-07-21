@@ -77,6 +77,7 @@ import { getDeviceTypeInfo } from "@/lib/mappings/identification";
 import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from "@/components/ui/skeleton";
 import { LocationSpaceSelector } from '@/components/common/LocationSpaceSelector';
+import { ExportButton } from '@/components/common/ExportButton';
 
 // Define the shape of data expected by the table, combining store data
 interface DisplayedDevice extends Omit<DeviceWithConnector, 'status' | 'type' | 'pikoServerDetails' | 'id'> { // Also omit original id
@@ -617,9 +618,33 @@ export default function DevicesPage() {
     return Array.from(categorySet).sort();
   }, [connectors]);
 
+  // Create filter parameters for export
+  const exportFilterParams = useMemo(() => {
+    const params = new URLSearchParams();
+    
+    if (categoryFilter && categoryFilter !== 'all') {
+      params.set('connectorCategory', categoryFilter);
+    }
+    if (locationFilter && locationFilter !== 'all') {
+      params.set('locationId', locationFilter);
+    }
+    if (spaceFilter && spaceFilter !== 'all') {
+      params.set('spaceId', spaceFilter);
+    }
+    
+    return params;
+  }, [categoryFilter, locationFilter, spaceFilter]);
+
   // Define the actions separately for clarity
   const pageActions = (
     <>
+      <ExportButton
+        currentData={filteredTableData as any}
+        filterParams={exportFilterParams}
+        dataTypeName="devices"
+        disabled={filteredTableData.length === 0}
+      />
+      
       <LocationSpaceSelector
         locationFilter={locationFilter}
         spaceFilter={spaceFilter}
