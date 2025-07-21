@@ -274,8 +274,6 @@ export default function EventsPage() {
 
   // Simple loading tracking
   const [hasInitiallyLoaded, setHasInitiallyLoaded] = useState(false);
-  
-
 
   // Initialize view and filter preferences from localStorage (following app pattern)
   useEffect(() => {
@@ -335,10 +333,7 @@ export default function EventsPage() {
   // State for hierarchy dialog
   const [isHierarchyDialogOpen, setIsHierarchyDialogOpen] = useState(false);
 
-  // Set page title
-  useEffect(() => {
-    document.title = 'Events // Fusion';
-  }, []);
+
 
   // Initial events fetch if needed (for first-time page loads)
   useEffect(() => {
@@ -1178,14 +1173,17 @@ export default function EventsPage() {
 
   // Default page rendering (when not in full-screen card view)
   return (
-    <div className="flex flex-col h-full p-4 md:p-6">
-      <TooltipProvider>
-        {/* Simplified Header */}
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold text-foreground">Events</h1>
-        </div>
+          <div className="flex flex-col h-full p-4 md:p-6">
+        <TooltipProvider>
+          {/* Page Title */}
+          <div className="mb-6">
+            <div className="flex items-center gap-3">
+              <Activity className="h-6 w-6 text-muted-foreground" />
+              <h1 className="text-xl font-semibold text-foreground">Events</h1>
+            </div>
+          </div>
 
-        {/* Responsive Toolbar */}
+          {/* Responsive Toolbar */}
         <div className="mb-6">
           {/* Mobile Layout - Visible only on mobile */}
           <div className="flex sm:hidden items-center gap-2">

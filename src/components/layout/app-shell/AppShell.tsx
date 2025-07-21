@@ -1,12 +1,18 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { useTheme } from "next-themes";
 import { FiMenu } from "react-icons/fi";
 import { AppSidebar } from '../app-sidebar';
 import { SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
 import { ThemeToggle } from '@/components/common/theme-toggle';
+import { getPageConfig } from '@/lib/page-config';
+import dynamic from 'next/dynamic';
+
+const ClientBreadcrumb = dynamic(() => import('../page-breadcrumb').then(mod => ({ default: mod.PageBreadcrumb })), { 
+  ssr: false 
+});
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -15,6 +21,16 @@ interface AppShellProps {
 const AppShell: React.FC<AppShellProps> = ({ children }) => {
   const pathname = usePathname();
   const showSidebar = !['/login', '/setup', '/verify-2fa'].includes(pathname);
+  
+  // Get page configuration from comprehensive page config
+  const pageInfo = getPageConfig(pathname);
+
+  // Automatically set document title
+  useEffect(() => {
+    if (pageInfo?.title) {
+      document.title = `${pageInfo.title} // Fusion`;
+    }
+  }, [pageInfo?.title]);
 
   return (
     <>
@@ -28,7 +44,11 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
                 <span className="sr-only">Toggle Sidebar</span>
               </SidebarTrigger>
               
-              <div className="flex-1"></div>
+              <div className="flex-1">
+                {pageInfo?.breadcrumbs && (
+                  <ClientBreadcrumb breadcrumbs={pageInfo.breadcrumbs} />
+                )}
+              </div>
 
               <ThemeToggle />
             </header>

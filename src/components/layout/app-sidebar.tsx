@@ -16,9 +16,9 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { LogOut, Loader2, User, Settings, ChevronsUpDown, Users, Plug, Cpu, Terminal, Workflow, Building, ShieldAlert, CalendarClock, Shield } from 'lucide-react';
+import { LogOut, Loader2, User, ChevronsUpDown, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { FiActivity } from 'react-icons/fi';
+import { getNavigationGroups } from '@/lib/page-config';
 import FusionIcon from '@/components/icons/FusionIcon';
 import { useSession, signOut } from '@/lib/auth/client';
 import {
@@ -47,35 +47,8 @@ type NavGroup = {
   items: NavItem[];
 };
 
-const navGroups: NavGroup[] = [
-  {
-    items: [
-      { href: '/connectors', label: 'Connectors', icon: Plug },
-      { href: '/devices', label: 'Devices', icon: Cpu },
-      { href: '/locations', label: 'Locations & Spaces', icon: Building },
-    ]
-  },
-  {
-    items: [
-      { href: '/alarm-zones', label: 'Alarm Zones', icon: Shield },
-      // { href: '/alarm/schedules', label: 'Alarm Schedules', icon: CalendarClock }, // Hidden: Infrastructure exists but not currently active
-      { href: '/alarm/alarms', label: 'Active Alarms', icon: ShieldAlert },
-    ]
-  },
-  {
-    items: [
-      { href: '/events', label: 'Events', icon: FiActivity },
-      { href: '/automations', label: 'Automations', icon: Workflow },
-    ]
-  },
-  {
-    items: [
-      { href: '/users', label: 'Users', icon: Users },
-      { href: '/system-logs', label: 'Console', icon: Terminal },
-      { href: '/settings', label: 'Settings', icon: Settings },
-    ]
-  }
-];
+// Get navigation groups from comprehensive page config
+export const navGroups: NavGroup[] = getNavigationGroups();
 
 export function AppSidebar() {
   const pathname = usePathname();

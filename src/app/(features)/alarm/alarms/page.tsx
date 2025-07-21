@@ -88,7 +88,7 @@ const AlarmsPage: React.FC = () => {
 
   if (isLoadingAlarmZones) {
     return (
-      <div className="container mx-auto py-10">
+      <div className="flex flex-col h-full p-4 md:p-6">
         <PageHeader title="Active Alarms" icon={<AlertTriangle className="h-6 w-6 text-destructive" />} />
         <AlarmsPageSkeleton cardCount={6} />
       </div>
@@ -99,7 +99,7 @@ const AlarmsPage: React.FC = () => {
 
   return (
     <TooltipProvider>
-      <div className="container mx-auto py-10">
+      <div className="flex flex-col h-full p-4 md:p-6">
         <PageHeader 
           title="Active Alarms" 
           icon={<AlertTriangle className="h-6 w-6 text-destructive" />}
