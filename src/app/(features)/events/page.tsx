@@ -1428,15 +1428,15 @@ export default function EventsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Only show skeleton during initial load */}
-        {loading && !hasInitiallyLoaded ? (
+        {/* Show skeleton whenever loading */}
+        {loading ? (
           <div className="flex-shrink-0">
             {viewMode === 'card' 
               ? <EventCardViewSkeleton segmentCount={2} cardsPerSegment={4} cardSize={cardSize} />
               : <EventsTableSkeleton rowCount={15} columnCount={columns.length} />}
           </div>
         ) : (
-          /* Always show the table container once initially loaded */
+          /* Show content when not loading */
           <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
             {viewMode === 'table' ? (
               <EventsTableView 
