@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Activity, ChevronDown, Play, Loader2, ListTree, Maximize, Minimize, Gamepad, Plug, CircleX, Video, X as XIcon } from 'lucide-react';
+import { Activity, ChevronDown, Play, Loader2, ListTree, Maximize, Minimize, Gamepad, Plug, CircleX, Video, X as XIcon, Filter, MoreHorizontal, Settings2 } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -28,7 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
+  } from "@/components/ui/dropdown-menu";
 import {
   flexRender,
   getCoreRowModel,
@@ -82,7 +82,6 @@ import { DeviceWithConnector, ConnectorWithConfig } from '@/types';
 import { useFusionStore } from '@/stores/store';
 import { EventHierarchyViewer } from '@/components/features/events/EventHierarchyViewer';
 import { getDeviceTypeInfo } from "@/lib/mappings/identification";
-import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from "@/components/ui/skeleton";
 import { EventViewToggle } from '@/components/features/events/EventViewToggle';
 import { EventsTableView } from '@/components/features/events/EventsTableView';
@@ -94,6 +93,7 @@ import { VideoPlaybackDialog, type VideoPlaybackDialogProps } from '@/components
 import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
 import { TimeFilterDropdown } from '@/components/features/events/TimeFilterDropdown';
 import { ExportButton } from '@/components/features/events/ExportButton';
+import { EventFiltersDialog } from '@/components/features/events/EventFiltersDialog';
 
 // --- Interface for Pagination Metadata from API ---
 interface PaginationMetadata {
@@ -1114,169 +1114,6 @@ export default function EventsPage() {
     return params;
   }, [eventCategoryFilter, connectorCategoryFilter, locationFilter, spaceFilter, alarmEventsOnly, viewMode, deviceNameFilter, eventTypeFilter, deviceTypeFilter, connectorNameFilter, timeStart, timeEnd]);
 
-  // Define page actions  
-  const pageActions = (
-    <>
-      <ExportButton 
-        currentEvents={displayedEvents}
-        filterParams={exportFilterParams}
-      />
-      <EventViewToggle viewMode={viewMode} onViewModeChange={setViewMode} cardSize={cardSize} onCardSizeChange={setCardSize} />
-      {viewMode === 'card' && (
-        <TooltipProvider delayDuration={100}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" className="h-8 w-8 flex-shrink-0" onClick={toggleCardViewFullScreen}>
-                {isCardViewFullScreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
-                <span className="sr-only">{isCardViewFullScreen ? 'Exit Full Screen' : 'Full Screen'}</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      )}
-      <LocationSpaceSelector
-        locationFilter={locationFilter}
-        spaceFilter={spaceFilter}
-        searchTerm={locationSpaceSearchTerm}
-        locations={locations}
-        spaces={spaces}
-        onLocationChange={setLocationFilter}
-        onSpaceChange={setSpaceFilter}
-        onSearchChange={setLocationSpaceSearchTerm}
-      />
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" className="w-full sm:w-[120px] h-9 justify-between">
-            <div className="flex items-center gap-2 flex-1">
-              {connectorCategoryFilter === 'all' ? (
-                <Plug className="h-4 w-4" />
-              ) : (
-                <ConnectorIcon connectorCategory={connectorCategoryFilter} size={16} />
-              )}
-              <span>
-                {connectorCategoryFilter === 'all' 
-                  ? 'All' 
-                  : formatConnectorCategory(connectorCategoryFilter)}
-              </span>
-            </div>
-            <ChevronDown className="h-4 w-4 opacity-50" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-56">
-          <DropdownMenuLabel>Connector Type</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setConnectorCategoryFilter('all')}>
-            <div className="flex items-center gap-2">
-              <Plug className="h-4 w-4" />
-              All
-            </div>
-          </DropdownMenuItem>
-          {connectorCategories.map(category => (
-            <DropdownMenuItem 
-              key={category} 
-              onClick={() => setConnectorCategoryFilter(category)}
-            >
-              <div className="flex items-center gap-2">
-                <ConnectorIcon connectorCategory={category} size={16} />
-                <span>{formatConnectorCategory(category)}</span>
-              </div>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" className="w-full sm:w-[150px] h-9 justify-between">
-            <span>
-              Categories ({eventCategoryFilter.length === Object.keys(EVENT_CATEGORY_DISPLAY_MAP).length
-                ? 'All' 
-                : eventCategoryFilter.length})
-            </span>
-            <ChevronDown className="h-4 w-4 opacity-50" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-56">
-          <DropdownMenuLabel>Event Filters</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuCheckboxItem
-            checked={alarmEventsOnly}
-            onCheckedChange={setAlarmEventsOnly}
-            onSelect={(e) => e.preventDefault()}
-          >
-            Alarm events only
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel>Event Categories</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {Object.entries(EVENT_CATEGORY_DISPLAY_MAP).map(([categoryKey, displayName]) => (
-            <DropdownMenuCheckboxItem
-              key={categoryKey}
-              checked={eventCategoryFilter.includes(categoryKey)}
-              onCheckedChange={(checked) => {
-                const newCategories = checked 
-                  ? [...eventCategoryFilter, categoryKey] 
-                  : eventCategoryFilter.filter(item => item !== categoryKey);
-                setEventCategoryFilter(newCategories);
-              }}
-              onSelect={(e) => e.preventDefault()}
-            >
-              {displayName}
-            </DropdownMenuCheckboxItem>
-          ))}
-                </DropdownMenuContent>
-      </DropdownMenu>
-      <TimeFilterDropdown
-        value={timeFilter}
-        timeStart={timeStart}
-        timeEnd={timeEnd}
-        onChange={setTimeFilter}
-        onTimeStartChange={setTimeStart}
-        onTimeEndChange={setTimeEnd}
-      />
-      <TooltipProvider delayDuration={100}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="outline" size="icon" className="h-8 w-8 flex-shrink-0" onClick={resetFiltersToDefaults}>
-              <CircleX className="h-4 w-4" />
-              <span className="sr-only">Reset filters to defaults</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Reset filters to defaults</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      <Dialog open={isHierarchyDialogOpen} onOpenChange={setIsHierarchyDialogOpen}>
-        <TooltipProvider delayDuration={100}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8 flex-shrink-0">
-                  <ListTree className="h-4 w-4" />
-                  <span className="sr-only">View Event Hierarchy</span>
-                </Button>
-              </DialogTrigger>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>View Event Hierarchy</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Event Hierarchy</DialogTitle>
-            <DialogDescription>
-              Defined event categories, types, and subtypes.
-            </DialogDescription>
-          </DialogHeader>
-          <EventHierarchyViewer />
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-
   if (isCardViewFullScreen && viewMode === 'card') {
     return (
       <div ref={cardViewContainerRef} className="fixed inset-0 bg-background z-50 h-screen w-screen overflow-hidden">
@@ -1343,14 +1180,223 @@ export default function EventsPage() {
   return (
     <div className="flex flex-col h-full p-4 md:p-6">
       <TooltipProvider>
-        <PageHeader 
-          title="Events"
-          description="View incoming events from connected devices."
-          icon={<Activity className="h-6 w-6" />}
-          actions={pageActions}
-        />
+        {/* Simplified Header */}
+        <div className="mb-6">
+          <h1 className="text-xl font-semibold text-foreground">Events</h1>
+        </div>
 
+        {/* Responsive Toolbar */}
+        <div className="mb-6">
+          {/* Mobile Layout - Visible only on mobile */}
+          <div className="flex sm:hidden items-center gap-2">
+            <ExportButton 
+              currentEvents={displayedEvents}
+              filterParams={exportFilterParams}
+            />
+            
+            <EventViewToggle 
+              viewMode={viewMode} 
+              onViewModeChange={setViewMode} 
+              cardSize={cardSize} 
+              onCardSizeChange={setCardSize} 
+            />
 
+            <div className="flex-1" /> {/* Spacer */}
+
+            {viewMode === 'card' && (
+              <TooltipProvider delayDuration={100}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-9 px-3" onClick={toggleCardViewFullScreen}>
+                      {isCardViewFullScreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{isCardViewFullScreen ? 'Exit Full Screen' : 'Full Screen'}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
+            <EventFiltersDialog
+              locationFilter={locationFilter}
+              spaceFilter={spaceFilter}
+              locationSpaceSearchTerm={locationSpaceSearchTerm}
+              locations={locations}
+              spaces={spaces}
+              onLocationChange={setLocationFilter}
+              onSpaceChange={setSpaceFilter}
+              onLocationSpaceSearchChange={setLocationSpaceSearchTerm}
+              connectorCategoryFilter={connectorCategoryFilter}
+              connectorCategories={connectorCategories}
+              onConnectorCategoryChange={setConnectorCategoryFilter}
+              eventCategoryFilter={eventCategoryFilter}
+              alarmEventsOnly={alarmEventsOnly}
+              onEventCategoryChange={setEventCategoryFilter}
+              onAlarmEventsOnlyChange={setAlarmEventsOnly}
+              timeFilter={timeFilter}
+              timeStart={timeStart}
+              timeEnd={timeEnd}
+              onTimeFilterChange={setTimeFilter}
+              onTimeStartChange={setTimeStart}
+              onTimeEndChange={setTimeEnd}
+              onResetFilters={resetFiltersToDefaults}
+            />
+          </div>
+
+          {/* Desktop/Tablet Layout - Hidden on mobile */}
+          <div className="hidden sm:flex flex-wrap items-center gap-3">
+            <ExportButton 
+              currentEvents={displayedEvents}
+              filterParams={exportFilterParams}
+            />
+            
+            <EventViewToggle 
+              viewMode={viewMode} 
+              onViewModeChange={setViewMode} 
+              cardSize={cardSize} 
+              onCardSizeChange={setCardSize} 
+            />
+
+            <LocationSpaceSelector
+              locationFilter={locationFilter}
+              spaceFilter={spaceFilter}
+              searchTerm={locationSpaceSearchTerm}
+              locations={locations}
+              spaces={spaces}
+              onLocationChange={setLocationFilter}
+              onSpaceChange={setSpaceFilter}
+              onSearchChange={setLocationSpaceSearchTerm}
+            />
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9">
+                  <div className="flex items-center gap-2 flex-1">
+                    {connectorCategoryFilter === 'all' ? (
+                      <Plug className="h-4 w-4" />
+                    ) : (
+                      <ConnectorIcon connectorCategory={connectorCategoryFilter} size={16} />
+                    )}
+                    <span>
+                      {connectorCategoryFilter === 'all' 
+                        ? 'All' 
+                        : formatConnectorCategory(connectorCategoryFilter)}
+                    </span>
+                  </div>
+                  <ChevronDown className="h-4 w-4 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56">
+                <DropdownMenuLabel>Connector Type</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setConnectorCategoryFilter('all')}>
+                  <div className="flex items-center gap-2">
+                    <Plug className="h-4 w-4" />
+                    All
+                  </div>
+                </DropdownMenuItem>
+                {connectorCategories.map(category => (
+                  <DropdownMenuItem 
+                    key={category} 
+                    onClick={() => setConnectorCategoryFilter(category)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <ConnectorIcon connectorCategory={category} size={16} />
+                      <span>{formatConnectorCategory(category)}</span>
+                    </div>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9">
+                  <span>
+                    Categories ({eventCategoryFilter.length === Object.keys(EVENT_CATEGORY_DISPLAY_MAP).length
+                      ? 'All' 
+                      : eventCategoryFilter.length})
+                  </span>
+                  <ChevronDown className="h-4 w-4 opacity-50 ml-2" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56">
+                <DropdownMenuLabel>Event Filters</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem
+                  checked={alarmEventsOnly}
+                  onCheckedChange={setAlarmEventsOnly}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  Alarm events only
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Event Categories</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {Object.entries(EVENT_CATEGORY_DISPLAY_MAP).map(([categoryKey, displayName]) => (
+                  <DropdownMenuCheckboxItem
+                    key={categoryKey}
+                    checked={eventCategoryFilter.includes(categoryKey)}
+                    onCheckedChange={(checked) => {
+                      const newCategories = checked 
+                        ? [...eventCategoryFilter, categoryKey] 
+                        : eventCategoryFilter.filter(item => item !== categoryKey);
+                      setEventCategoryFilter(newCategories);
+                    }}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {displayName}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <TimeFilterDropdown
+              value={timeFilter}
+              timeStart={timeStart}
+              timeEnd={timeEnd}
+              onChange={setTimeFilter}
+              onTimeStartChange={setTimeStart}
+              onTimeEndChange={setTimeEnd}
+            />
+
+            <div className="hidden sm:block h-6 w-px bg-border" /> {/* Separator */}
+
+            {viewMode === 'card' && (
+              <TooltipProvider delayDuration={100}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-9 px-3" onClick={toggleCardViewFullScreen}>
+                      {isCardViewFullScreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{isCardViewFullScreen ? 'Exit Full Screen' : 'Full Screen'}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 px-3">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={resetFiltersToDefaults}>
+                  <CircleX className="h-4 w-4 mr-2" />
+                  Reset Filters
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsHierarchyDialogOpen(true)}>
+                  <ListTree className="h-4 w-4 mr-2" />
+                  Event Hierarchy
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
 
         <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
           <DialogContent className="max-w-3xl max-h-[90vh]">
@@ -1369,6 +1415,18 @@ export default function EventsPage() {
                 Could not load device details.
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isHierarchyDialogOpen} onOpenChange={setIsHierarchyDialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Event Hierarchy</DialogTitle>
+              <DialogDescription>
+                Defined event categories, types, and subtypes.
+              </DialogDescription>
+            </DialogHeader>
+            <EventHierarchyViewer />
           </DialogContent>
         </Dialog>
 
@@ -1401,12 +1459,9 @@ export default function EventsPage() {
               ) : (
                 <div className="flex-grow flex items-center justify-center p-4">
                   <div className="text-center">
-                    <p className="text-muted-foreground mb-4">
+                    <p className="text-muted-foreground">
                       No events match your current filters.
                     </p>
-                    <Button variant="outline" onClick={resetFiltersToDefaults}>
-                      Clear All Filters
-                    </Button>
                   </div>
                 </div>
               )
@@ -1424,8 +1479,6 @@ export default function EventsPage() {
           disableFullscreen={false}
         />
       )}
-
-
     </div>
   );
 }

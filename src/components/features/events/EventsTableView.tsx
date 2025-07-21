@@ -200,7 +200,7 @@ export function EventsTableView<TData extends TableEventData>({
             ) : (
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-24 text-center">
-                  No results match your filters or no events received yet.
+                  No events match your current filters.
                 </TableCell>
               </TableRow>
             )}
