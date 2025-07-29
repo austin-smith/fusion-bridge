@@ -5,7 +5,10 @@ import { sql, eq } from 'drizzle-orm';
 import crypto from 'crypto'; // Import crypto
 import { Buffer } from 'buffer'; // Needed for raw body handling
 import type { NetBoxWebhookPayload, NetBoxDeviceWebhookPayload, NetBoxEventWebhookPayload } from '@/types/netbox'; // Import the types
+import type { GeneaEventWebhookPayload } from '@/types/genea'; // Import Genea types
+import { isGeneaEventPayload } from '@/types/genea'; // Import Genea type guard function
 import { parseNetboxEvent } from '@/lib/event-parsers/netbox'; // Import the NetBox parser
+import { parseGeneaEvent } from '@/lib/event-parsers/genea'; // Import the Genea parser
 import { storeStandardizedEvent } from '@/data/repositories/events'; // Import the event storage function
 import { useFusionStore } from '@/stores/store'; // Import Zustand store if needed for real-time updates
 import { recordWebhookActivity } from '@/services/webhook-service'; // <-- Import the new function
@@ -254,6 +257,37 @@ export async function POST(
       // responseMessage = 'NetBox Event Processed';
       recordWebhookActivity(connectorId);
       return NextResponse.json({ success: true, message: 'NetBox Event processed' }, { status: 200 });
+
+    } else if (connectorInfo.category === 'genea') {
+      // Handle Genea Event payload
+      if (!isGeneaEventPayload(payload)) {
+        console.warn(`[Webhook ${connectorId}] Received Genea payload with invalid structure.`, payload);
+        return NextResponse.json({ success: false, error: 'Invalid Genea payload structure' }, { status: 400 });
+      }
+
+      const geneaPayload = payload as GeneaEventWebhookPayload;
+      console.log(`[Webhook ${connectorId}] Received Genea event: ${geneaPayload.event_action} (UUID: ${geneaPayload.uuid}) on door: ${geneaPayload.door?.name || geneaPayload.door?.uuid || 'unknown'}`);
+      
+      try {
+        // Parse the Genea event
+        const standardizedEvents = await parseGeneaEvent(geneaPayload, connectorId);
+
+        for (const stdEvent of standardizedEvents) {
+          try {
+            await processAndPersistEvent(stdEvent);
+            useFusionStore.getState().processStandardizedEvent(stdEvent);
+          } catch (e) {
+            console.error(`[Webhook Handler][${connectorId}] Error processing standardized Genea event ${stdEvent.eventId}:`, e);
+          }
+        }
+        
+        console.log(`[Webhook Handler][${connectorId}] Genea event(s) processed and handed off.`);
+        recordWebhookActivity(connectorId);
+        return NextResponse.json({ success: true, message: 'Genea Event processed' }, { status: 200 });
+      } catch (parseError) {
+        console.error(`[Webhook Handler][${connectorId}] Error parsing Genea event:`, parseError);
+        return NextResponse.json({ success: false, error: 'Failed to parse Genea event' }, { status: 500 });
+      }
 
     } else {
       console.warn(`[Webhook ${connectorId}] Received unhandled payload type '${payload.Type}' or category '${connectorInfo.category}'.`);

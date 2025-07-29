@@ -153,6 +153,8 @@ export async function processAndPersistEvent(event: StandardizedEvent): Promise<
     } else if (typeof event.originalEvent === 'object' && event.originalEvent !== null && 'Descname' in event.originalEvent && typeof event.originalEvent.Descname === 'string') {
       // Handling for Netbox-like structures where Descname might be the raw type
       rawEventType = event.originalEvent.Descname;
+    } else if (typeof event.originalEvent === 'object' && event.originalEvent !== null && 'event_action' in event.originalEvent && typeof event.originalEvent.event_action === 'string') {
+      rawEventType = event.originalEvent.event_action;
     }
     // Add more conditions if other raw event structures are common
 
