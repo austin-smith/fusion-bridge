@@ -1863,152 +1863,68 @@ async function getApiDocumentation(args: any): Promise<FunctionExecutionResult> 
   try {
     // Get base URL for the current environment
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '';
+    const apiDocUrl = `${baseUrl}/api/docs/reference`;
     
-    let documentation: any = {};
-    
+    // Create action button to open API documentation in new tab
+    const actions: ChatAction[] = [
+      {
+        id: 'open-api-docs',
+        type: 'device',
+        label: 'Open API Documentation',
+        icon: 'ExternalLink',
+        metadata: {
+          internalDeviceId: 'api-docs-link',
+          deviceName: 'API Documentation',
+          action: 'open_external_link',
+          connectorCategory: 'system',
+          deviceType: 'link',
+          externalUrl: apiDocUrl
+        } as DeviceActionMetadata
+      }
+    ];
+
+    // Build response based on request type
     switch (requestType) {
       case 'overview':
-        documentation = {
-          title: "Fusion API Documentation",
-          description: "Comprehensive REST API for managing devices, spaces, alarm zones, events, and automations",
-          version: "1.0",
-          features: [
-            "Device management and control",
-            "Space and alarm zone management",
-            "Event querying and filtering", 
-            "Automation management",
-            "User and organization management",
-            "Real-time event streaming"
-          ]
+        return {
+          aiData: {
+            summary: "Fusion API provides comprehensive REST endpoints for device management, spaces, alarm zones, events, and automations. Features include device control, event querying, and real-time streaming."
+          },
+          uiData: { actions }
         };
-        break;
         
       case 'endpoints':
-        documentation = {
-          categories: [
-            {
-              name: "Devices",
-              endpoints: [
-                "GET /api/devices - List all devices",
-                "GET /api/devices/{id} - Get device details",
-                "POST /api/devices/{id}/state - Control device state"
-              ]
-            },
-            {
-              name: "Spaces",
-              endpoints: [
-                "GET /api/spaces - List all spaces",
-                "POST /api/spaces - Create new space",
-                "GET/PUT/DELETE /api/spaces/{id} - Manage specific space"
-              ]
-            },
-            {
-              name: "Alarm Zones", 
-              endpoints: [
-                "GET /api/alarm-zones - List all alarm zones",
-                "POST /api/alarm-zones - Create new zone",
-                "PUT /api/alarm-zones/{id}/arm-state - Arm/disarm zone"
-              ]
-            },
-            {
-              name: "Events",
-              endpoints: [
-                "GET /api/events - Query events with filters",
-                "GET /api/events/dashboard - Get dashboard events",
-                "GET /api/events/stream - Real-time event stream"
-              ]
-            }
-          ]
+        return {
+          aiData: {
+            summary: "API endpoints include device management (GET/POST /api/devices), space management (GET/POST /api/spaces), alarm zones (GET/POST /api/alarm-zones), and event querying (GET /api/events)."
+          },
+          uiData: { actions }
         };
-        break;
         
       case 'authentication':
-        documentation = {
-          type: "API Key",
-          description: "All API requests require authentication using API keys",
-          headerName: "x-api-key",
-          headerFormat: "YOUR_API_KEY",
-          keyManagement: "API keys can be managed in Account Settings → Organization tab"
+        return {
+          aiData: {
+            summary: "API authentication uses API keys in the x-api-key header. Keys can be generated in Account Settings → Organization tab."
+          },
+          uiData: { actions }
         };
-        break;
         
       case 'examples':
-        documentation = {
-          listDevices: {
-            method: "GET",
-            endpoint: "/api/devices",
-            description: "Get all devices for your organization"
+        return {
+          aiData: {
+            summary: "Common API examples: GET /api/devices (list devices), GET /api/events?limit=50 (recent events), PUT /api/alarm-zones/{id}/arm-state (arm zones)."
           },
-          listEvents: {
-            method: "GET", 
-            endpoint: "/api/events?limit=50",
-            description: "Get recent events with optional filters"
-          },
-          armZone: {
-            method: "PUT",
-            endpoint: "/api/alarm-zones/{id}/arm-state",
-            description: "Arm a specific alarm zone"
-          }
+          uiData: { actions }
         };
-        break;
+        
+      default:
+        return {
+          aiData: {
+            summary: `Complete API documentation with getting started guide, authentication details, and endpoint examples. Base URL: ${baseUrl}/api`
+          },
+          uiData: { actions }
+        };
     }
-    
-    documentation = {
-      ...documentation,
-      apiDocumentationUrl: `${baseUrl}/api/docs/reference`,
-      openApiSpecUrl: `${baseUrl}/api/docs/spec`,
-      baseApiUrl: `${baseUrl}/api`,
-      overview: {
-        title: "Fusion API Documentation",
-        description: "Comprehensive REST API for managing devices, spaces, alarm zones, events, and automations",
-        version: "1.0",
-        features: [
-          "Device management and control",
-          "Space and alarm zone management",
-          "Event querying and filtering", 
-          "Automation management",
-          "User and organization management",
-          "Real-time event streaming"
-        ]
-      },
-      authentication: {
-        type: "API Key",
-        description: "All API requests require authentication using API keys",
-        headerName: "x-api-key",
-        headerFormat: "YOUR_API_KEY",
-        keyManagement: "API keys can be managed in Account Settings → Organization tab"
-      },
-      examples: {
-        listDevices: {
-          method: "GET",
-          endpoint: "/api/devices",
-          description: "Get all devices for your organization"
-        },
-        listEvents: {
-          method: "GET", 
-          endpoint: "/api/events?limit=50",
-          description: "Get recent events with optional filters"
-        },
-        armZone: {
-          method: "PUT",
-          endpoint: "/api/alarm-zones/{id}/arm-state",
-          description: "Arm a specific alarm zone"
-        }
-      },
-      gettingStarted: [
-        "1. Generate an API key in Account Settings → Organization tab",
-        "2. Include the key in x-api-key header: 'YOUR_API_KEY'",
-        "3. Make requests to endpoints under /api/",
-        "4. View interactive documentation for testing endpoints"
-      ]
-    };
-    
-    return {
-      aiData: {
-        summary: `API documentation for ${requestType} retrieved successfully`,
-        ...documentation
-      }
-    };
   } catch (error) {
     console.error('[getApiDocumentation] Error:', error);
     return {
