@@ -232,7 +232,7 @@ export async function testGeneaConnection(config: unknown): Promise<GeneaTestRes
   }
 } 
 
-// --- Function to fetch doors (No change in logic needed, uses updated schema) ---
+// --- Function to fetch doors ---
 /**
  * Fetches all doors for a given Genea customer.
  * @param config - The Genea connector configuration containing the API key and customer UUID.
@@ -251,42 +251,65 @@ export async function getGeneaDoors(config: GeneaConfig): Promise<GeneaDoor[]> {
   }
 
   const { apiKey, customerUuid } = validation.data;
+  const pageSize = 100;
 
   try {
-    console.log(`Fetching Genea doors for customer ${customerUuid}...`);
-    // TODO: Implement pagination if the API supports it and returns many doors
-    //       Check responseBody.meta.pagination for page_count, etc.
-    const response = await fetch(`${GENEA_API_BASE_URL}/v2/customer/${customerUuid}/door`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Accept': 'application/json', // Best practice
-      },
-    });
+    console.log(`Fetching Genea doors for customer ${customerUuid} with pagination...`);
+    
+    const allDoors: GeneaDoor[] = [];
+    let currentPage = 1;
+    let totalPages = 1; // Will be updated from first response
+    let totalRows = 0; // Will be updated from first response
 
-    if (!response.ok) {
-      let errorMessage = `Genea API returned status: ${response.status} when fetching doors`;
-      try {
-        const errorBody = await response.json();
-        errorMessage = errorBody?.meta?.message || errorBody?.error?.message || errorBody?.error || errorMessage;
-      } catch (e) {
-        console.warn("Could not parse error response body from Genea door fetch API.");
+    do {
+      console.log(`Fetching Genea doors page ${currentPage}${totalPages > 1 ? ` of ${totalPages}` : ''} (page size: ${pageSize})...`);
+      
+      const response = await fetch(`${GENEA_API_BASE_URL}/v2/customer/${customerUuid}/door?page=${currentPage}&page_size=${pageSize}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        let errorMessage = `Genea API returned status: ${response.status} when fetching doors (page ${currentPage})`;
+        try {
+          const errorBody = await response.json();
+          errorMessage = errorBody?.meta?.message || errorBody?.error?.message || errorBody?.error || errorMessage;
+        } catch (e) {
+          console.warn("Could not parse error response body from Genea door fetch API.");
+        }
+        console.error(errorMessage);
+        throw new Error(errorMessage);
       }
-      console.error(errorMessage);
-      throw new Error(errorMessage);
-    }
 
-    const responseBody = await response.json();
-    // Parsing now uses the updated GeneaDoorListResponseSchema
-    const parseResult = GeneaDoorListResponseSchema.safeParse(responseBody); 
+      const responseBody = await response.json();
+      const parseResult = GeneaDoorListResponseSchema.safeParse(responseBody);
 
-    if (!parseResult.success) {
-      console.error("Failed to parse Genea door list response:", parseResult.error);
-      throw new Error("Invalid data format received from Genea doors API.");
-    }
+      if (!parseResult.success) {
+        console.error(`Failed to parse Genea door list response for page ${currentPage}:`, parseResult.error);
+        throw new Error(`Invalid data format received from Genea doors API (page ${currentPage}).`);
+      }
 
-    console.log(`Successfully fetched ${parseResult.data.data.length} Genea doors.`);
-    return parseResult.data.data;
+      // Update pagination info from first response
+      if (currentPage === 1 && parseResult.data.meta?.pagination) {
+        totalPages = parseResult.data.meta.pagination.page_count;
+        totalRows = parseResult.data.meta.pagination.row_count;
+        console.log(`Found ${totalRows} total doors across ${totalPages} pages`);
+      }
+
+      // Add doors from this page
+      const doorsOnThisPage = parseResult.data.data.length;
+      allDoors.push(...parseResult.data.data);
+      console.log(`Retrieved ${doorsOnThisPage} doors from page ${currentPage} (${allDoors.length} total so far)`);
+
+      currentPage++;
+
+    } while (currentPage <= totalPages);
+
+    console.log(`Successfully fetched ${allDoors.length} Genea doors total across ${totalPages} pages.`);
+    return allDoors;
 
   } catch (error: unknown) {
     console.error('Error fetching Genea doors:', error);
@@ -294,4 +317,3 @@ export async function getGeneaDoors(config: GeneaConfig): Promise<GeneaDoor[]> {
     throw error instanceof Error ? error : new Error('Unknown error fetching Genea doors');
   }
 }
-// --- END Function --- 
