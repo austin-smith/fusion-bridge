@@ -2,19 +2,15 @@ import { StandardizedEvent } from '@/types/events';
 import { EventCategory, EventType, EventSubtype, DeviceType } from '@/lib/mappings/definitions';
 import { PikoJsonRpcEventParams, PikoDeviceRaw } from '@/services/drivers/piko';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
+import { 
+  ALLOWED_PIKO_EVENT_TYPES, 
+  classifyPikoEvent 
+} from '@/lib/mappings/event-maps/piko';
+import { EventClassification } from '@/lib/mappings/event-hierarchy';
 import crypto from 'crypto';
 import { processAndPersistEvent } from '@/lib/events/eventProcessor';
 
-// Define the possible EventTypes this parser can return
-type ParsedPikoEventType = EventType.ANALYTICS_EVENT 
-                         | EventType.LOITERING 
-                         | EventType.ARMED_PERSON 
-                         | EventType.TAILGATING 
-                         | EventType.INTRUSION 
-                         | EventType.LINE_CROSSING
-                         | EventType.OBJECT_DETECTED
-                         | EventType.OBJECT_REMOVED
-                         | EventType.MOTION_DETECTED;
+
 
 /**
  * Parses the event parameters from a Piko JSON-RPC event update message 
@@ -76,50 +72,26 @@ export async function parsePikoEvent(
         objectTrackId: rawEventParams.objectTrackId,
     };
 
-    let specificEventType: ParsedPikoEventType = EventType.ANALYTICS_EVENT; 
-    let specificEventSubtype: EventSubtype | undefined = undefined; 
     const inputPortId = rawEventParams.inputPortId?.toLowerCase(); 
     const pikoEventType = rawEventParams.eventType;
-    const allowedPikoEventTypes = ['analyticsSdkObjectDetected', 'analyticsSdkEvent', 'cameraMotionEvent'];
 
-    if (!pikoEventType || !allowedPikoEventTypes.includes(pikoEventType)) {
+    // Validate event type
+    if (!pikoEventType || !ALLOWED_PIKO_EVENT_TYPES.includes(pikoEventType as any)) {
         console.warn(`[Piko Parser][${connectorId}] Received Piko event with eventType '${pikoEventType || 'undefined'}'. Not an allowed type. Event discarded.`);
         return [];
     }
 
-    if (inputPortId === 'cvedia.rt.loitering') {
-        specificEventType = EventType.LOITERING;
-    } else if (inputPortId === 'cvedia.rt.armed_person') {
-        specificEventType = EventType.ARMED_PERSON;
-    } else if (inputPortId === 'cvedia.rt.tailgating') {
-        specificEventType = EventType.TAILGATING;
-    } else if (inputPortId === 'cvedia.rt.intrusion') {
-        specificEventType = EventType.INTRUSION;
-    } else if (inputPortId === 'cvedia.rt.crossing') {
-        specificEventType = EventType.LINE_CROSSING;
-    } else if (inputPortId === 'objectremovedetector' || inputPortId === 'cvedia.rt.object_removed') {
-        specificEventType = EventType.OBJECT_REMOVED;
-    } else if (pikoEventType === 'analyticsSdkObjectDetected') {
-        specificEventType = EventType.OBJECT_DETECTED;
-        if (inputPortId?.includes('person')) {
-            specificEventSubtype = EventSubtype.PERSON;
-        } else if (inputPortId?.includes('vehicle')) {
-            specificEventSubtype = EventSubtype.VEHICLE;
-        }
-    } else if (pikoEventType === 'analyticsSdkEvent') {
-        specificEventType = EventType.ANALYTICS_EVENT;
-    } else if (pikoEventType === 'cameraMotionEvent') {
-        specificEventType = EventType.MOTION_DETECTED;
-    }
+    // Centralized event classification
+    const eventClassification = classifyPikoEvent(inputPortId, pikoEventType);
 
     const standardizedEvent: StandardizedEvent = {
         eventId: crypto.randomUUID(),
         timestamp: timestamp,
         connectorId: connectorId,
         deviceId: deviceId,
-        category: EventCategory.ANALYTICS,
-        type: specificEventType,
-        subtype: specificEventSubtype, 
+        category: eventClassification.category,
+        type: eventClassification.type,
+        subtype: eventClassification.subtype, 
         deviceInfo: deviceInfo,
         payload: payload,
         originalEvent: rawEventParams,

@@ -19,9 +19,9 @@ import {
   EventType, 
   EventCategory, 
   EVENT_TYPE_DISPLAY_MAP, 
-  EVENT_CATEGORY_DISPLAY_MAP,
-  getEventsByCategory
+  EVENT_CATEGORY_DISPLAY_MAP
 } from '@/lib/mappings/definitions';
+import { getEventsByCategory } from '@/lib/mappings/event-hierarchy';
 import { getEventCategoryIcon } from '@/lib/mappings/presentation';
 import { SIMPLE_ALARM_EVENT_TYPES } from '@/lib/alarm-event-types';
 import { useFusionStore } from '@/stores/store';

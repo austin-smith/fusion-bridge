@@ -9,8 +9,6 @@ import {
     LockStatus,
     ErrorState,
     DeviceSubtype, // Keep subtype for mapping keys
-    EventCategory, // <-- Import from definitions
-    EventType,      // <-- Import from definitions
     DisplayState // <-- Import DisplayState
 } from '@/lib/mappings/definitions';
 import {
@@ -23,6 +21,12 @@ import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
 import crypto from 'crypto'; // Import crypto for UUID generation
 import { processAndPersistEvent } from '@/lib/events/eventProcessor'; // Import the central processor
 import { getRawStateStringFromYoLinkData } from '@/services/drivers/yolink';
+import { 
+    YOLINK_EVENT_SUFFIX_MAP, 
+    YOLINK_IPCAMERA_EVENT_MAP, 
+    YOLINK_SMARTFOB_PRESS_MAP, 
+    YOLINK_UNKNOWN_EVENT 
+} from '@/lib/mappings/event-maps/yolink';
 
 // --- BEGIN DB Imports ---
 // import { db } from '@/data/db';
@@ -181,14 +185,15 @@ function handlePowerReport({ event, timestamp, connectorId, deviceInfo }: EventC
         (payload as any).batteryPercentage = batteryPercentage;
     }
     
+    const classification = YOLINK_EVENT_SUFFIX_MAP['.powerReport'];
+    
     return [{
         eventId: crypto.randomUUID(),
         timestamp: timestamp,
         connectorId: connectorId,
         deviceId: event.deviceId,
         deviceInfo: deviceInfo, 
-        category: EventCategory.DIAGNOSTICS,
-        type: EventType.POWER_CHECK_IN,    
+        ...classification,
         payload: payload,
         originalEvent: event,
     }];
@@ -232,7 +237,7 @@ function handleSmartFobButtonPress({ event, timestamp, connectorId, deviceInfo }
                 (payload as any).batteryPercentage = batteryPercentage;
             }
             
-            const eventType = pressType === 'LongPress' ? EventType.BUTTON_LONG_PRESSED : EventType.BUTTON_PRESSED;
+            const classification = YOLINK_SMARTFOB_PRESS_MAP[pressType as keyof typeof YOLINK_SMARTFOB_PRESS_MAP];
             
             standardizedEvents.push({
                 eventId: crypto.randomUUID(),
@@ -240,13 +245,12 @@ function handleSmartFobButtonPress({ event, timestamp, connectorId, deviceInfo }
                 connectorId: connectorId,
                 deviceId: event.deviceId,
                 deviceInfo: deviceInfo,
-                category: EventCategory.DEVICE_STATE,
-                type: eventType,
+                ...classification,
                 payload: payload,
                 originalEvent: event,
             });
             
-            console.log(`[YoLink Parser] Created ${eventType} event for button ${buttonNumber + 1} on device ${event.deviceId}`);
+            console.log(`[YoLink Parser] Created ${classification.type} event for button ${buttonNumber + 1} on device ${event.deviceId}`);
         }
     }
     
@@ -255,13 +259,9 @@ function handleSmartFobButtonPress({ event, timestamp, connectorId, deviceInfo }
 
 function handleIPCameraEvents({ event, timestamp, connectorId, deviceInfo }: EventContext): StandardizedEvent[] {
     const eventString = event.data!.event as string;
-    let eventType: EventType;
+    const classification = YOLINK_IPCAMERA_EVENT_MAP[eventString as keyof typeof YOLINK_IPCAMERA_EVENT_MAP];
     
-    if (eventString === 'sound_detected') {
-        eventType = EventType.SOUND_DETECTED;
-    } else if (eventString === 'motion_detected') {
-        eventType = EventType.MOTION_DETECTED;
-    } else {
+    if (!classification) {
         console.warn(`[YoLink Parser] Unknown IPCamera event: ${eventString}`);
         return [];
     }
@@ -276,8 +276,7 @@ function handleIPCameraEvents({ event, timestamp, connectorId, deviceInfo }: Eve
         connectorId: connectorId,
         deviceId: event.deviceId,
         deviceInfo: deviceInfo,
-        category: EventCategory.ANALYTICS,
-        type: eventType,
+        ...classification,
         payload: payload,
         originalEvent: event,
     }];
@@ -319,14 +318,28 @@ function handleGenericStateChange({ event, timestamp, connectorId, deviceInfo }:
         (payload as any).batteryPercentage = batteryPercentage;
     }
     
+    // Determine event suffix to get classification
+    let suffix: string;
+    if (event.event.endsWith('.Alert')) {
+        suffix = '.Alert';
+    } else if (event.event.endsWith('.StatusChange')) {
+        suffix = '.StatusChange';
+    } else if (event.event.endsWith('.setState')) {
+        suffix = '.setState';
+    } else {
+        // Fallback - should not happen given handler conditions
+        suffix = '.Alert';
+    }
+    
+    const classification = YOLINK_EVENT_SUFFIX_MAP[suffix as keyof typeof YOLINK_EVENT_SUFFIX_MAP];
+    
     return [{
         eventId: crypto.randomUUID(),
         timestamp: timestamp,
         connectorId: connectorId,
         deviceId: event.deviceId,
         deviceInfo: deviceInfo,
-        category: EventCategory.DEVICE_STATE,
-        type: EventType.STATE_CHANGED,
+        ...classification,
         payload: payload,
         originalEvent: event,
     }];
@@ -346,14 +359,15 @@ function handleGenericDiagnosticReport({ event, timestamp, connectorId, deviceIn
         (payload as any).batteryPercentage = batteryPercentage;
     }
     
+    const classification = YOLINK_EVENT_SUFFIX_MAP['.Report'];
+    
     return [{
         eventId: crypto.randomUUID(),
         timestamp: timestamp,
         connectorId: connectorId,
         deviceId: event.deviceId,
         deviceInfo: deviceInfo, 
-        category: EventCategory.DIAGNOSTICS,
-        type: EventType.DEVICE_CHECK_IN,    
+        ...classification,
         payload: payload,
         originalEvent: event,
     }];
@@ -379,8 +393,7 @@ function createUnknownEvent({ event, timestamp, connectorId, deviceInfo }: Event
         connectorId: connectorId,
         deviceId: event.deviceId, 
         deviceInfo: deviceInfo,
-        category: EventCategory.UNKNOWN,
-        type: EventType.UNKNOWN_EXTERNAL_EVENT,
+        ...YOLINK_UNKNOWN_EVENT,
         payload: payload,
         originalEvent: event,
     }];

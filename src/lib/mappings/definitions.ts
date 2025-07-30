@@ -432,59 +432,6 @@ export const EVENT_TYPE_DISPLAY_MAP = {
   [EventType.UNKNOWN_EXTERNAL_EVENT]: 'Unknown Event',
 };
 
-// --- EVENT TYPE TO CATEGORY MAPPING ---
-// The single source of truth for which category each event type belongs to
-export const EVENT_TYPE_TO_CATEGORY_MAP: Record<EventType, EventCategory> = {
-  // DEVICE_STATE
-  [EventType.STATE_CHANGED]: EventCategory.DEVICE_STATE,
-  [EventType.BATTERY_LEVEL_CHANGED]: EventCategory.DEVICE_STATE,
-  [EventType.BUTTON_PRESSED]: EventCategory.DEVICE_STATE,
-  [EventType.BUTTON_LONG_PRESSED]: EventCategory.DEVICE_STATE,
-  
-  // ACCESS_CONTROL  
-  [EventType.ACCESS_GRANTED]: EventCategory.ACCESS_CONTROL,
-  [EventType.ACCESS_DENIED]: EventCategory.ACCESS_CONTROL,
-  [EventType.DOOR_HELD_OPEN]: EventCategory.ACCESS_CONTROL,
-  [EventType.DOOR_FORCED_OPEN]: EventCategory.ACCESS_CONTROL,
-  [EventType.EXIT_REQUEST]: EventCategory.ACCESS_CONTROL,
-  
-  // ANALYTICS
-  [EventType.ANALYTICS_EVENT]: EventCategory.ANALYTICS,
-  [EventType.OBJECT_DETECTED]: EventCategory.ANALYTICS,
-  [EventType.OBJECT_REMOVED]: EventCategory.ANALYTICS,
-  [EventType.MOTION_DETECTED]: EventCategory.ANALYTICS,
-  [EventType.SOUND_DETECTED]: EventCategory.ANALYTICS,
-  [EventType.LOITERING]: EventCategory.ANALYTICS,
-  [EventType.LINE_CROSSING]: EventCategory.ANALYTICS,
-  [EventType.ARMED_PERSON]: EventCategory.ANALYTICS,
-  [EventType.TAILGATING]: EventCategory.ANALYTICS,
-  [EventType.INTRUSION]: EventCategory.ANALYTICS,
-  
-  // DIAGNOSTICS
-  [EventType.DEVICE_CHECK_IN]: EventCategory.DIAGNOSTICS,
-  [EventType.POWER_CHECK_IN]: EventCategory.DIAGNOSTICS,
-  
-  // UNKNOWN
-  [EventType.UNKNOWN_EXTERNAL_EVENT]: EventCategory.UNKNOWN,
-};
-
-// Helper function to group all event types by their category
-export function getEventsByCategory(): Record<EventCategory, EventType[]> {
-  const grouped: Record<EventCategory, EventType[]> = {
-    [EventCategory.DEVICE_STATE]: [],
-    [EventCategory.ACCESS_CONTROL]: [],
-    [EventCategory.ANALYTICS]: [],
-    [EventCategory.DIAGNOSTICS]: [],
-    [EventCategory.UNKNOWN]: [],
-  };
-  
-  Object.entries(EVENT_TYPE_TO_CATEGORY_MAP).forEach(([eventType, category]) => {
-    grouped[category].push(eventType as EventType);
-  });
-  
-  return grouped;
-}
-
 // --- EVENT CATEGORY DISPLAY STRINGS --- 
 export const DEVICE_STATE_CATEGORY_DISPLAY = 'Device State';
 export const ACCESS_CONTROL_CATEGORY_DISPLAY = 'Access Control'; 

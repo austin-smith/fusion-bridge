@@ -2,124 +2,10 @@ import { StandardizedEvent } from '@/types/events';
 import { GeneaEventWebhookPayload } from '@/types/genea';
 import { EventCategory, EventType, EventSubtype } from '@/lib/mappings/definitions';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
+import { GENEA_EVENT_MAP, GENEA_UNKNOWN_EVENT } from '@/lib/mappings/event-maps/genea';
 import crypto from 'crypto';
 
-/**
- * Comprehensive mapping of Genea event actions to standardized event types and subtypes
- * Based on the provided mapping table from Genea API documentation
- */
-const GENEA_EVENT_MAPPING: Record<string, {
-  type: EventType;
-  subtype?: EventSubtype;
-}> = {
-  // Access Denied Events with specific subtypes
-  'SEQUR_ACCESS_DENIED_ACCESS_POINT_LOCKED': {
-    type: EventType.ACCESS_DENIED,
-    subtype: EventSubtype.DOOR_LOCKED
-  },
-  'SEQUR_ACCESS_DENIED_AFTER_EXPIRATION_DATE': {
-    type: EventType.ACCESS_DENIED,
-    subtype: EventSubtype.EXPIRED_CREDENTIAL
-  },
-  'SEQUR_ACCESS_DENIED_ANTI_PASSBACK_VIOLATION': {
-    type: EventType.ACCESS_DENIED,
-    subtype: EventSubtype.ANTIPASSBACK_VIOLATION
-  },
-  'SEQUR_ACCESS_DENIED_DURESS_code_DETECTED': {
-    type: EventType.ACCESS_DENIED,
-    subtype: EventSubtype.DURESS_PIN
-  },
-  'SEQUR_ACCESS_DENIED_INVALID_PIN': {
-    type: EventType.ACCESS_DENIED,
-    subtype: EventSubtype.INVALID_CREDENTIAL
-  },
-  'SEQUR_ACCESS_DENIED_INVALID_TIME': {
-    type: EventType.ACCESS_DENIED,
-    subtype: EventSubtype.NOT_IN_SCHEDULE
-  },
-  'SEQUR_ACCESS_DENIED_OCCUPANCY_LIMIT_REACHED': {
-    type: EventType.ACCESS_DENIED,
-    subtype: EventSubtype.OCCUPANCY_LIMIT
-  },
-  
-  // Access Denied Events without specific subtypes (will use undefined subtype)
-  'SEQUR_ACCESS_DENIED_AIRLOCK': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_AREA_NOT_ENABLED': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_BEFORE_ACTIVATION_DATE': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_CARD_NOT_FOUND': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_COUNT_EXCEEDED': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_DEACTIVATED_CARD': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_ELEVATOR_FLOOR': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_ELEVATOR_FLOOR_UNAUTHORIZED': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_ELEVATOR_TIMEOUT': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_ELEVATOR_UNKNOWN_ERROR': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_HOST_APPROVAL_DENIED': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_HOST_APPROVAL_TIMEOUT': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_INCOMPLETE_CARD_PIN_SEQ': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_INVALID_FACILITY_code': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_INVALID_FORMAT': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_INVALID_ISSUE_code': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_NO_DOOR_ACCESS': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_NO_ESCORT_CARD': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_NO_SECOND_CARD': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_UNAUTHORIZED_ASSETS': {
-    type: EventType.ACCESS_DENIED
-  },
-  'SEQUR_ACCESS_DENIED_USE_LIMIT': {
-    type: EventType.ACCESS_DENIED
-  },
-  
-  // Access Granted Events
-  'SEQUR_ACCESS_GRANTED': {
-    type: EventType.ACCESS_GRANTED,
-    subtype: EventSubtype.NORMAL
-  },
-  'SEQUR_ACCESS_GRANTED_ACCESS_POINT_UNLOCKED': {
-    type: EventType.ACCESS_GRANTED,
-    subtype: EventSubtype.NORMAL
-  }
-  
-  // Note: Add more event mappings here as discovered from Genea documentation
-  // or as new event types are encountered in production
-};
+
 
 /**
  * Parses a Genea webhook event payload into a StandardizedEvent.
@@ -177,24 +63,23 @@ export async function parseGeneaEvent(
     }
   }
 
-  // Map Genea event action to standardized event type and subtype
-  const eventMapping = GENEA_EVENT_MAPPING[event_action];
+  // Map Genea event action to standardized event classification
+  const eventClassification = GENEA_EVENT_MAP[event_action as keyof typeof GENEA_EVENT_MAP];
   let category: EventCategory;
   let type: EventType;
   let subtype: EventSubtype | undefined;
 
-  if (eventMapping) {
-    // All mapped Genea events are ACCESS_CONTROL category
-    category = EventCategory.ACCESS_CONTROL;
-    type = eventMapping.type;
-    subtype = eventMapping.subtype;
+  if (eventClassification) {
+    category = eventClassification.category;
+    type = eventClassification.type;
+    subtype = eventClassification.subtype;
     console.log(`[Genea Parser] Mapped event action '${event_action}' to ${type}${subtype ? ` / ${subtype}` : ''}`);
   } else {
     // Handle unmapped events
     console.warn(`[Genea Parser] Unmapped event action: '${event_action}' for event ${eventUuid}`);
-    category = EventCategory.UNKNOWN;
-    type = EventType.UNKNOWN_EXTERNAL_EVENT;
-    subtype = undefined;
+    category = GENEA_UNKNOWN_EVENT.category;
+    type = GENEA_UNKNOWN_EVENT.type;
+    subtype = GENEA_UNKNOWN_EVENT.subtype;
   }
 
   // Get device type info (all Genea devices are doors)
