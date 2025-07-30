@@ -213,7 +213,7 @@ export async function parseGeneaEvent(
     payload: {
       eventMessage: event_message,
       ...(door?.name && { doorName: door.name }),
-      ...(location?.name && { locationName: location.name }),
+      ...(location?.[0]?.name && { locationName: location[0].name }),
       ...(actor?.type && { actorType: actor.type }),
       ...(actor?.user_name && { userName: actor.user_name }),
       ...(actor?.user_email && { userEmail: actor.user_email }),

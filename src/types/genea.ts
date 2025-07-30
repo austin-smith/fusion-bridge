@@ -80,7 +80,7 @@ export interface GeneaEventWebhookPayload {
   
   // Contextual objects
   actor?: GeneaActor;
-  location?: GeneaLocation;
+  location?: GeneaLocation[];
   door?: GeneaDoor;
   controller?: GeneaController;
   card?: GeneaCard;
