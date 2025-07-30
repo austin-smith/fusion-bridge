@@ -429,7 +429,7 @@
     "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/next",
     "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/next/license.md"
   },
-  "node-cron@4.0.5": {
+  "node-cron@4.2.1": {
     "licenses": "ISC",
     "repository": "https://github.com/merencia/node-cron",
     "publisher": "Lucas Merencia",
