@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { 
-    EventCategory, 
-    EventType, 
-    EventSubtype, 
-    EVENT_CATEGORY_DISPLAY_MAP, 
-    EVENT_TYPE_DISPLAY_MAP, 
-    EVENT_SUBTYPE_DISPLAY_MAP
+  EventCategory, 
+  EventType, 
+  EventSubtype, 
+  EVENT_CATEGORY_DISPLAY_MAP, 
+  EVENT_TYPE_DISPLAY_MAP,
+  EVENT_SUBTYPE_DISPLAY_MAP
 } from '@/lib/mappings/definitions';
+import { EVENT_HIERARCHY } from '@/lib/mappings/event-hierarchy';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -29,77 +30,24 @@ type StandardBadgeVariant = VariantProps<typeof badgeVariants>["variant"];
 // List of known standard badge variants used for severity
 const standardSeverityVariants: StandardBadgeVariant[] = ['destructive', 'secondary', 'default', 'outline'];
 
-// Manually define the hierarchy based on the comments/grouping in definitions.ts
-// This avoids complex type manipulation and keeps the display logic clear.
-const eventHierarchy = {
-    [EventCategory.DEVICE_STATE]: {
-        displayName: EVENT_CATEGORY_DISPLAY_MAP[EventCategory.DEVICE_STATE],
-        types: {
-            [EventType.STATE_CHANGED]: { displayName: EVENT_TYPE_DISPLAY_MAP[EventType.STATE_CHANGED], subtypes: [] },
-            [EventType.BATTERY_LEVEL_CHANGED]: { displayName: EVENT_TYPE_DISPLAY_MAP[EventType.BATTERY_LEVEL_CHANGED], subtypes: [] },
-        }
-    },
-    [EventCategory.ACCESS_CONTROL]: {
-        displayName: EVENT_CATEGORY_DISPLAY_MAP[EventCategory.ACCESS_CONTROL],
-        types: {
-            [EventType.ACCESS_GRANTED]: { 
-                displayName: EVENT_TYPE_DISPLAY_MAP[EventType.ACCESS_GRANTED], 
-                subtypes: [
-                    EventSubtype.NORMAL,
-                    EventSubtype.REMOTE_OVERRIDE,
-                    EventSubtype.PASSBACK_RETURN,
-                ].sort()
-            },
-            [EventType.ACCESS_DENIED]: { 
-                displayName: EVENT_TYPE_DISPLAY_MAP[EventType.ACCESS_DENIED],
-                subtypes: [
-                    EventSubtype.ANTIPASSBACK_VIOLATION, 
-                    EventSubtype.DOOR_LOCKED, 
-                    EventSubtype.DURESS_PIN, 
-                    EventSubtype.EXPIRED_CREDENTIAL, 
-                    EventSubtype.INVALID_CREDENTIAL,
-                    EventSubtype.NOT_IN_SCHEDULE,
-                    EventSubtype.OCCUPANCY_LIMIT, 
-                    EventSubtype.PIN_REQUIRED, 
-                ].sort()
-            },
-            [EventType.DOOR_HELD_OPEN]: { displayName: EVENT_TYPE_DISPLAY_MAP[EventType.DOOR_HELD_OPEN], subtypes: [] },
-            [EventType.DOOR_FORCED_OPEN]: { displayName: EVENT_TYPE_DISPLAY_MAP[EventType.DOOR_FORCED_OPEN], subtypes: [] },
-            [EventType.EXIT_REQUEST]: {
-                displayName: EVENT_TYPE_DISPLAY_MAP[EventType.EXIT_REQUEST],
-                subtypes: [
-                    EventSubtype.PRESSED,
-                    EventSubtype.HELD,
-                    EventSubtype.MOTION,
-                ].sort()
-            },
-        }
-    },
-    [EventCategory.ANALYTICS]: {
-        displayName: EVENT_CATEGORY_DISPLAY_MAP[EventCategory.ANALYTICS],
-        types: {
-            [EventType.ANALYTICS_EVENT]: { displayName: EVENT_TYPE_DISPLAY_MAP[EventType.ANALYTICS_EVENT], subtypes: [] },
-            [EventType.OBJECT_DETECTED]: { 
-                displayName: EVENT_TYPE_DISPLAY_MAP[EventType.OBJECT_DETECTED],
-                subtypes: [
-                    EventSubtype.PERSON,
-                    EventSubtype.VEHICLE,
-                ]
-            },
-            [EventType.LOITERING]: { displayName: EVENT_TYPE_DISPLAY_MAP[EventType.LOITERING], subtypes: [] },
-            [EventType.LINE_CROSSING]: { displayName: EVENT_TYPE_DISPLAY_MAP[EventType.LINE_CROSSING], subtypes: [] },
-            [EventType.ARMED_PERSON]: { displayName: EVENT_TYPE_DISPLAY_MAP[EventType.ARMED_PERSON], subtypes: [] },
-            [EventType.TAILGATING]: { displayName: EVENT_TYPE_DISPLAY_MAP[EventType.TAILGATING], subtypes: [] },
-            [EventType.INTRUSION]: { displayName: EVENT_TYPE_DISPLAY_MAP[EventType.INTRUSION], subtypes: [] },
-        }
-    },
-    [EventCategory.UNKNOWN]: {
-        displayName: EVENT_CATEGORY_DISPLAY_MAP[EventCategory.UNKNOWN],
-        types: {
-            [EventType.UNKNOWN_EXTERNAL_EVENT]: { displayName: EVENT_TYPE_DISPLAY_MAP[EventType.UNKNOWN_EXTERNAL_EVENT], subtypes: [] },
-        }
-    },
-};
+// Generate display hierarchy from the central EVENT_HIERARCHY
+const eventHierarchy = Object.fromEntries(
+  Object.entries(EVENT_HIERARCHY).map(([category, types]) => [
+    category,
+    {
+      displayName: EVENT_CATEGORY_DISPLAY_MAP[category as EventCategory],
+      types: Object.fromEntries(
+        Object.entries(types).map(([eventType, subtypes]) => [
+          eventType,
+          {
+            displayName: EVENT_TYPE_DISPLAY_MAP[eventType as EventType],
+            subtypes: (subtypes as EventSubtype[]).sort()
+          }
+        ])
+      )
+    }
+  ])
+);
 
 export const EventHierarchyViewer: React.FC = () => {
     // Initialize state with all categories open

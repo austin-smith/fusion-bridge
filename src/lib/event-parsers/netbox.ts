@@ -2,6 +2,7 @@ import { StandardizedEvent } from '@/types/events';
 import { NetBoxEventWebhookPayload } from '@/types/netbox';
 import { EventCategory, EventType, EventSubtype } from '@/lib/mappings/definitions';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
+import { NETBOX_EVENT_MAP, NETBOX_UNKNOWN_EVENT } from '@/lib/mappings/event-maps/netbox';
 import crypto from 'crypto'; // Use Node.js crypto for UUID
 import { processAndPersistEvent } from '@/lib/events/eventProcessor'; // Import the central processor
 
@@ -39,56 +40,24 @@ export async function parseNetboxEvent(
     RawXmlBase64 
   } = payload;
 
+  // Map Descname to standardized event classification
+  const eventClassification = NETBOX_EVENT_MAP[Descname as keyof typeof NETBOX_EVENT_MAP];
+  
   let category: EventCategory;
   let type: EventType;
   let subtype: EventSubtype | undefined;
 
-  // Map Descname to standardized category, type, and subtype
-  switch (Descname) {
-    case 'Access Denied Because Radio Busy':
-      category = EventCategory.ACCESS_CONTROL;
-      type = EventType.ACCESS_DENIED;
-      subtype = EventSubtype.NORMAL; // Use NORMAL when no specific subtype applies
-      break;
-    case 'Access Granted':
-      category = EventCategory.ACCESS_CONTROL;
-      type = EventType.ACCESS_GRANTED;
-      subtype = EventSubtype.NORMAL;
-      break;
-    case 'Invalid Access':
-      category = EventCategory.ACCESS_CONTROL;
-      type = EventType.ACCESS_DENIED;
-      subtype = EventSubtype.INVALID_CREDENTIAL;
-      break;
-    case 'Interior Push Button':
-      category = EventCategory.ACCESS_CONTROL;
-      type = EventType.EXIT_REQUEST;
-      subtype = EventSubtype.PRESSED;
-      break;
-    case 'Unlock': // Treat both Unlock and Momentary Unlock as Remote Override
-    case 'Momentary Unlock':
-      category = EventCategory.ACCESS_CONTROL;
-      type = EventType.ACCESS_GRANTED;
-      subtype = EventSubtype.REMOTE_OVERRIDE;
-      break;
-    case 'Elevator Access Denied':
-      category = EventCategory.ACCESS_CONTROL;
-      type = EventType.ACCESS_DENIED;
-      subtype = EventSubtype.NORMAL; // No specific subtype given
-      break;
-    case 'Elevator Access Granted':
-      category = EventCategory.ACCESS_CONTROL;
-      type = EventType.ACCESS_GRANTED;
-      subtype = EventSubtype.NORMAL;
-      break;
-    default:
-      // Log unmapped events but don't stop processing
-      console.warn(`[Netbox Parser] Unmapped Descname: '${Descname}'`);
-      category = EventCategory.UNKNOWN;
-      type = EventType.UNKNOWN_EXTERNAL_EVENT;
-      subtype = undefined;
-      // If choosing not to process unmapped events further, can return early:
-      // return; 
+  if (eventClassification) {
+    category = eventClassification.category;
+    type = eventClassification.type;
+    subtype = eventClassification.subtype;
+    console.log(`[Netbox Parser] Mapped Descname '${Descname}' to ${type}${subtype ? ` / ${subtype}` : ''}`);
+  } else {
+    // Handle unmapped events
+    console.warn(`[Netbox Parser] Unmapped Descname: '${Descname}'`);
+    category = NETBOX_UNKNOWN_EVENT.category;
+    type = NETBOX_UNKNOWN_EVENT.type;
+    subtype = NETBOX_UNKNOWN_EVENT.subtype;
   }
 
   // Determine the deviceId, preferring Nodeunique

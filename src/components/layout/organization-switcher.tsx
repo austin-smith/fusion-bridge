@@ -17,57 +17,38 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { useFusionStore, type Organization } from '@/stores/store';
+import { type Organization } from '@/stores/store';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth/client';
 import { toast } from 'sonner';
 import { OrganizationLogoDisplay } from '@/components/features/organizations/organization-logo-selector';
 import { Badge } from '@/components/ui/badge';
+import { useActiveOrganization, useUserOrganizations } from '@/hooks/use-organization';
 
 export function OrganizationSwitcher() {
   const { isMobile } = useSidebar();
   const router = useRouter();
-  const { 
-    organizations, 
-    fetchOrganizations,
-    isLoadingOrganizations,
-    setActiveOrganizationId
-  } = useFusionStore();
-
+  
+  // Use Better Auth hooks for organization management
+  const { data: activeOrganization, isPending: isLoadingActiveOrg } = useActiveOrganization();
+  const { data: organizations, isPending: isLoadingOrganizations } = useUserOrganizations();
+  
   const [isSwitching, setIsSwitching] = React.useState(false);
   const [hasMounted, setHasMounted] = React.useState(false);
-  const [hasInitialized, setHasInitialized] = React.useState(false);
 
-  // Use Better Auth's useActiveOrganization hook
-  const { data: activeOrganization, isPending: isLoadingActiveOrg } = authClient.useActiveOrganization();
-
-  // Prevent hydration mismatch by only rendering after mount
+  // Prevent hydration mismatch by only rendering dynamic content after mount
   React.useEffect(() => {
     setHasMounted(true);
   }, []);
 
-  // Load organizations on mount
-  React.useEffect(() => {
-    if (hasMounted && organizations.length === 0 && !isLoadingOrganizations) {
-      fetchOrganizations();
-    }
-  }, [hasMounted, organizations.length, isLoadingOrganizations, fetchOrganizations]);
 
-  // Sync Better Auth active organization with Zustand store
-  React.useEffect(() => {
-    if (!isLoadingActiveOrg && activeOrganization) {
-      setActiveOrganizationId(activeOrganization.id);
-    } else if (!isLoadingActiveOrg && !activeOrganization) {
-      setActiveOrganizationId(null);
-    }
-  }, [activeOrganization, isLoadingActiveOrg, setActiveOrganizationId]);
 
   const handleOrganizationSwitch = React.useCallback(async (organization: Organization) => {
     if (organization.id === activeOrganization?.id) return;
     
     setIsSwitching(true);
     try {
-      // Use Better Auth's setActive method with proper session management
+      // Use Better Auth's setActive method - OrganizationBridge handles store sync
       const result = await authClient.organization.setActive({
         organizationId: organization.id
       });
@@ -75,10 +56,6 @@ export function OrganizationSwitcher() {
       if (result.error) {
         throw new Error(result.error.message || 'Failed to switch organization');
       }
-      
-      // Immediately update the store with the new organization ID
-      // This ensures data fetches happen right away rather than waiting for the hook to detect changes
-      setActiveOrganizationId(organization.id);
       
       toast.success(`Switched to ${organization.name}`);
       
@@ -89,47 +66,29 @@ export function OrganizationSwitcher() {
     } finally {
       setIsSwitching(false);
     }
-  }, [activeOrganization?.id, setActiveOrganizationId]);
+  }, [activeOrganization?.id]);
 
-  // Auto-select first organization if none active - but only run once after initial load
-  React.useEffect(() => {
-    if (
-      hasMounted && 
-      !isLoadingActiveOrg && 
-      !activeOrganization && 
-      organizations.length > 0 && 
-      !isSwitching &&
-      !hasInitialized
-    ) {
-      // Auto-select first organization alphabetically
-      const firstOrg = [...organizations].sort((a, b) => a.name.localeCompare(b.name))[0];
-      console.log('Auto-selecting first organization:', firstOrg.name);
-      setHasInitialized(true);
-      handleOrganizationSwitch(firstOrg);
-    } else if (
-      hasMounted && 
-      !isLoadingActiveOrg && 
-      (activeOrganization || organizations.length === 0) &&
-      !hasInitialized
-    ) {
-      // Mark as initialized even if we don't auto-select
-      setHasInitialized(true);
-    }
-  }, [hasMounted, isLoadingActiveOrg, activeOrganization, organizations, isSwitching, hasInitialized, handleOrganizationSwitch]);
+
 
   // Consolidate loading state logic
   const isLoading = React.useMemo(() => {
+    // Always show loading state until mounted (prevents hydration mismatch)
+    if (!hasMounted) {
+      return true;
+    }
+    
     // Don't show loading if we're just switching organizations
-    if (isSwitching && organizations.length > 0) {
+    if (isSwitching && organizations && organizations.length > 0) {
       return false;
     }
     
-    // Show loading during initial mount, auth check, or organization fetch
-    return !hasMounted || isLoadingActiveOrg || (isLoadingOrganizations && organizations.length === 0);
-  }, [hasMounted, isLoadingActiveOrg, isLoadingOrganizations, organizations.length, isSwitching]);
+    // Show loading during auth check or organization fetch
+    return isLoadingActiveOrg || (isLoadingOrganizations && (!organizations || organizations.length === 0));
+  }, [hasMounted, isLoadingActiveOrg, isLoadingOrganizations, organizations, isSwitching]);
 
   // Sort organizations alphabetically by name for consistent display
   const sortedOrganizations = React.useMemo(() => {
+    if (!organizations) return [];
     return [...organizations].sort((a, b) => a.name.localeCompare(b.name));
   }, [organizations]);
 
@@ -157,7 +116,7 @@ export function OrganizationSwitcher() {
   }
 
   // Show "no organizations" state
-  if (organizations.length === 0) {
+  if (!organizations || organizations.length === 0) {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
@@ -205,7 +164,7 @@ export function OrganizationSwitcher() {
                     {currentOrg.name}
                   </span>
                   <span className="truncate text-xs text-muted-foreground">
-                    {organizations.length} organization{organizations.length !== 1 ? 's' : ''}
+                    {organizations?.length || 0} organization{(organizations?.length || 0) !== 1 ? 's' : ''}
                   </span>
                 </div>
                 <ChevronsUpDown className="ml-auto size-4" />

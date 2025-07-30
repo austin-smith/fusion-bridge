@@ -8,6 +8,7 @@ import { ToasterProvider } from '@/components/common/toaster-provider';
 import { ServerInit } from '@/components/layout/server-init';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { ChatAIAssistant } from '@/components/features/ai-assistant/ChatAIAssistant';
+import { useOrganizationSync } from '@/hooks/use-organization-sync';
 
 // Component to handle global state effects like toasts
 function GlobalStateEffects() {
@@ -32,6 +33,9 @@ interface ClientProvidersProps {
 export const AuthContext = createContext<{ initialUserRole: string | null }>({ initialUserRole: null });
 
 export function ClientProviders({ children, initialSidebarOpen = true, initialUserRole = null }: ClientProvidersProps) {
+  // Sync Better Auth organization state to Zustand store
+  useOrganizationSync();
+
   return (
     <ThemeProvider
       attribute="class"
