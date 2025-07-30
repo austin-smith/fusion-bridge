@@ -430,8 +430,8 @@ export default function EventsPage() {
     timeStart,
     timeEnd,
     viewMode,
-    fetchEvents
-    // NOTE: Intentionally exclude eventsHasInitiallyLoaded to prevent double-fetch
+    fetchEvents,
+    eventsHasInitiallyLoaded
   ]);
 
   const toggleCardViewFullScreen = () => { // Simpler toggle, actual API calls in useEffect

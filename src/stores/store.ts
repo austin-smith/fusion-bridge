@@ -2085,7 +2085,15 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         },
         eventsAbortController: null,
         eventsHasInitiallyLoaded: false,
+        // Reset organization-specific filters
+        eventsLocationFilter: 'all',
+        eventsSpaceFilter: 'all',
       });
+      
+      // Update localStorage to persist the reset filters
+      localStorage.setItem('eventsLocationFilterPreference', 'all');
+      localStorage.setItem('eventsSpaceFilterPreference', 'all');
+      console.log('[Store] Reset organization-specific filters to "all"');
       
       // Auto-refetch data for new organization if we have one
       if (organizationId) {
