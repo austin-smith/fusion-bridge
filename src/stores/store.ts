@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { produce, Draft, enableMapSet } from 'immer';
 import { toast } from 'sonner'; // <-- Import toast
 import { PikoServer } from '@/types';
-import type { StandardizedEvent } from '@/types/events';
+import type { StandardizedEvent, EnrichedEvent } from '@/types/events';
 import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, ArmedState, ActionableState, ON, OFF, EVENT_CATEGORY_DISPLAY_MAP } from '@/lib/mappings/definitions';
 import type { DeviceWithConnector, ConnectorWithConfig, Location, Space, AlarmZone, ApiResponse, ArmingSchedule, AlarmZoneTriggerOverride, CreateTriggerOverrideData } from '@/types/index';
 // Re-export the ArmingSchedule type
@@ -236,6 +236,21 @@ interface FusionState {
   eventsTimeStart: string | null; // ISO date string for custom range
   eventsTimeEnd: string | null;   // ISO date string for custom range
   
+  // --- Events Data State ---
+  events: EnrichedEvent[];
+  isLoadingEvents: boolean;
+  errorEvents: string | null;
+  eventsPagination: {
+    pageIndex: number;
+    pageSize: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    currentPage: number;
+    totalItems?: number;
+  };
+  eventsAbortController: AbortController | null;
+  eventsHasInitiallyLoaded: boolean;
+  
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
   addConnector: (connector: ConnectorWithConfig) => void;
@@ -385,6 +400,23 @@ interface FusionState {
   initializeViewPreferences: () => void;
   initializeFilterPreferences: () => void;
   resetFiltersToDefaults: () => void;
+  
+  // --- Events Data Actions ---
+  fetchEvents: (options?: {
+    page?: number;
+    pageSize?: number;
+    resetPagination?: boolean;
+    isInitialLoad?: boolean;
+  }) => Promise<void>;
+  setEventsPagination: (pagination: Partial<{
+    pageIndex: number;
+    pageSize: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    currentPage: number;
+    totalItems?: number;
+  }>) => void;
+  resetEventsState: () => void;
 }
 
 // Initial state for MQTT (default)
@@ -521,6 +553,20 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   eventsTimeFilter: 'all',
   eventsTimeStart: null,
   eventsTimeEnd: null,
+  
+  // --- Events Data Initial State ---
+  events: [],
+  isLoadingEvents: false,
+  errorEvents: null,
+  eventsPagination: {
+    pageIndex: 0,
+    pageSize: 50,
+    totalPages: 0,
+    hasNextPage: false,
+    currentPage: 1,
+  },
+  eventsAbortController: null,
+  eventsHasInitiallyLoaded: false,
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -2000,6 +2046,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         organizationMembers: [],
         organizationInvitations: [],
         automations: [], // Clear automations
+        events: [], // Clear events data
         // Reset loading states
         isLoading: false,
         isLoadingLocations: false,
@@ -2012,6 +2059,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         isLoadingInvitations: false,
         isLoadingAutomations: false, // Reset automations loading
         isLoadingOpenAi: false, // Reset OpenAI loading
+        isLoadingEvents: false, // Reset events loading
         // Clear errors
         error: null,
         errorLocations: null,
@@ -2024,8 +2072,19 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         errorInvitations: null,
         errorAutomations: null, // Clear automations error
         errorOpenAi: null, // Clear OpenAI error
+        errorEvents: null, // Clear events error
         // Reset OpenAI state
         openAiEnabled: false, // Reset OpenAI enabled state
+        // Reset events state
+        eventsPagination: {
+          pageIndex: 0,
+          pageSize: 50,
+          totalPages: 0,
+          hasNextPage: false,
+          currentPage: 1,
+        },
+        eventsAbortController: null,
+        eventsHasInitiallyLoaded: false,
       });
       
       // Auto-refetch data for new organization if we have one
@@ -2407,6 +2466,175 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
     
     console.log('[FusionStore] Filters reset to defaults');
+  },
+
+  // --- Events Data Actions ---
+  fetchEvents: async (options = {}) => {
+    const {
+      page = get().eventsPagination.pageIndex + 1,
+      pageSize = get().eventsPagination.pageSize,
+      resetPagination = false,
+      isInitialLoad = false
+    } = options;
+
+    // Simple duplicate prevention
+    const state = get();
+    if (state.isLoadingEvents) {
+      return; // Skip if already loading
+    }
+
+    // Cancel any existing request
+    const existingController = state.eventsAbortController;
+    if (existingController) {
+      existingController.abort();
+    }
+
+    const abortController = new AbortController();
+    set({ 
+      eventsAbortController: abortController, 
+      isLoadingEvents: true, 
+      errorEvents: null
+    });
+
+    try {
+      const state = get();
+      const params = new URLSearchParams();
+      
+      // Pagination
+      params.append('page', String(page));
+      params.append('limit', String(pageSize));
+
+      // Apply filters from store state
+      if (state.eventsEventCategoryFilter.length > 0) {
+        params.append('eventCategories', state.eventsEventCategoryFilter.join(','));
+      }
+      if (state.eventsConnectorCategoryFilter && state.eventsConnectorCategoryFilter.toLowerCase() !== 'all') {
+        params.append('connectorCategory', state.eventsConnectorCategoryFilter);
+      }
+      if (state.eventsLocationFilter && state.eventsLocationFilter.toLowerCase() !== 'all') {
+        params.append('locationId', state.eventsLocationFilter);
+      }
+      if (state.eventsSpaceFilter && state.eventsSpaceFilter.toLowerCase() !== 'all') {
+        params.append('spaceId', state.eventsSpaceFilter);
+      }
+      if (state.eventsAlarmEventsOnly) {
+        params.append('alarmEventsOnly', 'true');
+      }
+
+      // Column filters (only apply in table view)
+      if (state.eventsViewMode === 'table') {
+        if (state.eventsDeviceNameFilter && state.eventsDeviceNameFilter.trim() !== '') {
+          params.append('deviceNameFilter', state.eventsDeviceNameFilter);
+        }
+        if (state.eventsEventTypeFilter && state.eventsEventTypeFilter.trim() !== '') {
+          params.append('eventTypeFilter', state.eventsEventTypeFilter);
+        }
+        if (state.eventsDeviceTypeFilter && state.eventsDeviceTypeFilter.trim() !== '') {
+          params.append('deviceTypeFilter', state.eventsDeviceTypeFilter);
+        }
+        if (state.eventsConnectorNameFilter && state.eventsConnectorNameFilter.trim() !== '') {
+          params.append('connectorNameFilter', state.eventsConnectorNameFilter);
+        }
+      }
+      
+      // Time filters
+      if (state.eventsTimeStart) {
+        params.append('timeStart', state.eventsTimeStart);
+      }
+      if (state.eventsTimeEnd) {
+        params.append('timeEnd', state.eventsTimeEnd);
+      }
+
+      const response = await fetch(`/api/events?${params.toString()}`, {
+        signal: abortController.signal
+      });
+
+      if (!response.ok) {
+        let errorMessage = `HTTP error! Status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (jsonError) {
+          console.warn('Failed to parse error response body as JSON:', jsonError);
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'API returned success: false');
+      }
+
+      // Update events and pagination
+      set((state) => ({
+        events: data.data || [],
+        isLoadingEvents: false,
+        errorEvents: null,
+        eventsAbortController: null,
+        eventsHasInitiallyLoaded: true,
+        eventsPagination: {
+          ...state.eventsPagination,
+          ...(resetPagination ? { pageIndex: 0 } : { pageIndex: page - 1 }),
+          totalPages: data.pagination?.hasNextPage ? 
+            (data.pagination.currentPage + 1) : 
+            data.pagination?.currentPage || 1,
+          hasNextPage: data.pagination?.hasNextPage || false,
+          currentPage: data.pagination?.currentPage || 1,
+          totalItems: data.pagination?.totalItems
+        }
+      }));
+
+      console.log(`[FusionStore] Events loaded: ${data.data?.length || 0} events, page ${page}`);
+
+    } catch (error) {
+      // Don't show errors for cancelled requests
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
+      
+      console.error('Error fetching events:', error);
+      const displayMessage = error instanceof Error ? error.message : 'An unknown error occurred while fetching events';
+      
+      set({ 
+        isLoadingEvents: false, 
+        errorEvents: displayMessage, 
+        eventsAbortController: null
+      });
+      
+      if (isInitialLoad) {
+        toast.error(displayMessage);
+      }
+    }
+  },
+
+  setEventsPagination: (pagination) => {
+    set((state) => ({
+      eventsPagination: { ...state.eventsPagination, ...pagination }
+    }));
+  },
+
+  resetEventsState: () => {
+    // Cancel any existing request
+    const abortController = get().eventsAbortController;
+    if (abortController) {
+      abortController.abort();
+    }
+    
+    set({
+      events: [],
+      isLoadingEvents: false,
+      errorEvents: null,
+      eventsPagination: {
+        pageIndex: 0,
+        pageSize: 50,
+        totalPages: 0,
+        hasNextPage: false,
+        currentPage: 1,
+      },
+      eventsAbortController: null,
+      eventsHasInitiallyLoaded: false,
+    });
   },
 
 })); 

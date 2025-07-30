@@ -168,26 +168,17 @@ const EventsTableSkeleton = ({ rowCount = 10, columnCount = 8 }: { rowCount?: nu
 };
 
 export default function EventsPage() {
-  const [events, setEvents] = useState<EnrichedEvent[]>([]);
-  const [loading, setLoading] = useState(true);
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'timestamp', desc: true }
   ]);
-  // Request cancellation for search
-  const searchAbortControllerRef = useRef<AbortController | null>(null);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>({});
-  const [pagination, setPagination] = useState<PaginationState>({
-    pageIndex: 0,
-    pageSize: 50,
-  });
-  const [tablePageCount, setTablePageCount] = useState<number>(0);
   const [locationSpaceSearchTerm, setLocationSpaceSearchTerm] = useState('');
   
   // Video dialog state - centralized for both normal and full screen modes
   const [isVideoPlayerOpen, setIsVideoPlayerOpen] = useState(false);
   const [videoPlayerProps, setVideoPlayerProps] = useState<Omit<VideoPlaybackDialogProps, 'isOpen' | 'onOpenChange'> | null>(null);
-
+  
   // Unified video handler for both normal and full screen modes
   const handlePlayVideo = useCallback((
     bestShotEvent: EnrichedEvent | undefined,
@@ -272,8 +263,26 @@ export default function EventsPage() {
   const setTimeStart = useFusionStore(state => state.setEventsTimeStart);
   const setTimeEnd = useFusionStore(state => state.setEventsTimeEnd);
 
-  // Simple loading tracking
-  const [hasInitiallyLoaded, setHasInitiallyLoaded] = useState(false);
+  // Get Events data from store
+  const {
+    events,
+    isLoadingEvents,
+    errorEvents,
+    eventsPagination,
+    eventsHasInitiallyLoaded,
+    fetchEvents,
+    setEventsPagination,
+    resetEventsState,
+  } = useFusionStore((state) => ({
+    events: state.events,
+    isLoadingEvents: state.isLoadingEvents,
+    errorEvents: state.errorEvents,
+    eventsPagination: state.eventsPagination,
+    eventsHasInitiallyLoaded: state.eventsHasInitiallyLoaded,
+    fetchEvents: state.fetchEvents,
+    setEventsPagination: state.setEventsPagination,
+    resetEventsState: state.resetEventsState,
+  }));
 
   // Initialize view and filter preferences from localStorage (following app pattern)
   useEffect(() => {
@@ -291,14 +300,12 @@ export default function EventsPage() {
     }
   }, [viewMode, setDeviceNameFilter, setEventTypeFilter, setDeviceTypeFilter, setConnectorNameFilter]);
 
-  // Cleanup effect to cancel pending requests on unmount
+  // Cleanup effect to reset events state on unmount
   useEffect(() => {
     return () => {
-      if (searchAbortControllerRef.current) {
-        searchAbortControllerRef.current.abort();
-      }
+      resetEventsState();
     };
-  }, []);
+  }, [resetEventsState]);
 
   const [isCardViewFullScreen, setIsCardViewFullScreen] = useState(false);
   const cardViewContainerRef = useRef<HTMLDivElement>(null);
@@ -307,6 +314,7 @@ export default function EventsPage() {
   const spaces = useFusionStore(state => state.spaces);
   const allDevices = useFusionStore(state => state.allDevices);
   const locations = useFusionStore(state => state.locations);
+  const activeOrganizationId = useFusionStore(state => state.activeOrganizationId);
   
   // Use store loading states instead of manual loading
   const isLoadingConnectors = useFusionStore(state => state.isLoading);
@@ -334,119 +342,6 @@ export default function EventsPage() {
   const [isHierarchyDialogOpen, setIsHierarchyDialogOpen] = useState(false);
 
 
-
-  // Initial events fetch if needed (for first-time page loads)
-  useEffect(() => {
-    // Only trigger if we have organization data but no events yet and we're not loading
-    if (connectors.length > 0 && events.length === 0 && !loading && !isLoadingConnectors && !isLoadingSpaces && !isLoadingDevices && !isLoadingLocations) {
-      // This will trigger the main useEffect above to fetch events
-      setLoading(true);
-      setTimeout(() => setLoading(false), 100); // Reset loading state to trigger the main effect
-    }
-      }, [connectors.length, events.length, loading, isLoadingConnectors, isLoadingSpaces, isLoadingDevices, isLoadingLocations]);
-
-  // MODIFIED: fetchEvents signature and URL construction
-  const fetchEvents = useCallback(async (
-    page: number, 
-    pageSize: number, 
-    isInitialLoad = false,
-    currentEventCategories: string[],
-    currentConnectorCategory: string,
-    currentLocationFilter: string,
-    currentSpaceFilter: string,
-    currentAlarmEventsOnly: boolean,
-    currentDeviceNameFilter: string,
-    currentEventTypeFilter: string,
-    currentDeviceTypeFilter: string,
-    currentConnectorNameFilter: string,
-    currentTimeStart: string | null,
-    currentTimeEnd: string | null,
-    abortSignal?: AbortSignal
-  ): Promise<{ pagination: PaginationMetadata | null; actualDataLength: number } | null> => {
-    try {
-      const params = new URLSearchParams();
-      params.append('page', String(page));
-      params.append('limit', String(pageSize));
-
-      if (currentEventCategories.length > 0) {
-        params.append('eventCategories', currentEventCategories.join(','));
-      }
-      if (currentConnectorCategory && currentConnectorCategory.toLowerCase() !== 'all') {
-        params.append('connectorCategory', currentConnectorCategory);
-      }
-      if (currentLocationFilter && currentLocationFilter.toLowerCase() !== 'all') {
-        params.append('locationId', currentLocationFilter);
-      }
-      if (currentSpaceFilter && currentSpaceFilter.toLowerCase() !== 'all') {
-        params.append('spaceId', currentSpaceFilter);
-      }
-      if (currentAlarmEventsOnly) {
-        params.append('alarmEventsOnly', 'true');
-      }
-
-      // Column filter parameters
-      if (currentDeviceNameFilter && currentDeviceNameFilter.trim() !== '') {
-        params.append('deviceNameFilter', currentDeviceNameFilter);
-      }
-      if (currentEventTypeFilter && currentEventTypeFilter.trim() !== '') {
-        params.append('eventTypeFilter', currentEventTypeFilter);
-      }
-      if (currentDeviceTypeFilter && currentDeviceTypeFilter.trim() !== '') {
-        params.append('deviceTypeFilter', currentDeviceTypeFilter);
-      }
-      if (currentConnectorNameFilter && currentConnectorNameFilter.trim() !== '') {
-        params.append('connectorNameFilter', currentConnectorNameFilter);
-      }
-      
-      // Time filter parameters
-      if (currentTimeStart) {
-        params.append('timeStart', currentTimeStart);
-      }
-      if (currentTimeEnd) {
-        params.append('timeEnd', currentTimeEnd);
-      }
-
-      const response = await fetch(`/api/events?${params.toString()}`, {
-        signal: abortSignal
-      });
-
-      if (!response.ok) {
-        let errorMessage = `HTTP error! Status: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch (jsonError) {
-          console.warn('Failed to parse error response body as JSON:', jsonError);
-        }
-        throw new Error(errorMessage);
-      }
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'API returned success: false');
-      }
-
-      setEvents(data.data || []);
-      // MODIFIED: Return pagination data instead of setting state
-      return { pagination: data.pagination as PaginationMetadata | null, actualDataLength: data.data.length };
-
-    } catch (error) {
-      // Don't show errors for cancelled requests
-      if (error instanceof Error && error.name === 'AbortError') {
-        return null;
-      }
-      
-      console.error('Error fetching events:', error);
-      const displayMessage = error instanceof Error ? error.message : 'An unknown error occurred while fetching events';
-      if (isInitialLoad) {
-         toast.error(displayMessage);
-      }
-      return null; // Return null on error
-    } finally {
-      // setLoading is now handled by the calling useEffects
-    }
-  }, []); // Dependencies remain empty for fetchEvents itself
 
   // Function to fetch specific device details
   const fetchDeviceDetails = useCallback(async (deviceId: string) => {
@@ -502,93 +397,27 @@ export default function EventsPage() {
     }
   }, []);
 
-  // Simple unified data fetcher
-  const loadEvents = useCallback(async () => {
-    if (searchAbortControllerRef.current) {
-      searchAbortControllerRef.current.abort();
+  // Simple events fetching - just like other pages
+  useEffect(() => {
+    if (isLoadingConnectors || connectors.length === 0) {
+      return;
     }
-    
-    searchAbortControllerRef.current = new AbortController();
-    
-    setLoading(true);
-    
-    try {
-      const result = await fetchEvents(
-        pagination.pageIndex + 1, 
-        pagination.pageSize, 
-        !hasInitiallyLoaded,
-        eventCategoryFilter, 
-        connectorCategoryFilter, 
-        locationFilter, 
-        spaceFilter, 
-        alarmEventsOnly, 
-        // Only apply column filters in table view
-        viewMode === 'table' ? deviceNameFilter : '', 
-        viewMode === 'table' ? eventTypeFilter : '', 
-        viewMode === 'table' ? deviceTypeFilter : '', 
-        viewMode === 'table' ? connectorNameFilter : '',
-        timeStart,
-        timeEnd,
-        searchAbortControllerRef.current.signal
-      );
-      
-      if (result?.pagination) {
-        const newPageCount = result.pagination.hasNextPage ? 
-          result.pagination.currentPage + 1 : 
-          result.pagination.currentPage;
-        setTablePageCount(newPageCount);
-      }
-      
-      if (!hasInitiallyLoaded) {
-        setHasInitiallyLoaded(true);
-      }
-    } finally {
-      setLoading(false);
+
+    if (!eventsHasInitiallyLoaded) {
+      fetchEvents({ isInitialLoad: true, resetPagination: true });
+    } else {
+      fetchEvents({ 
+        page: eventsPagination.pageIndex + 1,
+        pageSize: eventsPagination.pageSize
+      });
     }
   }, [
-    fetchEvents, 
-    pagination.pageIndex, 
-    pagination.pageSize, 
-    hasInitiallyLoaded,
-    eventCategoryFilter, 
-    connectorCategoryFilter, 
-    locationFilter, 
-    spaceFilter, 
-    alarmEventsOnly, 
-    deviceNameFilter, 
-    eventTypeFilter, 
-    deviceTypeFilter, 
-    connectorNameFilter,
-    timeStart,
-    timeEnd,
-    viewMode
-  ]);
-
-  // Initial load only
-  useEffect(() => {
-    if (!hasInitiallyLoaded && connectors.length > 0 && !isLoadingConnectors) {
-      loadEvents();
-    }
-  }, [hasInitiallyLoaded, connectors.length, isLoadingConnectors, loadEvents]);
-
-  // Handle pagination changes
-  useEffect(() => {
-    if (hasInitiallyLoaded) {
-      loadEvents();
-    }
-  }, [pagination.pageIndex, pagination.pageSize, hasInitiallyLoaded, loadEvents]);
-
-  // Handle filter changes (search)
-  useEffect(() => {
-    if (hasInitiallyLoaded) {
-      // Reset to first page for filter changes
-      if (pagination.pageIndex !== 0) {
-        setPagination(prev => ({ ...prev, pageIndex: 0 }));
-        return;
-      }
-      loadEvents();
-    }
-  }, [
+    // Only include dependencies that should actually trigger a refetch
+    connectors.length, 
+    isLoadingConnectors,
+    activeOrganizationId,
+    eventsPagination.pageIndex, 
+    eventsPagination.pageSize,
     eventCategoryFilter, 
     connectorCategoryFilter, 
     locationFilter, 
@@ -601,9 +430,8 @@ export default function EventsPage() {
     timeStart,
     timeEnd,
     viewMode,
-    hasInitiallyLoaded,
-    pagination.pageIndex,
-    loadEvents
+    fetchEvents
+    // NOTE: Intentionally exclude eventsHasInitiallyLoaded to prevent double-fetch
   ]);
 
   const toggleCardViewFullScreen = () => { // Simpler toggle, actual API calls in useEffect
@@ -1054,12 +882,23 @@ export default function EventsPage() {
       sorting,
       columnFilters,
       expanded,
-      pagination,
+      pagination: {
+        pageIndex: eventsPagination.pageIndex,
+        pageSize: eventsPagination.pageSize,
+      },
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onExpandedChange: setExpanded,
-    onPaginationChange: setPagination,
+    onPaginationChange: (updater) => {
+      const newPagination = typeof updater === 'function' 
+        ? updater({
+            pageIndex: eventsPagination.pageIndex,
+            pageSize: eventsPagination.pageSize,
+          })
+        : updater;
+      setEventsPagination(newPagination);
+    },
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -1069,7 +908,7 @@ export default function EventsPage() {
     getRowId: (originalRow) => originalRow.eventUuid,
     manualPagination: true,
     manualFiltering: true,
-    pageCount: tablePageCount,
+    pageCount: eventsPagination.totalPages,
   });
 
   
@@ -1430,15 +1269,15 @@ export default function EventsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Show skeleton whenever loading */}
-        {loading ? (
+        {/* Show skeleton when loading OR when we should be loading but aren't yet */}
+        {isLoadingEvents || !eventsHasInitiallyLoaded ? (
           <div className="flex-shrink-0">
             {viewMode === 'card' 
               ? <EventCardViewSkeleton segmentCount={2} cardsPerSegment={4} cardSize={cardSize} />
               : <EventsTableSkeleton rowCount={15} columnCount={columns.length} />}
           </div>
         ) : (
-          /* Show content when not loading */
+          /* Show content only when we've successfully loaded at least once */
           <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
             {viewMode === 'table' ? (
               <EventsTableView 
