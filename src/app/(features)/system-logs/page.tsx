@@ -101,12 +101,9 @@ export default function SystemLogsPage() {
   useEffect(() => {
     if (isAutoScrollEnabled && isLiveEnabled && !isInitialLoad && scrollContainerRef.current) {
       const scrollElement = scrollContainerRef.current;
-      // Use setTimeout to ensure DOM update completes before scrolling
-      setTimeout(() => {
-        scrollElement.scrollTop = scrollElement.scrollHeight;
-      }, 0);
+      scrollElement.scrollTop = scrollElement.scrollHeight;
     }
-  }, [logs, isInitialLoad, isAutoScrollEnabled, isLiveEnabled]); // Added isLiveEnabled dependency
+  }, [logs, isInitialLoad, isAutoScrollEnabled, isLiveEnabled]);
 
   const clearLogs = () => {
     setLogs([]);
@@ -249,7 +246,8 @@ export default function SystemLogsPage() {
             {/* Log scroll area */}
             <div 
               ref={scrollContainerRef}
-              className="flex-1 overflow-auto"
+              className="overflow-auto"
+              style={{ height: 'calc(100vh - 300px)' }}
             >
               <div className="p-4 font-mono text-sm">
                 {filteredLogs.length > 0 ? (
