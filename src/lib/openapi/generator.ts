@@ -1983,7 +1983,7 @@ export function generateOpenApiSpec() {
     servers: [
       {
         url: process.env.NODE_ENV === 'production' 
-          ? 'https://fusion-bridge-production.up.railway.app' 
+          ? 'https://app.getfusion.io' 
           : 'http://localhost:3000',
         description: process.env.NODE_ENV === 'production' 
           ? 'Production server' 

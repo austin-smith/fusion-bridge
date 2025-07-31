@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
-import { db } from '@/data/db';
-import { events, devices, connectors, locations } from '@/data/db/schema';
-import { desc, eq, and, isNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { EventCategory, EventType, EventSubtype } from '@/lib/mappings/definitions';

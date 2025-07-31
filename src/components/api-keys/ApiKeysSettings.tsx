@@ -281,7 +281,7 @@ export function ApiKeysSettings({ user }: ApiKeysSettingsProps) {
                       Include your API key in the <code className="px-1 py-0.5 bg-muted rounded text-xs">x-api-key</code> header:
                     </p>
                     <pre className="p-3 bg-muted rounded text-xs overflow-x-auto">
-                      <code>curl -H &quot;x-api-key: your_api_key_here&quot; http://fusion-bridge-production.up.railway.app/api/endpoint</code>
+                      <code>curl -H &quot;x-api-key: your_api_key_here&quot; https://app.getfusion.io/api/endpoint</code>
                     </pre>
                   </div>
                   

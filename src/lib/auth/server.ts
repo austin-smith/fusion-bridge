@@ -19,8 +19,7 @@ export const auth = betterAuth.betterAuth({
     "http://localhost:3000",
     "https://fusion-bridge-dev.up.railway.app",
     "https://fusion-bridge-production.up.railway.app",
-    "https://www.getfusion.io",
-    "https://getfusion.io"
+    "https://app.getfusion.io"
   ],
 
   database: drizzleAdapter(db, {
