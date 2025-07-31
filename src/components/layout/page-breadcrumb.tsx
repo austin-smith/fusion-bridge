@@ -1,3 +1,4 @@
+import React from 'react';
 import Link from 'next/link';
 import {
   Breadcrumb,
@@ -24,7 +25,7 @@ export function PageBreadcrumb({ breadcrumbs }: PageBreadcrumbProps) {
     <Breadcrumb>
       <BreadcrumbList>
         {breadcrumbs.map((item, index) => (
-          <div key={index} className="flex items-center">
+          <React.Fragment key={index}>
             <BreadcrumbItem>
               {item.isCurrentPage ? (
                 <BreadcrumbPage>{item.label}</BreadcrumbPage>
@@ -37,7 +38,7 @@ export function PageBreadcrumb({ breadcrumbs }: PageBreadcrumbProps) {
               )}
             </BreadcrumbItem>
             {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
-          </div>
+          </React.Fragment>
         ))}
       </BreadcrumbList>
     </Breadcrumb>

@@ -4,13 +4,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useFusionStore } from '@/stores/store';
 import { toast } from "sonner";
-import { ConnectorWithConfig } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
-import crypto from 'crypto'; // Import Node crypto for secret generation
-import { formatConnectorCategory } from '@/lib/utils'; // Import formatConnectorCategory
-import { cn } from '@/lib/utils'; // Import cn utility
-import * as React from 'react'; // Import React
-import { Badge } from "@/components/ui/badge";
+import crypto from 'crypto';
+import { formatConnectorCategory } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import * as React from 'react';
 
 import {
   Dialog,
@@ -46,16 +44,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { 
-  AlertDialog, 
-  AlertDialogAction, 
-  AlertDialogCancel, 
-  AlertDialogContent, 
-  AlertDialogDescription, 
-  AlertDialogFooter, 
-  AlertDialogHeader, 
-  AlertDialogTitle 
-} from "@/components/ui/alert-dialog";
 import { Cloud, EthernetPort } from 'lucide-react';
 import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -63,7 +51,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Define connector types for the dropdown
 const connectorOptions = [
   { value: 'netbox', label: 'NetBox', mechanism: 'Webhook' },
-  { value: 'piko', label: 'Piko', mechanism: 'WebSockets' },
+  { value: 'piko', label: 'Piko', mechanism: 'WebSocket' },
   { value: 'yolink', label: 'YoLink', mechanism: 'MQTT' },
   { value: 'genea', label: 'Genea', mechanism: 'Webhook' },
 ];

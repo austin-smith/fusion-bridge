@@ -1,14 +1,12 @@
 'use client'; // Make this a client component
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { useFusionStore } from '@/stores/store'; // Import the store hook
-import { Button, buttonVariants } from '@/components/ui/button'; // Import buttonVariants
-import { AddConnectorModal } from '@/components/features/connectors/add-connector-modal'; // Import the modal
+import { useFusionStore } from '@/stores/store';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { AddConnectorModal } from '@/components/features/connectors/add-connector-modal';
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, Pencil, Trash2, Plus, Plug, AlertCircle, X, Copy, Check } from "lucide-react";
-// Using console for messaging instead of toast
-import { ConnectorWithConfig } from '@/types'; // Renamed type
+import { Loader2,  Plus, Plug, AlertCircle, X } from "lucide-react";
+import { ConnectorWithConfig } from '@/types';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,8 +16,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"; // Import AlertDialog components
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // <<< Added Alert imports
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Table,
   TableBody,
@@ -28,20 +26,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Switch } from "@/components/ui/switch";
-import { SiMqtt } from "react-icons/si";
-import { LuArrowRightLeft } from "react-icons/lu"; // Use requested WebSocket icon
-import { ConnectorIcon } from "@/components/features/connectors/connector-icon"; // Import ConnectorIcon
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"; // Import TooltipProvider & components
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"; // <<< Added Popover imports
-import { formatConnectorCategory } from "@/lib/utils"; // Import formatConnectorCategory
-import { formatDistanceToNow } from 'date-fns'; // <<< Import date-fns function
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'; // <<< Added SyntaxHighlighter
-import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'; // <<< Added style
-import { toast } from 'sonner'; // <<< Added for copy toast
-import { ConnectorRow } from '@/components/features/connectors/ConnectorRow'; // <<< Import ConnectorRow
-import { PageHeader } from '@/components/layout/page-header'; // Import PageHeader
-import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { toast } from 'sonner';
+import { ConnectorRow } from '@/components/features/connectors/ConnectorRow';
+import { PageHeader } from '@/components/layout/page-header';
+import { Skeleton } from "@/components/ui/skeleton";
 import { useSession } from '@/lib/auth/client'; // Import useSession for admin detection
 import { authClient } from '@/lib/auth/client'; // Import authClient for organization fetching
 
@@ -52,7 +41,7 @@ interface FetchedMqttState {
   error: string | null;
   reconnecting: boolean;
   disabled: boolean;
-  homeId?: string | null; // Add optional homeId
+  homeId?: string | null;
   lastStandardizedPayload?: Record<string, any> | null;
 }
 
@@ -63,8 +52,8 @@ interface FetchedPikoState {
   error: string | null;
   reconnecting: boolean;
   disabled: boolean;
-  lastActivity: number | null; // Assuming timestamp
-  systemId?: string | null; // Add optional systemId
+  lastActivity: number | null;
+  systemId?: string | null;
   lastStandardizedPayload?: Record<string, any> | null;
 }
 

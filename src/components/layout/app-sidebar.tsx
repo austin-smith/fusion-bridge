@@ -291,7 +291,7 @@ export function AppSidebar() {
                   ) : (
                     <LogOut className="h-4 w-4 mr-2" />
                   )}
-                 <span>Logout</span>
+                 <span>Log Out</span>
                </DropdownMenuItem>
             </DropdownMenuContent>
           )}
