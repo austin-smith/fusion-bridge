@@ -187,7 +187,7 @@ export function initializeCronJobs(): void {
     // Register event cleanup job
     registerJob({
       name: 'event-cleanup',
-      schedule: '0 6 * * *', // Daily at 6 AM UTC
+      schedule: '45 14 * * *', // Daily at 2:45 PM UTC
       timezone: 'UTC',
       retryConfig: { maxRetries: 2, retryDelay: 10000 } // Standard retries for database operations
     });

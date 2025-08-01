@@ -324,7 +324,7 @@ export function EventRetentionSettings({
                     handlePolicyChange({ strategy: value })
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full [&>span]:overflow-visible [&>span]:whitespace-nowrap">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
