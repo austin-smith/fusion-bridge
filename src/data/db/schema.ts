@@ -53,7 +53,9 @@ export const events = sqliteTable("events", {
     // Indexes for common query patterns
     timestampIdx: index("events_timestamp_idx").on(table.timestamp),
     connectorDeviceIdx: index("events_connector_device_idx").on(table.connectorId, table.deviceId),
-    eventTypeIdx: index("events_event_type_idx").on(table.standardizedEventType), // <-- Index for filtering conditions
+    eventTypeIdx: index("events_event_type_idx").on(table.standardizedEventType),
+    connectorCategoryTimestampIdx: index("events_connector_category_timestamp_idx")
+      .on(table.connectorId, table.standardizedEventCategory, table.timestamp),
 }));
 
 // Relation for events linking back to connector
