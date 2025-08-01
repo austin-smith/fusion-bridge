@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { processScheduledAutomations } from '@/services/automation-service'; // Import new processor
 import { updateSunTimes } from '@/lib/cron/jobs/update-sun-times'; // Import sun times job
+import { cleanupAllOrganizationsEvents } from '@/services/event-cleanup-service'; // Import event cleanup
 import type { ScheduledTask } from 'node-cron';
 
 // Job registry for better management
@@ -183,6 +184,14 @@ export function initializeCronJobs(): void {
       retryConfig: { maxRetries: 3, retryDelay: 30000 } // More retries with longer delay for external API
     });
     
+    // Register event cleanup job
+    registerJob({
+      name: 'event-cleanup',
+      schedule: '0 6 * * *', // Daily at 6 AM UTC
+      timezone: 'UTC',
+      retryConfig: { maxRetries: 2, retryDelay: 10000 } // Standard retries for database operations
+    });
+    
     // Initialize scheduled automations job
     const automationsConfig = jobRegistry.get('scheduled-automations')!;
     
@@ -238,6 +247,34 @@ export function initializeCronJobs(): void {
       schedule: sunTimesConfig.schedule,
       timezone: sunTimesConfig.timezone,
       retryConfig: sunTimesConfig.retryConfig
+    });
+
+    // Initialize event cleanup job
+    const cleanupConfig = jobRegistry.get('event-cleanup')!;
+    
+    // Validate configuration before scheduling
+    const cleanupValidation = validateCronConfig(cleanupConfig.schedule, cleanupConfig.timezone);
+    if (!cleanupValidation.isValid) {
+      throw new Error(`Invalid event-cleanup configuration: ${cleanupValidation.error}`);
+    }
+    
+    const cleanupTask = createJobWrapper(
+      'event-cleanup',
+      async () => {
+        await cleanupAllOrganizationsEvents();
+      },
+      cleanupConfig.retryConfig
+    );
+    
+    cleanupConfig.task = cron.schedule(
+      cleanupConfig.schedule, 
+      cleanupTask,
+      { timezone: cleanupConfig.timezone }
+    );
+    logger.info('Event cleanup job initialized', {
+      schedule: cleanupConfig.schedule,
+      timezone: cleanupConfig.timezone,
+      retryConfig: cleanupConfig.retryConfig
     });
 
     logger.info('All CRON jobs initialized successfully', {

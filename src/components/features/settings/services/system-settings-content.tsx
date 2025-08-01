@@ -2,12 +2,14 @@
 
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Settings, Key, BookOpen, ExternalLink, Award } from 'lucide-react';
+import { Settings, Key, BookOpen, ExternalLink, Award, Database } from 'lucide-react';
 import { ServicesSettingsClientPageContent } from './services-settings-client-page';
 import { AdminApiKeysContent } from '../../../../components/api-keys/admin-api-keys-content';
 import { AttributionContent } from './attribution-content';
+import { EventRetentionSettings } from './event-retention-settings';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useFusionStore } from '@/stores/store';
 
 const systemSettingsTabs = [
   {
@@ -19,6 +21,11 @@ const systemSettingsTabs = [
     id: 'api-keys',
     label: 'API Keys',
     icon: Key,
+  },
+  {
+    id: 'event-retention',
+    label: 'Event Retention',
+    icon: Database,
   },
   {
     id: 'api-docs',
@@ -104,6 +111,7 @@ export function SystemSettingsContent({
   initialOpenAIConfig 
 }: SystemSettingsContentProps) {
   const [activeTab, setActiveTab] = useState('services');
+  const activeOrganizationId = useFusionStore(state => state.activeOrganizationId);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -118,6 +126,8 @@ export function SystemSettingsContent({
         );
       case 'api-keys':
         return <AdminApiKeysContent />;
+      case 'event-retention':
+        return <EventRetentionSettings organizationId={activeOrganizationId!} />;
       case 'api-docs':
         return <ApiDocumentationContent />;
       case 'attribution':
