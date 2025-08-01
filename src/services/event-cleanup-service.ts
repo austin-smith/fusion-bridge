@@ -11,6 +11,11 @@ import type { EventRetentionPolicy } from '@/types/organization-settings';
 import { RetentionStrategy } from '@/types/organization-settings';
 
 /**
+ * Batch size for database operations
+ */
+const BATCH_SIZE = 1000;
+
+/**
  * Statistics returned by event cleanup operations
  */
 export interface EventCleanupStats {
@@ -133,7 +138,6 @@ export async function cleanupOrganizationEvents(organizationId: string): Promise
           const eventIdsToDelete = oldestEvents.map(e => e.id);
           
           // Delete in batches to avoid memory issues
-          const BATCH_SIZE = 1000;
           let deletedByCount = 0;
           
           for (let i = 0; i < eventIdsToDelete.length; i += BATCH_SIZE) {
