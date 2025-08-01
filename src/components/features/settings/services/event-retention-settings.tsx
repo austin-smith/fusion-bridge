@@ -330,27 +330,27 @@ export function EventRetentionSettings({
                   <SelectContent>
                     <SelectItem value={RetentionStrategy.TIME}>
                       <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-shrink-0">
                           <Clock className="h-4 w-4" />
-                          <span>Time-based</span>
+                          <span className="whitespace-nowrap">Time-based</span>
                         </div>
                         <span className="text-xs text-muted-foreground ml-2">Delete events older than n days</span>
                       </div>
                     </SelectItem>
                     <SelectItem value={RetentionStrategy.COUNT}>
                       <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-shrink-0">
                           <Database className="h-4 w-4" />
-                          <span>Count-based</span>
+                          <span className="whitespace-nowrap">Count-based</span>
                         </div>
                         <span className="text-xs text-muted-foreground ml-2">Keep only the most recent n events</span>
                       </div>
                     </SelectItem>
                     <SelectItem value={RetentionStrategy.HYBRID}>
                       <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-shrink-0">
                           <Blend className="h-4 w-4" />
-                          <span>Hybrid</span>
+                          <span className="whitespace-nowrap">Hybrid</span>
                         </div>
                         <span className="text-xs text-muted-foreground ml-2">Apply both time and count limits</span>
                       </div>
