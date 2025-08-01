@@ -68,7 +68,7 @@ export function SunTimesUpdateTrigger() {
   };
 
   return (
-    <Card>
+    <Card className="mt-4">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Sun className="h-5 w-5 text-amber-500" />

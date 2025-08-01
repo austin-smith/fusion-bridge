@@ -700,6 +700,21 @@ export const invitation = sqliteTable("invitation", {
   statusIdx: index("invitation_status_idx").on(table.status),
 }));
 
+// --- Organization Settings Table (Generic) ---
+
+export const organizationSettings = sqliteTable("organization_settings", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  configJson: text("config_json", { mode: "json" }).notNull().$type<Record<string, any>>(), // JSON blob for settings
+  isEnabled: integer("is_enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  orgTypeUniqueIdx: uniqueIndex("organization_settings_org_type_unique_idx").on(table.organizationId, table.type),
+  organizationIdx: index("organization_settings_organization_idx").on(table.organizationId),
+  typeIdx: index("organization_settings_type_idx").on(table.type),
+}));
 // --- Relations for Better Auth Organization Schema ---
 
 export const organizationRelations = relations(organization, ({ many }) => ({
@@ -710,6 +725,7 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   automations: many(automations), // Organization has many automations
   sessions: many(session), // For activeOrganizationId reference
   keypadPins: many(keypadPins), // Organization keypad PINs
+  settings: many(organizationSettings), // Organization settings
 }));
 
 export const memberRelations = relations(member, ({ one }) => ({
@@ -730,6 +746,13 @@ export const invitationRelations = relations(invitation, ({ one }) => ({
   }),
   organization: one(organization, {
     fields: [invitation.organizationId],
+    references: [organization.id],
+  }),
+}));
+
+export const organizationSettingsRelations = relations(organizationSettings, ({ one }) => ({
+  organization: one(organization, {
+    fields: [organizationSettings.organizationId],
     references: [organization.id],
   }),
 }));

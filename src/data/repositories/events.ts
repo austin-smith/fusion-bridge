@@ -1,34 +1,25 @@
 import { db } from '@/data/db';
 import { events, devices, connectors, spaceDevices, spaces, locations } from '@/data/db/schema';
-import { desc, asc, count, eq, sql, and, gte, lte, or, inArray, type SQL, isNull } from 'drizzle-orm';
+import { desc, count, eq, sql, and, or, inArray, type SQL, isNull } from 'drizzle-orm';
 import type { StandardizedEvent } from '@/types/events';
 import { EventCategory, EventType, EventSubtype, DeviceType, DeviceSubtype } from '@/lib/mappings/definitions';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
-import { intermediateStateToDisplayString } from '@/lib/mappings/presentation';
 
-// Maximum number of events to keep
-// TODO: Consider basing cleanup on time window instead of fixed count if rules need longer history
-const MAX_EVENTS = 100000;
-
-// --- ADDED: Interface for getRecentEvents filters ---
 interface RecentEventsFilters {
   eventCategories?: string[];
   connectorCategory?: string;
   locationId?: string;
-  // Add other potential global filters here if needed in the future
 }
-// --- END ADDED ---
 
 // Interface for the filter parameters of findEventsInWindow
 export interface FindEventsFilter {
     deviceId?: string; // The external device ID from the event
     standardizedEventTypes?: string[]; 
     standardizedEventSubtypes?: string[];
-    // Expects standardized types, e.g., "Sensor.Contact", "Sensor", "Door"
     standardizedDeviceTypes?: string[]; 
     startTime: Date;
     endTime: Date;
-    specificDeviceIds?: string[]; // The external device IDs
+    specificDeviceIds?: string[];
 }
 
 /**
@@ -216,8 +207,7 @@ export async function storeStandardizedEvent(stdEvent: StandardizedEvent) {
       rawPayload: JSON.stringify(stdEvent.originalEvent ?? {}), // Store the original raw payload as JSON
     });
 
-    // Clean up old events (keeping this logic)
-    await cleanupOldEvents();
+
   } catch (err) {
     console.error('Failed to store standardized event:', err, { eventUuid: stdEvent.eventId });
     throw err; // Re-throw error so callers can be aware
@@ -313,53 +303,6 @@ export async function getEventCount(): Promise<number> {
   } catch (err) {
     console.error('Failed to count events:', err);
     return 0;
-  }
-}
-
-/**
-* Clean up old events to prevent database growth
-* (This function should still work correctly as it relies on timestamp/id)
-*/
-export async function cleanupOldEvents() {
-  try {
-    // Count total number of events
-    const eventCount = await getEventCount();
-
-    if (eventCount > MAX_EVENTS) {
-      // Calculate how many events to delete
-      const eventsToDeleteCount = eventCount - MAX_EVENTS;
-      
-      // Find the ID of the Nth oldest event (where N = eventsToDeleteCount)
-      // Using offset directly is simpler if supported and performs okay
-      const thresholdEvents = await db.select({ id: events.id })
-        .from(events)
-        .orderBy(asc(events.timestamp), asc(events.id)) // Secondary sort by ID for stability
-        .limit(1)
-        .offset(eventsToDeleteCount); // Offset by the number to delete
-
-      if (thresholdEvents.length > 0) {
-        const thresholdId = thresholdEvents[0].id;
-
-        // Get the timestamp of the threshold event
-        const thresholdEventDetails = await db.select({ timestamp: events.timestamp })
-          .from(events)
-          .where(eq(events.id, thresholdId))
-          .limit(1);
-
-        if (thresholdEventDetails.length > 0) {
-          const thresholdTimestamp = thresholdEventDetails[0].timestamp;
-
-          // Delete events that are older than the threshold timestamp,
-          // OR have the same timestamp but an ID less than or equal to the threshold ID
-          await db.delete(events)
-            .where(sql`${events.timestamp} < ${thresholdTimestamp} OR (${events.timestamp} = ${thresholdTimestamp} AND ${events.id} <= ${thresholdId})`);
-
-          console.log(`Cleaned up ${eventsToDeleteCount} old events (target count).`); 
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Failed to clean up old events:', err);
   }
 }
 
