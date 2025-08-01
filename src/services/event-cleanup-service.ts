@@ -289,9 +289,7 @@ export async function previewOrganizationCleanup(organizationId: string): Promis
     }
   }
   
-  const total = policy.strategy === RetentionStrategy.HYBRID 
-    ? Math.max(estimatedByTime, estimatedByTime + estimatedByCount) // In hybrid, time cleanup happens first
-    : estimatedByTime + estimatedByCount;
+  const total = estimatedByTime + estimatedByCount;
   
   return {
     policy,
