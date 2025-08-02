@@ -383,6 +383,126 @@ export class AutomationAuditQueryService {
       return 0;
     }
   }
+
+  /**
+   * Get execution counts and success rate for a time period (organization-scoped)
+   */
+  async getExecutionCounts(
+    timeStart?: string,
+    timeEnd?: string,
+    organizationId?: string
+  ): Promise<{ total: number; successful: number; failed: number; successRate: number }> {
+    try {
+      const conditions = [];
+      
+      // Filter by organization if provided
+      if (organizationId) {
+        conditions.push(eq(automations.organizationId, organizationId));
+      }
+      
+      // Time range filtering
+      if (timeStart && timeEnd) {
+        conditions.push(gte(automationExecutions.triggerTimestamp, new Date(timeStart)));
+        conditions.push(lte(automationExecutions.triggerTimestamp, new Date(timeEnd)));
+      }
+
+      // Get total count
+      const totalResult = await db
+        .select({ count: count() })
+        .from(automationExecutions)
+        .innerJoin(automations, eq(automationExecutions.automationId, automations.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const total = totalResult[0]?.count || 0;
+
+      if (total === 0) {
+        return { total: 0, successful: 0, failed: 0, successRate: 0 };
+      }
+
+      // Get successful count
+      const successfulResult = await db
+        .select({ count: count() })
+        .from(automationExecutions)
+        .innerJoin(automations, eq(automationExecutions.automationId, automations.id))
+        .where(and(
+          eq(automationExecutions.executionStatus, 'success'),
+          ...(conditions.length > 0 ? conditions : [])
+        ));
+
+      const successful = successfulResult[0]?.count || 0;
+      const failed = total - successful;
+      const successRate = total > 0 ? Math.round((successful / total) * 100 * 10) / 10 : 0;
+
+      return {
+        total,
+        successful,
+        failed,
+        successRate
+      };
+    } catch (error) {
+      console.error('[AutomationAuditQueryService] Error fetching execution counts:', error);
+      return { total: 0, successful: 0, failed: 0, successRate: 0 };
+    }
+  }
+
+  /**
+   * Get grouped execution counts for charts (organization-scoped)
+   */
+  async getGroupedExecutionCounts(
+    groupBy: string,
+    timeStart?: string,
+    timeEnd?: string,
+    organizationId?: string
+  ): Promise<any[]> {
+    try {
+      const conditions = [];
+      
+      // Filter by organization if provided
+      if (organizationId) {
+        conditions.push(eq(automations.organizationId, organizationId));
+      }
+      
+      // Time range filtering
+      if (timeStart && timeEnd) {
+        conditions.push(gte(automationExecutions.triggerTimestamp, new Date(timeStart)));
+        conditions.push(lte(automationExecutions.triggerTimestamp, new Date(timeEnd)));
+      }
+
+      // Determine grouping fields and select
+      const selectFields: any = { count: count() };
+      const groupByFields: any[] = [];
+      
+      if (groupBy === 'automation' || groupBy === 'day,automation') {
+        selectFields.automationId = automationExecutions.automationId;
+        selectFields.automationName = automations.name;
+        groupByFields.push(automationExecutions.automationId, automations.name);
+      }
+      
+      if (groupBy === 'day' || groupBy === 'day,automation') {
+        // Group by date (YYYY-MM-DD format) - SQLite syntax for timestamp stored as milliseconds
+        selectFields.date = sql<string>`date(${automationExecutions.triggerTimestamp}, 'unixepoch')`;
+        groupByFields.push(sql`date(${automationExecutions.triggerTimestamp}, 'unixepoch')`);
+      }
+      
+      if (groupByFields.length === 0) {
+        throw new Error(`Unsupported groupBy parameter: ${groupBy}`);
+      }
+
+      // Build and execute the query
+      const result = await db
+        .select(selectFields)
+        .from(automationExecutions)
+        .innerJoin(automations, eq(automationExecutions.automationId, automations.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .groupBy(...groupByFields)
+        .orderBy(sql`date(${automationExecutions.triggerTimestamp}, 'unixepoch') DESC`);
+
+      return result;
+    } catch (error) {
+      console.error('[AutomationAuditQueryService] Error fetching grouped execution counts:', error);
+      return [];
+    }
+  }
 }
 
 // Export singleton instance

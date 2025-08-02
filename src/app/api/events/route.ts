@@ -146,6 +146,92 @@ async function getEventsCount(
   }
 }
 
+// Function to get grouped event counts (organization-scoped)
+async function getGroupedEventsCount(
+  organizationId: string,
+  groupBy: string,
+  filters: any,
+  timeStart?: string,
+  timeEnd?: string,
+  deviceNames?: string[]
+): Promise<any[]> {
+  try {
+    // Build WHERE conditions
+    const conditions = [eq(connectors.organizationId, organizationId)];
+    
+    // Time range filtering
+    if (timeStart && timeEnd) {
+      conditions.push(gte(events.timestamp, new Date(timeStart)));
+      conditions.push(lte(events.timestamp, new Date(timeEnd)));
+    }
+    
+    // Event category filtering
+    if (filters.eventCategories?.length) {
+      conditions.push(inArray(events.standardizedEventCategory, filters.eventCategories));
+    }
+    
+    // Connector category filtering
+    if (filters.connectorCategory && filters.connectorCategory.toLowerCase() !== 'all') {
+      conditions.push(eq(connectors.category, filters.connectorCategory));
+    }
+    
+    // Device name filtering
+    let needsDeviceJoin = false;
+    if (deviceNames?.length) {
+      needsDeviceJoin = true;
+    }
+    
+    // Determine grouping fields and select
+    const selectFields: any = { count: count() };
+    const groupByFields: any[] = [];
+    
+    if (groupBy === 'connector' || groupBy === 'day,connector') {
+      selectFields.connectorCategory = connectors.category;
+      groupByFields.push(connectors.category);
+    }
+    
+    if (groupBy === 'day' || groupBy === 'day,connector') {
+      // Group by date (YYYY-MM-DD format) - SQLite syntax for timestamp
+      selectFields.date = sql<string>`date(${events.timestamp}, 'unixepoch')`;
+      groupByFields.push(sql`date(${events.timestamp}, 'unixepoch')`);
+    }
+    
+    if (groupByFields.length === 0) {
+      throw new Error(`Unsupported groupBy parameter: ${groupBy}`);
+    }
+    
+    // Build the query
+    let query = db
+      .select(selectFields)
+      .from(events)
+      .innerJoin(connectors, eq(connectors.id, events.connectorId));
+    
+    // Add device join if needed
+    if (needsDeviceJoin) {
+      query = query.leftJoin(devices, and(
+        eq(devices.connectorId, events.connectorId),
+        eq(devices.deviceId, events.deviceId)
+      ));
+      
+      if (deviceNames?.length) {
+        conditions.push(inArray(devices.name, deviceNames));
+      }
+    }
+    
+    // Apply conditions and grouping
+    const result = await query
+      .where(and(...conditions))
+      .groupBy(...groupByFields)
+      .orderBy(sql`date(${events.timestamp}, 'unixepoch') DESC`);
+    
+    return result;
+    
+  } catch (error) {
+    console.error('Error getting grouped events count:', error);
+    return [];
+  }
+}
+
 // Function to get a single event by UUID (organization-scoped)
 async function getSingleEvent(eventUuid: string, orgDb: any): Promise<ApiEnrichedEvent | null> {
   try {
@@ -280,6 +366,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const offset = (page - 1) * limit;
     const countOnly = searchParams.get('count') === 'true';
+    const groupBy = searchParams.get('groupBy');
     
     // Parse time range parameters
     const timeStart = searchParams.get('timeStart');
@@ -322,11 +409,28 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
 
     // If count is requested, return count only
     if (countOnly) {
-      const eventCount = await getEventsCount(authContext.organizationId, filters, timeStart || undefined, timeEnd || undefined, deviceNames);
-      return NextResponse.json({
-        success: true,
-        count: eventCount
-      });
+      if (groupBy) {
+        // Return grouped counts
+        const groupedCounts = await getGroupedEventsCount(
+          authContext.organizationId, 
+          groupBy, 
+          filters, 
+          timeStart || undefined, 
+          timeEnd || undefined, 
+          deviceNames
+        );
+        return NextResponse.json({
+          success: true,
+          data: groupedCounts
+        });
+      } else {
+        // Return simple count
+        const eventCount = await getEventsCount(authContext.organizationId, filters, timeStart || undefined, timeEnd || undefined, deviceNames);
+        return NextResponse.json({
+          success: true,
+          count: eventCount
+        });
+      }
     }
 
     // Use organization-scoped event query

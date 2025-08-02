@@ -10,6 +10,40 @@ export const GET = withOrganizationAuth(async (request: NextRequest, authContext
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
     const lastRunOnly = searchParams.get('lastRunOnly') === 'true';
+    const count = searchParams.get('count') === 'true';
+    const timeStart = searchParams.get('timeStart');
+    const timeEnd = searchParams.get('timeEnd');
+    const groupBy = searchParams.get('groupBy');
+
+    // If requesting execution counts/stats
+    if (count) {
+      if (groupBy) {
+        // Grouped counts for charts
+        const groupedStats = await automationAuditQueryService.getGroupedExecutionCounts(
+          groupBy,
+          timeStart || undefined,
+          timeEnd || undefined,
+          authContext.organizationId
+        );
+        
+        return NextResponse.json({
+          success: true,
+          data: groupedStats
+        });
+      } else {
+        // Overall stats for radial chart
+        const stats = await automationAuditQueryService.getExecutionCounts(
+          timeStart || undefined,
+          timeEnd || undefined,
+          authContext.organizationId
+        );
+        
+        return NextResponse.json({
+          success: true,
+          data: stats
+        });
+      }
+    }
 
     // If requesting a specific execution detail
     if (executionId) {
