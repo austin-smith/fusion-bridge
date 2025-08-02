@@ -21,7 +21,7 @@ import {
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 import { TimeFilterDropdown, getTimeFilterDisplayText, calculateDateRangeForFilter } from "@/components/features/events/TimeFilterDropdown";
 import { Responsive, WidthProvider, Layout } from 'react-grid-layout';
-import { startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, differenceInDays } from 'date-fns';
+import { differenceInDays } from 'date-fns';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 
@@ -57,16 +57,16 @@ export default function ReportsPage() {
       { i: 'devices-card', x: 0, y: 0, w: 4, h: 2, minW: 3, minH: 2 },
       { i: 'connectors-card', x: 4, y: 0, w: 4, h: 2, minW: 3, minH: 2 },
       { i: 'active-alarms-card', x: 8, y: 0, w: 4, h: 2, minW: 3, minH: 2 },
-      { i: 'automation-success', x: 0, y: 2, w: 6, h: 5, minW: 4, minH: 3 },
-      { i: 'automation-executions', x: 6, y: 2, w: 6, h: 5, minW: 4, minH: 3 },
+      { i: 'automation-success', x: 0, y: 2, w: 5, h: 5, minW: 4, minH: 3 },
+      { i: 'automation-executions', x: 5, y: 2, w: 7, h: 5, minW: 4, minH: 3 },
       { i: 'events-chart', x: 0, y: 7, w: 12, h: 5, minW: 8, minH: 4 },
     ],
     md: [
       { i: 'devices-card', x: 0, y: 0, w: 4, h: 2, minW: 3, minH: 2 },
       { i: 'connectors-card', x: 4, y: 0, w: 4, h: 2, minW: 3, minH: 2 },
       { i: 'active-alarms-card', x: 8, y: 0, w: 4, h: 2, minW: 3, minH: 2 },
-      { i: 'automation-success', x: 0, y: 2, w: 6, h: 5, minW: 4, minH: 3 },
-      { i: 'automation-executions', x: 6, y: 2, w: 6, h: 5, minW: 4, minH: 3 },
+      { i: 'automation-success', x: 0, y: 2, w: 5, h: 5, minW: 4, minH: 3 },
+      { i: 'automation-executions', x: 5, y: 2, w: 7, h: 5, minW: 4, minH: 3 },
       { i: 'events-chart', x: 0, y: 7, w: 12, h: 5, minW: 8, minH: 4 },
     ],
     sm: [
@@ -440,7 +440,7 @@ export default function ReportsPage() {
           onChange={setReportsTimeFilter}
           onTimeStartChange={setReportsTimeStart}
           onTimeEndChange={setReportsTimeEnd}
-          className="w-full sm:w-[180px] h-9 justify-between"
+          className="no-drag w-full sm:w-[180px] h-9 justify-between"
         />
         <TooltipProvider>
           <Tooltip>
@@ -449,7 +449,7 @@ export default function ReportsPage() {
                 variant="outline"
                 size="sm"
                 onClick={resetLayout}
-                className="h-9 w-9 p-0"
+                className="no-drag h-9 w-9 p-0"
               >
                 <CircleX className="h-4 w-4" />
               </Button>
@@ -481,66 +481,67 @@ export default function ReportsPage() {
           preventCollision={false}
           compactType="vertical"
           margin={[16, 16]}
+          draggableCancel=".no-drag"
         >
         {/* Devices Card */}
         <div key="devices-card">
-          <Link href="/devices" target="_blank" rel="noopener noreferrer">
-            <Card className="hover:bg-accent/50 transition-colors cursor-pointer h-full">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium truncate">Devices</CardTitle>
-                <Cpu className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
+          <Card className="h-full">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium truncate">Devices</CardTitle>
+              <Cpu className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <Link href="/devices" target="_blank" rel="noopener noreferrer" className="no-drag">
+                <div className="text-2xl font-bold hover:bg-accent/50 transition-colors cursor-pointer rounded p-1 -m-1">
                   {isLoading ? <Skeleton className="h-8 w-16" /> : (allDevices?.length || 0).toLocaleString()}
                 </div>
-              </CardContent>
-            </Card>
-          </Link>
+              </Link>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Connectors Card */}
         <div key="connectors-card">
-          <Link href="/connectors" target="_blank" rel="noopener noreferrer">
-            <Card className="hover:bg-accent/50 transition-colors cursor-pointer h-full">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium truncate">Connectors</CardTitle>
-                <Plug className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
+          <Card className="h-full">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium truncate">Connectors</CardTitle>
+              <Plug className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <Link href="/connectors" target="_blank" rel="noopener noreferrer" className="no-drag">
+                <div className="text-2xl font-bold hover:bg-accent/50 transition-colors cursor-pointer rounded p-1 -m-1">
                   {isLoading ? <Skeleton className="h-8 w-16" /> : (connectors?.length || 0).toLocaleString()}
                 </div>
-              </CardContent>
-            </Card>
-          </Link>
+              </Link>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Active Alarms Card */}
         <div key="active-alarms-card">
-          <Link href="/alarm/alarms" target="_blank" rel="noopener noreferrer">
-            <Card className={`hover:bg-accent/50 transition-colors cursor-pointer h-full ${
-              activeAlarmCount && activeAlarmCount > 0 ? 'border-destructive bg-destructive/5' : ''
-            }`}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className={`text-sm font-medium truncate ${
-                  activeAlarmCount && activeAlarmCount > 0 ? 'text-destructive' : ''
-                }`}>
-                  Active Alarms
-                </CardTitle>
-                <ShieldAlert className={`h-4 w-4 ${
-                  activeAlarmCount && activeAlarmCount > 0 ? 'text-destructive' : 'text-muted-foreground'
-                }`} />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold ${
-                  activeAlarmCount && activeAlarmCount > 0 ? 'text-destructive' : ''
+          <Card className={`h-full ${
+            activeAlarmCount && activeAlarmCount > 0 ? 'border-destructive bg-destructive/5' : ''
+          }`}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className={`text-sm font-medium truncate ${
+                activeAlarmCount && activeAlarmCount > 0 ? 'text-destructive' : ''
+              }`}>
+                Active Alarms
+              </CardTitle>
+              <ShieldAlert className={`h-4 w-4 ${
+                activeAlarmCount && activeAlarmCount > 0 ? 'text-destructive' : 'text-muted-foreground'
+              }`} />
+            </CardHeader>
+            <CardContent>
+              <Link href="/alarm/alarms" target="_blank" rel="noopener noreferrer" className="no-drag">
+                <div className={`text-2xl font-bold hover:bg-accent/50 transition-colors cursor-pointer rounded p-1 -m-1 ${
+                  activeAlarmCount && activeAlarmCount > 0 ? 'text-destructive hover:bg-destructive/10' : ''
                 }`}>
                   {isLoading ? <Skeleton className="h-8 w-16" /> : (activeAlarmCount || 0).toLocaleString()}
                 </div>
-              </CardContent>
-            </Card>
-          </Link>
+              </Link>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Automation Success Rate Chart */}
@@ -681,7 +682,7 @@ export default function ReportsPage() {
                         if (!active || !payload || !payload.length) return null;
                         
                         const data = payload[0].payload;
-                        const successRate = data.total > 0 ? ((data.successful / data.total) * 100).toFixed(1) : '0.0';
+                        const successRate = data.total > 0 ? Math.round((data.successful / data.total) * 100) : 0;
                         
                         return (
                           <div className="rounded-lg border bg-background p-2 shadow-sm">
@@ -763,23 +764,7 @@ export default function ReportsPage() {
                 )}
               </div>
             </CardContent>
-            <CardFooter className="flex-col items-start gap-2 text-sm flex-shrink-0">
-              {automationChartData.length > 0 && (
-                <>
-                  <div className="flex gap-2 leading-none font-medium">
-                    {automationStats && automationStats.total > 0 && (
-                      <>
-                        <span>Total: {automationStats.total.toLocaleString()}</span>
-                        <TrendingUp className="h-4 w-4" />
-                      </>
-                    )}
-                  </div>
-                  <div className="text-muted-foreground leading-none">
-                    {automationChartData.length} automation{automationChartData.length !== 1 ? 's' : ''} with executions
-                  </div>
-                </>
-              )}
-            </CardFooter>
+
           </Card>
         </div>
 
@@ -795,7 +780,7 @@ export default function ReportsPage() {
                 <button
                   key="all"
                   data-active={activeChart === 'all'}
-                  className="data-[active=true]:bg-muted/50 flex min-w-0 flex-col justify-center gap-1 border-t px-3 py-2 text-left sm:border-t-0 sm:border-l sm:px-4 sm:py-3"
+                  className="no-drag data-[active=true]:bg-muted/50 flex min-w-0 flex-col justify-center gap-1 border-t px-3 py-2 text-left sm:border-t-0 sm:border-l sm:px-4 sm:py-3"
                   onClick={() => setActiveChart('all')}
                 >
                   <span className="text-muted-foreground text-xs">Total Events</span>
@@ -807,7 +792,7 @@ export default function ReportsPage() {
                   <button
                     key={category}
                     data-active={activeChart === category}
-                    className="data-[active=true]:bg-muted/50 flex min-w-0 flex-col justify-center gap-1 border-t px-3 py-2 text-left even:border-l sm:border-t-0 sm:border-l sm:px-4 sm:py-3"
+                    className="no-drag data-[active=true]:bg-muted/50 flex min-w-0 flex-col justify-center gap-1 border-t px-3 py-2 text-left even:border-l sm:border-t-0 sm:border-l sm:px-4 sm:py-3"
                     onClick={() => setActiveChart(category)}
                   >
                     <div className="flex items-center gap-2 min-w-0">

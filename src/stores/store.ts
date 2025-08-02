@@ -153,6 +153,7 @@ interface FusionState {
   allDevices: DeviceWithConnector[];
   isLoadingAllDevices: boolean;
   errorAllDevices: string | null;
+  allDevicesHasInitiallyLoaded: boolean;
 
   // --- Locations State ---
   locations: Location[];
@@ -327,6 +328,7 @@ interface FusionState {
 
   // Fetch all devices 
   fetchAllDevices: () => Promise<void>;
+  setAllDevicesHasInitiallyLoaded: (loaded: boolean) => void;
 
   // Fetch dashboard events
   fetchDashboardEvents: () => Promise<void>;
@@ -480,6 +482,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   allDevices: [], 
   isLoadingAllDevices: false,
   errorAllDevices: null,
+  allDevicesHasInitiallyLoaded: false,
 
   // Location State
   locations: [],
@@ -1446,7 +1449,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       const fetchedDevices = data.data || [];
       
       // Update allDevices first
-      set({ allDevices: fetchedDevices, isLoadingAllDevices: false });
+      set({ allDevices: fetchedDevices, isLoadingAllDevices: false, allDevicesHasInitiallyLoaded: true });
       console.log('[FusionStore] All devices loaded into state:', fetchedDevices.length);
       
       // Now populate deviceStates from the fetched devices
@@ -1485,8 +1488,12 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error("Error fetching all devices:", message);
-      set({ isLoadingAllDevices: false, errorAllDevices: message, allDevices: [] });
+      set({ isLoadingAllDevices: false, errorAllDevices: message, allDevices: [], allDevicesHasInitiallyLoaded: true });
     }
+  },
+
+  setAllDevicesHasInitiallyLoaded: (loaded: boolean) => {
+    set({ allDevicesHasInitiallyLoaded: loaded });
   },
 
   // Fetch dashboard events

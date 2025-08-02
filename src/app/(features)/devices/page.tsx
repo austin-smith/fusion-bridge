@@ -213,6 +213,7 @@ export default function DevicesPage() {
   const allDevices = useFusionStore(state => state.allDevices);
   // Use store loading state
   const isLoadingAllDevices = useFusionStore(state => state.isLoadingAllDevices);
+  const allDevicesHasInitiallyLoaded = useFusionStore(state => state.allDevicesHasInitiallyLoaded);
   
   // Fetch locations and spaces from store
   const locations = useFusionStore(state => state.locations);
@@ -243,12 +244,12 @@ export default function DevicesPage() {
 
   // Initial data fetch if needed (for first-time page loads)
   useEffect(() => {
-    // Only fetch if we have no devices and we're not currently loading
-    if (allDevices.length === 0 && !isLoadingAllDevices) {
+    // Only fetch if we haven't initially loaded yet and we're not currently loading
+    if (!allDevicesHasInitiallyLoaded && !isLoadingAllDevices) {
       // Let the store handle fetching through organization context
       useFusionStore.getState().fetchAllDevices();
     }
-  }, [allDevices.length, isLoadingAllDevices]);
+  }, [allDevicesHasInitiallyLoaded, isLoadingAllDevices]);
 
   // The store handles initial data fetching via organization switching
   // No need for manual API calls here
@@ -752,12 +753,12 @@ export default function DevicesPage() {
         </div>
 
         {/* Show Skeleton Loader OR Content */}
-        {isLoadingAllDevices ? ( // Only show skeleton if loading AND no error
+        {(isLoadingAllDevices || !allDevicesHasInitiallyLoaded) ? (
           <DevicesTableSkeleton rowCount={15} columnCount={columns.length} />
         ) : (
           <> 
-            {/* Show "No devices found" only AFTER load and if conditions met */} 
-            {tableData.length === 0 && !isSyncing && !error && categoryFilter === 'all' && (
+            {/* Show "No devices found" only AFTER initial load and if conditions met */} 
+            {tableData.length === 0 && !isSyncing && !error && categoryFilter === 'all' && allDevicesHasInitiallyLoaded && (
               <p className="text-muted-foreground text-center py-10">
                 No devices found in store. Try syncing connectors.
               </p>
