@@ -285,6 +285,7 @@ interface FusionState {
   // Action to bulk update device states after a sync operation
   setDeviceStatesFromSync: (syncedDevices: DeviceWithConnector[]) => void;
   fetchConnectors: () => Promise<void>;
+  fetchConnectorStatus: (connectorsToCheck?: ConnectorWithConfig[]) => Promise<void>;
 
   // --- Location Actions ---
   fetchLocations: () => Promise<void>;
@@ -744,12 +745,76 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to fetch connectors');
         }
-        set({ connectors: data.data || [], isLoading: false });
-        console.log('[FusionStore] Connectors loaded:', data.data);
+        const fetchedConnectors = data.data || [];
+        set({ connectors: fetchedConnectors, isLoading: false });
+        console.log('[FusionStore] Connectors loaded:', fetchedConnectors);
+        
+        // Immediately fetch connector status
+        get().fetchConnectorStatus(fetchedConnectors);
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         console.error('[FusionStore] Error fetching connectors:', message);
         set({ error: message, isLoading: false, connectors: [] });
+    }
+  },
+
+  fetchConnectorStatus: async (connectorsToCheck?: ConnectorWithConfig[]) => {
+    try {
+      const connectors = connectorsToCheck || get().connectors;
+      if (connectors.length === 0) return;
+
+      const statusResponse = await fetch('/api/connection-status');
+      const statusData = await statusResponse.json();
+      
+      if (statusData.success && statusData.statuses && Array.isArray(statusData.statuses)) {
+        const connectorMap = new Map(connectors.map(c => [c.id, c]));
+
+        for (const statusPayload of statusData.statuses) {
+          const connectorId = statusPayload.connectorId;
+          const connector = connectorMap.get(connectorId);
+
+          if (!connector) {
+            console.warn(`[Store] Received status for unknown connector ID: ${connectorId}`);
+            continue;
+          }
+
+          // Process based on connectionType (simplified logic)
+          if (statusPayload.connectionType === 'mqtt' && statusPayload.state) {
+            const mqttState = statusPayload.state;
+            // Simple status mapping - connected if no error and events enabled
+            const status = connector.eventsEnabled && !mqttState.error ? 'connected' : 'disconnected';
+            get().setMqttState(connectorId, { 
+              status, 
+              error: mqttState.error,
+              lastEventTime: mqttState.lastEvent?.time ?? null, 
+              eventCount: mqttState.lastEvent?.count ?? null,
+              lastStandardizedPayload: mqttState.lastStandardizedPayload ?? null,
+              lastActivity: statusPayload.lastActivity ?? mqttState.lastEvent?.time ?? null
+            });
+          } else if (statusPayload.connectionType === 'websocket' && statusPayload.state) {
+            const pikoState = statusPayload.state;
+            // Simple status mapping - connected if no error and events enabled  
+            const status = connector.eventsEnabled && !pikoState.error ? 'connected' : 'disconnected';
+            get().setPikoState(connectorId, { 
+              status, 
+              error: pikoState.error,
+              lastEventTime: pikoState.lastActivity, 
+              eventCount: null, 
+              lastStandardizedPayload: pikoState.lastStandardizedPayload ?? null,
+              lastActivity: statusPayload.lastActivity ?? pikoState.lastActivity ?? null
+            });
+          } else if (statusPayload.connectionType === 'webhook') {
+            const webhookState = statusPayload.state || {}; 
+            get().setWebhookState(connectorId, { 
+              lastActivity: statusPayload.lastActivity ?? webhookState.lastActivity ?? null
+            });
+          }
+        }
+      } else {
+        console.error('[Store] Failed to fetch connector statuses:', statusData.error || 'Invalid format');
+      }
+    } catch (error) {
+      console.error('[Store] Error fetching connector status:', error);
     }
   },
 

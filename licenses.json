@@ -554,6 +554,13 @@
     "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react",
     "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react/LICENSE"
   },
+  "recharts@2.15.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/recharts/recharts",
+    "publisher": "recharts group",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/recharts",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/recharts/LICENSE"
+  },
   "remark-gfm@4.0.1": {
     "licenses": "MIT",
     "repository": "https://github.com/remarkjs/remark-gfm",
