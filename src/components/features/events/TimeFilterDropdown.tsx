@@ -17,13 +17,78 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth } from 'date-fns';
 
+export type TimeFilterValue = 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom';
+
 interface TimeFilterDropdownProps {
-  value: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom';
+  value: TimeFilterValue;
   timeStart: string | null;
   timeEnd: string | null;
-  onChange: (filter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom') => void;
+  onChange: (filter: TimeFilterValue) => void;
   onTimeStartChange: (date: string | null) => void;
   onTimeEndChange: (date: string | null) => void;
+  className?: string;
+}
+
+// Export the display text function for reuse
+export function getTimeFilterDisplayText(
+  filter: TimeFilterValue,
+  timeStart?: string | null,
+  timeEnd?: string | null
+): string {
+  if (filter === 'custom' && timeStart && timeEnd) {
+    const startDate = new Date(timeStart);
+    const endDate = new Date(timeEnd);
+    return `${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`;
+  }
+  
+  switch (filter) {
+    case 'all': return 'All Time';
+    case 'today': return 'Today';
+    case 'yesterday': return 'Yesterday';
+    case 'last7days': return 'Last 7 Days';
+    case 'last30days': return 'Last 30 Days';
+    case 'thisMonth': return 'This Month';
+    case 'custom': return 'Custom';
+    default: return 'All Time';
+  }
+}
+
+// Export the date range calculation function for reuse
+export function calculateDateRangeForFilter(filter: TimeFilterValue): { start: string | null; end: string | null } {
+  const now = new Date();
+  
+  switch (filter) {
+    case 'all':
+      return { start: null, end: null };
+    case 'today':
+      return {
+        start: startOfDay(now).toISOString(),
+        end: endOfDay(now).toISOString()
+      };
+    case 'yesterday':
+      const yesterday = subDays(now, 1);
+      return {
+        start: startOfDay(yesterday).toISOString(),
+        end: endOfDay(yesterday).toISOString()
+      };
+    case 'last7days':
+      return {
+        start: startOfDay(subDays(now, 7)).toISOString(),
+        end: endOfDay(now).toISOString()
+      };
+    case 'last30days':
+      return {
+        start: startOfDay(subDays(now, 30)).toISOString(),
+        end: endOfDay(now).toISOString()
+      };
+    case 'thisMonth':
+      return {
+        start: startOfMonth(now).toISOString(),
+        end: endOfMonth(now).toISOString()
+      };
+    default:
+      return { start: null, end: null };
+  }
 }
 
 export function TimeFilterDropdown({
@@ -32,23 +97,15 @@ export function TimeFilterDropdown({
   timeEnd,
   onChange,
   onTimeStartChange,
-  onTimeEndChange
+  onTimeEndChange,
+  className
 }: TimeFilterDropdownProps) {
   const [isCustomPopoverOpen, setIsCustomPopoverOpen] = useState(false);
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
 
   const getDisplayText = () => {
-    switch (value) {
-      case 'all': return 'All Time';
-      case 'today': return 'Today';
-      case 'yesterday': return 'Yesterday';
-      case 'last7days': return 'Last 7 Days';
-      case 'last30days': return 'Last 30 Days';
-      case 'thisMonth': return 'This Month';
-      case 'custom': return 'Custom'; // Always show "Custom" - range shown in tooltip
-      default: return 'All Time';
-    }
+    return getTimeFilterDisplayText(value, timeStart, timeEnd);
   };
 
   const getTooltipText = () => {
@@ -59,36 +116,9 @@ export function TimeFilterDropdown({
   };
 
   const handlePresetClick = (preset: typeof value) => {
-    const now = new Date();
-    
-    switch (preset) {
-      case 'all':
-        onTimeStartChange(null);
-        onTimeEndChange(null);
-        break;
-      case 'today':
-        onTimeStartChange(startOfDay(now).toISOString());
-        onTimeEndChange(endOfDay(now).toISOString());
-        break;
-      case 'yesterday':
-        const yesterday = subDays(now, 1);
-        onTimeStartChange(startOfDay(yesterday).toISOString());
-        onTimeEndChange(endOfDay(yesterday).toISOString());
-        break;
-      case 'last7days':
-        onTimeStartChange(startOfDay(subDays(now, 7)).toISOString());
-        onTimeEndChange(endOfDay(now).toISOString());
-        break;
-      case 'last30days':
-        onTimeStartChange(startOfDay(subDays(now, 30)).toISOString());
-        onTimeEndChange(endOfDay(now).toISOString());
-        break;
-      case 'thisMonth':
-        onTimeStartChange(startOfMonth(now).toISOString());
-        onTimeEndChange(endOfMonth(now).toISOString());
-        break;
-    }
-    
+    const { start, end } = calculateDateRangeForFilter(preset);
+    onTimeStartChange(start);
+    onTimeEndChange(end);
     onChange(preset);
   };
 
@@ -124,7 +154,7 @@ export function TimeFilterDropdown({
     <>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="w-full sm:w-[160px] h-9 justify-between">
+        <Button variant="outline" className={className || "w-full sm:w-[160px] h-9 justify-between"}>
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <Clock className="h-4 w-4 flex-shrink-0" />
             {tooltipText ? (

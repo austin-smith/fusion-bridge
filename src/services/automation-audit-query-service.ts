@@ -469,7 +469,11 @@ export class AutomationAuditQueryService {
       }
 
       // Determine grouping fields and select
-      const selectFields: any = { count: count() };
+      const selectFields: any = { 
+        count: count(),
+        successfulCount: sql<number>`SUM(CASE WHEN ${automationExecutions.executionStatus} = 'success' THEN 1 ELSE 0 END)`,
+        failedCount: sql<number>`SUM(CASE WHEN ${automationExecutions.executionStatus} != 'success' THEN 1 ELSE 0 END)`
+      };
       const groupByFields: any[] = [];
       
       if (groupBy === 'automation' || groupBy === 'day,automation') {

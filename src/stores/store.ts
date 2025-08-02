@@ -236,6 +236,11 @@ interface FusionState {
   eventsTimeStart: string | null; // ISO date string for custom range
   eventsTimeEnd: string | null;   // ISO date string for custom range
   
+  // --- Reports Page Time Filters ---
+  reportsTimeFilter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom';
+  reportsTimeStart: string | null; // ISO date string for custom range
+  reportsTimeEnd: string | null;   // ISO date string for custom range
+  
   // --- Events Data State ---
   events: EnrichedEvent[];
   isLoadingEvents: boolean;
@@ -398,6 +403,12 @@ interface FusionState {
   setEventsTimeFilter: (filter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom') => void;
   setEventsTimeStart: (date: string | null) => void;
   setEventsTimeEnd: (date: string | null) => void;
+  
+  // --- Reports Page Time Filter Actions ---
+  setReportsTimeFilter: (filter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom') => void;
+  setReportsTimeStart: (date: string | null) => void;
+  setReportsTimeEnd: (date: string | null) => void;
+  initializeReportsPreferences: () => void;
   initializeViewPreferences: () => void;
   initializeFilterPreferences: () => void;
   resetFiltersToDefaults: () => void;
@@ -554,6 +565,11 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   eventsTimeFilter: 'all',
   eventsTimeStart: null,
   eventsTimeEnd: null,
+  
+  // --- Reports Page Time Filter Initial Values ---
+  reportsTimeFilter: 'last7days', // Default to match current behavior
+  reportsTimeStart: null,
+  reportsTimeEnd: null,
   
   // --- Events Data Initial State ---
   events: [],
@@ -2432,6 +2448,62 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       } else {
         localStorage.removeItem('eventsTimeEndPreference');
       }
+    }
+  },
+  
+  // Reports Page Time Filter Actions
+  setReportsTimeFilter: (filter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom') => {
+    set({ reportsTimeFilter: filter });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('reportsTimeFilterPreference', filter);
+    }
+  },
+  setReportsTimeStart: (date: string | null) => {
+    set({ reportsTimeStart: date });
+    if (typeof window !== 'undefined') {
+      if (date) {
+        localStorage.setItem('reportsTimeStartPreference', date);
+      } else {
+        localStorage.removeItem('reportsTimeStartPreference');
+      }
+    }
+  },
+  setReportsTimeEnd: (date: string | null) => {
+    set({ reportsTimeEnd: date });
+    if (typeof window !== 'undefined') {
+      if (date) {
+        localStorage.setItem('reportsTimeEndPreference', date);
+      } else {
+        localStorage.removeItem('reportsTimeEndPreference');
+      }
+    }
+  },
+  
+  initializeReportsPreferences: () => {
+    if (typeof window !== 'undefined') {
+      // Load reports time filter preferences from localStorage
+      const storedTimeFilter = localStorage.getItem('reportsTimeFilterPreference') as 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom' || 'last7days';
+      const storedTimeStart = localStorage.getItem('reportsTimeStartPreference') || null;
+      const storedTimeEnd = localStorage.getItem('reportsTimeEndPreference') || null;
+      
+      set({ 
+        reportsTimeFilter: storedTimeFilter,
+        reportsTimeStart: storedTimeStart,
+        reportsTimeEnd: storedTimeEnd
+      });
+      
+      console.log('[FusionStore] Reports preferences loaded from localStorage:', { 
+        storedTimeFilter, 
+        storedTimeStart, 
+        storedTimeEnd 
+      });
+    } else {
+      // Server-side fallback
+      set({ 
+        reportsTimeFilter: 'last7days',
+        reportsTimeStart: null,
+        reportsTimeEnd: null
+      });
     }
   },
   initializeFilterPreferences: () => {
