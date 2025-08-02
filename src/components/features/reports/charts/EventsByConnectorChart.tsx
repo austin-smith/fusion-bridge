@@ -119,13 +119,13 @@ export function EventsByConnectorChart({
                       dot={false}
                     />
                   ))
-                : (
+                : Object.keys(chartConfig).includes(activeChart) && (
                     <Line
                       key={activeChart}
                       dataKey={activeChart}
                       type="monotone"
                       stroke={`var(--color-${activeChart})`}
-                strokeWidth={2}
+                      strokeWidth={2}
                       dot={false}
                     />
                   )

@@ -3,7 +3,7 @@
  * Combines all individual data hooks and manages overall state
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useReportsTimeFilter, type UseReportsTimeFilterResult } from './useReportsTimeFilter';
 import { useEventData, type EventData } from './useEventData';
 import { useAutomationStats, type AutomationData } from './useAutomationStats';
@@ -33,6 +33,7 @@ export interface UseReportsDataResult {
  */
 export function useReportsData(): UseReportsDataResult {
   const [isInitializing, setIsInitializing] = useState(true);
+  const isFirstRender = useRef(true);
   
   // Initialize time filter
   const timeFilter = useReportsTimeFilter();
@@ -88,18 +89,18 @@ export function useReportsData(): UseReportsDataResult {
 
   // Refetch time-dependent data when time filter changes
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
     const fetchTimeFilterData = async () => {
       await Promise.all([
         refetchEventData(),
         refetchAutomationData(),
       ]);
     };
-
-    // Don't fetch on initial mount (handled by initial fetch above)
-    if (!isInitializing) {
-      fetchTimeFilterData();
-    }
-  }, [timeFilter.filter, timeFilter.start, timeFilter.end, refetchEventData, refetchAutomationData, isInitializing]);
+    fetchTimeFilterData();
+  }, [timeFilter.filter, timeFilter.start, timeFilter.end, refetchEventData, refetchAutomationData]);
 
   return {
     timeFilter,

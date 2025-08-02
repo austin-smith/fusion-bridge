@@ -94,11 +94,6 @@ export default function ReportsPage() {
   const onLayoutChange = useCallback((layout: Layout[], layouts: ReportsLayouts) => {
     setLayouts(layouts);
     localStorage.setItem('fusion-reports-layouts', JSON.stringify(layouts));
-    
-    // Force chart re-render after layout change
-    setTimeout(() => {
-      window.dispatchEvent(new Event('resize'));
-    }, 100);
   }, []);
 
   // Function to reset layout to defaults

@@ -19,6 +19,14 @@ import { format, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth } from 
 
 export type TimeFilterValue = 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom';
 
+/**
+ * Type guard to validate TimeFilterValue
+ */
+export function isTimeFilterValue(value: unknown): value is TimeFilterValue {
+  return typeof value === 'string' && 
+    ['all', 'today', 'yesterday', 'last7days', 'last30days', 'thisMonth', 'custom'].includes(value);
+}
+
 interface TimeFilterDropdownProps {
   value: TimeFilterValue;
   timeStart: string | null;

@@ -5,7 +5,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { useFusionStore } from '@/stores/store';
-import { calculateDateRangeForFilter, type TimeFilterValue } from '@/components/features/events/TimeFilterDropdown';
+import { calculateDateRangeForFilter, isTimeFilterValue, type TimeFilterValue } from '@/components/features/events/TimeFilterDropdown';
 import type { TimeFilterState } from '@/types/reports';
 
 export interface UseReportsTimeFilterResult {
@@ -53,11 +53,16 @@ export function useReportsTimeFilter(): UseReportsTimeFilterResult {
       return { start: startRaw, end: endRaw };
     }
     
-    return calculateDateRangeForFilter(filterRaw as TimeFilterValue);
+    if (isTimeFilterValue(filterRaw)) {
+      return calculateDateRangeForFilter(filterRaw);
+    } else {
+      // Handle invalid value: return nulls or a default range
+      return { start: null, end: null };
+    }
   }, [filterRaw, startRaw, endRaw]);
 
   return useMemo(() => ({
-    filter: filterRaw as TimeFilterValue,
+    filter: isTimeFilterValue(filterRaw) ? filterRaw : 'today', // fallback to a default value
     start: startRaw,
     end: endRaw,
     setFilter,

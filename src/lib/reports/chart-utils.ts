@@ -54,7 +54,7 @@ export function buildEventChartData(
   if (dateRange.start && dateRange.end) {
     const startDate = new Date(dateRange.start);
     const endDate = new Date(dateRange.end);
-    const daysDiff = Math.min(differenceInDays(endDate, startDate), 30); // Limit to 30 days for chart readability
+    const daysDiff = differenceInDays(endDate, startDate);
     
     for (let i = 0; i <= daysDiff; i++) {
       const date = new Date(startDate);
