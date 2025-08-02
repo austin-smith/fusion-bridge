@@ -56,6 +56,15 @@ export interface ExecutionStats {
   failedActions: number;
 }
 
+export interface AutomationGroupedData {
+  automationName: string;
+  successfulCount: number;
+  failedCount: number;
+  count: number;
+  automationId?: string;
+  date?: string;
+}
+
 export class AutomationAuditQueryService {
   /**
    * Get recent automation executions with pagination (organization-scoped)
@@ -453,7 +462,7 @@ export class AutomationAuditQueryService {
     timeStart?: string,
     timeEnd?: string,
     organizationId?: string
-  ): Promise<any[]> {
+  ): Promise<AutomationGroupedData[]> {
     try {
       const conditions = [];
       
@@ -501,7 +510,15 @@ export class AutomationAuditQueryService {
         .groupBy(...groupByFields)
         .orderBy(sql`date(${automationExecutions.triggerTimestamp}, 'unixepoch') DESC`);
 
-      return result;
+      // Map results to proper interface
+      return result.map((row: any) => ({
+        automationName: row.automationName || '',
+        successfulCount: Number(row.successfulCount) || 0,
+        failedCount: Number(row.failedCount) || 0,
+        count: Number(row.count) || 0,
+        automationId: row.automationId || undefined,
+        date: row.date || undefined,
+      }));
     } catch (error) {
       console.error('[AutomationAuditQueryService] Error fetching grouped execution counts:', error);
       return [];
