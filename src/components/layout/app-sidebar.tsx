@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { getNavigationGroups } from '@/lib/page-config';
 import FusionIcon from '@/components/icons/FusionIcon';
 import { useSession, signOut } from '@/lib/auth/client';
+import { ArmedState } from '@/lib/mappings/definitions';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,11 +60,22 @@ export function AppSidebar() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   
   // Get setter and currentUser from Zustand
-  const { setCurrentUser, currentUser } = useFusionStore();
+  const { setCurrentUser, currentUser, alarmZones, isLoadingAlarmZones } = useFusionStore((state) => ({
+    setCurrentUser: state.setCurrentUser,
+    currentUser: state.currentUser,
+    alarmZones: state.alarmZones,
+    isLoadingAlarmZones: state.isLoadingAlarmZones,
+  }));
   const { isMobile, setOpenMobile, state } = useSidebar();
 
   // Determine user role from session
   const userRole = (session?.user as any)?.role; // Access role, might be undefined
+
+  // Calculate active alarm count for badge display
+  const activeAlarmCount = useMemo(() => {
+    if (isLoadingAlarmZones) return 0; // Don't show badge while loading
+    return alarmZones.filter(zone => zone.armedState === ArmedState.TRIGGERED).length;
+  }, [alarmZones, isLoadingAlarmZones]);
 
   // Effect to populate Zustand store from useSession data on initial load only
   useEffect(() => {
@@ -90,6 +102,26 @@ export function AppSidebar() {
   const canViewAdminItem = (): boolean => {
     // Use the server-provided initial role for consistency
     return initialUserRole === 'admin';
+  };
+
+  // Helper function to get dynamic badge text
+  const getDynamicBadge = (item: NavItem, activeCount: number): string | undefined => {
+    if (item.href === '/alarm/alarms' && activeCount > 0) {
+      return activeCount > 99 ? '99+' : activeCount.toString();
+    }
+    return item.badge; // Fall back to static badge for other items
+  };
+
+  // Helper function to get badge styling
+  const getBadgeStyle = (item: NavItem, badgeText: string): string => {
+    const baseClasses = "ml-auto px-1.5 py-0.5 text-xs font-medium rounded-md group-data-[collapsible=icon]:hidden";
+    const isActiveAlarms = item.href === '/alarm/alarms';
+    const isNumeric = /^\d+$/.test(badgeText) || badgeText === '99+';
+    
+    if (isActiveAlarms && isNumeric) {
+      return `${baseClasses} bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400`;
+    }
+    return `${baseClasses} bg-blue-100 text-blue-800`;
   };
 
   const handleLogout = async () => {
@@ -176,11 +208,16 @@ export function AppSidebar() {
                             >
                               <Icon className="mr-2 h-5 w-5 flex-shrink-0 group-data-[collapsible=icon]:mr-0" />
                               <span className="truncate group-data-[collapsible=icon]:hidden">{item.label}</span>
-                              {item.badge && (
-                                <span className="ml-auto px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-md group-data-[collapsible=icon]:hidden">
-                                  {item.badge}
-                                </span>
-                              )}
+                              {(() => {
+                                const dynamicBadge = getDynamicBadge(item, activeAlarmCount);
+                                const badgeStyle = dynamicBadge ? getBadgeStyle(item, dynamicBadge) : '';
+                                
+                                return dynamicBadge ? (
+                                  <span className={badgeStyle}>
+                                    {dynamicBadge}
+                                  </span>
+                                ) : null;
+                              })()}
                             </Link>
                           </SidebarMenuButton>
                         </SidebarMenuItem>
