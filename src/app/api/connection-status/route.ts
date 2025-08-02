@@ -3,23 +3,25 @@ import { db } from '@/data/db';
 import { connectors } from '@/data/db/schema';
 import * as mqttService from '@/services/mqtt-service';
 import * as pikoService from '@/services/piko-websocket-service';
-import { ConnectorCategory } from '@/lib/mappings/definitions'; // Import connector category type
-import { getLastWebhookActivity } from '@/services/webhook-service'; // <-- Import webhook store getter
+import { getLastWebhookActivity } from '@/services/webhook-service';
+import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
+import { eq } from 'drizzle-orm';
 
 /**
  * GET handler for getting connection status for all connectors (MQTT, WebSocket, etc.).
  * Returns an array of status objects.
  */
-export async function GET(request: Request) {
+export const GET = withOrganizationAuth(async (request: Request, authContext: OrganizationAuthContext) => {
   try {
-    // Fetch all connectors from the database
+    // Fetch connectors for this organization only
     const allConnectors = await db.select({
         id: connectors.id,
         name: connectors.name,
         category: connectors.category,
         cfg_enc: connectors.cfg_enc,
         eventsEnabled: connectors.eventsEnabled
-    }).from(connectors);
+    }).from(connectors)
+    .where(eq(connectors.organizationId, authContext.organizationId));
 
     // Pre-fetch all current states
     const allMqttStates = mqttService.getAllMqttClientStates();
@@ -158,4 +160,4 @@ export async function GET(request: Request) {
       error: error instanceof Error ? error.message : 'An unknown error occurred'
     }, { status: 500 });
   }
-} 
+}); 

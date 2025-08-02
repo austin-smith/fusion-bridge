@@ -1,4 +1,4 @@
-import { Activity, Plug, Cpu, Building, Shield, ShieldAlert, Workflow, Users, Terminal, Settings, User, FileText } from 'lucide-react';
+import { Activity, Plug, Cpu, Building, Shield, ShieldAlert, Workflow, Users, Terminal, Settings, User, FileText, BarChart3 } from 'lucide-react';
 import { FiActivity } from 'react-icons/fi';
 
 export interface BreadcrumbItem {
@@ -20,6 +20,7 @@ export interface PageConfig {
   breadcrumbs: BreadcrumbItem[];
   isNavItem?: boolean; // Whether this appears in sidebar navigation
   navGroup?: NavGroup; // Which navigation group this belongs to
+  badge?: string; // Optional badge text (e.g., "Beta", "New")
 }
 
 // Comprehensive page configuration - single source of truth for ALL pages
@@ -94,6 +95,17 @@ export const PAGE_CONFIG: Record<string, PageConfig> = {
     ],
     isNavItem: true,
     navGroup: NavGroup.ACTIVITY
+  },
+  '/reports': {
+    title: 'Reports',
+    icon: BarChart3,
+    breadcrumbs: [
+      { label: 'Home', href: '/' },
+      { label: 'Reports', isCurrentPage: true }
+    ],
+    isNavItem: true,
+    navGroup: NavGroup.ACTIVITY,
+    badge: 'New'
   },
   '/users': {
     title: 'Users',
@@ -251,6 +263,7 @@ export function getNavigationGroups(): Array<{
     href: string;
     label: string;
     icon: React.ElementType;
+    badge?: string;
   }>;
 }> {
   const navItems = Object.entries(PAGE_CONFIG)
@@ -259,7 +272,8 @@ export function getNavigationGroups(): Array<{
       href,
       label: config.title,
       icon: config.icon as React.ElementType || Activity,
-      navGroup: config.navGroup || NavGroup.RESOURCES
+      navGroup: config.navGroup || NavGroup.RESOURCES,
+      badge: config.badge
     }));
 
   // Group by navGroup enum values in proper order

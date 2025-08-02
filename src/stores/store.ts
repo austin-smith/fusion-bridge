@@ -153,6 +153,7 @@ interface FusionState {
   allDevices: DeviceWithConnector[];
   isLoadingAllDevices: boolean;
   errorAllDevices: string | null;
+  allDevicesHasInitiallyLoaded: boolean;
 
   // --- Locations State ---
   locations: Location[];
@@ -236,6 +237,11 @@ interface FusionState {
   eventsTimeStart: string | null; // ISO date string for custom range
   eventsTimeEnd: string | null;   // ISO date string for custom range
   
+  // --- Reports Page Time Filters ---
+  reportsTimeFilter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom';
+  reportsTimeStart: string | null; // ISO date string for custom range
+  reportsTimeEnd: string | null;   // ISO date string for custom range
+  
   // --- Events Data State ---
   events: EnrichedEvent[];
   isLoadingEvents: boolean;
@@ -285,6 +291,7 @@ interface FusionState {
   // Action to bulk update device states after a sync operation
   setDeviceStatesFromSync: (syncedDevices: DeviceWithConnector[]) => void;
   fetchConnectors: () => Promise<void>;
+  fetchConnectorStatus: (connectorsToCheck?: ConnectorWithConfig[]) => Promise<void>;
 
   // --- Location Actions ---
   fetchLocations: () => Promise<void>;
@@ -321,6 +328,7 @@ interface FusionState {
 
   // Fetch all devices 
   fetchAllDevices: () => Promise<void>;
+  setAllDevicesHasInitiallyLoaded: (loaded: boolean) => void;
 
   // Fetch dashboard events
   fetchDashboardEvents: () => Promise<void>;
@@ -397,6 +405,12 @@ interface FusionState {
   setEventsTimeFilter: (filter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom') => void;
   setEventsTimeStart: (date: string | null) => void;
   setEventsTimeEnd: (date: string | null) => void;
+  
+  // --- Reports Page Time Filter Actions ---
+  setReportsTimeFilter: (filter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom') => void;
+  setReportsTimeStart: (date: string | null) => void;
+  setReportsTimeEnd: (date: string | null) => void;
+  initializeReportsPreferences: () => void;
   initializeViewPreferences: () => void;
   initializeFilterPreferences: () => void;
   resetFiltersToDefaults: () => void;
@@ -468,6 +482,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   allDevices: [], 
   isLoadingAllDevices: false,
   errorAllDevices: null,
+  allDevicesHasInitiallyLoaded: false,
 
   // Location State
   locations: [],
@@ -553,6 +568,11 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   eventsTimeFilter: 'all',
   eventsTimeStart: null,
   eventsTimeEnd: null,
+  
+  // --- Reports Page Time Filter Initial Values ---
+  reportsTimeFilter: 'last7days', // Default to match current behavior
+  reportsTimeStart: null,
+  reportsTimeEnd: null,
   
   // --- Events Data Initial State ---
   events: [],
@@ -744,12 +764,76 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to fetch connectors');
         }
-        set({ connectors: data.data || [], isLoading: false });
-        console.log('[FusionStore] Connectors loaded:', data.data);
+        const fetchedConnectors = data.data || [];
+        set({ connectors: fetchedConnectors, isLoading: false });
+        console.log('[FusionStore] Connectors loaded:', fetchedConnectors);
+        
+        // Immediately fetch connector status
+        get().fetchConnectorStatus(fetchedConnectors);
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         console.error('[FusionStore] Error fetching connectors:', message);
         set({ error: message, isLoading: false, connectors: [] });
+    }
+  },
+
+  fetchConnectorStatus: async (connectorsToCheck?: ConnectorWithConfig[]) => {
+    try {
+      const connectors = connectorsToCheck || get().connectors;
+      if (connectors.length === 0) return;
+
+      const statusResponse = await fetch('/api/connection-status');
+      const statusData = await statusResponse.json();
+      
+      if (statusData.success && statusData.statuses && Array.isArray(statusData.statuses)) {
+        const connectorMap = new Map(connectors.map(c => [c.id, c]));
+
+        for (const statusPayload of statusData.statuses) {
+          const connectorId = statusPayload.connectorId;
+          const connector = connectorMap.get(connectorId);
+
+          if (!connector) {
+            console.warn(`[Store] Received status for unknown connector ID: ${connectorId}`);
+            continue;
+          }
+
+          // Process based on connectionType (simplified logic)
+          if (statusPayload.connectionType === 'mqtt' && statusPayload.state) {
+            const mqttState = statusPayload.state;
+            // Simple status mapping - connected if no error and events enabled
+            const status = connector.eventsEnabled && !mqttState.error ? 'connected' : 'disconnected';
+            get().setMqttState(connectorId, { 
+              status, 
+              error: mqttState.error,
+              lastEventTime: mqttState.lastEvent?.time ?? null, 
+              eventCount: mqttState.lastEvent?.count ?? null,
+              lastStandardizedPayload: mqttState.lastStandardizedPayload ?? null,
+              lastActivity: statusPayload.lastActivity ?? mqttState.lastEvent?.time ?? null
+            });
+          } else if (statusPayload.connectionType === 'websocket' && statusPayload.state) {
+            const pikoState = statusPayload.state;
+            // Simple status mapping - connected if no error and events enabled  
+            const status = connector.eventsEnabled && !pikoState.error ? 'connected' : 'disconnected';
+            get().setPikoState(connectorId, { 
+              status, 
+              error: pikoState.error,
+              lastEventTime: pikoState.lastActivity, 
+              eventCount: null, 
+              lastStandardizedPayload: pikoState.lastStandardizedPayload ?? null,
+              lastActivity: statusPayload.lastActivity ?? pikoState.lastActivity ?? null
+            });
+          } else if (statusPayload.connectionType === 'webhook') {
+            const webhookState = statusPayload.state || {}; 
+            get().setWebhookState(connectorId, { 
+              lastActivity: statusPayload.lastActivity ?? webhookState.lastActivity ?? null
+            });
+          }
+        }
+      } else {
+        console.error('[Store] Failed to fetch connector statuses:', statusData.error || 'Invalid format');
+      }
+    } catch (error) {
+      console.error('[Store] Error fetching connector status:', error);
     }
   },
 
@@ -1365,7 +1449,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       const fetchedDevices = data.data || [];
       
       // Update allDevices first
-      set({ allDevices: fetchedDevices, isLoadingAllDevices: false });
+      set({ allDevices: fetchedDevices, isLoadingAllDevices: false, allDevicesHasInitiallyLoaded: true });
       console.log('[FusionStore] All devices loaded into state:', fetchedDevices.length);
       
       // Now populate deviceStates from the fetched devices
@@ -1404,8 +1488,12 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error("Error fetching all devices:", message);
-      set({ isLoadingAllDevices: false, errorAllDevices: message, allDevices: [] });
+      set({ isLoadingAllDevices: false, errorAllDevices: message, allDevices: [], allDevicesHasInitiallyLoaded: true });
     }
+  },
+
+  setAllDevicesHasInitiallyLoaded: (loaded: boolean) => {
+    set({ allDevicesHasInitiallyLoaded: loaded });
   },
 
   // Fetch dashboard events
@@ -2367,6 +2455,62 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       } else {
         localStorage.removeItem('eventsTimeEndPreference');
       }
+    }
+  },
+  
+  // Reports Page Time Filter Actions
+  setReportsTimeFilter: (filter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom') => {
+    set({ reportsTimeFilter: filter });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('reportsTimeFilterPreference', filter);
+    }
+  },
+  setReportsTimeStart: (date: string | null) => {
+    set({ reportsTimeStart: date });
+    if (typeof window !== 'undefined') {
+      if (date) {
+        localStorage.setItem('reportsTimeStartPreference', date);
+      } else {
+        localStorage.removeItem('reportsTimeStartPreference');
+      }
+    }
+  },
+  setReportsTimeEnd: (date: string | null) => {
+    set({ reportsTimeEnd: date });
+    if (typeof window !== 'undefined') {
+      if (date) {
+        localStorage.setItem('reportsTimeEndPreference', date);
+      } else {
+        localStorage.removeItem('reportsTimeEndPreference');
+      }
+    }
+  },
+  
+  initializeReportsPreferences: () => {
+    if (typeof window !== 'undefined') {
+      // Load reports time filter preferences from localStorage
+      const storedTimeFilter = localStorage.getItem('reportsTimeFilterPreference') as 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom' || 'last7days';
+      const storedTimeStart = localStorage.getItem('reportsTimeStartPreference') || null;
+      const storedTimeEnd = localStorage.getItem('reportsTimeEndPreference') || null;
+      
+      set({ 
+        reportsTimeFilter: storedTimeFilter,
+        reportsTimeStart: storedTimeStart,
+        reportsTimeEnd: storedTimeEnd
+      });
+      
+      console.log('[FusionStore] Reports preferences loaded from localStorage:', { 
+        storedTimeFilter, 
+        storedTimeStart, 
+        storedTimeEnd 
+      });
+    } else {
+      // Server-side fallback
+      set({ 
+        reportsTimeFilter: 'last7days',
+        reportsTimeStart: null,
+        reportsTimeEnd: null
+      });
     }
   },
   initializeFilterPreferences: () => {

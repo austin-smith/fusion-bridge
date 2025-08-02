@@ -34,71 +34,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useSession } from '@/lib/auth/client'; // Import useSession for admin detection
 import { authClient } from '@/lib/auth/client'; // Import authClient for organization fetching
 
-// Define structure for fetched YoLink MQTT state from API
-interface FetchedMqttState {
-  connected: boolean;
-  lastEvent: { time: number; count: number } | null;
-  error: string | null;
-  reconnecting: boolean;
-  disabled: boolean;
-  homeId?: string | null;
-  lastStandardizedPayload?: Record<string, any> | null;
-}
 
-// Define structure for fetched Piko WebSocket state from API
-interface FetchedPikoState {
-  isConnected: boolean;
-  isConnecting: boolean;
-  error: string | null;
-  reconnecting: boolean;
-  disabled: boolean;
-  lastActivity: number | null;
-  systemId?: string | null;
-  lastStandardizedPayload?: Record<string, any> | null;
-}
 
-// Shared connection status type used in the store
-type ConnectionStatus = 'connected' | 'disconnected' | 'unknown' | 'reconnecting' | 'error';
 
-// Helper function to translate YoLink fetched state to store status
-const translateMqttStatus = (
-  eventsEnabled: boolean,
-  state: FetchedMqttState
-): ConnectionStatus => {
-  if (!eventsEnabled || state.disabled) {
-    return 'unknown'; // Explicitly disabled by user OR by backend service
-  }
-  if (state.connected) {
-    return 'connected';
-  }
-  if (state.reconnecting) {
-    return 'reconnecting';
-  }
-  if (state.error) {
-    return 'error';
-  }
-  return 'disconnected';
-};
 
-// Helper function to translate Piko fetched state to store status
-const translatePikoStatus = (
-  eventsEnabled: boolean,
-  state: FetchedPikoState
-): ConnectionStatus => {
-  if (!eventsEnabled || state.disabled) {
-    return 'unknown'; // Explicitly disabled by user OR by backend service
-  }
-  if (state.isConnected) {
-    return 'connected';
-  }
-  if (state.isConnecting || state.reconnecting) { // Consider both connecting and reconnecting states
-    return 'reconnecting';
-  }
-  if (state.error) {
-    return 'error';
-  }
-  return 'disconnected';
-};
+
 
 // Skeleton Component for Connectors Table
 const ConnectorsTableSkeleton = ({ rowCount = 5 }: { rowCount?: number }) => {
@@ -154,16 +94,12 @@ export default function ConnectorsPage() {
   
   // Get stable action references
   const { 
-    setConnectors, 
+    fetchConnectors,
     setAddConnectorOpen,
-    setLoading, 
-    setError,
     setEditConnectorOpen,
     setEditingConnector, 
-    deleteConnector, 
-    setMqttState,
-    setPikoState,
-    setWebhookState
+    deleteConnector,
+    setError
   } = useFusionStore(); 
 
   // State for modals and delete confirmation
@@ -182,84 +118,14 @@ export default function ConnectorsPage() {
   }, []);
 
   // --- Data Fetching and Polling ---
-  const refreshConnectorsData = useCallback(async (isInitialLoad = false) => {
-    if (isInitialLoad) {
-      setLoading(true);
-    }
-    try {
-      const connectorsResponse = await fetch('/api/connectors');
-      const connectorsData = await connectorsResponse.json();
-      let fetchedConnectors: ConnectorWithConfig[] = [];
-      if (connectorsData.success) {
-        fetchedConnectors = connectorsData.data;
-        setConnectors(fetchedConnectors);
-      } else {
-        setError(connectorsData.error || 'Failed to load connectors');
-        if (isInitialLoad) setLoading(false);
-        return;
-      }
-      // Fetch status from the /api/connection-status endpoint
-      const statusResponse = await fetch('/api/connection-status'); 
-      const statusData = await statusResponse.json();
-      
-      if (statusData.success && statusData.statuses && Array.isArray(statusData.statuses)) {
-        const connectorMap = new Map(fetchedConnectors.map(c => [c.id, c]));
-
-        for (const statusPayload of statusData.statuses) {
-          const connectorId = statusPayload.connectorId;
-          const connector = connectorMap.get(connectorId);
-
-          if (!connector) {
-            console.warn(`[ConnectorsPage] Received status for unknown connector ID: ${connectorId}`);
-            continue;
-          }
-
-          // Process based on connectionType
-          if (statusPayload.connectionType === 'mqtt' && statusPayload.state) {
-            const mqttState: FetchedMqttState = statusPayload.state;
-            const storeStatus: ConnectionStatus = translateMqttStatus(connector.eventsEnabled === true, mqttState);
-            setMqttState(connectorId, { 
-              status: storeStatus, 
-              error: mqttState.error,
-              lastEventTime: mqttState.lastEvent?.time ?? null, 
-              eventCount: mqttState.lastEvent?.count ?? null,
-              lastStandardizedPayload: mqttState.lastStandardizedPayload ?? null,
-              lastActivity: statusPayload.lastActivity ?? mqttState.lastEvent?.time ?? null
-            });
-          } else if (statusPayload.connectionType === 'websocket' && statusPayload.state) {
-            const pikoState: FetchedPikoState = statusPayload.state;
-            const storeStatus: ConnectionStatus = translatePikoStatus(connector.eventsEnabled === true, pikoState);
-            setPikoState(connectorId, { 
-              status: storeStatus, 
-              error: pikoState.error,
-              lastEventTime: pikoState.lastActivity, 
-              eventCount: null, 
-              lastStandardizedPayload: pikoState.lastStandardizedPayload ?? null,
-              lastActivity: statusPayload.lastActivity ?? pikoState.lastActivity ?? null
-            });
-          } else if (statusPayload.connectionType === 'webhook') {
-            const webhookState = statusPayload.state || {}; 
-            setWebhookState(connectorId, { 
-              lastActivity: statusPayload.lastActivity ?? webhookState.lastActivity ?? null
-            });
-          } else if (statusPayload.connectionType !== 'unknown') {
-            console.warn(`[ConnectorsPage] Received status for connector ${connectorId} with unknown state or connection type:`, statusPayload);
-          }
-        }
-      } else {
-        console.error('[ConnectorsPage] Failed to fetch or parse connection statuses:', statusData.error || 'Invalid format');
-      }
-    } catch (error) {
-      console.error('[ConnectorsPage] Error refreshing data:', error);
-      if (isInitialLoad) setError('Failed to load page data');
-    } finally {
-      if (isInitialLoad) { setLoading(false); }
-    }
-  }, [setLoading, setConnectors, setError, setMqttState, setPikoState, setWebhookState]);
+  const refreshConnectorsData = useCallback(async () => {
+    // Store handles everything now - connectors and their status
+    await fetchConnectors();
+  }, [fetchConnectors]);
 
   // Fetch initial data and set up polling
   useEffect(() => {
-     refreshConnectorsData(true); // Initial fetch
+     refreshConnectorsData(); // Initial fetch
 
      const intervalId = setInterval(() => {
        refreshConnectorsData(); // Poll periodically
