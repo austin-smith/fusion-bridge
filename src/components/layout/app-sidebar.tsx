@@ -30,7 +30,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { useFusionStore, UserProfile } from '@/stores/store';
 import { AuthContext } from '@/components/layout/client-providers';
@@ -41,6 +40,7 @@ type NavItem = {
   href: string;
   label: string;
   icon: React.ElementType;
+  badge?: string;
 };
 
 type NavGroup = {
@@ -48,7 +48,7 @@ type NavGroup = {
 };
 
 // Get navigation groups from comprehensive page config
-export const navGroups: NavGroup[] = getNavigationGroups();
+const navGroups = getNavigationGroups();
 
 export function AppSidebar() {
   const pathname = usePathname();
@@ -172,9 +172,15 @@ export function AppSidebar() {
                                   setOpenMobile(false);
                                 }
                               }}
+                              className="flex items-center w-full"
                             >
                               <Icon className="mr-2 h-5 w-5 flex-shrink-0 group-data-[collapsible=icon]:mr-0" />
                               <span className="truncate group-data-[collapsible=icon]:hidden">{item.label}</span>
+                              {item.badge && (
+                                <span className="ml-auto px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-md group-data-[collapsible=icon]:hidden">
+                                  {item.badge}
+                                </span>
+                              )}
                             </Link>
                           </SidebarMenuButton>
                         </SidebarMenuItem>

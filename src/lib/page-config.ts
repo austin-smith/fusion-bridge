@@ -20,6 +20,7 @@ export interface PageConfig {
   breadcrumbs: BreadcrumbItem[];
   isNavItem?: boolean; // Whether this appears in sidebar navigation
   navGroup?: NavGroup; // Which navigation group this belongs to
+  badge?: string; // Optional badge text (e.g., "Beta", "New")
 }
 
 // Comprehensive page configuration - single source of truth for ALL pages
@@ -103,7 +104,8 @@ export const PAGE_CONFIG: Record<string, PageConfig> = {
       { label: 'Reports', isCurrentPage: true }
     ],
     isNavItem: true,
-    navGroup: NavGroup.ACTIVITY
+    navGroup: NavGroup.ACTIVITY,
+    badge: 'New'
   },
   '/users': {
     title: 'Users',
@@ -261,6 +263,7 @@ export function getNavigationGroups(): Array<{
     href: string;
     label: string;
     icon: React.ElementType;
+    badge?: string;
   }>;
 }> {
   const navItems = Object.entries(PAGE_CONFIG)
@@ -269,7 +272,8 @@ export function getNavigationGroups(): Array<{
       href,
       label: config.title,
       icon: config.icon as React.ElementType || Activity,
-      navGroup: config.navGroup || NavGroup.RESOURCES
+      navGroup: config.navGroup || NavGroup.RESOURCES,
+      badge: config.badge
     }));
 
   // Group by navGroup enum values in proper order
