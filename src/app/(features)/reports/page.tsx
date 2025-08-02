@@ -681,7 +681,7 @@ export default function ReportsPage() {
                         if (!active || !payload || !payload.length) return null;
                         
                         const data = payload[0].payload;
-                        const successRate = data.total > 0 ? Math.round((data.successful / data.total) * 100) : 0;
+                        const successRate = data.total > 0 ? ((data.successful / data.total) * 100).toFixed(1) : '0.0';
                         
                         return (
                           <div className="rounded-lg border bg-background p-2 shadow-sm">
