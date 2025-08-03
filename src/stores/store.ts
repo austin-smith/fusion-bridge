@@ -242,6 +242,9 @@ interface FusionState {
   reportsTimeStart: string | null; // ISO date string for custom range
   reportsTimeEnd: string | null;   // ISO date string for custom range
   
+  // --- Roadmap Page Preferences ---
+  roadmapViewType: 'kanban' | 'table-flat' | 'table-grouped';
+  
   // --- Events Data State ---
   events: EnrichedEvent[];
   isLoadingEvents: boolean;
@@ -415,6 +418,10 @@ interface FusionState {
   initializeFilterPreferences: () => void;
   resetFiltersToDefaults: () => void;
   
+  // --- Roadmap Page Preferences Actions ---
+  setRoadmapViewType: (viewType: 'kanban' | 'table-flat' | 'table-grouped') => void;
+  initializeRoadmapPreferences: () => void;
+  
   // --- Events Data Actions ---
   fetchEvents: (options?: {
     page?: number;
@@ -573,6 +580,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   reportsTimeFilter: 'last7days', // Default to match current behavior
   reportsTimeStart: null,
   reportsTimeEnd: null,
+  
+  // --- Roadmap Page Preferences Initial Values ---
+  roadmapViewType: 'table-flat',
   
   // --- Events Data Initial State ---
   events: [],
@@ -2513,6 +2523,32 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       });
     }
   },
+  
+  // --- Roadmap Page Preferences Actions ---
+  setRoadmapViewType: (viewType: 'kanban' | 'table-flat' | 'table-grouped') => {
+    set({ roadmapViewType: viewType });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('roadmapViewTypePreference', viewType);
+    }
+  },
+  initializeRoadmapPreferences: () => {
+    if (typeof window !== 'undefined') {
+      // Load roadmap view type preference from localStorage
+      const storedViewType = (localStorage.getItem('roadmapViewTypePreference') as 'kanban' | 'table-flat' | 'table-grouped') ?? 'table-flat';
+      
+      // Validate the stored value
+      const validViewTypes: ('kanban' | 'table-flat' | 'table-grouped')[] = ['kanban', 'table-flat', 'table-grouped'];
+      const viewType = validViewTypes.includes(storedViewType) ? storedViewType : 'table-flat';
+      
+      set({ roadmapViewType: viewType });
+      
+      console.log('[FusionStore] Roadmap preferences loaded from localStorage:', { viewType });
+    } else {
+      // Server-side fallback
+      set({ roadmapViewType: 'table-flat' });
+    }
+  },
+  
   initializeFilterPreferences: () => {
     if (typeof window !== 'undefined') {
       // Load from localStorage with fallbacks

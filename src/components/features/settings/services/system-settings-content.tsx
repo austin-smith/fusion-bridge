@@ -102,13 +102,15 @@ interface SystemSettingsContentProps {
   initialPushcutConfig: any;
   initialOpenWeatherConfig: any;
   initialOpenAIConfig: any;
+  initialLinearConfig: any;
 }
 
 export function SystemSettingsContent({ 
   initialPushoverConfig, 
   initialPushcutConfig,
   initialOpenWeatherConfig,
-  initialOpenAIConfig 
+  initialOpenAIConfig,
+  initialLinearConfig 
 }: SystemSettingsContentProps) {
   const [activeTab, setActiveTab] = useState('services');
   const activeOrganizationId = useFusionStore(state => state.activeOrganizationId);
@@ -122,6 +124,7 @@ export function SystemSettingsContent({
             initialPushcutConfig={initialPushcutConfig}
             initialOpenWeatherConfig={initialOpenWeatherConfig}
             initialOpenAIConfig={initialOpenAIConfig}
+            initialLinearConfig={initialLinearConfig}
           />
         );
       case 'api-keys':
@@ -139,6 +142,7 @@ export function SystemSettingsContent({
             initialPushcutConfig={initialPushcutConfig}
             initialOpenWeatherConfig={initialOpenWeatherConfig}
             initialOpenAIConfig={initialOpenAIConfig}
+            initialLinearConfig={initialLinearConfig}
           />
         );
     }

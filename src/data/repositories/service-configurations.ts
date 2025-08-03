@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import type { PushcutConfig, PushcutStoredConfig } from '@/types/pushcut-types';
 import type { OpenWeatherConfig } from '@/types/openweather-types';
 import type { OpenAIConfig, OpenAIModel } from '@/types/ai/openai-service-types';
+import type { LinearConfig, LinearStoredConfig } from '@/services/drivers/linear';
 
 export interface BaseServiceConfig {
   id: string;
@@ -20,7 +21,7 @@ export interface PushoverConfig extends BaseServiceConfig {
 }
 
 // Union type for all possible service configurations
-export type AnyServiceConfig = PushoverConfig | PushcutConfig | OpenWeatherConfig | OpenAIConfig;
+export type AnyServiceConfig = PushoverConfig | PushcutConfig | OpenWeatherConfig | OpenAIConfig | LinearConfig;
 
 // Interface for the data stored *inside* the configEnc blob for Pushover
 interface PushoverStoredConfig {
@@ -35,6 +36,13 @@ interface OpenAIStoredConfig {
   maxTokens: number;
   temperature: number;
   topP: number;
+}
+
+// Interface for the data stored *inside* the configEnc blob for Linear
+interface LinearStoredConfigInternal {
+  apiKey: string;
+  teamId?: string;
+  teamName?: string;
 }
 
 /**
@@ -463,6 +471,109 @@ export async function upsertOpenAIConfiguration(
     }
   } catch (error) {
     console.error("[ServiceConfigRepo] Error upserting OpenAI configuration:", error);
+    return { success: false, message: 'Database operation failed.' };
+  }
+}
+
+/**
+ * Fetches the Linear service configuration.
+ * For now, we assume there's only one configuration with type 'LINEAR'.
+ * @returns The Linear configuration object or null if not found.
+ */
+export async function getLinearConfiguration(): Promise<LinearConfig | null> {
+  try {
+    const configRecord = await db
+      .select({
+        id: serviceConfigurations.id,
+        configEnc: serviceConfigurations.configEnc,
+        isEnabled: serviceConfigurations.isEnabled,
+      })
+      .from(serviceConfigurations)
+      .where(eq(serviceConfigurations.type, 'LINEAR'))
+      .limit(1);
+
+    if (configRecord.length === 0) {
+      console.log("[ServiceConfigRepo] No Linear configuration found.");
+      return null;
+    }
+
+    const record = configRecord[0];
+    const decryptedConfig = JSON.parse(record.configEnc) as LinearStoredConfigInternal;
+
+    return {
+      id: record.id,
+      type: 'linear',
+      isEnabled: record.isEnabled,
+      apiKey: decryptedConfig.apiKey,
+      teamId: decryptedConfig.teamId,
+      teamName: decryptedConfig.teamName,
+    };
+  } catch (error) {
+    console.error("[ServiceConfigRepo] Error fetching Linear configuration:", error);
+    return null;
+  }
+}
+
+/**
+ * Upserts (inserts or updates) the Linear service configuration.
+ * @param apiKey - The Linear API key
+ * @param teamId - Optional team ID
+ * @param teamName - Optional team name  
+ * @param isEnabled - Whether the service is enabled
+ * @returns Success status and configuration ID
+ */
+export async function upsertLinearConfiguration(
+  apiKey: string,
+  teamId?: string,
+  teamName?: string,
+  isEnabled: boolean = false
+): Promise<{ success: boolean; id?: string; message?: string }> {
+  try {
+    // Create the configuration object to encrypt
+    const configToStore: LinearStoredConfigInternal = {
+      apiKey,
+      teamId,
+      teamName,
+    };
+
+    // For now, we store as JSON. In production, this should be encrypted.
+    const configEnc = JSON.stringify(configToStore);
+
+    // Check if a configuration already exists
+    const existingConfig = await db
+      .select({ id: serviceConfigurations.id })
+      .from(serviceConfigurations)
+      .where(eq(serviceConfigurations.type, 'LINEAR'))
+      .limit(1);
+
+    if (existingConfig.length > 0) {
+      // Update existing configuration
+      await db
+        .update(serviceConfigurations)
+        .set({
+          configEnc: configEnc,
+          isEnabled: isEnabled,
+          updatedAt: new Date(),
+        })
+        .where(eq(serviceConfigurations.id, existingConfig[0].id));
+      console.log("[ServiceConfigRepo] Updated Linear configuration:", existingConfig[0].id);
+      return { success: true, id: existingConfig[0].id };
+    } else {
+      // Insert new configuration
+      const newConfig = await db
+        .insert(serviceConfigurations)
+        .values({
+          type: 'LINEAR',
+          configEnc: configEnc,
+          isEnabled: isEnabled,
+        })
+        .returning({ id: serviceConfigurations.id });
+      const newId = newConfig[0]?.id;
+      console.log("[ServiceConfigRepo] Created new Linear configuration:", newId);
+      return { success: true, id: newId };
+    }
+  } catch (error) {
+    console.error("[ServiceConfigRepo] Error upserting Linear configuration:", error);
     return { success: false, message: 'Database operation failed.' };
   }
 } 
