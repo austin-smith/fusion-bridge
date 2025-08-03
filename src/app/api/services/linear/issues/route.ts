@@ -8,7 +8,7 @@ import { getLinearIssues } from '@/services/drivers/linear';
 const LinearIssuesQuerySchema = z.object({
   teamId: z.string().optional(),
   orderBy: z.enum(['updatedAt', 'createdAt']).optional().default('updatedAt'),
-  activeOnly: z.coerce.boolean().optional().default(true), // Default to showing active items only
+  activeOnly: z.string().optional().default('true').transform(val => val === 'true'), // Properly handle string boolean values
   state: z.string().optional(),
   assignee: z.string().optional(),
   priority: z.coerce.number().min(0).max(4).optional(),

@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { LinearIssue } from '@/services/drivers/linear';
+import { getLinearPriorityConfig } from '@/services/drivers/linear';
 
 interface LinearIssuesTableProps {
   issues: LinearIssue[];
@@ -52,15 +53,7 @@ const SortableHeader = ({ column, children }: { column: any, children: React.Rea
 
 // Priority badge component
 const PriorityBadge = ({ priority }: { priority: number }) => {
-  const priorityConfig = {
-    0: { label: 'No Priority', color: '#6b7280', icon: Ellipsis }, // gray-500
-    1: { label: 'Urgent', color: '#ef4444', icon: AlertCircle },     // red-500
-    2: { label: 'High', color: '#f97316', icon: SignalHigh },        // orange-500
-    3: { label: 'Medium', color: '#eab308', icon: SignalMedium },    // yellow-500
-    4: { label: 'Low', color: '#3b82f6', icon: SignalLow },          // blue-500
-  };
-
-  const config = priorityConfig[priority as keyof typeof priorityConfig] || priorityConfig[0];
+  const config = getLinearPriorityConfig(priority);
   const IconComponent = config.icon;
 
   return (
@@ -69,10 +62,14 @@ const PriorityBadge = ({ priority }: { priority: number }) => {
       className="text-xs font-medium text-foreground max-w-24"
       style={{ 
         borderColor: config.color,
-        backgroundColor: `${config.color}50` // 31% opacity background
+        backgroundColor: `${config.color}50`, // 31% opacity background
+        color: config.color
       }}
     >
-      <IconComponent className="h-3 w-3 mr-1 shrink-0" />
+      <IconComponent 
+        className="h-3 w-3 mr-1 shrink-0" 
+        style={{ fill: config.color }}
+      />
       <span className="truncate">{config.label}</span>
     </Badge>
   );

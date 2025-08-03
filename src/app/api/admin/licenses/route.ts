@@ -129,6 +129,14 @@ export const GET = withApiRouteAuth(async (req: NextRequest, context) => {
         repository: "https://github.com/shadcn-ui/ui",
         author: "shadcn",
         packageCount: 1
+      },
+      {
+        name: "shadcn-kanban-board",
+        packages: ["shadcn-kanban-board (adapted code)"],
+        license: "MIT",
+        repository: "https://github.com/janhesters/shadcn-kanban-board",
+        author: "Jan Hesters",
+        packageCount: 1
       }
     ];
 

@@ -23,14 +23,10 @@ import {
   CircleDashed,
   CircleCheck,
   LoaderCircle,
-  CircleX,
-  AlertCircle,
-  SignalHigh,
-  SignalMedium,
-  SignalLow,
-  Ellipsis
+  CircleX
 } from 'lucide-react';
 import type { LinearIssue } from '@/services/drivers/linear';
+import { getLinearPriorityConfig } from '@/services/drivers/linear';
 import { MarkdownRenderer } from '@/components/ui/chat/markdown-renderer';
 
 interface LinearIssueDetailDialogProps {
@@ -39,17 +35,7 @@ interface LinearIssueDetailDialogProps {
   onClose: () => void;
 }
 
-// Priority configuration
-const getPriorityConfig = (priority: number) => {
-  const configs = {
-    0: { label: 'No Priority', color: '#6b7280', icon: Ellipsis }, // gray-500
-    1: { label: 'Urgent', color: '#ef4444', icon: AlertCircle },     // red-500
-    2: { label: 'High', color: '#f97316', icon: SignalHigh },        // orange-500
-    3: { label: 'Medium', color: '#eab308', icon: SignalMedium },    // yellow-500
-    4: { label: 'Low', color: '#3b82f6', icon: SignalLow },          // blue-500
-  };
-  return configs[priority as keyof typeof configs] || configs[0];
-};
+
 
 
 
@@ -58,7 +44,7 @@ export function LinearIssueDetailDialog({ issue, isOpen, onClose }: LinearIssueD
     return null;
   }
 
-  const priorityConfig = getPriorityConfig(issue.priority);
+  const priorityConfig = getLinearPriorityConfig(issue.priority);
 
   // Map state type to icon
   const getStateIcon = (type: string) => {
@@ -166,7 +152,10 @@ export function LinearIssueDetailDialog({ issue, isOpen, onClose }: LinearIssueD
                     color: priorityConfig.color
                   }}
                 >
-                  <priorityConfig.icon className="h-4 w-4 mr-2" />
+                  <priorityConfig.icon 
+                    className="h-4 w-4 mr-2" 
+                    style={{ fill: priorityConfig.color }}
+                  />
                   {priorityConfig.label}
                 </Badge>
               </div>
@@ -198,14 +187,25 @@ export function LinearIssueDetailDialog({ issue, isOpen, onClose }: LinearIssueD
               {/* Creator */}
               <div className="space-y-2">
                 <div className="text-sm font-medium text-muted-foreground">Created by</div>
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback className="text-sm font-medium">
-                      {(issue.creator.displayName || issue.creator.name).charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="font-medium">{issue.creator.displayName || issue.creator.name}</span>
-                </div>
+                {issue.creator ? (
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback className="text-sm font-medium">
+                        {(issue.creator.displayName || issue.creator.name).charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="font-medium">{issue.creator.displayName || issue.creator.name}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback className="text-sm font-medium">
+                        ?
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="text-muted-foreground">Unknown</span>
+                  </div>
+                )}
               </div>
 
               {/* Labels */}

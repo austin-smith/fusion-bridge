@@ -1,8 +1,22 @@
 import { z } from 'zod';
 import { LinearClient } from '@linear/sdk';
+import { Flag } from 'lucide-react';
 
-// Temporary toggle for testing - set to false to use real API
-const USE_MOCK_DATA = true;
+// Configurable toggle for testing - defaults to false if env variable not set
+const USE_MOCK_DATA = process.env.LINEAR_USE_MOCK_DATA === 'true';
+
+// Shared Linear Priority Configuration
+export const LINEAR_PRIORITY_CONFIG = {
+  0: { label: 'None', color: '#6b7280', icon: Flag },     // gray-500
+  1: { label: 'Urgent', color: '#ef4444', icon: Flag },   // red-500
+  2: { label: 'High', color: '#f97316', icon: Flag },     // orange-500
+  3: { label: 'Medium', color: '#eab308', icon: Flag },   // yellow-500
+  4: { label: 'Low', color: '#3b82f6', icon: Flag },      // blue-500
+} as const;
+
+export const getLinearPriorityConfig = (priority: number) => {
+  return LINEAR_PRIORITY_CONFIG[priority as keyof typeof LINEAR_PRIORITY_CONFIG] || LINEAR_PRIORITY_CONFIG[0];
+};
 
 // Linear Configuration Schema (for storage)
 export const LinearConfigSchema = z.object({
@@ -70,7 +84,7 @@ export interface LinearIssue {
     type: string;
   };
   assignee?: LinearUser;
-  creator: LinearUser;
+  creator?: LinearUser;
   team: LinearTeam;
   labels: LinearLabel[];
 }
@@ -376,12 +390,12 @@ export async function getLinearIssues(
         email: issue.assignee.email,
         displayName: issue.assignee.name, // Use name as displayName fallback
       } : undefined,
-      creator: {
+      creator: issue.creator ? {
         id: '', // Not needed in UI but required by type
         name: issue.creator.name,
         email: issue.creator.email,
         displayName: issue.creator.name, // Use name as displayName fallback
-      },
+      } : undefined,
       team: {
         id: '',
         name: '',
@@ -521,12 +535,12 @@ export async function getLinearIssues(
         email: issue.assignee.email,
         displayName: issue.assignee.name, // Use name as displayName fallback
       } : undefined,
-      creator: {
+      creator: issue.creator ? {
         id: '', // Not needed in UI but required by type
         name: issue.creator.name,
         email: issue.creator.email,
         displayName: issue.creator.name, // Use name as displayName fallback
-      },
+      } : undefined,
       team: {
         id: '',
         name: '',
@@ -621,12 +635,12 @@ export async function getLinearIssue(apiKey: string, issueId: string): Promise<L
         email: issue.assignee.email,
         displayName: issue.assignee.name, // Use name as displayName fallback
       } : undefined,
-      creator: {
+      creator: issue.creator ? {
         id: '', // Not needed in UI but required by type
         name: issue.creator.name,
         email: issue.creator.email,
         displayName: issue.creator.name, // Use name as displayName fallback
-      },
+      } : undefined,
       team: {
         id: '',
         name: '',
@@ -708,12 +722,12 @@ export async function getLinearIssue(apiKey: string, issueId: string): Promise<L
         email: issue.assignee.email,
         displayName: issue.assignee.name, // Use name as displayName fallback
       } : undefined,
-      creator: {
+      creator: issue.creator ? {
         id: '', // Not needed in UI but required by type
         name: issue.creator.name,
         email: issue.creator.email,
         displayName: issue.creator.name, // Use name as displayName fallback
-      },
+      } : undefined,
       team: {
         id: '',
         name: '',

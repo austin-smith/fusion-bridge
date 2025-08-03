@@ -4,12 +4,21 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Search, Loader2, AlertCircle, Settings, List, Group } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { Search, Loader2, AlertCircle, Settings, Kanban, Table, Table2, Map } from 'lucide-react';
 
 import { LinearIssuesTable } from '@/components/features/linear/linear-issues-table';
 import { LinearIssuesTableSkeleton } from '@/components/features/linear/linear-issues-table';
+import { LinearKanbanBoard, LinearKanbanBoardSkeleton } from '@/components/features/linear/linear-kanban-board';
 import { LinearIssueDetailDialog } from '@/components/features/linear/linear-issue-detail-dialog';
 import type { LinearIssue } from '@/services/drivers/linear';
+import { useFusionStore } from '@/stores/store';
+import { PageHeader } from '@/components/layout/page-header';
 
 interface LinearConfig {
   configured: boolean;
@@ -24,8 +33,11 @@ export default function RoadmapPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [selectedIssue, setSelectedIssue] = useState<LinearIssue | null>(null);
-  const [enableGrouping, setEnableGrouping] = useState(false);
   const [activeOnly, setActiveOnly] = useState(true);
+  
+  // Use store for view type preference
+  const { roadmapViewType, setRoadmapViewType, initializeRoadmapPreferences } = useFusionStore();
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
   const fetchLinearData = useCallback(async () => {
     setIsLoading(true);
@@ -81,22 +93,26 @@ export default function RoadmapPage() {
     await fetchLinearData();
   }, [fetchLinearData]);
 
+  // Initialize roadmap preferences on mount
+  useEffect(() => {
+    initializeRoadmapPreferences();
+    setPreferencesLoaded(true);
+  }, [initializeRoadmapPreferences]);
+
   // Initial load
   useEffect(() => {
     fetchLinearData();
   }, [fetchLinearData]);
 
   return (
-    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-      {/* Page Header */}
-      <div className="flex items-center justify-between space-y-2">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Roadmap</h2>
-        </div>
-      </div>
+    <div className="flex flex-col h-full p-4 md:p-6">
+      <PageHeader 
+        title="Roadmap" 
+        icon={<Map className="h-6 w-6" />}
+      />
 
       {/* Search and Filters */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:gap-2">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:gap-2 mb-6">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -106,38 +122,121 @@ export default function RoadmapPage() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 border rounded-md p-1">
-            <Button
-              variant={activeOnly ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setActiveOnly(true)}
-              className="h-8"
-            >
-              Active
-            </Button>
-            <Button
-              variant={!activeOnly ? "secondary" : "ghost"}
-              size="sm" 
-              onClick={() => setActiveOnly(false)}
-              className="h-8"
-            >
-              All
-            </Button>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setEnableGrouping(!enableGrouping)}
-            className="flex items-center gap-2"
-          >
-            {enableGrouping ? <Group className="h-4 w-4" /> : <List className="h-4 w-4" />}
-            {enableGrouping ? "Grouped" : "Flat"}
-          </Button>
+          {/* Active/All toggle */}
+          <TooltipProvider>
+            <div className="flex items-center gap-1 border rounded-md p-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={activeOnly ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => setActiveOnly(true)}
+                    className="h-8"
+                  >
+                    Active
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Show active issues only</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={!activeOnly ? "secondary" : "ghost"}
+                    size="sm" 
+                    onClick={() => setActiveOnly(false)}
+                    className="h-8"
+                  >
+                    All
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Show all issues</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </TooltipProvider>
+
+          {/* View Type toggle */}
+          {preferencesLoaded ? (
+            <TooltipProvider>
+              <div className="flex items-center gap-1 border rounded-md p-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={roadmapViewType === 'kanban' ? "secondary" : "ghost"}
+                      size="sm"
+                      onClick={() => setRoadmapViewType('kanban')}
+                      className="h-8"
+                    >
+                      <Kanban className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Kanban Board</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={roadmapViewType === 'table-flat' ? "secondary" : "ghost"}
+                      size="sm"
+                      onClick={() => setRoadmapViewType('table-flat')}
+                      className="h-8"
+                    >
+                      <Table className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Flat Table</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={roadmapViewType === 'table-grouped' ? "secondary" : "ghost"}
+                      size="sm"
+                      onClick={() => setRoadmapViewType('table-grouped')}
+                      className="h-8"
+                    >
+                      <Table2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Grouped Table</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
+          ) : (
+            <div className="flex items-center gap-1 border rounded-md p-1">
+              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3 text-xs">
+                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
+              </div>
+              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3 text-xs">
+                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
+              </div>
+              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3 text-xs">
+                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
+
+  
+
       {/* Content based on state */}
-      {isLoading && <LinearIssuesTableSkeleton />}
+      {isLoading && (
+        roadmapViewType === 'kanban' ? 
+          <LinearKanbanBoardSkeleton /> : 
+          <LinearIssuesTableSkeleton />
+      )}
 
       {!isLoading && !config?.configured && (
         <Card>
@@ -214,11 +313,20 @@ export default function RoadmapPage() {
       )}
 
       {!isLoading && config?.configured && !error && (
-        <LinearIssuesTable
-          issues={issues}
-          onRowClick={setSelectedIssue}
-          enableGrouping={enableGrouping}
-        />
+        <>
+          {roadmapViewType === 'kanban' ? (
+            <LinearKanbanBoard
+              issues={issues}
+              onCardClick={setSelectedIssue}
+            />
+          ) : (
+            <LinearIssuesTable
+              issues={issues}
+              onRowClick={setSelectedIssue}
+              enableGrouping={roadmapViewType === 'table-grouped'}
+            />
+          )}
+        </>
       )}
 
       {selectedIssue && (
