@@ -1,4 +1,4 @@
-import { Activity, Plug, Cpu, Building, Shield, ShieldAlert, Workflow, Users, Terminal, Settings, User, FileText, BarChart3 } from 'lucide-react';
+import { Activity, Plug, Cpu, Building, Shield, ShieldAlert, Workflow, Users, Terminal, Settings, User, FileText, BarChart3, Map } from 'lucide-react';
 import { FiActivity } from 'react-icons/fi';
 
 export interface BreadcrumbItem {
@@ -11,6 +11,7 @@ export enum NavGroup {
   RESOURCES = 'resources',
   ALARM = 'alarm', 
   ACTIVITY = 'activity',
+  INFORMATION = 'information',
   ADMIN = 'admin'
 }
 
@@ -136,6 +137,17 @@ export const PAGE_CONFIG: Record<string, PageConfig> = {
     ],
     isNavItem: true,
     navGroup: NavGroup.ADMIN
+  },
+  '/roadmap': {
+    title: 'Roadmap',
+    icon: Map,
+    breadcrumbs: [
+      { label: 'Home', href: '/' },
+      { label: 'Roadmap', isCurrentPage: true }
+    ],
+    isNavItem: true,
+    navGroup: NavGroup.INFORMATION,
+    badge: 'New'
   },
 
   // Detail and sub-pages
@@ -277,7 +289,7 @@ export function getNavigationGroups(): Array<{
     }));
 
   // Group by navGroup enum values in proper order
-  const groupOrder = [NavGroup.RESOURCES, NavGroup.ALARM, NavGroup.ACTIVITY, NavGroup.ADMIN];
+  const groupOrder = [NavGroup.RESOURCES, NavGroup.ALARM, NavGroup.ACTIVITY, NavGroup.ADMIN, NavGroup.INFORMATION];
   
   return groupOrder.map(groupKey => ({
     items: navItems.filter(item => item.navGroup === groupKey)
