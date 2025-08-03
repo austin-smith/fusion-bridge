@@ -18,7 +18,11 @@ import { upsertOpenWeatherConfiguration } from '@/data/repositories/service-conf
 
 // Import OpenAI specific items
 import { OpenAIConfigSchema, type SaveOpenAIConfigFormState } from '@/types/ai/openai-service-types';
-import { upsertOpenAIConfiguration } from '@/data/repositories/service-configurations';
+
+// Import Linear specific items
+import { LinearConfigSchema } from '@/services/drivers/linear';
+import type { SaveLinearConfigFormState } from '@/components/features/settings/services/linear/linear-config-form';
+import { upsertOpenAIConfiguration, upsertLinearConfiguration } from '@/data/repositories/service-configurations';
 
 // Schema for form validation
 const PushoverConfigSchema = z.object({
@@ -320,4 +324,84 @@ export async function updateServiceEnabledStateAction(
     const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
     return { success: false, message: `Failed to update service status: ${errorMessage}` };
   }
+}
+
+// --- Linear Configuration Action (Placeholder) ---
+export async function saveLinearConfigurationAction(
+  prevState: SaveLinearConfigFormState,
+  formData: FormData
+): Promise<SaveLinearConfigFormState> {
+  console.log('[Action saveLinearConfigurationAction] Received form data');
+  const formState: SaveLinearConfigFormState = { success: false };
+
+  const rawFormData = {
+    apiKey: formData.get('apiKey') as string,
+    teamId: formData.get('teamId') as string || undefined,
+    teamName: formData.get('teamName') as string || undefined,
+  };
+
+  const isEnabled = (formData.get('isEnabled') as string) === 'true';
+
+  // Validate with Zod schema
+  const validationResult = LinearConfigSchema.safeParse({
+    apiKey: rawFormData.apiKey,
+    teamId: rawFormData.teamId,
+    teamName: rawFormData.teamName,
+  });
+
+  if (!validationResult.success) {
+    const fieldErrors = validationResult.error.flatten().fieldErrors;
+    formState.message = 'Validation failed. Please check your inputs.';
+    formState.errors = {
+      apiKey: fieldErrors.apiKey,
+      teamId: fieldErrors.teamId,
+    };
+    console.warn('[Action saveLinearConfigurationAction] Validation failed:', formState.errors);
+    return formState;
+  }
+
+  // Additional validation: if service is enabled, team is required
+  if (isEnabled && (!rawFormData.teamId || rawFormData.teamId === '')) {
+    formState.message = 'Team selection is required when Linear service is enabled.';
+    formState.errors = {
+      teamId: ['Team is required when Linear service is enabled.'],
+    };
+    console.warn('[Action saveLinearConfigurationAction] Team required when enabled');
+    return formState;
+  }
+
+  const { apiKey, teamId, teamName } = validationResult.data;
+
+  try {
+    console.log(`[Action saveLinearConfigurationAction] Upserting Linear config. Enabled: ${isEnabled}`);
+    const result = await upsertLinearConfiguration(
+      apiKey,
+      teamId,
+      teamName,
+      isEnabled
+    );
+
+    if (result.success) {
+      formState.success = true;
+      formState.message = 'Linear configuration saved successfully.';
+      formState.savedIsEnabled = isEnabled;
+      formState.savedConfigId = result.id;
+      formState.savedApiKey = apiKey;
+      console.log('[Action saveLinearConfigurationAction] Linear config saved. ID:', result.id);
+      revalidatePath('/settings/services');
+    } else {
+      formState.message = result.message || 'Failed to save Linear configuration.';
+      formState.errors = { _form: [formState.message] };
+      console.error('[Action saveLinearConfigurationAction] Upsert failed:', result.message);
+    }
+  } catch (error) {
+    console.error('[Action saveLinearConfigurationAction] Unexpected error:', error);
+    formState.message = 'An unexpected error occurred while saving Linear configuration.';
+    if (error instanceof Error) {
+      formState.message = error.message;
+    }
+    formState.errors = { _form: [formState.message] };
+  }
+  
+  return formState;
 } 

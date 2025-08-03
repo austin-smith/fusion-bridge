@@ -5,6 +5,7 @@ import type { PushoverConfig } from "@/data/repositories/service-configurations"
 import type { PushcutConfig } from "@/types/pushcut-types";
 import type { OpenWeatherConfig } from "@/types/openweather-types";
 import type { OpenAIConfig } from "@/types/ai/openai-service-types";
+// LinearConfig type will be imported from the form component
 import { ServiceConfigForm } from "@/components/features/settings/services/service-config-form";
 import { PushoverTestModal } from "@/components/features/settings/services/pushover/pushover-test-modal";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,19 +14,24 @@ import { PushcutTestModal } from "@/components/features/settings/services/pushcu
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { TbBrandPushover, TbBrandOpenai } from "react-icons/tb";
+import { SiLinear } from "react-icons/si";
 import { Layers2, CloudSun } from 'lucide-react';
 import { OpenWeatherConfigForm } from './openweather/openweather-config-form';
 import { OpenWeatherTestModal } from './openweather/openweather-test-modal';
 import { OpenAIConfigForm } from './openai/openai-config-form';
 import { OpenAITestModal } from './openai/openai-test-modal';
+import { LinearConfigForm } from './linear/linear-config-form';
+
 import { SunTimesUpdateTrigger } from './SunTimesUpdateTrigger';
 import { useFusionStore } from '@/stores/store';
+import { toast } from 'sonner';
 
 interface ServicesSettingsClientPageContentProps {
   initialPushoverConfig: PushoverConfig | null;
   initialPushcutConfig: PushcutConfig | null;
   initialOpenWeatherConfig: OpenWeatherConfig | null;
   initialOpenAIConfig: OpenAIConfig | null;
+  initialLinearConfig: { id?: string; apiKey: string; teamId?: string; teamName?: string; isEnabled?: boolean } | null;
 }
 
 export function ServicesSettingsClientPageContent({
@@ -33,6 +39,7 @@ export function ServicesSettingsClientPageContent({
   initialPushcutConfig,
   initialOpenWeatherConfig,
   initialOpenAIConfig,
+  initialLinearConfig,
 }: ServicesSettingsClientPageContentProps) {
 
   // Get store functions for updating OpenAI status - use selector to prevent re-renders
@@ -43,6 +50,8 @@ export function ServicesSettingsClientPageContent({
   const [isPushcutTestModalOpen, setIsPushcutTestModalOpen] = useState(false);
   const [isOpenWeatherTestModalOpen, setIsOpenWeatherTestModalOpen] = useState(false);
   const [isOpenAITestModalOpen, setIsOpenAITestModalOpen] = useState(false);
+  const [isTestingLinear, setIsTestingLinear] = useState(false);
+
 
   // Stabilize the callback to prevent re-render loops
   const handleOpenAiSaveSuccess = useCallback((savedIsEnabled: boolean, savedConfigId?: string, savedApiKey?: string) => {
@@ -55,6 +64,37 @@ export function ServicesSettingsClientPageContent({
     document.title = 'Settings // Fusion';
   }, []);
 
+  // Handle Linear test
+  const handleTestLinear = async () => {
+    if (!initialLinearConfig?.apiKey) {
+      toast.error('Please enter an API key first');
+      return;
+    }
+    
+    setIsTestingLinear(true);
+
+    try {
+      const response = await fetch('/api/services/linear/teams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: initialLinearConfig.apiKey }),
+      });
+
+      const results = await response.json();
+      
+      if (results.success) {
+        toast.success(`Connected successfully as ${results.user?.displayName || results.user?.name}! Found ${results.teams?.length || 0} teams.`);
+      } else {
+        toast.error(`Connection failed: ${results.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error testing Linear connection:', error);
+      toast.error('Network error while testing connection');
+    } finally {
+      setIsTestingLinear(false);
+    }
+  };
+
   return (
     <div className="grid gap-6 mt-6"> {/* Added mt-6 for spacing from PageHeader in parent */}
       <Tabs defaultValue="pushover" className="space-y-4">
@@ -63,6 +103,7 @@ export function ServicesSettingsClientPageContent({
           <TabsTrigger value="pushcut">Pushcut</TabsTrigger>
           <TabsTrigger value="openweather">OpenWeather</TabsTrigger>
           <TabsTrigger value="openai">OpenAI</TabsTrigger>
+          <TabsTrigger value="linear">Linear</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pushover">
@@ -231,6 +272,40 @@ export function ServicesSettingsClientPageContent({
             onOpenChange={setIsOpenAITestModalOpen}
             openAIConfig={initialOpenAIConfig}
           />
+        </TabsContent>
+
+        <TabsContent value="linear">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                  <SiLinear className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+                </div>
+                <CardTitle>Linear Configuration</CardTitle>
+              </div>
+              <CardDescription>
+                Configure <a href="https://linear.app" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">Linear</a> to sync and manage project tasks.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* Test button and Linear form */}
+              <div className="flex items-center justify-end mb-6">
+                <Button 
+                  variant="outline" 
+                  onClick={handleTestLinear} 
+                  disabled={!initialLinearConfig || !initialLinearConfig.apiKey || isTestingLinear}>
+                  {isTestingLinear ? 'Testing...' : 'Test Linear API'}
+                </Button>
+              </div>
+              <LinearConfigForm
+                initialConfig={initialLinearConfig} 
+                isEnabled={initialLinearConfig?.isEnabled ?? false}
+                onSaveSuccess={(savedIsEnabled: boolean, savedConfigId?: string, savedApiKey?: string) => {
+                  // Handle success
+                }} 
+              />
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
