@@ -25,6 +25,7 @@ export default function RoadmapPage() {
   const [error, setError] = useState<string>('');
   const [selectedIssue, setSelectedIssue] = useState<LinearIssue | null>(null);
   const [enableGrouping, setEnableGrouping] = useState(false);
+  const [activeOnly, setActiveOnly] = useState(true);
 
   const fetchLinearData = useCallback(async () => {
     setIsLoading(true);
@@ -33,7 +34,7 @@ export default function RoadmapPage() {
     try {
       console.log('Fetching Linear data...');
       
-      const issuesResponse = await fetch('/api/services/linear/issues', {
+      const issuesResponse = await fetch(`/api/services/linear/issues?activeOnly=${activeOnly}`, {
         credentials: 'include'
       });
 
@@ -74,7 +75,7 @@ export default function RoadmapPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [activeOnly]);
 
   const handleRefresh = useCallback(async () => {
     await fetchLinearData();
@@ -105,6 +106,24 @@ export default function RoadmapPage() {
           />
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 border rounded-md p-1">
+            <Button
+              variant={activeOnly ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setActiveOnly(true)}
+              className="h-8"
+            >
+              Active
+            </Button>
+            <Button
+              variant={!activeOnly ? "secondary" : "ghost"}
+              size="sm" 
+              onClick={() => setActiveOnly(false)}
+              className="h-8"
+            >
+              All
+            </Button>
+          </div>
           <Button
             variant="outline"
             size="sm"

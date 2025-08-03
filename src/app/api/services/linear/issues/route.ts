@@ -7,9 +7,8 @@ import { getLinearIssues } from '@/services/drivers/linear';
 // Request query schema for Linear issues
 const LinearIssuesQuerySchema = z.object({
   teamId: z.string().optional(),
-  first: z.coerce.number().min(1).max(100).optional().default(50),
-  after: z.string().optional(),
   orderBy: z.enum(['updatedAt', 'createdAt']).optional().default('updatedAt'),
+  activeOnly: z.coerce.boolean().optional().default(true), // Default to showing active items only
   state: z.string().optional(),
   assignee: z.string().optional(),
   priority: z.coerce.number().min(0).max(4).optional(),
@@ -33,7 +32,7 @@ export const GET = withApiRouteAuth(async (req: NextRequest, authContext: ApiRou
       );
     }
 
-    const { teamId, first, after, orderBy, state, assignee, priority } = parseResult.data;
+    const { teamId, orderBy, activeOnly, state, assignee, priority } = parseResult.data;
 
     // Get Linear configuration
     const linearConfig = await getLinearConfiguration();
@@ -68,11 +67,10 @@ export const GET = withApiRouteAuth(async (req: NextRequest, authContext: ApiRou
     if (assignee) filter.assignee = assignee;
     if (priority !== undefined) filter.priority = priority;
 
-    // Fetch issues from Linear
+    // Fetch issues from Linear (auto-paginated)
     const issuesResponse = await getLinearIssues(linearConfig.apiKey, effectiveTeamId, {
-      first,
-      after,
       orderBy,
+      activeOnly,
       filter: Object.keys(filter).length > 0 ? filter : undefined,
     });
 
@@ -81,6 +79,7 @@ export const GET = withApiRouteAuth(async (req: NextRequest, authContext: ApiRou
       data: issuesResponse,
       meta: {
         teamId: effectiveTeamId,
+        activeOnly,
         filters: filter,
       }
     });

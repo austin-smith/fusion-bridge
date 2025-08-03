@@ -196,9 +196,8 @@ export async function getLinearIssues(
   apiKey: string,
   teamId?: string,
   options?: {
-    first?: number;
-    after?: string;
     orderBy?: 'updatedAt' | 'createdAt';
+    activeOnly?: boolean; // New: filter to active states only (excludes completed/canceled)
     filter?: {
       state?: string;
       assignee?: string;
@@ -356,7 +355,7 @@ export async function getLinearIssues(
     };
 
     // Transform to match our interface (same logic as real API)
-    const issues: LinearIssue[] = mockApiResponse.issues.nodes.map((issue: any) => ({
+    let issues: LinearIssue[] = mockApiResponse.issues.nodes.map((issue: any) => ({
       id: issue.id,
       identifier: issue.identifier,
       title: issue.title,
@@ -392,20 +391,24 @@ export async function getLinearIssues(
       estimate: undefined,
     }));
 
+    // Apply activeOnly filter if specified
+    if (options?.activeOnly) {
+      issues = issues.filter(issue => 
+        !['completed', 'canceled'].includes(issue.state.type)
+      );
+    }
+
     return {
       issues,
       pageInfo: {
-        hasNextPage: mockApiResponse.issues.pageInfo.hasNextPage,
-        endCursor: mockApiResponse.issues.pageInfo.endCursor || undefined,
+        hasNextPage: false, // Mock always returns all data
+        endCursor: undefined,
       },
-      totalCount: 49,
+      totalCount: issues.length,
     };
   }
 
   const client = createLinearClient(apiKey);
-  
-  const first = options?.first || 50;
-  const after = options?.after;
   
   try {
     // Build filter object
@@ -422,6 +425,12 @@ export async function getLinearIssues(
     if (options?.filter?.priority !== undefined) {
       filter.priority = { eq: options.filter.priority };
     }
+
+    // Auto-pagination: fetch all pages
+    const allIssues: any[] = [];
+    let hasNextPage = true;
+    let after: string | undefined = undefined;
+    const pageSize = 50; // Use Linear's default
 
     // Use optimized GraphQL query - only fetch fields we actually use
     const query = `
@@ -465,16 +474,33 @@ export async function getLinearIssues(
       }
     `;
 
-    const variables = {
-      first,
-      after,
-      filter: Object.keys(filter).length > 0 ? filter : undefined,
-    };
+    // Auto-pagination loop: fetch all pages
+    while (hasNextPage) {
+      const variables = {
+        first: pageSize,
+        after,
+        filter: Object.keys(filter).length > 0 ? filter : undefined,
+      };
 
-    const response = await client.client.rawRequest(query, variables);
-    const data = response.data as any;
+      const response = await client.client.rawRequest(query, variables);
+      const data = response.data as any;
 
-    const issues: LinearIssue[] = data.issues.nodes.map((issue: any) => ({
+      // Add issues from current page
+      allIssues.push(...data.issues.nodes);
+
+      // Update pagination state
+      hasNextPage = data.issues.pageInfo.hasNextPage;
+      after = data.issues.pageInfo.endCursor;
+
+      // Safety check to prevent infinite loops
+      if (allIssues.length > 10000) {
+        console.warn('[Linear Driver] Breaking auto-pagination at 10,000 issues for safety');
+        break;
+      }
+    }
+
+    // Transform all issues to match our interface
+    let issues: LinearIssue[] = allIssues.map((issue: any) => ({
       id: issue.id,
       identifier: issue.identifier,
       title: issue.title,
@@ -510,13 +536,20 @@ export async function getLinearIssues(
       estimate: undefined,
     }));
 
+    // Apply activeOnly filter if specified
+    if (options?.activeOnly) {
+      issues = issues.filter(issue => 
+        !['completed', 'canceled'].includes(issue.state.type)
+      );
+    }
+
     return {
       issues,
       pageInfo: {
-        hasNextPage: data.issues.pageInfo.hasNextPage,
-        endCursor: data.issues.pageInfo.endCursor || undefined,
+        hasNextPage: false, // We fetched all pages, so no more data
+        endCursor: undefined,
       },
-      totalCount: data.issues.nodes.length,
+      totalCount: issues.length,
     };
   } catch (error) {
     console.error('Error fetching Linear issues:', error);
