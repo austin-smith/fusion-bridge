@@ -23,7 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowUpDown, Circle, CircleDashed, CircleCheck, LoaderCircle, CircleX, AlertCircle, SignalHigh, SignalMedium, SignalLow, Ellipsis, User, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   Tooltip,
   TooltipContent,
@@ -242,7 +242,7 @@ const columns: ColumnDef<LinearIssue>[] = [
         );
       }
 
-      const name = assignee.displayName || assignee.name;
+                  const name = assignee.name;
       const fallback = name.charAt(0).toUpperCase();
       
       return (

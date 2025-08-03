@@ -1,21 +1,24 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   KanbanBoard,
   KanbanBoardColumn,
   KanbanBoardColumnHeader,
   KanbanBoardColumnTitle,
   KanbanBoardColumnList,
+  KanbanBoardColumnListItem,
   KanbanBoardColumnSkeleton,
   KanbanBoardExtraMargin,
   KanbanBoardProvider,
+  KanbanBoardCard,
 } from '@/components/kanban';
 import { Badge } from '@/components/ui/badge';
 import { Circle, CircleDashed, CircleCheck, LoaderCircle, CircleX } from 'lucide-react';
 import { useJsLoaded } from '@/hooks/use-js-loaded';
 import type { LinearIssue } from '@/services/drivers/linear';
 import { LinearKanbanCard } from './linear-kanban-card';
+import { toast } from 'sonner';
 
 interface LinearKanbanBoardProps {
   issues: LinearIssue[];
@@ -85,9 +88,74 @@ function getStateIcon(type: string) {
 
 export function LinearKanbanBoard({ issues, onCardClick }: LinearKanbanBoardProps) {
   const jsLoaded = useJsLoaded();
+  const [localIssues, setLocalIssues] = useState<LinearIssue[]>(issues);
+  
+  // Update local state when issues prop changes
+  React.useEffect(() => {
+    setLocalIssues(issues);
+  }, [issues]);
   
   // Transform issues into columns
-  const columns = useMemo(() => groupIssuesByState(issues), [issues]);
+  const columns = useMemo(() => groupIssuesByState(localIssues), [localIssues]);
+
+  // Handle drop on column
+  const handleDropOverColumn = useCallback((columnId: string) => {
+    return async (dataTransferData: string) => {
+      console.log('Drop triggered on column:', columnId, 'with data:', dataTransferData);
+      
+      const draggedCardData = JSON.parse(dataTransferData) as { id: string };
+      console.log('Parsed drag data:', draggedCardData);
+      
+      // Find the full issue from local state
+      const draggedIssue = localIssues.find(issue => issue.id === draggedCardData.id);
+      console.log('Found dragged issue:', draggedIssue);
+      if (!draggedIssue) return;
+      
+      // Find target column
+      const targetColumn = columns.find(col => col.id === columnId);
+      console.log('Target column:', targetColumn);
+      if (!targetColumn || targetColumn.id === draggedIssue.state.id) return;
+      
+      // Optimistic update
+      const originalIssues = [...localIssues];
+      const updatedIssues = localIssues.map(issue => 
+        issue.id === draggedIssue.id 
+          ? { ...issue, state: { ...issue.state, id: targetColumn.id, name: targetColumn.title, color: targetColumn.color, type: targetColumn.type } }
+          : issue
+      );
+      setLocalIssues(updatedIssues);
+      
+      try {
+        // Call API to update Linear
+        const response = await fetch(`/api/services/linear/issues/${draggedIssue.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stateId: targetColumn.id })
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to update issue');
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to update issue');
+        }
+        
+        // Update with actual response data
+        setLocalIssues(prev => prev.map(issue => 
+          issue.id === draggedIssue.id ? result.data : issue
+        ));
+        
+        toast.success(`Moved issue to ${targetColumn.title}`);
+      } catch (error) {
+        // Revert optimistic update
+        setLocalIssues(originalIssues);
+        toast.error(error instanceof Error ? error.message : 'Failed to update issue');
+        console.error('Error updating Linear issue:', error);
+      }
+    };
+  }, [localIssues, columns]);
 
   // Show skeleton while loading
   if (!jsLoaded) {
@@ -115,7 +183,11 @@ export function LinearKanbanBoard({ issues, onCardClick }: LinearKanbanBoardProp
           const StateIcon = getStateIcon(column.type);
           
           return (
-            <KanbanBoardColumn key={column.id} columnId={column.id}>
+            <KanbanBoardColumn 
+              key={column.id} 
+              columnId={column.id}
+              onDropOverColumn={handleDropOverColumn(column.id)}
+            >
               <KanbanBoardColumnHeader>
                 <KanbanBoardColumnTitle columnId={column.id}>
                   <div className="flex items-center gap-2">
@@ -133,12 +205,18 @@ export function LinearKanbanBoard({ issues, onCardClick }: LinearKanbanBoardProp
 
               <KanbanBoardColumnList>
                 {column.items.map((issue) => (
-                  <li key={issue.id} className="px-2 py-1">
-                    <LinearKanbanCard 
-                      issue={issue} 
-                      onClick={() => onCardClick(issue)}
-                    />
-                  </li>
+                  <KanbanBoardColumnListItem 
+                    key={issue.id} 
+                    cardId={issue.id}
+                    onDropOverListItem={(dataTransferData, dropDirection) => {
+                      console.log('Drop on list item:', issue.id, dataTransferData, dropDirection);
+                      return handleDropOverColumn(column.id)(dataTransferData);
+                    }}
+                  >
+                    <KanbanBoardCard data={{ id: issue.id }} onClick={() => onCardClick(issue)}>
+                      <LinearKanbanCard issue={issue} />
+                    </KanbanBoardCard>
+                  </KanbanBoardColumnListItem>
                 ))}
               </KanbanBoardColumnList>
             </KanbanBoardColumn>

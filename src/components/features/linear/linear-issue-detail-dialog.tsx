@@ -66,11 +66,11 @@ export function LinearIssueDetailDialog({ issue, isOpen, onClose }: LinearIssueD
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden p-0">
-        <div className="flex h-full">
+      <DialogContent className="max-w-6xl h-[90vh] overflow-hidden p-0">
+        <div className="flex h-full overflow-hidden">
           {/* Main Content Area */}
-          <div className="flex-1 overflow-y-auto">
-            <DialogHeader className="px-8 py-6 border-b bg-muted/20">
+          <div className="flex-1 flex flex-col min-w-0">
+            <DialogHeader className="px-8 py-6 border-b bg-muted/20 flex-shrink-0">
               <div className="flex items-center gap-3 mb-4">
                 <span className="font-mono text-sm text-muted-foreground">
                   {issue.team.name}
@@ -103,7 +103,7 @@ export function LinearIssueDetailDialog({ issue, isOpen, onClose }: LinearIssueD
               </DialogTitle>
             </DialogHeader>
 
-            <div className="px-8 py-6">
+            <div className="flex-1 overflow-auto px-8 py-6 min-h-0">
               {issue.description ? (
                 <div className="prose prose-lg max-w-none">
                   <MarkdownRenderer>{issue.description}</MarkdownRenderer>
@@ -117,7 +117,7 @@ export function LinearIssueDetailDialog({ issue, isOpen, onClose }: LinearIssueD
           </div>
 
           {/* Properties Sidebar */}
-          <div className="w-80 border-l bg-muted/10 overflow-y-auto">
+          <div className="w-80 flex-shrink-0 border-l bg-muted/10 overflow-y-auto">
             <div className="p-6 space-y-6">
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                 Properties
@@ -167,10 +167,10 @@ export function LinearIssueDetailDialog({ issue, isOpen, onClose }: LinearIssueD
                   <div className="flex items-center gap-3">
                     <Avatar className="h-8 w-8">
                       <AvatarFallback className="text-sm font-medium">
-                        {(issue.assignee.displayName || issue.assignee.name).charAt(0).toUpperCase()}
+                        {issue.assignee.name.charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="font-medium">{issue.assignee.displayName || issue.assignee.name}</span>
+                    <span className="font-medium">{issue.assignee.name}</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-3">
@@ -191,10 +191,10 @@ export function LinearIssueDetailDialog({ issue, isOpen, onClose }: LinearIssueD
                   <div className="flex items-center gap-3">
                     <Avatar className="h-8 w-8">
                       <AvatarFallback className="text-sm font-medium">
-                        {(issue.creator.displayName || issue.creator.name).charAt(0).toUpperCase()}
+                        {issue.creator.name.charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="font-medium">{issue.creator.displayName || issue.creator.name}</span>
+                    <span className="font-medium">{issue.creator.name}</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-3">
