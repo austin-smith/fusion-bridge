@@ -14,77 +14,20 @@ import {
   KanbanBoardCard,
 } from '@/components/kanban';
 import { Badge } from '@/components/ui/badge';
-import { Circle, CircleDashed, CircleCheck, LoaderCircle, CircleX } from 'lucide-react';
 import { useJsLoaded } from '@/hooks/use-js-loaded';
 import type { LinearIssue } from '@/services/drivers/linear';
 import { LinearKanbanCard } from './linear-kanban-card';
 import { toast } from 'sonner';
+import { groupIssuesByState, getStateIcon, type KanbanColumn } from '@/lib/linear-utils';
 
 interface LinearKanbanBoardProps {
   issues: LinearIssue[];
   onCardClick: (issue: LinearIssue) => void;
 }
 
-interface KanbanColumn {
-  id: string; // Linear state ID
-  title: string; // Linear state name
-  color: string; // Linear state color
-  type: string; // Linear state type
-  items: LinearIssue[];
-}
 
-/**
- * Transform Linear issues into Kanban columns grouped by state
- */
-function groupIssuesByState(issues: LinearIssue[]): KanbanColumn[] {
-  // Group issues by state name (more reliable than ID for mock data)
-  const stateGroups = issues.reduce((groups, issue) => {
-    const stateKey = issue.state.name;
-    if (!groups[stateKey]) {
-      groups[stateKey] = {
-        id: issue.state.id || issue.state.name, // Fallback to name if ID is empty
-        title: issue.state.name,
-        color: issue.state.color,
-        type: issue.state.type,
-        items: [],
-      };
-    }
-    groups[stateKey].items.push(issue);
-    return groups;
-  }, {} as Record<string, KanbanColumn>);
 
-  // Convert to array and sort by state type for logical order
-  const columns = Object.values(stateGroups);
-  
-  // Sort columns by state type priority (backlog -> unstarted -> started -> completed -> canceled)
-  const stateOrder = {
-    'backlog': 0,
-    'unstarted': 1,
-    'started': 2,
-    'completed': 3,
-    'canceled': 4,
-  };
-  
-  return columns.sort((a, b) => {
-    const orderA = stateOrder[a.type as keyof typeof stateOrder] ?? 999;
-    const orderB = stateOrder[b.type as keyof typeof stateOrder] ?? 999;
-    return orderA - orderB;
-  });
-}
 
-/**
- * Get the appropriate icon for a Linear state type
- */
-function getStateIcon(type: string) {
-  switch (type) {
-    case 'unstarted': return Circle; // Todo
-    case 'backlog': return CircleDashed;
-    case 'started': return LoaderCircle; // In Progress
-    case 'completed': return CircleCheck; // Done
-    case 'canceled': return CircleX;
-    default: return Circle;
-  }
-}
 
 export function LinearKanbanBoard({ issues, onCardClick }: LinearKanbanBoardProps) {
   const jsLoaded = useJsLoaded();

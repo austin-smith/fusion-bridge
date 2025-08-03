@@ -20,6 +20,7 @@ import { LinearIssueDetailDialog } from '@/components/features/linear/linear-iss
 import type { LinearIssue } from '@/services/drivers/linear';
 import { useFusionStore } from '@/stores/store';
 import { PageHeader } from '@/components/layout/page-header';
+import { extractStatesFromIssues } from '@/lib/linear-utils';
 
 interface LinearConfig {
   configured: boolean;
@@ -345,8 +346,19 @@ export default function RoadmapPage() {
       {selectedIssue && (
         <LinearIssueDetailDialog
           issue={selectedIssue}
+          availableStates={extractStatesFromIssues(issues)}
           isOpen={!!selectedIssue}
           onClose={() => setSelectedIssue(null)}
+          onIssueUpdate={(updatedIssue) => {
+            // Update the issue in the local state
+            setIssues(prevIssues => 
+              prevIssues.map(issue => 
+                issue.id === updatedIssue.id ? updatedIssue : issue
+              )
+            );
+            // Update the selected issue to reflect changes
+            setSelectedIssue(updatedIssue);
+          }}
         />
       )}
     </div>
