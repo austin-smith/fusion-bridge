@@ -2534,7 +2534,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   initializeRoadmapPreferences: () => {
     if (typeof window !== 'undefined') {
       // Load roadmap view type preference from localStorage
-      const storedViewType = localStorage.getItem('roadmapViewTypePreference') as 'kanban' | 'table-flat' | 'table-grouped' || 'table-flat';
+      const storedViewType = (localStorage.getItem('roadmapViewTypePreference') as 'kanban' | 'table-flat' | 'table-grouped') ?? 'table-flat';
       
       // Validate the stored value
       const validViewTypes: ('kanban' | 'table-flat' | 'table-grouped')[] = ['kanban', 'table-flat', 'table-grouped'];
