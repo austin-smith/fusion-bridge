@@ -3,7 +3,7 @@
 import React from 'react';
 
 interface PageHeaderProps {
-  title: string;
+  title: string | React.ReactNode;
   description?: string;
   icon?: React.ReactNode; // Accept an optional icon component
   actions?: React.ReactNode; // Accept optional action elements (buttons, filters, etc.)

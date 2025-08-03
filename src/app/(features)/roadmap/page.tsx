@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
   TooltipContent,
@@ -107,7 +108,19 @@ export default function RoadmapPage() {
   return (
     <div className="flex flex-col h-full p-4 md:p-6">
       <PageHeader 
-        title="Roadmap" 
+        title={
+          <div className="flex items-center gap-2">
+            Roadmap
+            {!isLoading && config?.configured && !error && (
+              <Badge 
+                variant="secondary"
+                className="rounded-full"
+              >
+                {issues.length}
+              </Badge>
+            )}
+          </div>
+        }
         icon={<Map className="h-6 w-6" />}
       />
 
