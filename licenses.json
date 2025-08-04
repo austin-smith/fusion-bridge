@@ -482,6 +482,13 @@
     "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-dom",
     "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-dom/LICENSE"
   },
+  "react-emoji-render@2.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/tommoor/react-emoji-render",
+    "publisher": "Tom Moor",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-emoji-render",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-emoji-render/LICENSE.md"
+  },
   "react-grid-layout@1.5.1": {
     "licenses": "MIT",
     "repository": "https://github.com/STRML/react-grid-layout",

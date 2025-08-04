@@ -90,6 +90,7 @@
     "pluralize": "^8.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-emoji-render": "^2.0.1",
     "react-grid-layout": "^1.5.1",
     "react-hook-form": "^7.55.0",
     "react-hot-toast": "^2.5.2",

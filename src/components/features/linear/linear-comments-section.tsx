@@ -14,6 +14,7 @@ import { formatDistanceToNow } from 'date-fns';
 
 interface LinearCommentsSectionProps {
   comments: LinearComment[];
+  isLoading?: boolean;
 }
 
 interface CommentWithReplies {
@@ -21,14 +22,46 @@ interface CommentWithReplies {
   replies: LinearComment[];
 }
 
-export function LinearCommentsSection({ comments }: LinearCommentsSectionProps) {
-  if (comments.length === 0) {
+export function LinearCommentsSection({ comments, isLoading = false }: LinearCommentsSectionProps) {
+  if (comments.length === 0 && !isLoading) {
     return (
       <div className="mt-8 pt-6 border-t">
         <div className="text-center py-8">
           <div className="text-muted-foreground text-sm">
             No comments yet
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="mt-8 pt-6 border-t">
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            Comments
+          </h3>
+        </div>
+        <div className="space-y-6">
+          {/* Loading skeleton */}
+          {[1, 2].map((i) => (
+            <div key={i} className="p-4 border border-border rounded-lg bg-card/50">
+              <div className="flex gap-3">
+                <div className="h-8 w-8 bg-muted rounded-full animate-pulse" />
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-24 bg-muted rounded animate-pulse" />
+                    <div className="h-3 w-16 bg-muted rounded animate-pulse" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="h-4 w-full bg-muted rounded animate-pulse" />
+                    <div className="h-4 w-3/4 bg-muted rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );

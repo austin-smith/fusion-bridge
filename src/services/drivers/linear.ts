@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { LinearClient } from '@linear/sdk';
 import { Flag } from 'lucide-react';
+import { toArray } from 'react-emoji-render';
+import { MOCK_LINEAR_ISSUES_RESPONSE } from './linear-mock-data';
 
 // Shared Linear Priority Configuration
 export const LINEAR_PRIORITY_CONFIG = {
@@ -33,6 +35,27 @@ export interface LinearConfig {
 }
 
 export type LinearStoredConfig = z.infer<typeof LinearConfigSchema>;
+
+/**
+ * Convert emoji shortcode to unicode emoji character
+ */
+function convertShortcodeToEmoji(shortcode: string): string {
+  const emojisArray = toArray(`:${shortcode}:`);
+  
+  // toArray outputs React elements for emojis and strings for other content
+  const result = emojisArray.reduce<string>((previous, current) => {
+    if (typeof current === "string") {
+      return previous + current;
+    }
+    // Handle React element case
+    if (current && typeof current === 'object' && 'props' in current && current.props) {
+      return previous + (current.props.children || '');
+    }
+    return previous;
+  }, "");
+  
+  return result;
+}
 
 // Linear API Response Types
 export interface LinearTeam {
@@ -67,7 +90,7 @@ export interface LinearLabel {
 
 export interface LinearReaction {
   id: string;
-  emoji: string;    // emoji unicode (👍, ❤️, 🎉, etc.)
+  emoji: string;    // actual emoji character (👍, ❤️, 🎉, etc.) converted from shortcode
   user: LinearUser;
   createdAt: Date;
 }
@@ -288,10 +311,22 @@ export async function getLinearIssues(
       ? MOCK_LINEAR_ISSUES_RESPONSE.issues.filter(issue => !['completed', 'canceled'].includes(issue.state.type))
       : MOCK_LINEAR_ISSUES_RESPONSE.issues;
 
+    // Convert emoji shortcodes in mock data reactions
+    const processedIssues = filteredIssues.map(issue => ({
+      ...issue,
+      comments: issue.comments.map(comment => ({
+        ...comment,
+        reactions: comment.reactions.map(reaction => ({
+          ...reaction,
+          emoji: convertShortcodeToEmoji(reaction.emoji)
+        }))
+      }))
+    }));
+
     return {
       ...MOCK_LINEAR_ISSUES_RESPONSE,
-      issues: filteredIssues,
-      totalCount: filteredIssues.length,
+      issues: processedIssues,
+      totalCount: processedIssues.length,
     };
   }
 
@@ -380,9 +415,11 @@ export async function getLinearIssues(
               const reactions: LinearReaction[] = commentReactions ? await Promise.all(
                 commentReactions.map(async (reaction: any) => {
                   const reactionUser = await reaction.user;
+                  // Convert shortcode to actual emoji character
+                  const emojiChar = convertShortcodeToEmoji(reaction.emoji);
                   return {
                     id: reaction.id,
-                    emoji: reaction.emoji,
+                    emoji: emojiChar,
                     createdAt: reaction.createdAt,
                     user: {
                       id: reactionUser?.id || '',
@@ -441,6 +478,29 @@ export async function getLinearIssues(
  * Get a single issue from Linear by ID
  */
 export async function getLinearIssue(apiKey: string, issueId: string): Promise<LinearIssue> {
+  // Return mock data if environment variable is set
+  if (process.env.LINEAR_USE_MOCK_DATA === 'true') {
+    console.log('[Linear Driver] Using mock data for issue:', issueId);
+    const mockIssue = MOCK_LINEAR_ISSUES_RESPONSE.issues.find((issue: LinearIssue) => issue.id === issueId);
+    if (!mockIssue) {
+      throw new Error('Issue not found in mock data');
+    }
+    
+    // Convert emoji shortcodes in mock data reactions
+    const processedIssue = {
+      ...mockIssue,
+      comments: mockIssue.comments.map(comment => ({
+        ...comment,
+        reactions: comment.reactions.map(reaction => ({
+          ...reaction,
+          emoji: convertShortcodeToEmoji(reaction.emoji)
+        }))
+      }))
+    };
+    
+    return processedIssue;
+  }
+
   const client = createLinearClient(apiKey);
   
   try {
@@ -510,9 +570,11 @@ export async function getLinearIssue(apiKey: string, issueId: string): Promise<L
           const reactions: LinearReaction[] = commentReactions ? await Promise.all(
             commentReactions.map(async (reaction: any) => {
               const reactionUser = await reaction.user;
+              // Convert shortcode to actual emoji character
+              const emojiChar = convertShortcodeToEmoji(reaction.emoji);
               return {
                 id: reaction.id,
-                emoji: reaction.emoji,
+                emoji: emojiChar,
                 createdAt: reaction.createdAt,
                 user: {
                   id: reactionUser?.id || '',

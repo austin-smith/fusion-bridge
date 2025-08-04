@@ -58,7 +58,7 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
           reactions: [
             {
               id: "reaction-1-1",
-              emoji: "👍",
+              emoji: "+1",
               createdAt: new Date("2025-07-16T08:35:00.000Z"),
               user: {
                 id: "user-2",
@@ -70,7 +70,7 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
             },
             {
               id: "reaction-1-2", 
-              emoji: "🎯",
+              emoji: "dart",
               createdAt: new Date("2025-07-16T09:20:00.000Z"),
               user: {
                 id: "c75d00ca-6866-408f-bc08-dc10ac8fe9ea",
@@ -116,7 +116,7 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
           reactions: [
             {
               id: "reaction-2-1",
-              emoji: "💯",
+              emoji: "100",
               createdAt: new Date("2025-07-16T15:00:00.000Z"),
               user: {
                 id: "6748788c-721d-4d50-bb21-a570dbf5931c",
@@ -128,7 +128,7 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
             },
             {
               id: "reaction-2-2",
-              emoji: "🚀",
+              emoji: "rocket",
               createdAt: new Date("2025-07-16T16:30:00.000Z"),
               user: {
                 id: "4a1594cb-defd-44e1-b47d-f64e86e3d298",

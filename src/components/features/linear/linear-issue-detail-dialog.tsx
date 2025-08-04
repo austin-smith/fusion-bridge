@@ -55,10 +55,43 @@ export function LinearIssueDetailDialog({
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
   const [isUpdatingAssignee, setIsUpdatingAssignee] = useState(false);
+  const [isLoadingComments, setIsLoadingComments] = useState(false);
 
-  // Update local state when issue prop changes
+  // Fetch full issue details with comments when issue changes
   useEffect(() => {
+    if (!issue) {
+      setLocalIssue(null);
+      return;
+    }
+
+    // Set initial data from grid
     setLocalIssue(issue);
+
+    // Fetch full issue details with comments
+    const fetchIssueWithComments = async () => {
+      setIsLoadingComments(true);
+      try {
+        const response = await fetch(`/api/services/linear/issues/${issue.id}`, {
+          credentials: 'include'
+        });
+
+        if (!response.ok) {
+          console.error('Failed to fetch issue details:', response.statusText);
+          return;
+        }
+
+        const result = await response.json();
+        if (result.success && result.data) {
+          setLocalIssue(result.data);
+        }
+      } catch (error) {
+        console.error('Error fetching issue details:', error);
+      } finally {
+        setIsLoadingComments(false);
+      }
+    };
+
+    fetchIssueWithComments();
   }, [issue]);
 
   if (!localIssue) {
@@ -272,7 +305,7 @@ export function LinearIssueDetailDialog({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <DialogTitle className="text-3xl font-bold leading-tight text-left pr-8">
+              <DialogTitle className="text-2xl font-bold leading-tight text-left pr-8">
                 {localIssue.title}
               </DialogTitle>
             </DialogHeader>
@@ -288,7 +321,10 @@ export function LinearIssueDetailDialog({
                 </div>
               )}
               
-              <LinearCommentsSection comments={localIssue.comments} />
+              <LinearCommentsSection 
+                comments={localIssue.comments} 
+                isLoading={isLoadingComments}
+              />
             </div>
           </div>
 
@@ -303,7 +339,7 @@ export function LinearIssueDetailDialog({
               <div className="space-y-2">
                 <div className="text-sm font-medium text-muted-foreground">Status</div>
                 <Select 
-                  value={localIssue.state.id} 
+                  value={localIssue.state.id || localIssue.state.name} 
                   onValueChange={handleStatusChange}
                   disabled={isUpdatingStatus}
                 >
