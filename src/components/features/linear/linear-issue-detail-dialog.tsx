@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Select,
   SelectContent,
@@ -28,7 +28,7 @@ import {
   User, 
   Loader2
 } from 'lucide-react';
-import type { LinearIssue } from '@/services/drivers/linear';
+import type { LinearIssue, LinearUser } from '@/services/drivers/linear';
 import { MarkdownRenderer } from '@/components/ui/chat/markdown-renderer';
 import { toast } from 'sonner';
 import { getStateIcon, getLinearPriorityOptions } from '@/lib/linear-utils';
@@ -36,6 +36,7 @@ import { getStateIcon, getLinearPriorityOptions } from '@/lib/linear-utils';
 interface LinearIssueDetailDialogProps {
   issue: LinearIssue | null;
   availableStates: Array<{ id: string; name: string; color: string; type: string }>;
+  teamMembers: LinearUser[];
   isOpen: boolean;
   onClose: () => void;
   onIssueUpdate?: (updatedIssue: LinearIssue) => void;
@@ -44,6 +45,7 @@ interface LinearIssueDetailDialogProps {
 export function LinearIssueDetailDialog({ 
   issue, 
   availableStates, 
+  teamMembers,
   isOpen, 
   onClose, 
   onIssueUpdate 
@@ -51,6 +53,7 @@ export function LinearIssueDetailDialog({
   const [localIssue, setLocalIssue] = useState<LinearIssue | null>(issue);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
+  const [isUpdatingAssignee, setIsUpdatingAssignee] = useState(false);
 
   // Update local state when issue prop changes
   useEffect(() => {
@@ -172,6 +175,65 @@ export function LinearIssueDetailDialog({
       console.error('Error updating Linear issue priority:', error);
     } finally {
       setIsUpdatingPriority(false);
+    }
+  };
+
+  const handleAssigneeChange = async (newAssigneeId: string) => {
+    if (!localIssue) return;
+    
+    // Handle "unassigned" case
+    const assigneeId = newAssigneeId === 'unassigned' ? null : newAssigneeId;
+    
+    // Check if there's actually a change
+    if (assigneeId === localIssue.assignee?.id) return;
+
+    setIsUpdatingAssignee(true);
+
+    // Find the new assignee details for optimistic update
+    const newAssignee = assigneeId ? teamMembers.find(member => member.id === assigneeId) : null;
+
+    // Optimistic update
+    const originalIssue = { ...localIssue };
+    const updatedIssue = {
+      ...localIssue,
+      assignee: newAssignee || undefined,
+    };
+    setLocalIssue(updatedIssue);
+
+    try {
+      // Call API to update Linear
+      const response = await fetch(`/api/services/linear/issues/${localIssue.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assigneeId })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update issue');
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update issue');
+      }
+
+      // Update with actual response data
+      setLocalIssue(result.data);
+      
+      // Notify parent component
+      if (onIssueUpdate) {
+        onIssueUpdate(result.data);
+      }
+
+      const assigneeName = newAssignee?.name || 'Unassigned';
+      toast.success(`Assigned issue to ${assigneeName}`);
+    } catch (error) {
+      // Revert optimistic update
+      setLocalIssue(originalIssue);
+      toast.error(error instanceof Error ? error.message : 'Failed to update assignee');
+      console.error('Error updating Linear issue assignee:', error);
+    } finally {
+      setIsUpdatingAssignee(false);
     }
   };
 
@@ -315,47 +377,76 @@ export function LinearIssueDetailDialog({
               {/* Assignee */}
               <div className="space-y-2">
                 <div className="text-sm font-medium text-muted-foreground">Assignee</div>
-                {localIssue.assignee ? (
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="text-sm font-medium">
-                        {localIssue.assignee.name.charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="font-medium">{localIssue.assignee.name}</span>
+                <Select 
+                  value={localIssue.assignee?.id || 'unassigned'} 
+                  onValueChange={handleAssigneeChange}
+                  disabled={isUpdatingAssignee}
+                >
+                  <SelectTrigger className="w-fit min-w-40">
+                    {isUpdatingAssignee ? (
+                      <div className="flex items-center gap-2 mr-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Updating...</span>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
+                      <div className="mr-2">
+                        <SelectValue />
+                      </div>
+                    )}
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-6 w-6">
                       <AvatarFallback className="bg-muted">
-                        <User className="h-4 w-4" />
+                            <User className="h-3 w-3" />
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-muted-foreground">Unassigned</span>
+                        <span>Unassigned</span>
                   </div>
-                )}
+                    </SelectItem>
+                    {teamMembers.map(member => (
+                      <SelectItem key={member.id} value={member.id}>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-6 w-6">
+                            {member.avatarUrl && (
+                              <AvatarImage src={member.avatarUrl} alt={member.name} />
+                            )}
+                            <AvatarFallback className="text-xs font-medium">
+                              {member.name.charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span>{member.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Creator */}
               <div className="space-y-2">
                 <div className="text-sm font-medium text-muted-foreground">Created by</div>
                 {localIssue.creator ? (
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="text-sm font-medium">
+                  <div className="flex items-center gap-2 h-10 px-3 py-2">
+                    <Avatar className="h-6 w-6">
+                      {localIssue.creator.avatarUrl && (
+                        <AvatarImage src={localIssue.creator.avatarUrl} alt={localIssue.creator.name} />
+                      )}
+                      <AvatarFallback className="text-xs font-medium">
                         {localIssue.creator.name.charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="font-medium">{localIssue.creator.name}</span>
+                    <span className="text-sm">{localIssue.creator.name}</span>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="text-sm font-medium">
+                  <div className="flex items-center gap-2 h-10 px-3 py-2">
+                    <Avatar className="h-6 w-6">
+                      <AvatarFallback className="text-xs font-medium">
                         ?
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-muted-foreground">Unknown</span>
+                    <span className="text-sm text-muted-foreground">Unknown</span>
                   </div>
                 )}
               </div>

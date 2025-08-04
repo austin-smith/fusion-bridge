@@ -48,6 +48,7 @@ export interface LinearUser {
   name: string;
   email: string;
   displayName: string;
+  avatarUrl?: string;
 }
 
 export interface LinearTestResult {
@@ -134,6 +135,7 @@ export async function testLinearConnection(config: unknown): Promise<LinearTestR
         name: viewer.name,
         email: viewer.email,
         displayName: viewer.displayName,
+        avatarUrl: viewer.avatarUrl || undefined,
       },
       teams: teams.nodes.map(team => ({
         id: team.id,
@@ -182,6 +184,7 @@ export async function getLinearViewer(apiKey: string): Promise<LinearUser> {
     name: viewer.name,
     email: viewer.email,
     displayName: viewer.displayName,
+    avatarUrl: viewer.avatarUrl || undefined,
   };
 }
 
@@ -200,6 +203,43 @@ export async function getLinearTeams(apiKey: string): Promise<LinearTeam[]> {
   }));
 }
 
+/**
+ * Get active team members from Linear with minimal field selection
+ * Optimized for rate limiting - only fetches essential fields
+ */
+export async function getLinearTeamMembers(
+  apiKey: string, 
+  teamId: string,
+  options?: {
+    limit?: number;  // Default 50, can be reduced for large teams
+    activeOnly?: boolean; // Default true
+  }
+): Promise<LinearUser[]> {
+  const client = createLinearClient(apiKey);
+  
+  try {
+    // Use Linear SDK with minimal field selection
+    const team = await client.team(teamId);
+    const members = await team.members({
+      first: options?.limit || 50, // Respect pagination
+      filter: options?.activeOnly !== false ? { active: { eq: true } } : undefined
+    });
+    
+    // Transform with only essential fields
+    return members.nodes
+      .filter(member => member.active) // Double-check active status
+      .map(member => ({
+        id: member.id,
+        name: member.name,
+        email: member.email,
+        displayName: member.displayName || member.name, // Fallback
+        avatarUrl: member.avatarUrl || undefined, // Optional avatar
+      }));
+  } catch (error) {
+    console.error('Error fetching Linear team members:', error);
+    throw new Error('Failed to fetch team members');
+  }
+}
 
 /**
  * Get issues from Linear for a specific team
@@ -278,12 +318,14 @@ export async function getLinearIssues(
             name: assignee.name,
             email: assignee.email,
             displayName: assignee.displayName || assignee.name,
+            avatarUrl: assignee.avatarUrl || undefined,
           } : undefined,
           creator: creator ? {
             id: creator.id,
             name: creator.name,
             email: creator.email,
             displayName: creator.displayName || creator.name,
+            avatarUrl: creator.avatarUrl || undefined,
           } : undefined,
           team: {
             id: team?.id || '',
@@ -358,12 +400,14 @@ export async function getLinearIssue(apiKey: string, issueId: string): Promise<L
         name: assignee.name,
         email: assignee.email,
         displayName: assignee.displayName || assignee.name,
+        avatarUrl: assignee.avatarUrl || undefined,
       } : undefined,
       creator: creator ? {
         id: creator.id,
         name: creator.name,
         email: creator.email,
         displayName: creator.displayName || creator.name,
+        avatarUrl: creator.avatarUrl || undefined,
       } : undefined,
       team: {
         id: team?.id || '',

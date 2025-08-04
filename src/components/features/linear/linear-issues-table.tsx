@@ -23,7 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowUpDown, AlertCircle, SignalHigh, SignalMedium, SignalLow, Ellipsis, User, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Tooltip,
   TooltipContent,
@@ -214,7 +214,7 @@ const columns: ColumnDef<LinearIssue>[] = [
   {
     id: "assignee",
     header: ({ column }) => <SortableHeader column={column}>Assignee</SortableHeader>,
-    accessorFn: (row) => row.assignee?.displayName || row.assignee?.name || 'Unassigned',
+    accessorFn: (row) => row.assignee?.name || 'Unassigned',
     cell: ({ row }) => {
       const assignee = row.original.assignee;
       
@@ -237,6 +237,9 @@ const columns: ColumnDef<LinearIssue>[] = [
       return (
         <div className="flex items-center gap-2">
           <Avatar className="h-6 w-6">
+            {assignee.avatarUrl && (
+              <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
+            )}
             <AvatarFallback className="text-xs">{fallback}</AvatarFallback>
           </Avatar>
           <span className="text-sm truncate">{name}</span>

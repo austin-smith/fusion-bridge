@@ -1,4 +1,4 @@
-import type { LinearIssuesResponse } from './linear';
+import type { LinearIssuesResponse, LinearUser } from './linear';
 
 export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
   issues: [
@@ -18,16 +18,18 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
         type: "unstarted"
       },
       assignee: {
-        id: "user-austin",
+        id: "6748788c-721d-4d50-bb21-a570dbf5931c",
         name: "Austin Smith",
         email: "austinsmith23@gmail.com",
-        displayName: "Austin Smith"
+        displayName: "austinsmith23",
+        avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
       },
       creator: {
-        id: "user-austin",
+        id: "6748788c-721d-4d50-bb21-a570dbf5931c",
         name: "Austin Smith",
         email: "austinsmith23@gmail.com",
-        displayName: "Austin Smith"
+        displayName: "austinsmith23h",
+        avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
       },
       team: {
         id: "team-fusion",
@@ -53,16 +55,18 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
         type: "backlog"
       },
       assignee: {
-        id: "user-austin",
+        id: "6748788c-721d-4d50-bb21-a570dbf5931c",
         name: "Austin Smith",
         email: "austinsmith23@gmail.com",
-        displayName: "Austin Smith"
+        displayName: "austinsmith23",
+        avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
       },
       creator: {
-        id: "user-austin",
+        id: "6748788c-721d-4d50-bb21-a570dbf5931c",
         name: "Austin Smith",
         email: "austinsmith23@gmail.com",
-        displayName: "Austin Smith"
+        displayName: "austinsmith23",
+        avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
       },
       team: {
         id: "team-fusion",
@@ -89,16 +93,18 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
         type: "started"
       },
       assignee: {
-        id: "user-levi",
+        id: "4a1594cb-defd-44e1-b47d-f64e86e3d298",
         name: "Levi Daily",
         email: "leviwaynedaily@gmail.com",
-        displayName: "Levi Daily"
+        displayName: "leviwaynedaily",
+        avatarUrl: "https://public.linear.app/4a1594cb-defd-44e1-b47d-f64e86e3d298/1fd3ceb0-4d7a-4dd8-936b-a1bc7832e9ab"
       },
       creator: {
-        id: "user-austin",
+        id: "6748788c-721d-4d50-bb21-a570dbf5931c",
         name: "Austin Smith",
         email: "austinsmith23@gmail.com",
-        displayName: "Austin Smith"
+        displayName: "Austin Smith",
+        avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
       },
       team: {
         id: "team-fusion",
@@ -126,16 +132,18 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
         type: "completed"
       },
       assignee: {
-        id: "user-austin",
+        id: "6748788c-721d-4d50-bb21-a570dbf5931c",
         name: "Austin Smith",
         email: "austinsmith23@gmail.com",
-        displayName: "Austin Smith"
+        displayName: "austinsmith23",
+        avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
       },
       creator: {
-        id: "user-austin",
+        id: "6748788c-721d-4d50-bb21-a570dbf5931c",
         name: "Austin Smith",
         email: "austinsmith23@gmail.com",
-        displayName: "Austin Smith"
+        displayName: "austinsmith23",
+        avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
       },
       team: {
         id: "team-fusion",
@@ -163,10 +171,11 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
       },
       assignee: undefined,
       creator: {
-        id: "user-austin",
+        id: "6748788c-721d-4d50-bb21-a570dbf5931c",
         name: "Austin Smith",
         email: "austinsmith23@gmail.com",
-        displayName: "Austin Smith"
+        displayName: "austinsmith23",
+        avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
       },
       team: {
         id: "team-fusion",
@@ -191,16 +200,18 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
         type: "started"
       },
       assignee: {
-        id: "user-austin",
+        id: "6748788c-721d-4d50-bb21-a570dbf5931c",
         name: "Austin Smith",
         email: "austinsmith23@gmail.com",
-        displayName: "Austin Smith"
+        displayName: "Austin Smith",
+        avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
       },
       creator: {
-        id: "user-austin",
+        id: "6748788c-721d-4d50-bb21-a570dbf5931c",
         name: "Austin Smith",
         email: "austinsmith23@gmail.com",
-        displayName: "Austin Smith"
+        displayName: "austinsmith23",
+        avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
       },
       team: {
         id: "team-fusion",
@@ -215,4 +226,36 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
     endCursor: "21d08300-be22-454d-9f17-2cd4dae69568"
   },
   totalCount: 6
+};
+
+export const MOCK_LINEAR_TEAM_MEMBERS_RESPONSE = {
+  success: true,
+  data: [
+    {
+      id: "c75d00ca-6866-408f-bc08-dc10ac8fe9ea",
+      name: "lukas.hart@cooksolutionsgroup.com", 
+      email: "lukas.hart@cooksolutionsgroup.com",
+      displayName: "lukas.hart",
+      avatarUrl: undefined
+    },
+    {
+      id: "6748788c-721d-4d50-bb21-a570dbf5931c",
+      name: "Austin Smith",
+      email: "austinsmith23@gmail.com", 
+      displayName: "austinsmith23",
+      avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
+    },
+    {
+      id: "4a1594cb-defd-44e1-b47d-f64e86e3d298",
+      name: "Levi Daily",
+      email: "leviwaynedaily@gmail.com",
+      displayName: "leviwaynedaily", 
+      avatarUrl: "https://public.linear.app/4a1594cb-defd-44e1-b47d-f64e86e3d298/1fd3ceb0-4d7a-4dd8-936b-a1bc7832e9ab"
+    }
+  ] as LinearUser[],
+  meta: {
+    count: 3,
+    hasMore: false,
+    filters: { limit: 50, activeOnly: true }
+  }
 };

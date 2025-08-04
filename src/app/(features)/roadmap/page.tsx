@@ -11,13 +11,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Search, Loader2, AlertCircle, Settings, Kanban, Table, Table2, Map } from 'lucide-react';
+import { Search, Loader2, AlertCircle, Settings, SquareKanban, Table, Table2, Map } from 'lucide-react';
 
 import { LinearIssuesTable } from '@/components/features/linear/linear-issues-table';
 import { LinearIssuesTableSkeleton } from '@/components/features/linear/linear-issues-table';
 import { LinearKanbanBoard, LinearKanbanBoardSkeleton } from '@/components/features/linear/linear-kanban-board';
 import { LinearIssueDetailDialog } from '@/components/features/linear/linear-issue-detail-dialog';
-import type { LinearIssue } from '@/services/drivers/linear';
+import type { LinearIssue, LinearUser } from '@/services/drivers/linear';
 import { useFusionStore } from '@/stores/store';
 import { PageHeader } from '@/components/layout/page-header';
 import { extractStatesFromIssues } from '@/lib/linear-utils';
@@ -32,6 +32,7 @@ interface LinearConfig {
 export default function RoadmapPage() {
   const [config, setConfig] = useState<LinearConfig | null>(null);
   const [issues, setIssues] = useState<LinearIssue[]>([]);
+  const [teamMembers, setTeamMembers] = useState<LinearUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [selectedIssue, setSelectedIssue] = useState<LinearIssue | null>(null);
@@ -46,8 +47,6 @@ export default function RoadmapPage() {
     setError('');
     
     try {
-      console.log('Fetching Linear data...');
-      
       const issuesResponse = await fetch(`/api/services/linear/issues?activeOnly=${activeOnly}`, {
         credentials: 'include'
       });
@@ -73,19 +72,39 @@ export default function RoadmapPage() {
       }
 
       const issuesData = await issuesResponse.json();
+      const teamId = issuesData.meta?.teamId;
 
-      console.log('Linear data fetched successfully:', {
-        issuesCount: issuesData.data?.issues?.length || 0
-      });
+      // Fetch team members if we have a team ID
+      let teamMembersData: LinearUser[] = [];
+      if (teamId) {
+        try {
+          const membersResponse = await fetch(
+            `/api/services/linear/teams/${teamId}/members?limit=50&activeOnly=true`,
+            { credentials: 'include' }
+          );
+          
+          if (membersResponse.ok) {
+            const membersJson = await membersResponse.json();
+            teamMembersData = membersJson.success ? membersJson.data : [];
+          } else {
+            console.warn('Failed to fetch team members, continuing without assignee functionality');
+          }
+        } catch (membersError) {
+          console.warn('Error fetching team members:', membersError);
+          // Continue without team members - graceful degradation
+        }
+      }
 
-      setConfig({ configured: true });
+      setConfig({ configured: true, teamId });
       setIssues(issuesData.data?.issues || []);
+      setTeamMembers(teamMembersData);
       setError('');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       console.error('Error fetching Linear data:', error);
       setError(errorMessage);
       setIssues([]);
+      setTeamMembers([]);
     } finally {
       setIsLoading(false);
     }
@@ -185,7 +204,7 @@ export default function RoadmapPage() {
                       onClick={() => setRoadmapViewType('kanban')}
                       className="h-8"
                     >
-                      <Kanban className="h-4 w-4" />
+                      <SquareKanban className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -347,6 +366,7 @@ export default function RoadmapPage() {
         <LinearIssueDetailDialog
           issue={selectedIssue}
           availableStates={extractStatesFromIssues(issues)}
+          teamMembers={teamMembers}
           isOpen={!!selectedIssue}
           onClose={() => setSelectedIssue(null)}
           onIssueUpdate={(updatedIssue) => {

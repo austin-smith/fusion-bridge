@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Tooltip,
   TooltipContent,
@@ -122,6 +122,9 @@ export function LinearKanbanCard({ issue }: LinearKanbanCardProps) {
               <TooltipTrigger asChild>
                 <div className="flex items-center gap-2">
                   <Avatar className="h-5 w-5">
+                    {issue.assignee.avatarUrl && (
+                      <AvatarImage src={issue.assignee.avatarUrl} alt={issue.assignee.name} />
+                    )}
                     <AvatarFallback className="text-xs font-medium">
                       {issue.assignee.name.charAt(0).toUpperCase()}
                     </AvatarFallback>
