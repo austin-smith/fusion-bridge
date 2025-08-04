@@ -82,7 +82,7 @@ export async function parsePikoEvent(
     }
 
     // Centralized event classification
-    const eventClassification = classifyPikoEvent(inputPortId, pikoEventType);
+    const eventClassification = classifyPikoEvent(inputPortId, pikoEventType, rawEventParams.caption);
 
     const standardizedEvent: StandardizedEvent = {
         eventId: crypto.randomUUID(),

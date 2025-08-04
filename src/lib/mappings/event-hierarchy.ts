@@ -67,7 +67,10 @@ export const EVENT_HIERARCHY = {
     [EventType.LINE_CROSSING]: [],
     [EventType.ARMED_PERSON]: [],
     [EventType.TAILGATING]: [],
-    [EventType.INTRUSION]: [],
+    [EventType.INTRUSION]: [
+      EventSubtype.PERSON,
+      EventSubtype.VEHICLE,
+    ],
   },
 
   [EventCategory.DIAGNOSTICS]: {

@@ -4,28 +4,32 @@ import { createEventClassification, EventClassification } from '../event-hierarc
 /**
  * Piko inputPortId to standardized event classification mapping
  * First stage mapping - specific input port patterns
+ * Each entry is a function that determines classification based on event data
  */
 export const PIKO_INPUT_PORT_MAP = {
-  'cvedia.rt.loitering': createEventClassification(EventType.LOITERING),
-  'cvedia.rt.armed_person': createEventClassification(EventType.ARMED_PERSON),
-  'cvedia.rt.tailgating': createEventClassification(EventType.TAILGATING),
-  'cvedia.rt.intrusion': createEventClassification(EventType.INTRUSION),
-  'cvedia.rt.crossing': createEventClassification(EventType.LINE_CROSSING),
-  'objectremovedetector': createEventClassification(EventType.OBJECT_REMOVED),
-  'cvedia.rt.object_removed': createEventClassification(EventType.OBJECT_REMOVED),
+  'cvedia.rt.loitering': () => createEventClassification(EventType.LOITERING),
+  'cvedia.rt.armed_person': () => createEventClassification(EventType.ARMED_PERSON),
+  'cvedia.rt.tailgating': () => createEventClassification(EventType.TAILGATING),
+  'cvedia.rt.intrusion': (inputPortId?: string, caption?: string) => {
+    const intrusionSubtype = getObjectSubtypeFromText(caption);
+    return intrusionSubtype 
+      ? createEventClassification(EventType.INTRUSION, intrusionSubtype)
+      : createEventClassification(EventType.INTRUSION);
+  },
+  'cvedia.rt.crossing': () => createEventClassification(EventType.LINE_CROSSING),
+  'objectremovedetector': () => createEventClassification(EventType.OBJECT_REMOVED),
+  'cvedia.rt.object_removed': () => createEventClassification(EventType.OBJECT_REMOVED),
 } as const;
 
 /**
  * Piko eventType to classification function mapping
- * Each entry can be a direct classification or a function that determines classification
+ * Each entry is a function that determines classification based on event data
  */
 export const PIKO_EVENT_TYPE_MAP = {
   'analyticsSdkObjectDetected': (inputPortId?: string) => {
-    const objectSubtype = getObjectSubtype(inputPortId);
-    return objectSubtype === EventSubtype.PERSON 
-      ? createEventClassification(EventType.OBJECT_DETECTED, EventSubtype.PERSON)
-      : objectSubtype === EventSubtype.VEHICLE
-      ? createEventClassification(EventType.OBJECT_DETECTED, EventSubtype.VEHICLE)
+    const objectSubtype = getObjectSubtypeFromText(inputPortId);
+    return objectSubtype 
+      ? createEventClassification(EventType.OBJECT_DETECTED, objectSubtype)
       : createEventClassification(EventType.OBJECT_DETECTED);
   },
   'analyticsSdkEvent': () => createEventClassification(EventType.ANALYTICS_EVENT),
@@ -42,16 +46,24 @@ export const ALLOWED_PIKO_EVENT_TYPES = [
 ] as const;
 
 /**
+ * Extract object subtype from text content
+ * Supports person, vehicle, and can be extended for other object types
+ */
+export function getObjectSubtypeFromText(text?: string): EventSubtype | undefined {
+  if (!text) return undefined;
+  
+  const lowerText = text.toLowerCase();
+  if (lowerText.includes('person')) return EventSubtype.PERSON;
+  if (lowerText.includes('vehicle')) return EventSubtype.VEHICLE;
+  
+  return undefined;
+}
+
+/**
  * Get object subtype from inputPortId for object detection events
  */
 export function getObjectSubtype(inputPortId?: string): EventSubtype | undefined {
-  if (!inputPortId) return undefined;
-  
-  const lowerPortId = inputPortId.toLowerCase();
-  if (lowerPortId.includes('person')) return EventSubtype.PERSON;
-  if (lowerPortId.includes('vehicle')) return EventSubtype.VEHICLE;
-  
-  return undefined;
+  return getObjectSubtypeFromText(inputPortId);
 }
 
 /**
@@ -67,13 +79,15 @@ export const PIKO_UNKNOWN_EVENT = createEventClassification(
  */
 export function classifyPikoEvent(
   inputPortId?: string,
-  pikoEventType?: string
+  pikoEventType?: string,
+  caption?: string
 ): EventClassification<any> {
   const lowerInputPortId = inputPortId?.toLowerCase();
   
   // First check inputPortId (most specific)
   if (lowerInputPortId && PIKO_INPUT_PORT_MAP[lowerInputPortId as keyof typeof PIKO_INPUT_PORT_MAP]) {
-    return PIKO_INPUT_PORT_MAP[lowerInputPortId as keyof typeof PIKO_INPUT_PORT_MAP];
+    const mapper = PIKO_INPUT_PORT_MAP[lowerInputPortId as keyof typeof PIKO_INPUT_PORT_MAP];
+    return mapper(inputPortId, caption);
   }
   
   // Fall back to eventType mapping
