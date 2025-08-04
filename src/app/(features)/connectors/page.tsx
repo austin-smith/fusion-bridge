@@ -83,9 +83,10 @@ export default function ConnectorsPage() {
   const isAdmin = (session?.user as any)?.role === 'admin';
 
   // Select state
-  const { connectors, isLoading, getMqttState, getPikoState, getWebhookState, error } = useFusionStore((state) => ({
+  const { connectors, isLoading, hasInitiallyLoaded, getMqttState, getPikoState, getWebhookState, error } = useFusionStore((state) => ({
     connectors: state.connectors,
     isLoading: state.isLoading,
+    hasInitiallyLoaded: state.hasInitiallyLoaded,
     getMqttState: state.getMqttState,
     getPikoState: state.getPikoState,
     getWebhookState: state.getWebhookState,
@@ -353,7 +354,7 @@ export default function ConnectorsPage() {
           </Alert>
         )}
 
-        {isLoading ? (
+        {isLoading && !hasInitiallyLoaded ? (
           <ConnectorsTableSkeleton rowCount={5} />
         ) : connectors.length === 0 ? (
           <Card className="border-dashed">

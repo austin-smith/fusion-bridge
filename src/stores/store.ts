@@ -133,6 +133,7 @@ interface FusionState {
   connectors: ConnectorWithConfig[];
   isLoading: boolean;
   error: string | null;
+  hasInitiallyLoaded: boolean;
   isAddConnectorOpen: boolean;
   isEditConnectorOpen: boolean;
   editingConnector: ConnectorWithConfig | null;
@@ -469,6 +470,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   connectors: [],
   isLoading: true,
   error: null,
+  hasInitiallyLoaded: false,
   isAddConnectorOpen: false,
   isEditConnectorOpen: false,
   editingConnector: null,
@@ -767,7 +769,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   }),
 
   fetchConnectors: async () => {
-    set({ isLoading: true, error: null });
+    const { hasInitiallyLoaded } = get();
+    set({ isLoading: !hasInitiallyLoaded, error: null });
     try {
       const response = await fetch('/api/connectors');
         const data: ApiResponse<ConnectorWithConfig[]> = await response.json();
@@ -775,7 +778,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
             throw new Error(data.error || 'Failed to fetch connectors');
         }
         const fetchedConnectors = data.data || [];
-        set({ connectors: fetchedConnectors, isLoading: false });
+        set({ connectors: fetchedConnectors, isLoading: false, hasInitiallyLoaded: true });
         console.log('[FusionStore] Connectors loaded:', fetchedConnectors);
         
         // Immediately fetch connector status
@@ -783,7 +786,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         console.error('[FusionStore] Error fetching connectors:', message);
-        set({ error: message, isLoading: false, connectors: [] });
+        set({ error: message, isLoading: false, hasInitiallyLoaded: true });
     }
   },
 
