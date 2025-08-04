@@ -66,6 +66,25 @@ export interface LinearLabel {
   color: string;
 }
 
+export interface LinearReaction {
+  id: string;
+  emoji: string;    // emoji unicode (👍, ❤️, 🎉, etc.)
+  user: LinearUser;
+  createdAt: Date;
+}
+
+export interface LinearComment {
+  id: string;
+  body: string; // markdown content
+  createdAt: Date;
+  updatedAt: Date;
+  user: LinearUser;
+  url?: string;
+  parentId?: string;               // Parent comment ID (undefined for top-level comments)
+  children: LinearComment[];       // Child replies (built on frontend from parentId)
+  reactions: LinearReaction[];     // Reactions on this comment
+}
+
 export interface LinearIssue {
   id: string;
   identifier: string; // e.g., "FUS-123"
@@ -86,6 +105,7 @@ export interface LinearIssue {
   creator?: LinearUser;
   team: LinearTeam;
   labels: LinearLabel[];
+  comments: LinearComment[];
 }
 
 export interface LinearIssuesResponse {
@@ -290,12 +310,13 @@ export async function getLinearIssues(
     const issues: LinearIssue[] = await Promise.all(
       issuesConnection.nodes.map(async (issue: any) => {
         // Resolve all related data using SDK's lazy loading
-        const [state, assignee, creator, team, labels] = await Promise.all([
+        const [state, assignee, creator, team, labels, comments] = await Promise.all([
           issue.state,
           issue.assignee,
           issue.creator,
           issue.team,
-          issue.labels()
+          issue.labels(),
+          issue.comments()
         ]);
 
         return {
@@ -334,6 +355,53 @@ export async function getLinearIssues(
           },
           labels: labels?.nodes || [],
           estimate: issue.estimate,
+          comments: comments?.nodes ? await Promise.all(
+            comments.nodes.map(async (comment: any) => {
+              // Fetch user, parent ID reference, and reactions
+              const [commentUser, commentParent, commentReactions] = await Promise.all([
+                comment.user,
+                comment.parent,
+                comment.reactions || []
+              ]);
+
+              // Process reactions
+              const reactions: LinearReaction[] = commentReactions ? await Promise.all(
+                commentReactions.map(async (reaction: any) => {
+                  const reactionUser = await reaction.user;
+                  return {
+                    id: reaction.id,
+                    emoji: reaction.emoji,
+                    createdAt: reaction.createdAt,
+                    user: {
+                      id: reactionUser?.id || '',
+                      name: reactionUser?.name || '',
+                      email: reactionUser?.email || '',
+                      displayName: reactionUser?.displayName || reactionUser?.name || '',
+                      avatarUrl: reactionUser?.avatarUrl || undefined,
+                    },
+                  };
+                })
+              ) : [];
+
+              return {
+                id: comment.id,
+                body: comment.body,
+                createdAt: comment.createdAt,
+                updatedAt: comment.updatedAt,
+                user: {
+                  id: commentUser?.id || '',
+                  name: commentUser?.name || '',
+                  email: commentUser?.email || '',
+                  displayName: commentUser?.displayName || commentUser?.name || '',
+                  avatarUrl: commentUser?.avatarUrl || undefined,
+                },
+                url: comment.url || undefined,
+                parentId: commentParent?.id,  // Just the parent ID
+                children: [],                 // Build tree on frontend
+                reactions,                    // Include reactions
+              };
+            })
+          ) : [],
         };
       })
     );
@@ -372,12 +440,13 @@ export async function getLinearIssue(apiKey: string, issueId: string): Promise<L
     }
 
     // Resolve all related data using SDK's lazy loading
-    const [state, assignee, creator, team, labels] = await Promise.all([
+    const [state, assignee, creator, team, labels, comments] = await Promise.all([
       issue.state,
       issue.assignee,
       issue.creator,
       issue.team,
-      issue.labels()
+      issue.labels(),
+      issue.comments()
     ]);
 
     return {
@@ -416,6 +485,53 @@ export async function getLinearIssue(apiKey: string, issueId: string): Promise<L
       },
       labels: labels?.nodes || [],
       estimate: issue.estimate,
+      comments: comments?.nodes ? await Promise.all(
+        comments.nodes.map(async (comment: any) => {
+          // Fetch user, parent ID reference, and reactions
+          const [commentUser, commentParent, commentReactions] = await Promise.all([
+            comment.user,
+            comment.parent,
+            comment.reactions || []
+          ]);
+
+          // Process reactions
+          const reactions: LinearReaction[] = commentReactions ? await Promise.all(
+            commentReactions.map(async (reaction: any) => {
+              const reactionUser = await reaction.user;
+              return {
+                id: reaction.id,
+                emoji: reaction.emoji,
+                createdAt: reaction.createdAt,
+                user: {
+                  id: reactionUser?.id || '',
+                  name: reactionUser?.name || '',
+                  email: reactionUser?.email || '',
+                  displayName: reactionUser?.displayName || reactionUser?.name || '',
+                  avatarUrl: reactionUser?.avatarUrl || undefined,
+                },
+              };
+            })
+          ) : [];
+
+          return {
+            id: comment.id,
+            body: comment.body,
+            createdAt: comment.createdAt,
+            updatedAt: comment.updatedAt,
+            user: {
+              id: commentUser?.id || '',
+              name: commentUser?.name || '',
+              email: commentUser?.email || '',
+              displayName: commentUser?.displayName || commentUser?.name || '',
+              avatarUrl: commentUser?.avatarUrl || undefined,
+            },
+            url: comment.url || undefined,
+            parentId: commentParent?.id,  // Just the parent ID
+            children: [],                 // Build tree on frontend
+            reactions,                    // Include reactions
+          };
+        })
+      ) : [],
     };
   } catch (error) {
     console.error('Error fetching Linear issue:', error);

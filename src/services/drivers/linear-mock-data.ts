@@ -38,6 +38,188 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
       },
       labels: [
         { id: "improvement-1", name: "Improvement", color: "#10b981" }
+      ],
+      comments: [
+        {
+          id: "comment-1",
+          body: "This is a good cleanup task. We should also check if there are any other similar files that can be consolidated.",
+          createdAt: new Date("2025-07-16T08:30:00.000Z"),
+          updatedAt: new Date("2025-07-16T08:30:00.000Z"),
+          user: {
+            id: "6748788c-721d-4d50-bb21-a570dbf5931c",
+            name: "Austin Smith",
+            email: "austinsmith23@gmail.com",
+            displayName: "austinsmith23",
+            avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
+          },
+          url: "https://linear.app/pikoxfusion/issue/FUS-55/cleanup-or-remove-datarepositorieseventts#comment-1",
+          parentId: undefined,
+          children: [],
+          reactions: [
+            {
+              id: "reaction-1-1",
+              emoji: "👍",
+              createdAt: new Date("2025-07-16T08:35:00.000Z"),
+              user: {
+                id: "user-2",
+                name: "Sarah Johnson",
+                email: "sarah.johnson@example.com",
+                displayName: "sarah_dev",
+                avatarUrl: undefined
+              }
+            },
+            {
+              id: "reaction-1-2", 
+              emoji: "🎯",
+              createdAt: new Date("2025-07-16T09:20:00.000Z"),
+              user: {
+                id: "c75d00ca-6866-408f-bc08-dc10ac8fe9ea",
+                name: "Lukas Hart",
+                email: "lukas.hart@cooksolutionsgroup.com",
+                displayName: "lukas.hart",
+                avatarUrl: undefined
+              }
+            }
+          ]
+        },
+        {
+          id: "comment-1-reply-1",
+          body: "Good point! I can help with checking the imports. Should we create a separate task for that?",
+          createdAt: new Date("2025-07-16T10:15:00.000Z"),
+          updatedAt: new Date("2025-07-16T10:15:00.000Z"),
+          user: {
+            id: "user-2",
+            name: "Sarah Johnson",
+            email: "sarah.johnson@example.com",
+            displayName: "sarah_dev",
+            avatarUrl: undefined
+          },
+          url: "https://linear.app/pikoxfusion/issue/FUS-55/cleanup-or-remove-datarepositorieseventts#comment-1-reply-1",
+          parentId: "comment-1",
+          children: [],
+          reactions: []
+        },
+        {
+          id: "comment-2",
+          body: "Agreed! I'll also check the imports across the codebase to make sure we're not breaking anything.\n\n**Action items:**\n- [ ] Review all imports of `event.ts`\n- [ ] Test the merge with `org-scoped-db.ts`\n- [ ] Update any documentation",
+          createdAt: new Date("2025-07-16T14:45:00.000Z"),
+          updatedAt: new Date("2025-07-16T14:45:00.000Z"),
+          user: {
+            id: "user-2",
+            name: "Sarah Johnson",
+            email: "sarah.johnson@example.com",
+            displayName: "sarah_dev",
+            avatarUrl: undefined
+          },
+          parentId: undefined,
+          children: [],
+          reactions: [
+            {
+              id: "reaction-2-1",
+              emoji: "💯",
+              createdAt: new Date("2025-07-16T15:00:00.000Z"),
+              user: {
+                id: "6748788c-721d-4d50-bb21-a570dbf5931c",
+                name: "Austin Smith",
+                email: "austinsmith23@gmail.com",
+                displayName: "austinsmith23",
+                avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
+              }
+            },
+            {
+              id: "reaction-2-2",
+              emoji: "🚀",
+              createdAt: new Date("2025-07-16T16:30:00.000Z"),
+              user: {
+                id: "4a1594cb-defd-44e1-b47d-f64e86e3d298",
+                name: "Levi Daily",
+                email: "leviwaynedaily@gmail.com",
+                displayName: "leviwaynedaily",
+                avatarUrl: "https://public.linear.app/4a1594cb-defd-44e1-b47d-f64e86e3d298/1fd3ceb0-4d7a-4dd8-936b-a1bc7832e9ab"
+              }
+            }
+          ]
+        },
+        {
+          id: "comment-2-reply-1",
+          body: "Thanks Sarah! That action list looks comprehensive. Let me know if you need any help with the documentation updates.",
+          createdAt: new Date("2025-07-16T16:20:00.000Z"),
+          updatedAt: new Date("2025-07-16T16:20:00.000Z"),
+          user: {
+            id: "6748788c-721d-4d50-bb21-a570dbf5931c",
+            name: "Austin Smith",
+            email: "austinsmith23@gmail.com",
+            displayName: "austinsmith23",
+            avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
+          },
+          parentId: "comment-2",
+          children: [],
+          reactions: []
+        },
+        {
+          id: "comment-1-reply-2",
+          body: "Actually, let me handle the import checking. I already have a script that can scan for this.",
+          createdAt: new Date("2025-07-16T17:45:00.000Z"),
+          updatedAt: new Date("2025-07-16T17:45:00.000Z"),
+          user: {
+            id: "c75d00ca-6866-408f-bc08-dc10ac8fe9ea",
+            name: "Lukas Hart",
+            email: "lukas.hart@cooksolutionsgroup.com",
+            displayName: "lukas.hart",
+            avatarUrl: undefined
+          },
+          parentId: "comment-1",
+          children: [],
+          reactions: []
+        },
+        {
+          id: "comment-3",
+          body: "This cleanup will also help with our build times. I noticed `event.ts` has some circular dependency issues.",
+          createdAt: new Date("2025-07-17T08:15:00.000Z"),
+          updatedAt: new Date("2025-07-17T08:15:00.000Z"),
+          user: {
+            id: "4a1594cb-defd-44e1-b47d-f64e86e3d298",
+            name: "Levi Daily",
+            email: "leviwaynedaily@gmail.com",
+            displayName: "leviwaynedaily",
+            avatarUrl: "https://public.linear.app/4a1594cb-defd-44e1-b47d-f64e86e3d298/1fd3ceb0-4d7a-4dd8-936b-a1bc7832e9ab"
+          },
+          parentId: undefined,
+          children: [],
+          reactions: []
+        },
+        {
+          id: "comment-3-reply-1",
+          body: "Good catch! I'll make sure to test the build after merging these files.",
+          createdAt: new Date("2025-07-17T09:30:00.000Z"),
+          updatedAt: new Date("2025-07-17T09:30:00.000Z"),
+          user: {
+            id: "6748788c-721d-4d50-bb21-a570dbf5931c",
+            name: "Austin Smith",
+            email: "austinsmith23@gmail.com",
+            displayName: "austinsmith23",
+            avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
+          },
+          parentId: "comment-3",
+          children: [],
+          reactions: []
+        },
+        {
+          id: "comment-2-reply-2",
+          body: "I can also help with the documentation. Should we create a migration guide for any teams using these files?",
+          createdAt: new Date("2025-07-17T11:00:00.000Z"),
+          updatedAt: new Date("2025-07-17T11:00:00.000Z"),
+          user: {
+            id: "user-2",
+            name: "Sarah Johnson",
+            email: "sarah.johnson@example.com",
+            displayName: "sarah_dev",
+            avatarUrl: undefined
+          },
+          parentId: "comment-2",
+          children: [],
+          reactions: []
+        }
       ]
     },
     {
@@ -75,6 +257,24 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
       },
       labels: [
         { id: "feature-1", name: "Feature", color: "#BB87FC" }
+      ],
+      comments: [
+        {
+          id: "comment-3",
+          body: "This could be really helpful for new users. Should we include device type selection in the wizard?",
+          createdAt: new Date("2025-07-21T10:20:00.000Z"),
+          updatedAt: new Date("2025-07-21T10:20:00.000Z"),
+          user: {
+            id: "user-3",
+            name: "Mike Chen",
+            email: "mike.chen@example.com",
+            displayName: "mike_ux",
+            avatarUrl: undefined
+          },
+          parentId: undefined,
+          children: [],
+          reactions: []
+        }
       ]
     },
     {
@@ -114,6 +314,40 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
       labels: [
         { id: "improvement-2", name: "Improvement", color: "#4EA7FC" },
         { id: "feature-1", name: "Feature", color: "#BB87FC" }
+      ],
+      comments: [
+        {
+          id: "comment-4",
+          body: "I've updated the DNS records for the production domain. The CNAME for `app.getfusion.io` is now pointing to `nndizemc.up.railway.app`.",
+          createdAt: new Date("2025-07-26T15:30:00.000Z"),
+          updatedAt: new Date("2025-07-26T15:30:00.000Z"),
+          user: {
+            id: "6748788c-721d-4d50-bb21-a570dbf5931c",
+            name: "Austin Smith",
+            email: "austinsmith23@gmail.com",
+            displayName: "austinsmith23",
+            avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
+          },
+          parentId: undefined,
+          children: [],
+          reactions: []
+        },
+        {
+          id: "comment-5",
+          body: "Great! Still need to set up the dev domain. Will work on that next.",
+          createdAt: new Date("2025-07-27T09:15:00.000Z"),
+          updatedAt: new Date("2025-07-27T09:15:00.000Z"),
+          user: {
+            id: "user-4",
+            name: "DevOps Bot",
+            email: "devops@example.com",
+            displayName: "devops_bot",
+            avatarUrl: undefined
+          },
+          parentId: undefined,
+          children: [],
+          reactions: []
+        }
       ]
     },
     {
@@ -152,6 +386,40 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
       },
       labels: [
         { id: "bug-1", name: "Bug", color: "#EB5757" }
+      ],
+      comments: [
+        {
+          id: "comment-6",
+          body: "This was a tricky one to debug. The issue was in how we were generating unique keys for the connector display components.",
+          createdAt: new Date("2025-07-12T16:45:00.000Z"),
+          updatedAt: new Date("2025-07-12T16:45:00.000Z"),
+          user: {
+            id: "6748788c-721d-4d50-bb21-a570dbf5931c",
+            name: "Austin Smith",
+            email: "austinsmith23@gmail.com",
+            displayName: "austinsmith23",
+            avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
+          },
+          parentId: undefined,
+          children: [],
+          reactions: []
+        },
+        {
+          id: "comment-7",
+          body: "✅ Fixed by using `connector.id` instead of `connector.name` as the unique identifier in the dropdown component.",
+          createdAt: new Date("2025-07-15T18:30:00.000Z"),
+          updatedAt: new Date("2025-07-15T18:30:00.000Z"),
+          user: {
+            id: "6748788c-721d-4d50-bb21-a570dbf5931c",
+            name: "Austin Smith",
+            email: "austinsmith23@gmail.com",
+            displayName: "austinsmith23",
+            avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
+          },
+          parentId: undefined,
+          children: [],
+          reactions: []
+        }
       ]
     },
     {
@@ -182,7 +450,25 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
         name: "Fusion Team",
         key: "FUS"
       },
-      labels: []
+      labels: [],
+      comments: [
+        {
+          id: "comment-8",
+          body: "Decided to cancel this for now. We'll focus on Linear integration instead of GitHub/GitLab workflow automation.",
+          createdAt: new Date("2025-07-04T23:20:00.000Z"),
+          updatedAt: new Date("2025-07-04T23:20:00.000Z"),
+          user: {
+            id: "6748788c-721d-4d50-bb21-a570dbf5931c",
+            name: "Austin Smith",
+            email: "austinsmith23@gmail.com",
+            displayName: "austinsmith23",
+            avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
+          },
+          parentId: undefined,
+          children: [],
+          reactions: []
+        }
+      ]
     },
     {
       id: "5165c731-d28e-4628-b552-89c5baa2d37f",
@@ -218,7 +504,41 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
         name: "Fusion Team",
         key: "FUS"
       },
-      labels: []
+      labels: [],
+      comments: [
+        {
+          id: "comment-9",
+          body: "Started working on the Genea event mapping. The table above looks comprehensive for the initial implementation.",
+          createdAt: new Date("2025-07-22T11:15:00.000Z"),
+          updatedAt: new Date("2025-07-22T11:15:00.000Z"),
+          user: {
+            id: "6748788c-721d-4d50-bb21-a570dbf5931c",
+            name: "Austin Smith",
+            email: "austinsmith23@gmail.com",
+            displayName: "austinsmith23",
+            avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
+          },
+          parentId: undefined,
+          children: [],
+          reactions: []
+        },
+        {
+          id: "comment-10",
+          body: "Should we also include door open/close events in this initial implementation? They're pretty common in Genea systems.",
+          createdAt: new Date("2025-07-23T09:30:00.000Z"),
+          updatedAt: new Date("2025-07-23T09:30:00.000Z"),
+          user: {
+            id: "c75d00ca-6866-408f-bc08-dc10ac8fe9ea",
+            name: "lukas.hart@cooksolutionsgroup.com",
+            email: "lukas.hart@cooksolutionsgroup.com",
+            displayName: "lukas.hart",
+            avatarUrl: undefined
+          },
+          parentId: undefined,
+          children: [],
+          reactions: []
+        }
+      ]
     }
   ],
   pageInfo: {

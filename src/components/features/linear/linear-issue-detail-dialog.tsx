@@ -32,6 +32,7 @@ import type { LinearIssue, LinearUser } from '@/services/drivers/linear';
 import { MarkdownRenderer } from '@/components/ui/chat/markdown-renderer';
 import { toast } from 'sonner';
 import { getStateIcon, getLinearPriorityOptions } from '@/lib/linear-utils';
+import { LinearCommentsSection } from './linear-comments-section';
 
 interface LinearIssueDetailDialogProps {
   issue: LinearIssue | null;
@@ -225,7 +226,7 @@ export function LinearIssueDetailDialog({
         onIssueUpdate(result.data);
       }
 
-      const assigneeName = newAssignee?.name || 'Unassigned';
+      const assigneeName = newAssignee ? (newAssignee.name || newAssignee.displayName) : 'Unassigned';
       toast.success(`Assigned issue to ${assigneeName}`);
     } catch (error) {
       // Revert optimistic update
@@ -286,6 +287,8 @@ export function LinearIssueDetailDialog({
                   No description provided.
                 </div>
               )}
+              
+              <LinearCommentsSection comments={localIssue.comments} />
             </div>
           </div>
 
@@ -416,7 +419,7 @@ export function LinearIssueDetailDialog({
                               {member.name.charAt(0).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
-                          <span>{member.name}</span>
+                          <span>{member.name || member.displayName}</span>
                         </div>
                       </SelectItem>
                     ))}
