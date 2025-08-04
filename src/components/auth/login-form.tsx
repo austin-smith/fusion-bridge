@@ -28,15 +28,20 @@ export function LoginForm({
   const handleCredentialsLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     console.log("[Login Form] handleCredentialsLogin triggered.");
-    setIsLoading(true);
-    setError(null);
 
     console.log("[Login Form] Calling signIn.email with:", { email });
-    // Initiate sign-in; redirects (including 2FA) are handled by better-auth client/plugins
-    signIn.email({ email, password, callbackURL: "/" }); 
-    
-    // Note: setIsLoading(false) is removed as the component will likely unmount on redirect.
-    // Error handling might need to rely on query params added by better-auth on redirect back to login.
+    await signIn.email({ email, password, callbackURL: "/" }, {
+      onRequest: () => {
+        setIsLoading(true);
+        setError(null);
+      },
+      onResponse: () => {
+        setIsLoading(false);
+      },
+      onError: (ctx) => {
+        setError(ctx.error.message);
+      }
+    });
   };
 
   // No GitHub login handler needed
