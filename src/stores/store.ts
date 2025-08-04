@@ -336,6 +336,7 @@ interface FusionState {
 
   // Fetch dashboard events
   fetchDashboardEvents: () => Promise<void>;
+  autoRefreshDashboardEvents: () => Promise<void>;
 
   // --- Current User Actions ---
   setCurrentUser: (user: UserProfile | null) => void;
@@ -438,6 +439,7 @@ interface FusionState {
     currentPage: number;
     totalItems?: number;
   }>) => void;
+  autoRefreshEvents: () => Promise<void>;
   resetEventsState: () => void;
 }
 
@@ -1533,6 +1535,36 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error("Error fetching dashboard events:", message);
       set({ isLoadingDashboardEvents: false, errorDashboardEvents: message, dashboardEvents: [] });
+    }
+  },
+
+  // Background refresh for dashboard events auto-refresh - no loading states to prevent flicker
+  autoRefreshDashboardEvents: async () => {
+    const state = get();
+    
+    // Only auto-refresh if not currently loading
+    if (state.isLoadingDashboardEvents) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/events/dashboard'); 
+      const data: ApiResponse<DashboardEvent[]> = await response.json(); 
+
+      if (!response.ok || !data.success) {
+        // Silently fail for auto-refresh
+        return;
+      }
+      
+      const eventsWithDates = (data.data || []).map(event => ({
+        ...event,
+        timestamp: new Date(event.timestamp) 
+      }));
+      
+      // Silently update dashboard events without changing loading states
+      set({ dashboardEvents: eventsWithDates });
+    } catch (error) {
+      // Silently fail for auto-refresh - no error notifications
     }
   },
 
@@ -2796,6 +2828,100 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       if (isInitialLoad) {
         toast.error(displayMessage);
       }
+    }
+  },
+
+  // Background refresh for auto-refresh - no loading states or error toasts to prevent flicker
+  autoRefreshEvents: async () => {
+    const state = get();
+    
+    // Only auto-refresh if:
+    // 1. Not currently loading
+    // 2. Already has initial load
+    // 3. On first page (to avoid pagination confusion)
+    if (state.isLoadingEvents || !state.eventsHasInitiallyLoaded || state.eventsPagination.pageIndex !== 0) {
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams();
+      
+      // Always fetch first page for auto-refresh
+      params.append('page', '1');
+      params.append('limit', String(state.eventsPagination.pageSize));
+
+      // Apply current filters
+      if (state.eventsEventCategoryFilter.length > 0) {
+        params.append('eventCategories', state.eventsEventCategoryFilter.join(','));
+      }
+      if (state.eventsConnectorCategoryFilter && state.eventsConnectorCategoryFilter.toLowerCase() !== 'all') {
+        params.append('connectorCategory', state.eventsConnectorCategoryFilter);
+      }
+      if (state.eventsLocationFilter && state.eventsLocationFilter.toLowerCase() !== 'all') {
+        params.append('locationId', state.eventsLocationFilter);
+      }
+      if (state.eventsSpaceFilter && state.eventsSpaceFilter.toLowerCase() !== 'all') {
+        params.append('spaceId', state.eventsSpaceFilter);
+      }
+      if (state.eventsAlarmEventsOnly) {
+        params.append('alarmEventsOnly', 'true');
+      }
+
+      // Column filters (only apply in table view)
+      if (state.eventsViewMode === 'table') {
+        if (state.eventsDeviceNameFilter && state.eventsDeviceNameFilter.trim() !== '') {
+          params.append('deviceNameFilter', state.eventsDeviceNameFilter);
+        }
+        if (state.eventsEventTypeFilter && state.eventsEventTypeFilter.trim() !== '') {
+          params.append('eventTypeFilter', state.eventsEventTypeFilter);
+        }
+        if (state.eventsDeviceTypeFilter && state.eventsDeviceTypeFilter.trim() !== '') {
+          params.append('deviceTypeFilter', state.eventsDeviceTypeFilter);
+        }
+        if (state.eventsConnectorNameFilter && state.eventsConnectorNameFilter.trim() !== '') {
+          params.append('connectorNameFilter', state.eventsConnectorNameFilter);
+        }
+      }
+      
+      // Time filters
+      if (state.eventsTimeStart) {
+        params.append('timeStart', state.eventsTimeStart);
+      }
+      if (state.eventsTimeEnd) {
+        params.append('timeEnd', state.eventsTimeEnd);
+      }
+
+      const response = await fetch(`/api/events?${params.toString()}`);
+
+      if (!response.ok) {
+        // Silently fail for auto-refresh
+        return;
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        // Silently fail for auto-refresh
+        return;
+      }
+
+      // Silently update events without changing loading states
+      set((state) => ({
+        events: data.data || [],
+        // Update pagination metadata
+        eventsPagination: {
+          ...state.eventsPagination,
+          totalPages: data.pagination?.hasNextPage ? 
+            (data.pagination.currentPage + 1) : 
+            data.pagination?.currentPage || 1,
+          hasNextPage: data.pagination?.hasNextPage || false,
+          currentPage: data.pagination?.currentPage || 1,
+          totalItems: data.pagination?.totalItems
+        }
+      }));
+
+    } catch (error) {
+      // Silently fail for auto-refresh - no error notifications
     }
   },
 

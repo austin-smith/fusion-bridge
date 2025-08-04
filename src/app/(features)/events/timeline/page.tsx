@@ -15,6 +15,7 @@ export default function EventsDashboardPage() {
     isLoadingDashboardEvents,
     errorDashboardEvents,
     fetchDashboardEvents,
+    autoRefreshDashboardEvents,
     allDevices,
     fetchAllDevices,
     isLoadingAllDevices,
@@ -23,6 +24,7 @@ export default function EventsDashboardPage() {
     isLoadingDashboardEvents: state.isLoadingDashboardEvents,
     errorDashboardEvents: state.errorDashboardEvents,
     fetchDashboardEvents: state.fetchDashboardEvents,
+    autoRefreshDashboardEvents: state.autoRefreshDashboardEvents,
     allDevices: state.allDevices,
     fetchAllDevices: state.fetchAllDevices,
     isLoadingAllDevices: state.isLoadingAllDevices,
@@ -35,13 +37,50 @@ export default function EventsDashboardPage() {
     }
   }, [fetchDashboardEvents, fetchAllDevices, allDevices.length, isLoadingAllDevices]);
 
+  // Smart auto-refresh dashboard events - polls every 5 seconds when page is visible
   useEffect(() => {
-    console.log("[EventsDashboardPage] Setting up WebSocket simulation (Refetch strategy)...");
+    // Only set up auto-refresh after we have dashboard events loaded
+    if (isLoadingDashboardEvents || dashboardEvents.length === 0) {
+      return;
+    }
+
+    let intervalId: NodeJS.Timeout;
+    
+    const startAutoRefresh = () => {
+      intervalId = setInterval(() => {
+        // Only refresh if page is visible
+        if (!document.hidden) {
+          autoRefreshDashboardEvents();
+        }
+      }, 5000); // Smart refresh every 5 seconds
+    };
+
+    // Handle page visibility changes
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Page is hidden, stop auto-refresh
+        if (intervalId) {
+          clearInterval(intervalId);
+        }
+      } else {
+        // Page is visible, start auto-refresh
+        startAutoRefresh();
+      }
+    };
+
+    // Start initial auto-refresh
+    startAutoRefresh();
+
+    // Listen for page visibility changes
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-        console.log("[EventsDashboardPage] Cleaning up WebSocket simulation...");
+        if (intervalId) {
+          clearInterval(intervalId);
+        }
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [fetchDashboardEvents]);
+  }, [autoRefreshDashboardEvents, isLoadingDashboardEvents, dashboardEvents.length]);
 
   const renderContent = () => {
     if (isLoadingDashboardEvents || (allDevices.length === 0 && isLoadingAllDevices)) {
