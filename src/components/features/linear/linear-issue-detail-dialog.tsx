@@ -29,10 +29,9 @@ import {
   Loader2
 } from 'lucide-react';
 import type { LinearIssue } from '@/services/drivers/linear';
-import { getLinearPriorityConfig } from '@/services/drivers/linear';
 import { MarkdownRenderer } from '@/components/ui/chat/markdown-renderer';
 import { toast } from 'sonner';
-import { getStateIcon } from '@/lib/linear-utils';
+import { getStateIcon, getLinearPriorityOptions } from '@/lib/linear-utils';
 
 interface LinearIssueDetailDialogProps {
   issue: LinearIssue | null;
@@ -51,6 +50,7 @@ export function LinearIssueDetailDialog({
 }: LinearIssueDetailDialogProps) {
   const [localIssue, setLocalIssue] = useState<LinearIssue | null>(issue);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
 
   // Update local state when issue prop changes
   useEffect(() => {
@@ -60,8 +60,6 @@ export function LinearIssueDetailDialog({
   if (!localIssue) {
     return null;
   }
-
-  const priorityConfig = getLinearPriorityConfig(localIssue.priority);
 
   const handleOpenInLinear = () => {
     window.open(localIssue.url, '_blank', 'noopener,noreferrer');
@@ -122,6 +120,58 @@ export function LinearIssueDetailDialog({
       console.error('Error updating Linear issue:', error);
     } finally {
       setIsUpdatingStatus(false);
+    }
+  };
+
+  const handlePriorityChange = async (newPriorityString: string) => {
+    const newPriority = parseInt(newPriorityString);
+    if (!localIssue || newPriority === localIssue.priority) return;
+
+    setIsUpdatingPriority(true);
+
+    // Optimistic update
+    const originalIssue = { ...localIssue };
+    const updatedIssue = {
+      ...localIssue,
+      priority: newPriority,
+    };
+    setLocalIssue(updatedIssue);
+
+    try {
+      // Call API to update Linear
+      const response = await fetch(`/api/services/linear/issues/${localIssue.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priority: newPriority })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update issue');
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update issue');
+      }
+
+      // Update with actual response data
+      setLocalIssue(result.data);
+      
+      // Notify parent component
+      if (onIssueUpdate) {
+        onIssueUpdate(result.data);
+      }
+
+      const priorityOptions = getLinearPriorityOptions();
+      const priorityLabel = priorityOptions.find(p => p.value === newPriority)?.label || 'Unknown';
+      toast.success(`Updated priority to ${priorityLabel}`);
+    } catch (error) {
+      // Revert optimistic update
+      setLocalIssue(originalIssue);
+      toast.error(error instanceof Error ? error.message : 'Failed to update priority');
+      console.error('Error updating Linear issue priority:', error);
+    } finally {
+      setIsUpdatingPriority(false);
     }
   };
 
@@ -226,21 +276,40 @@ export function LinearIssueDetailDialog({
               {/* Priority */}
               <div className="space-y-2">
                 <div className="text-sm font-medium text-muted-foreground">Priority</div>
-                <Badge 
-                  variant="outline"
-                  className="text-sm font-medium w-fit"
-                  style={{ 
-                    borderColor: priorityConfig.color,
-                    backgroundColor: `${priorityConfig.color}15`,
-                    color: priorityConfig.color
-                  }}
+                <Select 
+                  value={localIssue.priority.toString()} 
+                  onValueChange={handlePriorityChange}
+                  disabled={isUpdatingPriority}
                 >
-                  <priorityConfig.icon 
-                    className="h-4 w-4 mr-2" 
-                    style={{ fill: priorityConfig.color }}
-                  />
-                  {priorityConfig.label}
-                </Badge>
+                  <SelectTrigger className="w-fit min-w-32">
+                    {isUpdatingPriority ? (
+                      <div className="flex items-center gap-2 mr-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Updating...</span>
+                      </div>
+                    ) : (
+                      <div className="mr-2">
+                        <SelectValue />
+                      </div>
+                    )}
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getLinearPriorityOptions().map(priority => {
+                      const PriorityIcon = priority.icon;
+                      return (
+                        <SelectItem key={priority.value} value={priority.value.toString()}>
+                          <div className="flex items-center gap-2">
+                            <PriorityIcon 
+                              className="h-4 w-4" 
+                              style={{ color: priority.color, fill: priority.color }}
+                            />
+                            <span>{priority.label}</span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Assignee */}

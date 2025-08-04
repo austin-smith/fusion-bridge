@@ -1,4 +1,5 @@
 import type { LinearIssue } from '@/services/drivers/linear';
+import { LINEAR_PRIORITY_CONFIG } from '@/services/drivers/linear';
 import { Circle, CircleDashed, CircleCheck, LoaderCircle, CircleX } from 'lucide-react';
 
 export interface LinearState {
@@ -13,7 +14,7 @@ export interface KanbanColumn extends LinearState {
   items: LinearIssue[];
 }
 
-// Shared state ordering and utilities
+// Shared Linear constants and utilities
 const STATE_ORDER = {
   'backlog': 0,
   'unstarted': 1,
@@ -21,6 +22,8 @@ const STATE_ORDER = {
   'completed': 3,
   'canceled': 4,
 } as const;
+
+
 
 /**
  * Get the appropriate icon component for a Linear state type
@@ -34,6 +37,18 @@ export function getStateIcon(type: string) {
     case 'canceled': return CircleX;
     default: return Circle;
   }
+}
+
+/**
+ * Get all available Linear priority options for use in Select components
+ */
+export function getLinearPriorityOptions() {
+  return Object.entries(LINEAR_PRIORITY_CONFIG).map(([value, config]) => ({
+    value: parseInt(value),
+    label: config.label,
+    color: config.color,
+    icon: config.icon,
+  }));
 }
 
 /**
