@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { LinearClient } from '@linear/sdk';
 import { Flag } from 'lucide-react';
-import { MOCK_LINEAR_ISSUES_RESPONSE } from './linear-mock-data';
 
 // Shared Linear Priority Configuration
 export const LINEAR_PRIORITY_CONFIG = {
@@ -280,7 +279,20 @@ export async function getLinearIssues(
   // Return mock data if environment variable is set
   if (process.env.LINEAR_USE_MOCK_DATA === 'true') {
     console.log('[Linear Driver] Using mock data');
-    return MOCK_LINEAR_ISSUES_RESPONSE;
+    
+    // Dynamically import mock data only when needed
+    const { MOCK_LINEAR_ISSUES_RESPONSE } = await import('./linear-mock-data');
+    
+    // Apply activeOnly filter to mock data, same as real API data
+    const filteredIssues = options?.activeOnly 
+      ? MOCK_LINEAR_ISSUES_RESPONSE.issues.filter(issue => !['completed', 'canceled'].includes(issue.state.type))
+      : MOCK_LINEAR_ISSUES_RESPONSE.issues;
+
+    return {
+      ...MOCK_LINEAR_ISSUES_RESPONSE,
+      issues: filteredIssues,
+      totalCount: filteredIssues.length,
+    };
   }
 
   const client = createLinearClient(apiKey);
@@ -361,7 +373,7 @@ export async function getLinearIssues(
               const [commentUser, commentParent, commentReactions] = await Promise.all([
                 comment.user,
                 comment.parent,
-                comment.reactions || []
+                comment.reactions || Promise.resolve([])
               ]);
 
               // Process reactions
@@ -491,7 +503,7 @@ export async function getLinearIssue(apiKey: string, issueId: string): Promise<L
           const [commentUser, commentParent, commentReactions] = await Promise.all([
             comment.user,
             comment.parent,
-            comment.reactions || []
+            comment.reactions || Promise.resolve([])
           ]);
 
           // Process reactions

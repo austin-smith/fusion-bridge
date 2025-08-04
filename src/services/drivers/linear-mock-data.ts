@@ -28,7 +28,7 @@ export const MOCK_LINEAR_ISSUES_RESPONSE: LinearIssuesResponse = {
         id: "6748788c-721d-4d50-bb21-a570dbf5931c",
         name: "Austin Smith",
         email: "austinsmith23@gmail.com",
-        displayName: "austinsmith23h",
+        displayName: "austinsmith23",
         avatarUrl: "https://public.linear.app/e763bc01-ab9c-4ca8-a455-4311967cf96f/39356c2e-c1ae-4b98-9afa-bd938a551047/3b7c19a7-efd3-4b66-9aa4-776c3d7c0970"
       },
       team: {

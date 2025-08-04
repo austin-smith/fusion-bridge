@@ -199,16 +199,16 @@ export default function RoadmapPage() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant={roadmapViewType === 'kanban' ? "secondary" : "ghost"}
+                      variant={roadmapViewType === 'table-grouped' ? "secondary" : "ghost"}
                       size="sm"
-                      onClick={() => setRoadmapViewType('kanban')}
+                      onClick={() => setRoadmapViewType('table-grouped')}
                       className="h-8"
                     >
-                      <SquareKanban className="h-4 w-4" />
+                      <Table2 className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Kanban Board</p>
+                    <p>Grouped Table</p>
                   </TooltipContent>
                 </Tooltip>
 
@@ -231,38 +231,35 @@ export default function RoadmapPage() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant={roadmapViewType === 'table-grouped' ? "secondary" : "ghost"}
+                      variant={roadmapViewType === 'kanban' ? "secondary" : "ghost"}
                       size="sm"
-                      onClick={() => setRoadmapViewType('table-grouped')}
+                      onClick={() => setRoadmapViewType('kanban')}
                       className="h-8"
                     >
-                      <Table2 className="h-4 w-4" />
+                      <SquareKanban className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Grouped Table</p>
+                    <p>Kanban Board</p>
                   </TooltipContent>
                 </Tooltip>
               </div>
             </TooltipProvider>
           ) : (
             <div className="flex items-center gap-1 border rounded-md p-1">
-              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3 text-xs">
+              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3">
                 <div className="h-4 w-4 bg-muted animate-pulse rounded" />
               </div>
-              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3 text-xs">
+              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3">
                 <div className="h-4 w-4 bg-muted animate-pulse rounded" />
               </div>
-              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3 text-xs">
+              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3">
                 <div className="h-4 w-4 bg-muted animate-pulse rounded" />
               </div>
             </div>
           )}
         </div>
       </div>
-
-
-  
 
       {/* Content based on state */}
       {isLoading && (

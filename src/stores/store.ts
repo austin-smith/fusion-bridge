@@ -582,7 +582,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   reportsTimeEnd: null,
   
   // --- Roadmap Page Preferences Initial Values ---
-  roadmapViewType: 'table-flat',
+  roadmapViewType: 'table-grouped',
   
   // --- Events Data Initial State ---
   events: [],
@@ -2534,18 +2534,18 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   initializeRoadmapPreferences: () => {
     if (typeof window !== 'undefined') {
       // Load roadmap view type preference from localStorage
-      const storedViewType = (localStorage.getItem('roadmapViewTypePreference') as 'kanban' | 'table-flat' | 'table-grouped') ?? 'table-flat';
+      const storedViewType = (localStorage.getItem('roadmapViewTypePreference') as 'kanban' | 'table-flat' | 'table-grouped') ?? 'table-grouped';
       
       // Validate the stored value
       const validViewTypes: ('kanban' | 'table-flat' | 'table-grouped')[] = ['kanban', 'table-flat', 'table-grouped'];
-      const viewType = validViewTypes.includes(storedViewType) ? storedViewType : 'table-flat';
+      const viewType = validViewTypes.includes(storedViewType) ? storedViewType : 'table-grouped';
       
       set({ roadmapViewType: viewType });
       
       console.log('[FusionStore] Roadmap preferences loaded from localStorage:', { viewType });
     } else {
       // Server-side fallback
-      set({ roadmapViewType: 'table-flat' });
+      set({ roadmapViewType: 'table-grouped' });
     }
   },
   
