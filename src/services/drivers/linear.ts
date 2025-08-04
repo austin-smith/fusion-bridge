@@ -2,9 +2,6 @@ import { z } from 'zod';
 import { LinearClient } from '@linear/sdk';
 import { Flag } from 'lucide-react';
 
-// Configurable toggle for testing - defaults to false if env variable not set
-const USE_MOCK_DATA = process.env.LINEAR_USE_MOCK_DATA === 'true';
-
 // Shared Linear Priority Configuration
 export const LINEAR_PRIORITY_CONFIG = {
   0: { label: 'None', color: '#6b7280', icon: Flag },     // gray-500
@@ -50,6 +47,7 @@ export interface LinearUser {
   name: string;
   email: string;
   displayName: string;
+  avatarUrl?: string;
 }
 
 export interface LinearTestResult {
@@ -65,6 +63,25 @@ export interface LinearLabel {
   id: string;
   name: string;
   color: string;
+}
+
+export interface LinearReaction {
+  id: string;
+  emoji: string;    // emoji unicode (👍, ❤️, 🎉, etc.)
+  user: LinearUser;
+  createdAt: Date;
+}
+
+export interface LinearComment {
+  id: string;
+  body: string; // markdown content
+  createdAt: Date;
+  updatedAt: Date;
+  user: LinearUser;
+  url?: string;
+  parentId?: string;               // Parent comment ID (undefined for top-level comments)
+  children: LinearComment[];       // Child replies (built on frontend from parentId)
+  reactions: LinearReaction[];     // Reactions on this comment
 }
 
 export interface LinearIssue {
@@ -87,6 +104,7 @@ export interface LinearIssue {
   creator?: LinearUser;
   team: LinearTeam;
   labels: LinearLabel[];
+  comments: LinearComment[];
 }
 
 export interface LinearIssuesResponse {
@@ -136,6 +154,7 @@ export async function testLinearConnection(config: unknown): Promise<LinearTestR
         name: viewer.name,
         email: viewer.email,
         displayName: viewer.displayName,
+        avatarUrl: viewer.avatarUrl || undefined,
       },
       teams: teams.nodes.map(team => ({
         id: team.id,
@@ -184,6 +203,7 @@ export async function getLinearViewer(apiKey: string): Promise<LinearUser> {
     name: viewer.name,
     email: viewer.email,
     displayName: viewer.displayName,
+    avatarUrl: viewer.avatarUrl || undefined,
   };
 }
 
@@ -202,6 +222,43 @@ export async function getLinearTeams(apiKey: string): Promise<LinearTeam[]> {
   }));
 }
 
+/**
+ * Get active team members from Linear with minimal field selection
+ * Optimized for rate limiting - only fetches essential fields
+ */
+export async function getLinearTeamMembers(
+  apiKey: string, 
+  teamId: string,
+  options?: {
+    limit?: number;  // Default 50, can be reduced for large teams
+    activeOnly?: boolean; // Default true
+  }
+): Promise<LinearUser[]> {
+  const client = createLinearClient(apiKey);
+  
+  try {
+    // Use Linear SDK with minimal field selection
+    const team = await client.team(teamId);
+    const members = await team.members({
+      first: options?.limit || 50, // Respect pagination
+      filter: options?.activeOnly !== false ? { active: { eq: true } } : undefined
+    });
+    
+    // Transform with only essential fields
+    return members.nodes
+      .filter(member => member.active) // Double-check active status
+      .map(member => ({
+        id: member.id,
+        name: member.name,
+        email: member.email,
+        displayName: member.displayName || member.name, // Fallback
+        avatarUrl: member.avatarUrl || undefined, // Optional avatar
+      }));
+  } catch (error) {
+    console.error('Error fetching Linear team members:', error);
+    throw new Error('Failed to fetch team members');
+  }
+}
 
 /**
  * Get issues from Linear for a specific team
@@ -211,7 +268,7 @@ export async function getLinearIssues(
   teamId?: string,
   options?: {
     orderBy?: 'updatedAt' | 'createdAt';
-    activeOnly?: boolean; // New: filter to active states only (excludes completed/canceled)
+    activeOnly?: boolean; // Filter to active states only (excludes completed/canceled)
     filter?: {
       state?: string;
       assignee?: string;
@@ -219,213 +276,29 @@ export async function getLinearIssues(
     };
   }
 ): Promise<LinearIssuesResponse> {
-  if (USE_MOCK_DATA) {
-    console.log('[Linear Driver] Using mock data for issues');
-    await new Promise(resolve => setTimeout(resolve, 100)); // Simulate API delay
+  // Return mock data if environment variable is set
+  if (process.env.LINEAR_USE_MOCK_DATA === 'true') {
+    console.log('[Linear Driver] Using mock data');
     
-    // Mock response that matches the optimized GraphQL query fields
-    const mockApiResponse = {
-      issues: {
-        nodes: [
-          {
-            id: "3c00c903-ae15-4b5e-a9dd-d714f93409a4",
-            identifier: "FUS-55",
-            title: "Cleanup | Remove data/repositories/event.ts",
-            description: "Remove data/repositories/event.ts and merge with org-scoped-db.ts… they are doing the same things.",
-            priority: 3,
-            url: "https://linear.app/pikoxfusion/issue/FUS-55/cleanup-or-remove-datarepositorieseventts",
-            updatedAt: "2025-08-01T04:24:11.990Z",
-            createdAt: "2025-07-15T10:20:30.000Z",
-            state: {
-              name: "Todo",
-              color: "#e2e2e2",
-              type: "unstarted"
-            },
-            assignee: {
-              name: "Austin Smith",
-              email: "austinsmith23@gmail.com"
-            },
-            creator: {
-              name: "Austin Smith",
-              email: "austinsmith23@gmail.com"
-            },
-            labels: {
-              nodes: [
-                { id: "improvement-1", name: "Improvement", color: "#10b981" }
-              ]
-            }
-          },
-          {
-            id: "0fd4bab0-4371-4830-a0d5-7915f2996c32",
-            identifier: "FUS-52",
-            title: "Devices | Device onboarding wizard",
-            priority: 0,
-            url: "https://linear.app/pikoxfusion/issue/FUS-52/devices-or-device-onboarding-wizard",
-            updatedAt: "2025-07-31T19:54:27.286Z",
-            createdAt: "2025-07-20T14:30:15.000Z",
-            state: {
-              name: "Backlog",
-              color: "#bec2c8",
-              type: "backlog"
-            },
-            assignee: {
-              name: "Austin Smith",
-              email: "austinsmith23@gmail.com"
-            },
-            creator: {
-              name: "Austin Smith",
-              email: "austinsmith23@gmail.com"
-            },
-            labels: {
-              nodes: [
-                { id: "feature-1", name: "Feature", color: "#BB87FC" }
-              ]
-            }
-          },
-          {
-            id: "44234cc6-0cc3-4963-be83-19d81a582251",
-            identifier: "FUS-47",
-            title: "Set up proper domain",
-            description: "# Prod\n\n---\n\nCurrently, the prod Fusion site is available at[ https://www.getfusion.io/](https://www.getfusion.io/.).\n\nInstead, make it available via[ https://app.getfusion.io/](https://app.getfusion.io/.) using the below config info…\n\n## **Configure DNS Records**\n\nTo finish setting up your custom domain, add the following DNS records to [getfusion.io](https://getfusion.io/):\n\n| Type | Name | Value |\n| -- | -- | -- |\n| CNAME | app | `nndizemc.up.railway.app` |\n\n# Non-prod\n\n---\n\nMake dev available at[ https://app.getfusion.dev/.](https://app.getfusion.dev/.) \n\n## **Configure DNS Records**\n\nTo finish setting up your custom domain, add the following DNS records to [getfusion.dev](https://getfusion.dev/)\n\n| Type | Name | Value |\n| -- | -- | -- |\n| CNAME | app | `1j7fbj7e.up.railway.app` |",
-            priority: 4,
-            url: "https://linear.app/pikoxfusion/issue/FUS-47/set-up-proper-domain",
-            updatedAt: "2025-08-01T02:39:31.270Z",
-            createdAt: "2025-07-25T09:15:45.000Z",
-            state: {
-              name: "In Progress",
-              color: "#f2c94c",
-              type: "started"
-            },
-            assignee: {
-              name: "Levi Daily",
-              email: "leviwaynedaily@gmail.com"
-            },
-            creator: {
-              name: "Austin Smith",
-              email: "austinsmith23@gmail.com"
-            },
-            labels: {
-              nodes: [
-                { id: "improvement-2", name: "Improvement", color: "#4EA7FC" },
-                { id: "feature-1", name: "Feature", color: "#BB87FC" }
-              ]
-            }
-          },
-          {
-            id: "4dcfe580-56df-49ab-b9b1-a76888dfafe7",
-            identifier: "FUS-10",
-            title: "Locations & Areas | Connectors w/ same name causes frontend display issues",
-            description: "When two or more connectors share the same name, it causes two issues on the **Locations & Areas** page:\n\n* Visual data duplication (same device show up twice)\n* When associating devices to areas, only one of the connectors w/ duplicate names are displayed in \"Connectors\" dropdown",
-            priority: 2,
-            url: "https://linear.app/pikoxfusion/issue/FUS-10/locations-and-areas-or-connectors-w-same-name-causes-frontend-display",
-            updatedAt: "2025-07-15T18:35:47.057Z",
-            createdAt: "2025-07-10T11:20:30.000Z",
-            state: {
-              name: "Done",
-              color: "#5e6ad2",
-              type: "completed"
-            },
-            assignee: {
-              name: "Austin Smith",
-              email: "austinsmith23@gmail.com"
-            },
-            creator: {
-              name: "Austin Smith",
-              email: "austinsmith23@gmail.com"
-            },
-            labels: {
-              nodes: [
-                { id: "bug-1", name: "Bug", color: "#EB5757" }
-              ]
-            }
-          },
-          {
-            id: "3617199e-aeee-416b-9a71-8c300d9963b7",
-            identifier: "FUS-4",
-            title: "Connect GitHub or GitLab",
-            description: "Connect your account to link issues to pull/merge requests and automate your workflow:\n\n* Link Linear issues to pull requests.\n* Automatically update an issue's status when PRs are created or merged.\n* Connect one or multiple repos.\n\n[Connect GitHub or GitLab →](https://linear.app/settings/integrations/github)\n\n## Setup tips\n\n#### How to link a Linear issue to a PR\n\n* **Branch name** (e.g. \"LIN-123\" or \"username/LIN-123\"). To quickly copy branch name for an issue to your clipboard, press `Cmd/Ctrl` `Shift` `.`\n* **Pull request title** (e.g. \"GitHub Workflow LIN-123\")\n* **Pull request description** (e.g. *Fixes LIN-123, Resolves LIN-123*) – it will not work if entered in commits or comments.\n\n#### When you link a Linear issue to a PR, Linear will:\n\n* Create a link to the PR in the Linear issue.\n* Comment on the PR with a link back to the Linear issue.\n* Once PR has been opened, Linear will change the status of the issue to \"In Progress\".\n* Once PR has been merged, Linear will change the status of the issue as \"Done\".\n\n#### Suggested Workflow\n\n1. Select or create the issue you want to work on next.\n2. Open the command menu (`Cmd` `K` on Mac, or `Ctrl` `K` on Windows) and select **Copy git branch name,** or use the shortcut `Cmd/Ctrl` `Shift` `.`\n3. This will copy the git branch name to your clipboard (e.g. `username/LIN-123-github-workflow`\n4. Paste the branch name to your git checkout command to create a new branch: `git checkout -b username/LIN-123-github-workflow`\n5. Make your changes and push the branch to GitHub and open a pull request\n6. Once the pull request is open, Linear will comment on the PR and change the issue state to **In Progress***.* \n7. Once the PR merged, Linear will change the status to Done.\n\nRead full integration instructions for [GitHub](https://linear.app/docs/github) and [GitLab →](https://linear.app/docs/gitlab)",
-            priority: 1,
-            url: "https://linear.app/pikoxfusion/issue/FUS-4/connect-github-or-gitlab",
-            updatedAt: "2025-07-04T23:22:53.219Z",
-            createdAt: "2025-07-01T08:10:20.000Z",
-            state: {
-              name: "Canceled",
-              color: "#95a2b3",
-              type: "canceled"
-            },
-            assignee: null,
-            creator: {
-              name: "Austin Smith",
-              email: "austinsmith23@gmail.com"
-            },
-            labels: { nodes: [] }
-          }
-        ],
-        pageInfo: {
-          hasNextPage: false,
-          endCursor: "21d08300-be22-454d-9f17-2cd4dae69568"
-        }
-      }
-    };
-
-    // Transform to match our interface (same logic as real API)
-    let issues: LinearIssue[] = mockApiResponse.issues.nodes.map((issue: any) => ({
-      id: issue.id,
-      identifier: issue.identifier,
-      title: issue.title,
-      description: issue.description || undefined,
-      priority: issue.priority,
-      url: issue.url,
-      updatedAt: new Date(issue.updatedAt),
-      createdAt: new Date(issue.createdAt),
-      state: {
-        id: '', // Not needed in UI but required by type
-        name: issue.state.name,
-        color: issue.state.color,
-        type: issue.state.type,
-      },
-      assignee: issue.assignee ? {
-        id: '', // Not needed in UI but required by type
-        name: issue.assignee.name,
-        email: issue.assignee.email,
-        displayName: issue.assignee.name, // Use name as displayName fallback
-      } : undefined,
-      creator: issue.creator ? {
-        id: '', // Not needed in UI but required by type
-        name: issue.creator.name,
-        email: issue.creator.email,
-        displayName: issue.creator.name, // Use name as displayName fallback
-      } : undefined,
-      team: {
-        id: '',
-        name: '',
-        key: '',
-      },
-      labels: (issue as any).labels?.nodes || [],
-      estimate: undefined,
-    }));
-
-    // Apply activeOnly filter if specified
-    if (options?.activeOnly) {
-      issues = issues.filter(issue => 
-        !['completed', 'canceled'].includes(issue.state.type)
-      );
-    }
+    // Dynamically import mock data only when needed
+    const { MOCK_LINEAR_ISSUES_RESPONSE } = await import('./linear-mock-data');
+    
+    // Apply activeOnly filter to mock data, same as real API data
+    const filteredIssues = options?.activeOnly 
+      ? MOCK_LINEAR_ISSUES_RESPONSE.issues.filter(issue => !['completed', 'canceled'].includes(issue.state.type))
+      : MOCK_LINEAR_ISSUES_RESPONSE.issues;
 
     return {
-      issues,
-      pageInfo: {
-        hasNextPage: false, // Mock always returns all data
-        endCursor: undefined,
-      },
-      totalCount: issues.length,
+      ...MOCK_LINEAR_ISSUES_RESPONSE,
+      issues: filteredIssues,
+      totalCount: filteredIssues.length,
     };
   }
 
   const client = createLinearClient(apiKey);
   
   try {
-    // Build filter object
+    // Build filter object for SDK
     const filter: any = {};
     if (teamId) {
       filter.team = { id: { eq: teamId } };
@@ -440,130 +313,123 @@ export async function getLinearIssues(
       filter.priority = { eq: options.filter.priority };
     }
 
-    // Auto-pagination: fetch all pages
-    const allIssues: any[] = [];
-    let hasNextPage = true;
-    let after: string | undefined = undefined;
-    const pageSize = 50; // Use Linear's default
+    // Use SDK method to fetch issues
+    const issuesConnection = await client.issues({
+      filter: Object.keys(filter).length > 0 ? filter : undefined,
+    });
 
-    // Use optimized GraphQL query - only fetch fields we actually use
-    const query = `
-      query Issues($first: Int, $after: String, $filter: IssueFilter) {
-        issues(first: $first, after: $after, filter: $filter) {
-          nodes {
-            id
-            identifier
-            title
-            description
-            priority
-            url
-            updatedAt
-            createdAt
-            state {
-              name
-              color
-              type
-            }
-            assignee {
-              name
-              email
-            }
-            creator {
-              name
-              email
-            }
-            labels {
-              nodes {
-                id
-                name
-                color
-              }
-            }
-          }
-          pageInfo {
-            hasNextPage
-            endCursor
-          }
-        }
-      }
-    `;
+    // Transform issues to match our interface - resolve lazy-loaded relationships
+    const issues: LinearIssue[] = await Promise.all(
+      issuesConnection.nodes.map(async (issue: any) => {
+        // Resolve all related data using SDK's lazy loading
+        const [state, assignee, creator, team, labels, comments] = await Promise.all([
+          issue.state,
+          issue.assignee,
+          issue.creator,
+          issue.team,
+          issue.labels(),
+          issue.comments()
+        ]);
 
-    // Auto-pagination loop: fetch all pages
-    while (hasNextPage) {
-      const variables = {
-        first: pageSize,
-        after,
-        filter: Object.keys(filter).length > 0 ? filter : undefined,
-      };
+        return {
+          id: issue.id,
+          identifier: issue.identifier,
+          title: issue.title,
+          description: issue.description || undefined,
+          priority: issue.priority,
+          url: issue.url,
+          updatedAt: issue.updatedAt,
+          createdAt: issue.createdAt,
+          state: {
+            id: state?.id || '',
+            name: state?.name || '',
+            color: state?.color || '',
+            type: state?.type || '',
+          },
+          assignee: assignee ? {
+            id: assignee.id,
+            name: assignee.name,
+            email: assignee.email,
+            displayName: assignee.displayName || assignee.name,
+            avatarUrl: assignee.avatarUrl || undefined,
+          } : undefined,
+          creator: creator ? {
+            id: creator.id,
+            name: creator.name,
+            email: creator.email,
+            displayName: creator.displayName || creator.name,
+            avatarUrl: creator.avatarUrl || undefined,
+          } : undefined,
+          team: {
+            id: team?.id || '',
+            name: team?.name || '',
+            key: team?.key || '',
+          },
+          labels: labels?.nodes || [],
+          estimate: issue.estimate,
+          comments: comments?.nodes ? await Promise.all(
+            comments.nodes.map(async (comment: any) => {
+              // Fetch user, parent ID reference, and reactions
+              const [commentUser, commentParent, commentReactions] = await Promise.all([
+                comment.user,
+                comment.parent,
+                comment.reactions || Promise.resolve([])
+              ]);
 
-      const response = await client.client.rawRequest(query, variables);
-      const data = response.data as any;
+              // Process reactions
+              const reactions: LinearReaction[] = commentReactions ? await Promise.all(
+                commentReactions.map(async (reaction: any) => {
+                  const reactionUser = await reaction.user;
+                  return {
+                    id: reaction.id,
+                    emoji: reaction.emoji,
+                    createdAt: reaction.createdAt,
+                    user: {
+                      id: reactionUser?.id || '',
+                      name: reactionUser?.name || '',
+                      email: reactionUser?.email || '',
+                      displayName: reactionUser?.displayName || reactionUser?.name || '',
+                      avatarUrl: reactionUser?.avatarUrl || undefined,
+                    },
+                  };
+                })
+              ) : [];
 
-      // Add issues from current page
-      allIssues.push(...data.issues.nodes);
-
-      // Update pagination state
-      hasNextPage = data.issues.pageInfo.hasNextPage;
-      after = data.issues.pageInfo.endCursor;
-
-      // Safety check to prevent infinite loops
-      if (allIssues.length > 10000) {
-        console.warn('[Linear Driver] Breaking auto-pagination at 10,000 issues for safety');
-        break;
-      }
-    }
-
-    // Transform all issues to match our interface
-    let issues: LinearIssue[] = allIssues.map((issue: any) => ({
-      id: issue.id,
-      identifier: issue.identifier,
-      title: issue.title,
-      description: issue.description || undefined,
-      priority: issue.priority,
-      url: issue.url,
-      updatedAt: new Date(issue.updatedAt),
-      createdAt: new Date(issue.createdAt),
-      state: {
-        id: '', // Not needed in UI but required by type
-        name: issue.state.name,
-        color: issue.state.color,
-        type: issue.state.type,
-      },
-      assignee: issue.assignee ? {
-        id: '', // Not needed in UI but required by type
-        name: issue.assignee.name,
-        email: issue.assignee.email,
-        displayName: issue.assignee.name, // Use name as displayName fallback
-      } : undefined,
-      creator: issue.creator ? {
-        id: '', // Not needed in UI but required by type
-        name: issue.creator.name,
-        email: issue.creator.email,
-        displayName: issue.creator.name, // Use name as displayName fallback
-      } : undefined,
-      team: {
-        id: '',
-        name: '',
-        key: '',
-      },
-      labels: (issue as any).labels?.nodes || [],
-      estimate: undefined,
-    }));
+              return {
+                id: comment.id,
+                body: comment.body,
+                createdAt: comment.createdAt,
+                updatedAt: comment.updatedAt,
+                user: {
+                  id: commentUser?.id || '',
+                  name: commentUser?.name || '',
+                  email: commentUser?.email || '',
+                  displayName: commentUser?.displayName || commentUser?.name || '',
+                  avatarUrl: commentUser?.avatarUrl || undefined,
+                },
+                url: comment.url || undefined,
+                parentId: commentParent?.id,  // Just the parent ID
+                children: [],                 // Build tree on frontend
+                reactions,                    // Include reactions
+              };
+            })
+          ) : [],
+        };
+      })
+    );
 
     // Apply activeOnly filter if specified
-    if (options?.activeOnly) {
-      issues = issues.filter(issue => 
-        !['completed', 'canceled'].includes(issue.state.type)
-      );
-    }
+    const filteredIssues = options?.activeOnly 
+      ? issues.filter(issue => !['completed', 'canceled'].includes(issue.state.type))
+      : issues;
 
     return {
-      issues,
+      issues: filteredIssues,
       pageInfo: {
-        hasNextPage: false, // We fetched all pages, so no more data
-        endCursor: undefined,
+        hasNextPage: issuesConnection.pageInfo.hasNextPage,
+        endCursor: issuesConnection.pageInfo.endCursor,
       },
-      totalCount: issues.length,
+      totalCount: filteredIssues.length,
     };
   } catch (error) {
     console.error('Error fetching Linear issues:', error);
@@ -575,131 +441,25 @@ export async function getLinearIssues(
  * Get a single issue from Linear by ID
  */
 export async function getLinearIssue(apiKey: string, issueId: string): Promise<LinearIssue> {
-  if (USE_MOCK_DATA) {
-    console.log('[Linear Driver] Using mock data for single issue');
-    await new Promise(resolve => setTimeout(resolve, 75)); // Simulate API delay
-    
-    // Mock response that matches the optimized GraphQL query fields
-    const mockApiResponse = {
-      issue: {
-        id: "44234cc6-0cc3-4963-be83-19d81a582251",
-        identifier: "FUS-47",
-        title: "Set up proper domain",
-        description: "# Prod\n\n---\n\nCurrently, the prod Fusion site is available at[ https://www.getfusion.io/](https://www.getfusion.io/.).\n\nInstead, make it available via[ https://app.getfusion.io/](https://app.getfusion.io/.) using the below config info…\n\n## **Configure DNS Records**\n\nTo finish setting up your custom domain, add the following DNS records to [getfusion.io](https://getfusion.io/):\n\n| Type | Name | Value |\n| -- | -- | -- |\n| CNAME | app | `nndizemc.up.railway.app` |",
-        priority: 4,
-        url: "https://linear.app/pikoxfusion/issue/FUS-47/set-up-proper-domain",
-        updatedAt: "2025-08-01T02:39:31.270Z",
-        createdAt: "2025-07-25T09:15:45.000Z",
-        state: {
-          name: "In Progress",
-          color: "#f2c94c",
-          type: "started"
-        },
-        assignee: {
-          name: "Levi Daily",
-          email: "levi@example.com"
-        },
-        creator: {
-          name: "Austin Smith",
-          email: "austinsmith23@gmail.com"
-        },
-        labels: {
-          nodes: [
-            { id: "improvement-2", name: "Improvement", color: "#10b981" },
-            { id: "urgent-1", name: "Urgent", color: "#ef4444" }
-          ]
-        }
-      }
-    };
-
-    // Transform to match our interface (same logic as real API)
-    const issue = mockApiResponse.issue;
-    return {
-      id: issue.id,
-      identifier: issue.identifier,
-      title: issue.title,
-      description: issue.description || undefined,
-      priority: issue.priority,
-      url: issue.url,
-      updatedAt: new Date(issue.updatedAt),
-      createdAt: new Date(issue.createdAt),
-      state: {
-        id: '', // Not needed in UI but required by type
-        name: issue.state.name,
-        color: issue.state.color,
-        type: issue.state.type,
-      },
-      assignee: issue.assignee ? {
-        id: '', // Not needed in UI but required by type
-        name: issue.assignee.name,
-        email: issue.assignee.email,
-        displayName: issue.assignee.name, // Use name as displayName fallback
-      } : undefined,
-      creator: issue.creator ? {
-        id: '', // Not needed in UI but required by type
-        name: issue.creator.name,
-        email: issue.creator.email,
-        displayName: issue.creator.name, // Use name as displayName fallback
-      } : undefined,
-      team: {
-        id: '',
-        name: '',
-        key: '',
-      },
-      labels: (issue as any).labels?.nodes || [],
-      estimate: undefined,
-    };
-  }
-
-  // REAL API CODE - OPTIMIZED FOR PERFORMANCE
   const client = createLinearClient(apiKey);
   
   try {
-    // Use optimized GraphQL query - only fetch fields we actually use
-    const query = `
-      query Issue($id: String!) {
-        issue(id: $id) {
-          id
-          identifier
-          title
-          description
-          priority
-          url
-          updatedAt
-          createdAt
-          state {
-            name
-            color
-            type
-          }
-          assignee {
-            name
-            email
-          }
-          creator {
-            name
-            email
-          }
-          labels {
-            nodes {
-              id
-              name
-              color
-            }
-          }
-        }
-      }
-    `;
-
-    const variables = { id: issueId };
-    const response = await client.client.rawRequest(query, variables);
-    const data = response.data as any;
+    // Use SDK method to fetch single issue
+    const issue = await client.issue(issueId);
     
-    if (!data.issue) {
+    if (!issue) {
       throw new Error('Issue not found');
     }
 
-    const issue = data.issue;
+    // Resolve all related data using SDK's lazy loading
+    const [state, assignee, creator, team, labels, comments] = await Promise.all([
+      issue.state,
+      issue.assignee,
+      issue.creator,
+      issue.team,
+      issue.labels(),
+      issue.comments()
+    ]);
 
     return {
       id: issue.id,
@@ -708,37 +468,120 @@ export async function getLinearIssue(apiKey: string, issueId: string): Promise<L
       description: issue.description || undefined,
       priority: issue.priority,
       url: issue.url,
-      updatedAt: new Date(issue.updatedAt),
-      createdAt: new Date(issue.createdAt),
+      updatedAt: issue.updatedAt,
+      createdAt: issue.createdAt,
       state: {
-        id: '', // Not needed in UI but required by type
-        name: issue.state.name,
-        color: issue.state.color,
-        type: issue.state.type,
+        id: state?.id || '',
+        name: state?.name || '',
+        color: state?.color || '',
+        type: state?.type || '',
       },
-      assignee: issue.assignee ? {
-        id: '', // Not needed in UI but required by type
-        name: issue.assignee.name,
-        email: issue.assignee.email,
-        displayName: issue.assignee.name, // Use name as displayName fallback
+      assignee: assignee ? {
+        id: assignee.id,
+        name: assignee.name,
+        email: assignee.email,
+        displayName: assignee.displayName || assignee.name,
+        avatarUrl: assignee.avatarUrl || undefined,
       } : undefined,
-      creator: issue.creator ? {
-        id: '', // Not needed in UI but required by type
-        name: issue.creator.name,
-        email: issue.creator.email,
-        displayName: issue.creator.name, // Use name as displayName fallback
+      creator: creator ? {
+        id: creator.id,
+        name: creator.name,
+        email: creator.email,
+        displayName: creator.displayName || creator.name,
+        avatarUrl: creator.avatarUrl || undefined,
       } : undefined,
       team: {
-        id: '',
-        name: '',
-        key: '',
+        id: team?.id || '',
+        name: team?.name || '',
+        key: team?.key || '',
       },
-      labels: (issue as any).labels?.nodes || [],
-      estimate: undefined,
+      labels: labels?.nodes || [],
+      estimate: issue.estimate,
+      comments: comments?.nodes ? await Promise.all(
+        comments.nodes.map(async (comment: any) => {
+          // Fetch user, parent ID reference, and reactions
+          const [commentUser, commentParent, commentReactions] = await Promise.all([
+            comment.user,
+            comment.parent,
+            comment.reactions || Promise.resolve([])
+          ]);
+
+          // Process reactions
+          const reactions: LinearReaction[] = commentReactions ? await Promise.all(
+            commentReactions.map(async (reaction: any) => {
+              const reactionUser = await reaction.user;
+              return {
+                id: reaction.id,
+                emoji: reaction.emoji,
+                createdAt: reaction.createdAt,
+                user: {
+                  id: reactionUser?.id || '',
+                  name: reactionUser?.name || '',
+                  email: reactionUser?.email || '',
+                  displayName: reactionUser?.displayName || reactionUser?.name || '',
+                  avatarUrl: reactionUser?.avatarUrl || undefined,
+                },
+              };
+            })
+          ) : [];
+
+          return {
+            id: comment.id,
+            body: comment.body,
+            createdAt: comment.createdAt,
+            updatedAt: comment.updatedAt,
+            user: {
+              id: commentUser?.id || '',
+              name: commentUser?.name || '',
+              email: commentUser?.email || '',
+              displayName: commentUser?.displayName || commentUser?.name || '',
+              avatarUrl: commentUser?.avatarUrl || undefined,
+            },
+            url: comment.url || undefined,
+            parentId: commentParent?.id,  // Just the parent ID
+            children: [],                 // Build tree on frontend
+            reactions,                    // Include reactions
+          };
+        })
+      ) : [],
     };
   } catch (error) {
     console.error('Error fetching Linear issue:', error);
     throw new Error('Failed to fetch Linear issue');
+  }
+}
+
+/**
+ * Update a Linear issue with any fields
+ */
+export async function updateLinearIssue(
+  apiKey: string, 
+  issueId: string, 
+  updates: {
+    stateId?: string;
+    assigneeId?: string;
+    priority?: number;
+    title?: string;
+    description?: string;
+    estimate?: number;
+    // Additional fields can be added as needed
+  }
+): Promise<LinearIssue> {
+  const client = createLinearClient(apiKey);
+  
+  try {
+    // Use Linear SDK's updateIssue mutation
+    const updatePayload = await client.updateIssue(issueId, updates);
+
+    if (!updatePayload.success) {
+      throw new Error('Failed to update issue');
+    }
+
+    // Return the updated issue by fetching it fresh
+    return await getLinearIssue(apiKey, issueId);
+  } catch (error) {
+    console.error('Error updating Linear issue:', error);
+    throw new Error(`Failed to update issue: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 

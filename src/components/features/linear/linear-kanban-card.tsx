@@ -2,8 +2,7 @@
 
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Tooltip,
   TooltipContent,
@@ -20,10 +19,10 @@ import { getLinearPriorityConfig } from '@/services/drivers/linear';
 
 interface LinearKanbanCardProps {
   issue: LinearIssue;
-  onClick: () => void;
+  onClick?: () => void;
 }
 
-export function LinearKanbanCard({ issue, onClick }: LinearKanbanCardProps) {
+export function LinearKanbanCard({ issue }: LinearKanbanCardProps) {
   const priorityConfig = getLinearPriorityConfig(issue.priority);
   const PriorityIcon = priorityConfig.icon;
 
@@ -33,22 +32,7 @@ export function LinearKanbanCard({ issue, onClick }: LinearKanbanCardProps) {
   };
 
   return (
-    <div
-      className={cn(
-        'rounded-lg border border-border bg-background p-3 text-start text-foreground shadow-sm',
-        'cursor-pointer hover:shadow-md transition-shadow duration-200',
-        'focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-none'
-      )}
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onClick();
-        }
-      }}
-    >
+    <div className="w-full">
       {/* Header with issue ID and external link */}
       <div className="flex items-center justify-between mb-2">
         <TooltipProvider>
@@ -67,14 +51,12 @@ export function LinearKanbanCard({ issue, onClick }: LinearKanbanCardProps) {
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-auto p-0 text-muted-foreground hover:text-foreground"
+              <div
+                className="h-auto p-0 text-muted-foreground hover:text-foreground cursor-pointer"
                 onClick={handleExternalLinkClick}
               >
                 <ExternalLink className="h-3 w-3" />
-              </Button>
+              </div>
             </TooltipTrigger>
             <TooltipContent>
               <p>Open in Linear</p>
@@ -140,17 +122,20 @@ export function LinearKanbanCard({ issue, onClick }: LinearKanbanCardProps) {
               <TooltipTrigger asChild>
                 <div className="flex items-center gap-2">
                   <Avatar className="h-5 w-5">
+                    {issue.assignee.avatarUrl && (
+                      <AvatarImage src={issue.assignee.avatarUrl} alt={issue.assignee.name} />
+                    )}
                     <AvatarFallback className="text-xs font-medium">
-                      {(issue.assignee.displayName || issue.assignee.name).charAt(0).toUpperCase()}
+                      {issue.assignee.name.charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <span className="text-xs text-muted-foreground truncate max-w-24">
-                    {issue.assignee.displayName || issue.assignee.name}
+                    {issue.assignee.name}
                   </span>
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Assigned to: {issue.assignee.displayName || issue.assignee.name}</p>
+                <p>Assigned to: {issue.assignee.name}</p>
                 <p className="text-xs opacity-80">{issue.assignee.email}</p>
               </TooltipContent>
             </Tooltip>

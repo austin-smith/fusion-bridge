@@ -11,15 +11,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Search, Loader2, AlertCircle, Settings, Kanban, Table, Table2, Map } from 'lucide-react';
+import { Search, Loader2, AlertCircle, Settings, SquareKanban, Table, Table2, Map } from 'lucide-react';
 
 import { LinearIssuesTable } from '@/components/features/linear/linear-issues-table';
 import { LinearIssuesTableSkeleton } from '@/components/features/linear/linear-issues-table';
 import { LinearKanbanBoard, LinearKanbanBoardSkeleton } from '@/components/features/linear/linear-kanban-board';
 import { LinearIssueDetailDialog } from '@/components/features/linear/linear-issue-detail-dialog';
-import type { LinearIssue } from '@/services/drivers/linear';
+import type { LinearIssue, LinearUser } from '@/services/drivers/linear';
 import { useFusionStore } from '@/stores/store';
 import { PageHeader } from '@/components/layout/page-header';
+import { extractStatesFromIssues } from '@/lib/linear-utils';
 
 interface LinearConfig {
   configured: boolean;
@@ -31,6 +32,7 @@ interface LinearConfig {
 export default function RoadmapPage() {
   const [config, setConfig] = useState<LinearConfig | null>(null);
   const [issues, setIssues] = useState<LinearIssue[]>([]);
+  const [teamMembers, setTeamMembers] = useState<LinearUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [selectedIssue, setSelectedIssue] = useState<LinearIssue | null>(null);
@@ -45,8 +47,6 @@ export default function RoadmapPage() {
     setError('');
     
     try {
-      console.log('Fetching Linear data...');
-      
       const issuesResponse = await fetch(`/api/services/linear/issues?activeOnly=${activeOnly}`, {
         credentials: 'include'
       });
@@ -72,19 +72,39 @@ export default function RoadmapPage() {
       }
 
       const issuesData = await issuesResponse.json();
+      const teamId = issuesData.meta?.teamId;
 
-      console.log('Linear data fetched successfully:', {
-        issuesCount: issuesData.data?.issues?.length || 0
-      });
+      // Fetch team members if we have a team ID
+      let teamMembersData: LinearUser[] = [];
+      if (teamId) {
+        try {
+          const membersResponse = await fetch(
+            `/api/services/linear/teams/${teamId}/members?limit=50&activeOnly=true`,
+            { credentials: 'include' }
+          );
+          
+          if (membersResponse.ok) {
+            const membersJson = await membersResponse.json();
+            teamMembersData = membersJson.success ? membersJson.data : [];
+          } else {
+            console.warn('Failed to fetch team members, continuing without assignee functionality');
+          }
+        } catch (membersError) {
+          console.warn('Error fetching team members:', membersError);
+          // Continue without team members - graceful degradation
+        }
+      }
 
-      setConfig({ configured: true });
+      setConfig({ configured: true, teamId });
       setIssues(issuesData.data?.issues || []);
+      setTeamMembers(teamMembersData);
       setError('');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       console.error('Error fetching Linear data:', error);
       setError(errorMessage);
       setIssues([]);
+      setTeamMembers([]);
     } finally {
       setIsLoading(false);
     }
@@ -179,16 +199,16 @@ export default function RoadmapPage() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant={roadmapViewType === 'kanban' ? "secondary" : "ghost"}
+                      variant={roadmapViewType === 'table-grouped' ? "secondary" : "ghost"}
                       size="sm"
-                      onClick={() => setRoadmapViewType('kanban')}
+                      onClick={() => setRoadmapViewType('table-grouped')}
                       className="h-8"
                     >
-                      <Kanban className="h-4 w-4" />
+                      <Table2 className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Kanban Board</p>
+                    <p>Grouped Table</p>
                   </TooltipContent>
                 </Tooltip>
 
@@ -211,38 +231,35 @@ export default function RoadmapPage() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant={roadmapViewType === 'table-grouped' ? "secondary" : "ghost"}
+                      variant={roadmapViewType === 'kanban' ? "secondary" : "ghost"}
                       size="sm"
-                      onClick={() => setRoadmapViewType('table-grouped')}
+                      onClick={() => setRoadmapViewType('kanban')}
                       className="h-8"
                     >
-                      <Table2 className="h-4 w-4" />
+                      <SquareKanban className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Grouped Table</p>
+                    <p>Kanban Board</p>
                   </TooltipContent>
                 </Tooltip>
               </div>
             </TooltipProvider>
           ) : (
             <div className="flex items-center gap-1 border rounded-md p-1">
-              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3 text-xs">
+              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3">
                 <div className="h-4 w-4 bg-muted animate-pulse rounded" />
               </div>
-              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3 text-xs">
+              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3">
                 <div className="h-4 w-4 bg-muted animate-pulse rounded" />
               </div>
-              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3 text-xs">
+              <div className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-8 px-3">
                 <div className="h-4 w-4 bg-muted animate-pulse rounded" />
               </div>
             </div>
           )}
         </div>
       </div>
-
-
-  
 
       {/* Content based on state */}
       {isLoading && (
@@ -345,8 +362,20 @@ export default function RoadmapPage() {
       {selectedIssue && (
         <LinearIssueDetailDialog
           issue={selectedIssue}
+          availableStates={extractStatesFromIssues(issues)}
+          teamMembers={teamMembers}
           isOpen={!!selectedIssue}
           onClose={() => setSelectedIssue(null)}
+          onIssueUpdate={(updatedIssue) => {
+            // Update the issue in the local state
+            setIssues(prevIssues => 
+              prevIssues.map(issue => 
+                issue.id === updatedIssue.id ? updatedIssue : issue
+              )
+            );
+            // Update the selected issue to reflect changes
+            setSelectedIssue(updatedIssue);
+          }}
         />
       )}
     </div>

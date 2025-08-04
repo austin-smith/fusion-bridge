@@ -20,7 +20,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowUpDown, Circle, CircleDashed, CircleCheck, LoaderCircle, CircleX, AlertCircle, SignalHigh, SignalMedium, SignalLow, Ellipsis, User, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowUpDown, AlertCircle, SignalHigh, SignalMedium, SignalLow, Ellipsis, User, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -33,6 +33,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { LinearIssue } from '@/services/drivers/linear';
 import { getLinearPriorityConfig } from '@/services/drivers/linear';
+import { getStateIcon } from '@/lib/linear-utils';
 
 interface LinearIssuesTableProps {
   issues: LinearIssue[];
@@ -77,18 +78,6 @@ const PriorityBadge = ({ priority }: { priority: number }) => {
 
 // Status badge component
 const StatusBadge = ({ state }: { state: LinearIssue['state'] }) => {
-  // Map state type to icon
-  const getStateIcon = (type: string) => {
-    switch (type) {
-      case 'unstarted': return Circle; // Todo
-      case 'backlog': return CircleDashed;
-      case 'started': return LoaderCircle; // In Progress
-      case 'completed': return CircleCheck; // Done
-      case 'canceled': return CircleX;
-      default: return Circle;
-    }
-  };
-
   const IconComponent = getStateIcon(state.type);
 
   return (
@@ -225,7 +214,7 @@ const columns: ColumnDef<LinearIssue>[] = [
   {
     id: "assignee",
     header: ({ column }) => <SortableHeader column={column}>Assignee</SortableHeader>,
-    accessorFn: (row) => row.assignee?.displayName || row.assignee?.name || 'Unassigned',
+    accessorFn: (row) => row.assignee?.name || 'Unassigned',
     cell: ({ row }) => {
       const assignee = row.original.assignee;
       
@@ -242,12 +231,15 @@ const columns: ColumnDef<LinearIssue>[] = [
         );
       }
 
-      const name = assignee.displayName || assignee.name;
+                  const name = assignee.name;
       const fallback = name.charAt(0).toUpperCase();
       
       return (
         <div className="flex items-center gap-2">
           <Avatar className="h-6 w-6">
+            {assignee.avatarUrl && (
+              <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
+            )}
             <AvatarFallback className="text-xs">{fallback}</AvatarFallback>
           </Avatar>
           <span className="text-sm truncate">{name}</span>
@@ -376,16 +368,6 @@ export function LinearIssuesTable({ issues, onRowClick, enableGrouping = false }
                       {/* Get state from first item in group to show status icon and color */}
                       {row.subRows.length > 0 && (() => {
                         const state = row.subRows[0].original.state;
-                        const getStateIcon = (type: string) => {
-                          switch (type) {
-                            case 'unstarted': return Circle;
-                            case 'backlog': return CircleDashed;
-                            case 'started': return LoaderCircle;
-                            case 'completed': return CircleCheck;
-                            case 'canceled': return CircleX;
-                            default: return Circle;
-                          }
-                        };
                         const IconComponent = getStateIcon(state.type);
                         return (
                           <div className="flex items-center gap-2">
