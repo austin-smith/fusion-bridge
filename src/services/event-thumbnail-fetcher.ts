@@ -38,14 +38,25 @@ async function fetchThumbnailFromSource(
       setTimeout(() => reject(new Error('Thumbnail fetch timeout')), THUMBNAIL_TIMEOUT_MS);
     });
 
-    console.log(`${logPrefix} Fetching ${source.type} thumbnail for timestamp ${source.timestamp} with size ${THUMBNAIL_SIZE}`);
+    console.log(`${logPrefix} Fetching ${source.type} thumbnail${source.type === 'best-shot' ? ` for objectTrackId ${source.objectTrackId}` : ` for timestamp ${source.timestamp}`} with size ${THUMBNAIL_SIZE}`);
 
-    // For now, both best-shot and space-camera use the same API
-    // In the future, best-shot could use a specialized endpoint
-    const thumbnailBlob = await Promise.race([
-      pikoDriver.getPikoDeviceThumbnail(source.connectorId, source.cameraId, source.timestamp, THUMBNAIL_SIZE),
-      timeoutPromise
-    ]) as Blob;
+    let thumbnailBlob: Blob;
+
+    if (source.type === 'best-shot' && source.objectTrackId) {
+      // Use best-shot API for analytics events
+      const { buffer, contentType } = await Promise.race([
+        pikoDriver.getPikoBestShotImageData(source.connectorId, source.objectTrackId, source.cameraId),
+        timeoutPromise
+      ]) as { buffer: Buffer; contentType: string };
+      
+      thumbnailBlob = new Blob([buffer], { type: contentType });
+    } else {
+      // Use regular thumbnail API for other events
+      thumbnailBlob = await Promise.race([
+        pikoDriver.getPikoDeviceThumbnail(source.connectorId, source.cameraId, source.timestamp, THUMBNAIL_SIZE),
+        timeoutPromise
+      ]) as Blob;
+    }
 
     // Verify we got a valid blob
     if (!(thumbnailBlob instanceof Blob)) {
@@ -70,7 +81,7 @@ async function fetchThumbnailFromSource(
     if (error instanceof Error && error.message === 'Thumbnail fetch timeout') {
       console.warn(`${logPrefix} Thumbnail fetch timed out after ${THUMBNAIL_TIMEOUT_MS}ms`);
     } else {
-      console.warn(`${logPrefix} Failed to fetch thumbnail:`, error);
+      console.warn(`${logPrefix} Failed to fetch ${source.type} thumbnail:`, error);
     }
     return null;
   }
