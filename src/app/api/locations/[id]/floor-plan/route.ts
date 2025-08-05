@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Readable } from 'stream';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { fileStorage, type FloorPlanData } from '@/lib/storage/file-storage';
@@ -149,11 +148,8 @@ export const GET = withOrganizationAuth(async (
       filename
     );
     
-    // Convert Node.js ReadStream to Web ReadableStream
-    const webStream = Readable.toWeb(stream);
-    
     // Create response with proper headers
-    const response = new NextResponse(webStream, {
+    const response = new NextResponse(stream as any, {
       status: 200,
       headers: {
         'Content-Type': metadata.contentType,

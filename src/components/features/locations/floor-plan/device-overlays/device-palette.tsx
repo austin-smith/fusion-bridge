@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { Search, Plus, Cpu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,6 +36,7 @@ interface DraggableDeviceItemProps {
 
 function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const dragPreviewRef = useRef<HTMLDivElement>(null);
 
   const typeInfo = device.deviceTypeInfo;
   const IconComponent = typeInfo ? getDeviceTypeIcon(typeInfo.type) : Cpu;
@@ -61,69 +62,10 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
     // Set visual feedback
     e.dataTransfer.effectAllowed = 'copy';
     
-    // Create drag preview element using CSS variables
-    const preview = document.createElement('div');
-    preview.style.cssText = `
-      position: absolute;
-      top: -1000px;
-      left: -1000px;
-      width: 120px;
-      height: 40px;
-      background: hsl(var(--background));
-      border: 2px solid hsl(var(--primary));
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-      font-size: 12px;
-      font-weight: 500;
-      color: hsl(var(--foreground));
-      z-index: 9999;
-      pointer-events: none;
-    `;
-    
-    // Add icon
-    const icon = document.createElement('span');
-    icon.style.cssText = `
-      width: 16px;
-      height: 16px;
-      background: hsl(var(--primary));
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: hsl(var(--primary-foreground));
-      font-size: 10px;
-      font-weight: bold;
-      flex-shrink: 0;
-    `;
-    icon.textContent = typeText.charAt(0).toUpperCase();
-    
-    // Add text
-    const text = document.createElement('span');
-    text.style.cssText = `
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      flex: 1;
-    `;
-    text.textContent = device.name;
-    
-    preview.appendChild(icon);
-    preview.appendChild(text);
-    document.body.appendChild(preview);
-    
-    // Set drag image
-    e.dataTransfer.setDragImage(preview, 60, 20);
-    
-    // Clean up immediately
-    setTimeout(() => {
-      if (document.body.contains(preview)) {
-        document.body.removeChild(preview);
-      }
-    }, 0);
+    // Use the hidden React element as drag preview
+    if (dragPreviewRef.current) {
+      e.dataTransfer.setDragImage(dragPreviewRef.current, 60, 20);
+    }
   };
 
   const handleDragEnd = () => {
@@ -131,19 +73,33 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
   };
 
   return (
-    <TooltipProvider delayDuration={300}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div
-            draggable
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-            className={cn(
-              "relative p-2 border rounded-md bg-background flex items-center gap-2 transition-all duration-200 cursor-grab active:cursor-grabbing group",
-              isDragging ? 'opacity-50 scale-95' : 'hover:bg-muted/50 hover:border-primary/20',
-              isCompact ? 'p-1.5' : 'p-2'
-            )}
-          >
+    <>
+      {/* Hidden drag preview element */}
+      <div
+        ref={dragPreviewRef}
+        className="fixed -top-[1000px] -left-[1000px] w-30 h-10 bg-background border-2 border-primary rounded-lg flex items-center gap-2 px-3 py-2 shadow-lg text-xs font-medium pointer-events-none z-[9999]"
+      >
+        <div className="w-4 h-4 bg-primary rounded text-primary-foreground text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+          {typeText.charAt(0).toUpperCase()}
+        </div>
+        <span className="truncate flex-1">
+          {device.name}
+        </span>
+      </div>
+
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div
+              draggable
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              className={cn(
+                "relative p-2 border rounded-md bg-background flex items-center gap-2 transition-all duration-200 cursor-grab active:cursor-grabbing group",
+                isDragging ? 'opacity-50 scale-95' : 'hover:bg-muted/50 hover:border-primary/20',
+                isCompact ? 'p-1.5' : 'p-2'
+              )}
+            >
             {/* Device Icon */}
             <div className="flex-shrink-0">
               <IconComponent className="h-4 w-4 text-muted-foreground" />
@@ -190,6 +146,7 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
+    </>
   );
 }
 
