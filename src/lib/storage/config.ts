@@ -1,6 +1,8 @@
 import { join } from 'path';
 import { homedir } from 'os';
 
+const LOCAL_APP_DIR = '.fusion-bridge';
+
 export interface StorageConfig {
   baseDir: string;
   maxFileSize: number;
@@ -9,17 +11,24 @@ export interface StorageConfig {
 }
 
 export function getStorageConfig(): StorageConfig {
-  // Detect environment
-  const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
+  const storageDir = process.env.STORAGE_DIR;
   
+  if (!storageDir) {
+    throw new Error('STORAGE_DIR environment variable is not set');
+  }
+  
+  // If it's an absolute path, use as-is, otherwise resolve based on environment
   let baseDir: string;
-  
-  if (isRailway) {
-    // Railway production - use mounted volume
-    baseDir = '/storage';
+  if (storageDir.startsWith('/')) {
+    // Absolute path - use as-is (Railway with mounted volume)
+    baseDir = storageDir;
   } else {
-    // Local development - use ~/.fusion-bridge/uploads
-    baseDir = join(homedir(), '.fusion-bridge', 'storage');
+    // Directory name - resolve based on environment
+    if (process.env.RAILWAY_ENVIRONMENT) {
+      baseDir = `//${storageDir}`;  // Railway: //storage
+    } else {
+      baseDir = join(homedir(), LOCAL_APP_DIR, storageDir);  // Local: ~/.fusion-bridge/storage
+    }
   }
   
   return {
