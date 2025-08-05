@@ -73,6 +73,15 @@ export const POST = withOrganizationAuth(async (
     
   } catch (error) {
     console.error('Error uploading floor plan:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      env: {
+        STORAGE_DIR: process.env.STORAGE_DIR,
+        RAILWAY_ENVIRONMENT: process.env.RAILWAY_ENVIRONMENT,
+        NODE_ENV: process.env.NODE_ENV
+      }
+    });
     
     // Check if it's a validation error (from storage service)
     if (error instanceof Error && (

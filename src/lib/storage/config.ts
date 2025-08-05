@@ -25,7 +25,7 @@ export function getStorageConfig(): StorageConfig {
   } else {
     // Directory name - resolve based on environment
     if (process.env.RAILWAY_ENVIRONMENT) {
-      baseDir = `//${storageDir}`;  // Railway: //storage
+      baseDir = `/${storageDir}`;  // Railway: /storage
     } else {
       baseDir = join(homedir(), LOCAL_APP_DIR, storageDir);  // Local: ~/.fusion-bridge/storage
     }
