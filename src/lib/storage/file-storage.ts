@@ -195,7 +195,7 @@ export class FileStorageService {
     organizationId: string,
     locationId: string,
     internalFilename: string
-  ): Promise<boolean> {
+  ): Promise<void> {
     // Validate input parameters for security
     this.validateId(organizationId, 'organizationId');
     this.validateId(locationId, 'locationId');
@@ -206,10 +206,9 @@ export class FileStorageService {
       const filePath = join(storageDir, internalFilename);
       
       await unlink(filePath);
-      return true;
     } catch (error) {
       console.error('Error deleting floor plan file:', error);
-      return false;
+      throw new Error(`Failed to delete floor plan file: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -220,9 +219,9 @@ export class FileStorageService {
     organizationId: string,
     locationId: string,
     floorPlanData: FloorPlanData
-  ): Promise<boolean> {
+  ): Promise<void> {
     const internalFilename = this.getInternalFilenameFromPath(floorPlanData.filePath);
-    return this.deleteFloorPlan(organizationId, locationId, internalFilename);
+    await this.deleteFloorPlan(organizationId, locationId, internalFilename);
   }
 
   /**

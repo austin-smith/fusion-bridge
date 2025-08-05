@@ -151,18 +151,10 @@ export function DeviceOverlayIcon({
 
   const handleMouseEnter = () => {
     setIsHovered(true);
-    // Change cursor to pointer
-    if (groupRef.current) {
-      groupRef.current.getStage().container().style.cursor = 'pointer';
-    }
   };
 
   const handleMouseLeave = () => {
     setIsHovered(false);
-    // Reset cursor
-    if (groupRef.current) {
-      groupRef.current.getStage().container().style.cursor = 'default';
-    }
   };
 
   const renderShape = () => {

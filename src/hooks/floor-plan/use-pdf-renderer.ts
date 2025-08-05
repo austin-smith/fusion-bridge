@@ -88,9 +88,12 @@ export function usePdfRenderer(
         // Dynamically import PDF.js to avoid SSR issues
         const pdfjsLib = await import('pdfjs-dist');
         
-        // Set worker source - use CDN fallback
+        // Set worker source using bundled worker
         if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+          pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+            'pdfjs-dist/build/pdf.worker.min.mjs',
+            import.meta.url
+          ).toString();
         }
 
         // Load the PDF document

@@ -16,7 +16,6 @@ export function validateFloorPlanFile(file: File): FileValidationResult {
   const allowedTypes = [
     'image/png',
     'image/jpeg',
-    'image/jpg', 
     'application/pdf',
     'image/svg+xml'
   ];

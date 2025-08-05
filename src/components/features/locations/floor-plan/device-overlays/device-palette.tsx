@@ -61,16 +61,16 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
     // Set visual feedback
     e.dataTransfer.effectAllowed = 'copy';
     
-    // Create compact drag preview
-    const dragPreview = document.createElement('div');
-    dragPreview.style.cssText = `
+    // Create drag preview element using CSS variables
+    const preview = document.createElement('div');
+    preview.style.cssText = `
       position: absolute;
       top: -1000px;
       left: -1000px;
       width: 120px;
       height: 40px;
-      background: white;
-      border: 2px solid #3b82f6;
+      background: hsl(var(--background));
+      border: 2px solid hsl(var(--primary));
       border-radius: 8px;
       display: flex;
       align-items: center;
@@ -79,47 +79,49 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
       font-size: 12px;
       font-weight: 500;
-      color: #1f2937;
+      color: hsl(var(--foreground));
       z-index: 9999;
       pointer-events: none;
     `;
     
-    // Add icon and text
-    const iconSpan = document.createElement('span');
-    iconSpan.style.cssText = `
+    // Add icon
+    const icon = document.createElement('span');
+    icon.style.cssText = `
       width: 16px;
       height: 16px;
-      background: #3b82f6;
+      background: hsl(var(--primary));
       border-radius: 4px;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: white;
+      color: hsl(var(--primary-foreground));
       font-size: 10px;
       font-weight: bold;
+      flex-shrink: 0;
     `;
-    iconSpan.textContent = typeText.charAt(0).toUpperCase();
+    icon.textContent = typeText.charAt(0).toUpperCase();
     
-    const textSpan = document.createElement('span');
-    textSpan.style.cssText = `
+    // Add text
+    const text = document.createElement('span');
+    text.style.cssText = `
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       flex: 1;
     `;
-    textSpan.textContent = device.name;
+    text.textContent = device.name;
     
-    dragPreview.appendChild(iconSpan);
-    dragPreview.appendChild(textSpan);
-    document.body.appendChild(dragPreview);
+    preview.appendChild(icon);
+    preview.appendChild(text);
+    document.body.appendChild(preview);
     
-    // Set drag image with proper offset
-    e.dataTransfer.setDragImage(dragPreview, 60, 20);
+    // Set drag image
+    e.dataTransfer.setDragImage(preview, 60, 20);
     
-    // Clean up drag preview after drag starts
+    // Clean up immediately
     setTimeout(() => {
-      if (document.body.contains(dragPreview)) {
-        document.body.removeChild(dragPreview);
+      if (document.body.contains(preview)) {
+        document.body.removeChild(preview);
       }
     }, 0);
   };

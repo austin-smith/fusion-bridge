@@ -34,7 +34,7 @@ const nextConfig: NextConfig = {
     // Handle PDF.js worker
     config.resolve.alias = {
       ...config.resolve.alias,
-      'pdfjs-dist/build/pdf.worker.entry': 'pdfjs-dist/build/pdf.worker.min.js',
+      'pdfjs-dist/build/pdf.worker.entry': 'pdfjs-dist/build/pdf.worker.min.mjs',
     };
     
     return config;
