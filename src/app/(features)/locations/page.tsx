@@ -3,16 +3,18 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box } from 'lucide-react';
-import { WeatherIcon } from '@/components/ui/weather-icon';
+import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box, PencilRuler } from 'lucide-react';
 import { LocationEditDialog } from '@/components/features/locations/locations/location-edit-dialog';
 import { LocationWeatherIcon } from '@/components/features/locations/locations/location-weather-icon';
+import { FloorPlanIndicator } from '@/components/features/locations/locations/floor-plan-indicator';
+import { FloorPlanDetail } from '@/components/features/locations/locations/floor-plan-detail';
 import { SpaceEditDialog } from '@/components/features/locations/spaces/space-edit-dialog';
 import { SpaceDeviceAssignmentDialog } from '@/components/features/locations/spaces/space-device-assignment-dialog';
 import { CameraWallDialog } from '@/components/features/common/camera-wall-dialog';
 import { SpaceCard } from '@/components/features/locations/spaces/SpaceCard';
 import { LocationTreeView } from '@/components/features/locations/locations/location-tree-view';
 import type { Location, Space, DeviceWithConnector } from "@/types/index";
+import type { FloorPlanData } from '@/lib/storage/file-storage';
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -31,6 +33,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { cn } from '@/lib/utils';
@@ -117,6 +125,8 @@ export default function LocationsPage() {
   const [spaceToAssignDevice, setSpaceToAssignDevice] = useState<Space | null>(null);
   const [isCameraWallDialogOpen, setIsCameraWallDialogOpen] = useState(false);
   const [selectedSpaceForCameraWall, setSelectedSpaceForCameraWall] = useState<Space | null>(null);
+  const [isFloorPlanViewerOpen, setIsFloorPlanViewerOpen] = useState(false);
+  const [selectedLocationForFloorPlan, setSelectedLocationForFloorPlan] = useState<Location | null>(null);
   const [expandedSpaceDevices, setExpandedSpaceDevices] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -294,6 +304,53 @@ export default function LocationsPage() {
       setSelectedSpaceForCameraWall(null);
     }
   };
+
+  // Floor plan handlers
+  const handleViewFloorPlan = (location: Location) => {
+    setSelectedLocationForFloorPlan(location);
+    setIsFloorPlanViewerOpen(true);
+  };
+
+  const handleUploadFloorPlan = (location: Location) => {
+    // For upload, open the floor plan detail dialog too
+    setSelectedLocationForFloorPlan(location);
+    setIsFloorPlanViewerOpen(true);
+  };
+
+  const handleFloorPlanDelete = async () => {
+    if (!selectedLocationForFloorPlan) return;
+    
+    try {
+      const response = await fetch(`/api/locations/${selectedLocationForFloorPlan.id}/floor-plan`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete floor plan');
+      }
+      
+      toast.success('Floor plan deleted successfully');
+      await fetchLocations(); // Refresh locations to update floor plan data
+      setIsFloorPlanViewerOpen(false);
+    } catch (error) {
+      console.error('Error deleting floor plan:', error);
+      toast.error('Failed to delete floor plan');
+    }
+  };
+
+  const handleFloorPlanUpdated = async () => {
+    await fetchLocations(); // Refresh locations to get updated floor plan data
+  };
+
+  // Update selected location when locations change (after upload)
+  useEffect(() => {
+    if (selectedLocationForFloorPlan) {
+      const updatedLocation = locations.find(loc => loc.id === selectedLocationForFloorPlan.id);
+      if (updatedLocation && updatedLocation.floorPlan !== selectedLocationForFloorPlan.floorPlan) {
+        setSelectedLocationForFloorPlan(updatedLocation);
+      }
+    }
+  }, [locations, selectedLocationForFloorPlan]);
 
   // Tree view handlers
   const handleTreeSelectItem = useCallback((item: { type: 'location' | 'space', location: Location | null, space: Space | null }) => {
@@ -572,6 +629,11 @@ export default function LocationsPage() {
                                            </div>
                                          </div>
                                          <div className="flex items-center gap-1 flex-shrink-0">
+                                             <FloorPlanIndicator
+                                               floorPlan={location.floorPlan as FloorPlanData | null}
+                                               onViewFloorPlan={() => handleViewFloorPlan(location)}
+                                               onUploadFloorPlan={() => handleUploadFloorPlan(location)}
+                                             />
                                              <DropdownMenu>
                                                  <DropdownMenuTrigger asChild>
                                                     <Button variant="ghost" size="icon" className="h-7 w-7">
@@ -788,6 +850,35 @@ export default function LocationsPage() {
               device.deviceTypeInfo?.type === DeviceType.Camera
             )}
           />
+        )}
+
+        {/* Floor Plan Detail Dialog */}
+        {selectedLocationForFloorPlan && (
+          <Dialog open={isFloorPlanViewerOpen} onOpenChange={setIsFloorPlanViewerOpen}>
+            <DialogContent className="max-w-6xl">
+              <DialogHeader>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted">
+                    <PencilRuler className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <DialogTitle className="text-xl">
+                      {selectedLocationForFloorPlan.name}
+                    </DialogTitle>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedLocationForFloorPlan.floorPlan ? 'Floor Plan' : 'Add Floor Plan'}
+                    </p>
+                  </div>
+                </div>
+              </DialogHeader>
+              <FloorPlanDetail
+                floorPlan={selectedLocationForFloorPlan.floorPlan as FloorPlanData | null}
+                locationId={selectedLocationForFloorPlan.id}
+                onFloorPlanUpdated={handleFloorPlanUpdated}
+                onDelete={handleFloorPlanDelete}
+              />
+            </DialogContent>
+          </Dialog>
         )}
       </div>
     </DndContext>
