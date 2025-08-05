@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
-import Image from 'next/image';
-import { ExternalLink, Upload, Trash2, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Upload, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FloorPlanUpload } from './floor-plan-upload';
+import { FloorPlanCanvasDynamic, DevicePalette } from '.';
+import { useDeviceOverlays } from '@/hooks/floor-plan/device-overlays';
+import { useFusionStore } from '@/stores/store';
 import { toast } from 'sonner';
 import type { FloorPlanData } from '@/lib/storage/file-storage';
 
@@ -26,6 +28,35 @@ export function FloorPlanDetail({
   const [isReplacing, setIsReplacing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [deviceSearchTerm, setDeviceSearchTerm] = useState('');
+
+  // Get devices and spaces from store
+  const { allDevices, spaces } = useFusionStore((state) => ({
+    allDevices: state.allDevices,
+    spaces: state.spaces
+  }));
+
+  // Get device overlays and management functions
+  const {
+    overlays,
+    isLoading: overlaysLoading,
+    error: overlaysError,
+    selectedOverlayId,
+    createOverlay,
+    updateOverlay,
+    deleteOverlay,
+    selectOverlay
+  } = useDeviceOverlays({ locationId });
+
+  // Create set of device IDs that are already placed on floor plan
+  const placedDeviceIds = new Set(overlays.map(overlay => overlay.deviceId));
+
+  // Handle overlay errors
+  useEffect(() => {
+    if (overlaysError) {
+      toast.error(`Device overlay error: ${overlaysError}`);
+    }
+  }, [overlaysError]);
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
@@ -138,46 +169,61 @@ export function FloorPlanDetail({
     );
   }
 
-  // Handle viewing mode
-  const isImage = floorPlan.contentType.startsWith('image/');
-  const isPdf = floorPlan.contentType === 'application/pdf';
+  // Handle viewing mode with interactive canvas
+  const handleCanvasLoad = (dimensions: { width: number; height: number }) => {
+    console.log('Floor plan loaded with dimensions:', dimensions);
+  };
+
+  const handleCanvasError = (error: string) => {
+    console.error('Floor plan canvas error:', error);
+    toast.error('Failed to load floor plan');
+  };
+
+  const handleAssignDevices = () => {
+    // This would open the device assignment dialog
+    // For now, just show a toast that this feature is coming
+    toast.info('Device assignment dialog will be implemented in a future update');
+  };
 
   return (
-    <div className="space-y-4">
-      {/* Floor Plan Content */}
-      {isPdf ? (
-        <div className="flex flex-col items-center justify-center p-8 text-center bg-muted/20 rounded-lg">
-          <ExternalLink className="h-12 w-12 mb-4 text-muted-foreground" />
-          <p className="text-lg font-medium mb-2">{floorPlan.filename}</p>
-          <p className="text-sm text-muted-foreground mb-4">PDF files open in a new tab</p>
-          <a
-            href={getServingUrl(floorPlan)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary hover:underline"
-          >
-            Open PDF
-          </a>
-        </div>
-      ) : isImage ? (
-        <div className="relative w-full h-[70vh] bg-muted/20 rounded-lg overflow-hidden">
-          <Image
-            src={getServingUrl(floorPlan)}
-            alt="Floor plan"
-            fill
-            className="object-contain"
-            priority
+    <div className="space-y-4 max-w-full overflow-hidden">
+      {/* Two-panel layout: Device Palette + Canvas */}
+      <div className="flex gap-4 h-[600px] min-w-0">
+        {/* Device Palette */}
+        <div className="w-72 flex-shrink-0">
+          <DevicePalette
+            devices={allDevices}
+            spaces={spaces}
+            locationId={locationId}
+            searchTerm={deviceSearchTerm}
+            onSearchChange={setDeviceSearchTerm}
+            onAssignDevices={handleAssignDevices}
+            placedDeviceIds={placedDeviceIds}
+            className="h-full"
           />
         </div>
-      ) : (
-        <div className="flex items-center justify-center p-8 bg-muted/20 rounded-lg">
-          <p className="text-muted-foreground">Unsupported file type</p>
+
+        {/* Interactive Floor Plan Canvas */}
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <FloorPlanCanvasDynamic
+            floorPlan={floorPlan}
+            locationId={locationId}
+            onLoad={handleCanvasLoad}
+            onError={handleCanvasError}
+            overlays={overlays}
+            selectedOverlayId={selectedOverlayId}
+            createOverlay={createOverlay}
+            updateOverlay={updateOverlay}
+            deleteOverlay={deleteOverlay}
+            selectOverlay={selectOverlay}
+            className="w-full h-full"
+          />
         </div>
-      )}
+      </div>
 
       {/* Action Buttons */}
       {showActions && (
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-2 w-full max-w-full overflow-hidden">
           <Button variant="outline" onClick={handleStartReplace}>
             <Upload className="h-4 w-4 mr-2" />
             Replace

@@ -757,3 +757,54 @@ export const organizationSettingsRelations = relations(organizationSettings, ({ 
     references: [organization.id],
   }),
 }));
+
+// --- Device Overlay Table ---
+export const deviceOverlays = sqliteTable("device_overlays", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  deviceId: text("device_id").notNull().references(() => devices.id, { onDelete: 'cascade' }),
+  locationId: text("location_id").notNull().references(() => locations.id, { onDelete: 'cascade' }),
+  organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: 'cascade' }),
+  // Normalized coordinates (0-1 scale) for responsive positioning
+  x: text("x").notNull(), // Store as text to avoid precision issues
+  y: text("y").notNull(), // Store as text to avoid precision issues
+  rotation: text("rotation"), // Optional rotation in degrees (stored as text)
+  scale: text("scale"), // Optional scale factor (stored as text, default 1.0)
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  createdByUserId: text("created_by_user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+  updatedByUserId: text("updated_by_user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  // Unique constraint: one device can only have one position per location
+  deviceLocationUniqueIdx: uniqueIndex("device_overlays_device_location_unique_idx")
+    .on(table.deviceId, table.locationId),
+  // Indexes for efficient queries
+  organizationIdx: index("device_overlays_organization_idx").on(table.organizationId),
+  locationIdx: index("device_overlays_location_idx").on(table.locationId),
+  deviceIdx: index("device_overlays_device_idx").on(table.deviceId),
+}));
+
+// Relations for Device Overlays
+export const deviceOverlaysRelations = relations(deviceOverlays, ({ one }) => ({
+  device: one(devices, {
+    fields: [deviceOverlays.deviceId],
+    references: [devices.id],
+  }),
+  location: one(locations, {
+    fields: [deviceOverlays.locationId],
+    references: [locations.id],
+  }),
+  organization: one(organization, {
+    fields: [deviceOverlays.organizationId],
+    references: [organization.id],
+  }),
+  createdByUser: one(user, {
+    fields: [deviceOverlays.createdByUserId],
+    references: [user.id],
+    relationName: 'deviceOverlayCreatedBy',
+  }),
+  updatedByUser: one(user, {
+    fields: [deviceOverlays.updatedByUserId],
+    references: [user.id],
+    relationName: 'deviceOverlayUpdatedBy',
+  }),
+}));

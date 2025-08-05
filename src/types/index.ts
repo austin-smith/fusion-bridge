@@ -69,6 +69,23 @@ export type DeviceWithConnector = {
   spaceName?: string | null;
 };
 
+// Device overlay types for floor plan positioning
+export type {
+  DeviceOverlayPosition,
+  DeviceOverlayData,
+  CreateDeviceOverlayPayload,
+  UpdateDeviceOverlayPayload,
+  DeviceOverlayWithDevice,
+  CanvasCoordinates,
+  CanvasDimensions
+} from './device-overlay';
+
+export {
+  normalizedToCanvas,
+  canvasToNormalized,
+  isValidNormalizedCoordinate
+} from './device-overlay';
+
 // Interface for Piko Server details (based on DB schema)
 export interface PikoServer {
   serverId: string;

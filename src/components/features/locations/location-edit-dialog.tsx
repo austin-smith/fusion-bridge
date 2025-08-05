@@ -34,9 +34,9 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TimezoneSelector } from '@/components/common/timezone-selector';
-import { LocationSunTimesDisplay } from '@/components/features/locations/locations/LocationSunTimesDisplay';
-import { FloorPlanUpload } from '@/components/features/locations/locations/floor-plan-upload';
-import { FloorPlanDisplay } from '@/components/features/locations/locations/floor-plan-display';
+import { LocationSunTimesDisplay } from '@/components/features/locations/LocationSunTimesDisplay';
+import { FloorPlanUpload } from '@/components/features/locations/floor-plan/floor-plan-upload';
+import { FloorPlanDisplay } from '@/components/features/locations/floor-plan/floor-plan-display';
 import { Check, ChevronsUpDown, MapPin, RotateCcw, Map, FileImage } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
