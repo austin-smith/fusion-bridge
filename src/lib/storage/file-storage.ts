@@ -47,10 +47,10 @@ export class FileStorageService {
       throw new Error(`Invalid ${paramName}: contains control characters`);
     }
 
-    // Enforce UUID format for security
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id)) {
-      throw new Error(`Invalid ${paramName}: must be a valid UUID`);
+    // Ensure ID contains only safe characters (alphanumeric, hyphens)
+    const safeIdRegex = /^[a-zA-Z0-9-]+$/;
+    if (!safeIdRegex.test(id)) {
+      throw new Error(`Invalid ${paramName}: must contain only alphanumeric characters and hyphens`);
     }
   }
 
