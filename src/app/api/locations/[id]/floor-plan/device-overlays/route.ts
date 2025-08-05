@@ -20,11 +20,6 @@ export const GET = withOrganizationAuth(async (
       success: true,
       overlays: overlays.map(overlay => ({
         ...overlay,
-        // Convert string coordinates back to numbers for client
-        x: parseFloat(overlay.x),
-        y: parseFloat(overlay.y),
-        rotation: overlay.rotation ? parseFloat(overlay.rotation) : undefined,
-        scale: overlay.scale ? parseFloat(overlay.scale) : undefined,
         device: {
           id: overlay.device.id,
           name: overlay.device.name,
@@ -108,10 +103,10 @@ export const POST = withOrganizationAuth(async (
     const result = await orgDb.deviceOverlays.create({
       deviceId: payload.deviceId,
       locationId: locationId,
-      x: payload.x.toString(),
-      y: payload.y.toString(),
-      rotation: payload.rotation?.toString(),
-      scale: payload.scale?.toString(),
+      x: payload.x,
+      y: payload.y,
+      rotation: payload.rotation,
+      scale: payload.scale,
       createdByUserId: authContext.userId
     });
     

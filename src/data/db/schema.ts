@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, uniqueIndex, index, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, primaryKey, uniqueIndex, index, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { relations, sql } from "drizzle-orm";
 import type { AutomationConfig } from "@/lib/automation-schemas"; // Import the config type
 import { ArmedState } from '@/lib/mappings/definitions'; // <-- Import the enum
@@ -765,10 +765,10 @@ export const deviceOverlays = sqliteTable("device_overlays", {
   locationId: text("location_id").notNull().references(() => locations.id, { onDelete: 'cascade' }),
   organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: 'cascade' }),
   // Normalized coordinates (0-1 scale) for responsive positioning
-  x: text("x").notNull(), // Store as text to avoid precision issues
-  y: text("y").notNull(), // Store as text to avoid precision issues
-  rotation: text("rotation"), // Optional rotation in degrees (stored as text)
-  scale: text("scale"), // Optional scale factor (stored as text, default 1.0)
+  x: real("x").notNull(), // Normalized X coordinate (0-1)
+  y: real("y").notNull(), // Normalized Y coordinate (0-1)
+  rotation: real("rotation"), // Optional rotation in degrees (0-360)
+  scale: real("scale"), // Optional scale factor (default 1.0)
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   createdByUserId: text("created_by_user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),

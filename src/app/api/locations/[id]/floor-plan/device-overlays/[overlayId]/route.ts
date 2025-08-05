@@ -59,10 +59,10 @@ export const PATCH = withOrganizationAuth(async (
       overlay.deviceId, 
       locationId, 
       {
-        x: payload.x?.toString(),
-        y: payload.y?.toString(),
-        rotation: payload.rotation?.toString(),
-        scale: payload.scale?.toString(),
+        x: payload.x,
+        y: payload.y,
+        rotation: payload.rotation,
+        scale: payload.scale,
         updatedByUserId: authContext.userId
       }
     );

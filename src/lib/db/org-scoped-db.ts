@@ -908,10 +908,10 @@ export class OrgScopedDb {
     create: (data: {
       deviceId: string;
       locationId: string;
-      x: string;
-      y: string;
-      rotation?: string;
-      scale?: string;
+      x: number;
+      y: number;
+      rotation?: number;
+      scale?: number;
       createdByUserId: string;
     }) =>
       db.insert(deviceOverlays)
@@ -924,10 +924,10 @@ export class OrgScopedDb {
 
     // Update existing device overlay position
     update: (deviceId: string, locationId: string, data: {
-      x?: string;
-      y?: string;
-      rotation?: string;
-      scale?: string;
+      x?: number;
+      y?: number;
+      rotation?: number;
+      scale?: number;
       updatedByUserId: string;
     }) =>
       db.update(deviceOverlays)
@@ -946,10 +946,10 @@ export class OrgScopedDb {
     upsert: async (data: {
       deviceId: string;
       locationId: string;
-      x: string;
-      y: string;
-      rotation?: string;
-      scale?: string;
+      x: number;
+      y: number;
+      rotation?: number;
+      scale?: number;
       userId: string;
     }) => {
       // Check if overlay exists
