@@ -2,6 +2,7 @@
 import { TypedDeviceInfo } from '@/lib/mappings/definitions';
 import { ArmedState } from '@/lib/mappings/definitions'; // <-- Import the enum
 import { DisplayState } from '@/lib/mappings/definitions'; // <-- Import DisplayState
+import type { FloorPlanData } from '@/lib/storage/file-storage';
 
 // Connector type for the database entities
 export interface Connector {
@@ -80,16 +81,6 @@ export interface PikoServer {
   url: string | null;
   createdAt: Date;
   updatedAt: Date;
-}
-
-// Floor plan metadata stored as JSON in the database
-export interface FloorPlanData {
-  filename: string;         // Original filename (for display)
-  uploadedAt: string;       // ISO timestamp
-  uploadedByUserId: string; // User who uploaded the file
-  size: number;             // File size in bytes
-  contentType: string;      // MIME type
-  filePath: string;         // Relative file path from storage root
 }
 
 // Represents a physical location in the hierarchy

@@ -26,7 +26,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import type { FloorPlanData } from '@/types/index';
+import type { FloorPlanData } from '@/lib/storage/file-storage';
 
 interface FloorPlanDisplayProps {
   floorPlan: FloorPlanData;
@@ -49,7 +49,11 @@ export function FloorPlanDisplay({
 
   // Generate serving URL for floor plan
   const getServingUrl = (floorPlanData: FloorPlanData) => {
-    const internalFilename = floorPlanData.filePath.split('/').pop();
+    const internalFilename = floorPlanData.filePath?.split('/').pop();
+    if (!internalFilename) {
+      console.error('Invalid floor plan file path:', floorPlanData.filePath);
+      return '#'; // Return placeholder URL to avoid crashes
+    }
     return `/api/locations/${locationId}/floor-plan?file=${internalFilename}`;
   };
 

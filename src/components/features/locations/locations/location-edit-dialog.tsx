@@ -4,7 +4,8 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import type { Location, FloorPlanData } from '@/types/index';
+import type { Location } from '@/types/index';
+import type { FloorPlanData } from '@/lib/storage/file-storage';
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

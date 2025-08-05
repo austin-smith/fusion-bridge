@@ -1,8 +1,9 @@
 import { mkdir, writeFile, unlink, access, stat } from 'fs/promises';
 import { join, extname } from 'path';
-import { createReadStream } from 'fs';
+import { createReadStream, type ReadStream } from 'fs';
 import { randomUUID } from 'crypto';
 import { getStorageConfig, getFloorPlanStoragePath } from './config';
+import { validateFloorPlanFile } from './file-validation';
 
 export interface FloorPlanData {
   filename: string;           // Original filename (for display)
@@ -27,6 +28,56 @@ export interface FileMetadata {
 
 export class FileStorageService {
   private config = getStorageConfig();
+
+  /**
+   * Validate ID parameter to prevent path traversal attacks
+   */
+  private validateId(id: string, paramName: string): void {
+    if (!id || typeof id !== 'string') {
+      throw new Error(`Invalid ${paramName}: must be a non-empty string`);
+    }
+
+    // Check for path traversal sequences
+    if (id.includes('..') || id.includes('/') || id.includes('\\')) {
+      throw new Error(`Invalid ${paramName}: contains illegal path characters`);
+    }
+
+    // Check for null bytes and other dangerous characters
+    if (/[\x00-\x1f\x7f-\x9f]/.test(id)) {
+      throw new Error(`Invalid ${paramName}: contains control characters`);
+    }
+
+    // Enforce UUID format for security
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      throw new Error(`Invalid ${paramName}: must be a valid UUID`);
+    }
+  }
+
+  /**
+   * Validate filename parameter to prevent path traversal attacks
+   */
+  private validateFilename(filename: string): void {
+    if (!filename || typeof filename !== 'string') {
+      throw new Error('Invalid filename: must be a non-empty string');
+    }
+
+    // Check for path traversal sequences
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      throw new Error('Invalid filename: contains illegal path characters');
+    }
+
+    // Check for null bytes and other dangerous characters
+    if (/[\x00-\x1f\x7f-\x9f]/.test(filename)) {
+      throw new Error('Invalid filename: contains control characters');
+    }
+
+    // Ensure it looks like a UUID-based filename with extension
+    const uuidFilenameRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-zA-Z0-9]{1,10}$/i;
+    if (!uuidFilenameRegex.test(filename)) {
+      throw new Error('Invalid filename: must be a UUID-based filename with extension');
+    }
+  }
 
   /**
    * Ensure directory exists, create if it doesn't
@@ -76,23 +127,12 @@ export class FileStorageService {
   }
 
   /**
-   * Validate file type and size
+   * Validate file using shared validation logic
    */
   private validateFile(file: File): void {
-    // Size validation
-    if (file.size > this.config.maxFileSize) {
-      throw new Error(`File size exceeds ${this.config.maxFileSize / (1024 * 1024)}MB limit`);
-    }
-
-    // Type validation
-    if (!this.config.allowedTypes.includes(file.type)) {
-      throw new Error(`File type ${file.type} is not allowed`);
-    }
-
-    // Extension validation (backup check)
-    const ext = extname(file.name).toLowerCase();
-    if (!this.config.allowedExtensions.includes(ext)) {
-      throw new Error(`File extension ${ext} is not allowed`);
+    const validation = validateFloorPlanFile(file);
+    if (!validation.isValid) {
+      throw new Error(validation.errors.join(', '));
     }
   }
 
@@ -105,6 +145,11 @@ export class FileStorageService {
     file: File,
     userId: string
   ): Promise<SaveFileResult> {
+    // Validate input parameters for security
+    this.validateId(organizationId, 'organizationId');
+    this.validateId(locationId, 'locationId');
+    this.validateId(userId, 'userId');
+
     // Validate file
     this.validateFile(file);
 
@@ -151,6 +196,11 @@ export class FileStorageService {
     locationId: string,
     internalFilename: string
   ): Promise<boolean> {
+    // Validate input parameters for security
+    this.validateId(organizationId, 'organizationId');
+    this.validateId(locationId, 'locationId');
+    this.validateFilename(internalFilename);
+
     try {
       const storageDir = getFloorPlanStoragePath(organizationId, locationId);
       const filePath = join(storageDir, internalFilename);
@@ -182,7 +232,12 @@ export class FileStorageService {
     organizationId: string,
     locationId: string,
     filename: string
-  ): Promise<{ stream: NodeJS.ReadableStream; metadata: FileMetadata }> {
+  ): Promise<{ stream: ReadStream; metadata: FileMetadata }> {
+    // Validate input parameters for security
+    this.validateId(organizationId, 'organizationId');
+    this.validateId(locationId, 'locationId');
+    this.validateFilename(filename);
+
     const storageDir = getFloorPlanStoragePath(organizationId, locationId);
     const filePath = join(storageDir, filename);
 
@@ -218,6 +273,11 @@ export class FileStorageService {
     locationId: string,
     filename: string
   ): Promise<boolean> {
+    // Validate input parameters for security
+    this.validateId(organizationId, 'organizationId');
+    this.validateId(locationId, 'locationId');
+    this.validateFilename(filename);
+
     try {
       const storageDir = getFloorPlanStoragePath(organizationId, locationId);
       const filePath = join(storageDir, filename);
