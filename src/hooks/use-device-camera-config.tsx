@@ -181,13 +181,22 @@ export function useDeviceCameraConfig(
       }
     }
     
+    // Use historical thumbnail if timestamp is provided
+    const shouldUseHistoricalThumbnail = Boolean(options.timestamp && options.timestamp > 0);
+    
+    // Generate static thumbnail URL for historical events
+    const staticThumbnailUrl = shouldUseHistoricalThumbnail 
+      ? `/api/piko/device-thumbnail?connectorId=${associatedCamera.connectorId}&cameraId=${associatedCamera.deviceId}&timestamp=${options.timestamp}`
+      : undefined;
+
     return {
       shouldShowMedia: true,
       mediaConfig: {
-        thumbnailMode: 'live-auto-refresh',
+        thumbnailMode: shouldUseHistoricalThumbnail ? 'static-url' : 'live-auto-refresh',
+        thumbnailUrl: staticThumbnailUrl,
         connectorId: associatedCamera.connectorId,
         cameraId: associatedCamera.deviceId,
-        refreshInterval: 10000,
+        refreshInterval: shouldUseHistoricalThumbnail ? undefined : 10000,
         videoConfig: {
           connectorId: associatedCamera.connectorId,
           cameraId: associatedCamera.deviceId,
