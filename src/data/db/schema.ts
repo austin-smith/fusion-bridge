@@ -187,6 +187,7 @@ export const locations = sqliteTable("locations", {
   sunriseTime: text("sunrise_time"), // "HH:mm" format in local timezone
   sunsetTime: text("sunset_time"),   // "HH:mm" format in local timezone
   sunTimesUpdatedAt: integer("sun_times_updated_at", { mode: "timestamp_ms" }),
+  floorPlan: text("floor_plan", { mode: "json" }), // Floor plan metadata as JSON
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({

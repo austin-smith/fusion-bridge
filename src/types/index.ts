@@ -82,6 +82,16 @@ export interface PikoServer {
   updatedAt: Date;
 }
 
+// Floor plan metadata stored as JSON in the database
+export interface FloorPlanData {
+  filename: string;         // Original filename (for display)
+  uploadedAt: string;       // ISO timestamp
+  uploadedByUserId: string; // User who uploaded the file
+  size: number;             // File size in bytes
+  contentType: string;      // MIME type
+  filePath: string;         // Relative file path from storage root
+}
+
 // Represents a physical location in the hierarchy
 export interface Location {
   id: string;
@@ -100,6 +110,7 @@ export interface Location {
   sunriseTime?: string | null; // "HH:mm" format in local timezone
   sunsetTime?: string | null;  // "HH:mm" format in local timezone
   sunTimesUpdatedAt?: Date | null;
+  floorPlan?: FloorPlanData | null; // Floor plan metadata
   createdAt: Date;
   updatedAt: Date;
   activeArmingScheduleId?: string | null;

@@ -4,7 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import type { Location } from '@/types/index';
+import type { Location, FloorPlanData } from '@/types/index';
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,7 +34,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TimezoneSelector } from '@/components/common/timezone-selector';
 import { LocationSunTimesDisplay } from '@/components/features/locations/locations/LocationSunTimesDisplay';
-import { Check, ChevronsUpDown, MapPin, RotateCcw, Map } from "lucide-react";
+import { FloorPlanUpload } from '@/components/features/locations/locations/floor-plan-upload';
+import { FloorPlanDisplay } from '@/components/features/locations/locations/floor-plan-display';
+import { Check, ChevronsUpDown, MapPin, RotateCcw, Map, FileImage } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Popover,
@@ -109,6 +111,11 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
   const [timezonePopoverOpen, setTimezonePopoverOpen] = useState(false);
   const [statePopoverOpen, setStatePopoverOpen] = useState(false);
   const [isRefreshingCoordinates, setIsRefreshingCoordinates] = useState(false);
+  const [selectedFloorPlanFile, setSelectedFloorPlanFile] = useState<File | null>(null);
+  const [isUploadingFloorPlan, setIsUploadingFloorPlan] = useState(false);
+  const [isDeletingFloorPlan, setIsDeletingFloorPlan] = useState(false);
+  const [showFloorPlanUpload, setShowFloorPlanUpload] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<Location | null>(locationToEdit || null);
   const form = useForm<LocationFormData>({
     resolver: zodResolver(locationFormSchema),
     defaultValues: {
@@ -142,6 +149,11 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
     return [addressStreet, addressCity, addressState, addressPostalCode]
       .every(field => field && field.trim() !== '');
   }, [addressStreet, addressCity, addressState, addressPostalCode]);
+
+  // Update currentLocation when locationToEdit prop changes
+  useEffect(() => {
+    setCurrentLocation(locationToEdit || null);
+  }, [locationToEdit]);
 
   const isEditing = !!locationToEdit;
   const dialogTitle = isEditing ? "Edit Location" : "Add New Location";
@@ -297,6 +309,85 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
     } finally {
       setIsRefreshingCoordinates(false);
     }
+  };
+
+  // Floor plan handlers
+  const handleFloorPlanFileSelect = (file: File) => {
+    setSelectedFloorPlanFile(file);
+  };
+
+  const handleFloorPlanFileRemove = () => {
+    setSelectedFloorPlanFile(null);
+  };
+
+  const handleFloorPlanUpload = async () => {
+    if (!selectedFloorPlanFile || !currentLocation) return;
+
+    setIsUploadingFloorPlan(true);
+    try {
+      const formData = new FormData();
+      formData.append('floorPlan', selectedFloorPlanFile);
+
+      const response = await fetch(`/api/locations/${currentLocation.id}/floor-plan`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success('Floor plan uploaded successfully!');
+        setSelectedFloorPlanFile(null);
+        setShowFloorPlanUpload(false);
+        // Update local state with the updated location data
+        if (result.data && result.data.location) {
+          setCurrentLocation(result.data.location);
+        }
+      } else {
+        throw new Error(result.error || 'Upload failed');
+      }
+    } catch (error) {
+      console.error('Error uploading floor plan:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to upload floor plan');
+    } finally {
+      setIsUploadingFloorPlan(false);
+    }
+  };
+
+  const handleFloorPlanDelete = async () => {
+    if (!currentLocation) return;
+
+    setIsDeletingFloorPlan(true);
+    try {
+      const response = await fetch(`/api/locations/${currentLocation.id}/floor-plan`, {
+        method: 'DELETE',
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success('Floor plan deleted successfully!');
+        // Update local state to remove floor plan data
+        if (currentLocation) {
+          setCurrentLocation({
+            ...currentLocation,
+            floorPlan: null
+          });
+        }
+      } else {
+        throw new Error(result.error || 'Delete failed');
+      }
+    } catch (error) {
+      console.error('Error deleting floor plan:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete floor plan');
+    } finally {
+      setIsDeletingFloorPlan(false);
+    }
+  };
+
+  const handleFloorPlanReplace = () => {
+    setShowFloorPlanUpload(true);
+    setSelectedFloorPlanFile(null);
   };
 
   return (
@@ -645,6 +736,81 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
                       </FormItem>
                     )}
                   />
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Floor Plan Section - Only show for existing locations */}
+            {isEditing && locationToEdit && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-md flex items-center gap-2">
+                      <FileImage className="h-4 w-4" />
+                      Floor Plan
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {!currentLocation?.floorPlan && !showFloorPlanUpload ? (
+                    <div className="text-center py-6">
+                      <FileImage className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground mb-4">
+                        No floor plan uploaded yet.
+                      </p>
+                      <Button 
+                        type="button"
+                        variant="outline" 
+                        onClick={() => setShowFloorPlanUpload(true)}
+                        disabled={isSubmitting}
+                      >
+                        Upload Floor Plan
+                      </Button>
+                    </div>
+                  ) : showFloorPlanUpload ? (
+                    <div className="space-y-4">
+                      <FloorPlanUpload
+                        onFileSelect={handleFloorPlanFileSelect}
+                        onFileRemove={handleFloorPlanFileRemove}
+                        selectedFile={selectedFloorPlanFile}
+                        isUploading={isUploadingFloorPlan}
+                        disabled={isSubmitting}
+                      />
+                      
+                      {selectedFloorPlanFile && (
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            onClick={handleFloorPlanUpload}
+                            disabled={isUploadingFloorPlan || isSubmitting}
+                            size="sm"
+                          >
+                            {isUploadingFloorPlan ? 'Uploading...' : 'Upload'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setShowFloorPlanUpload(false);
+                              setSelectedFloorPlanFile(null);
+                            }}
+                            disabled={isUploadingFloorPlan || isSubmitting}
+                            size="sm"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : currentLocation?.floorPlan ? (
+                    <FloorPlanDisplay
+                      floorPlan={currentLocation.floorPlan as FloorPlanData}
+                      locationId={currentLocation.id}
+                      onDelete={handleFloorPlanDelete}
+                      onReplace={handleFloorPlanReplace}
+                      isDeleting={isDeletingFloorPlan}
+                    />
+                  ) : null}
                 </CardContent>
               </Card>
             )}
