@@ -1,5 +1,5 @@
 import type { devices } from '@/data/db/schema';
-import type { ActionableState } from '@/lib/mappings/definitions';
+import type { ActionableState, DeviceCommand } from '@/lib/mappings/definitions';
 
 /**
  * Represents the necessary device information for action handlers.
@@ -46,4 +46,46 @@ export interface IDeviceActionHandler {
      * @returns An array of raw device type strings.
      */
     getControllableRawTypes(): string[];
+}
+
+/**
+ * Interface for connector-specific device command handlers.
+ * Handles device function calls/commands rather than state changes.
+ */
+export interface IDeviceCommandHandler {
+    /**
+     * The connector category this handler supports (e.g., 'yolink').
+     */
+    readonly category: string;
+
+    /**
+     * Checks if this handler can execute the requested command
+     * on the given device.
+     * @param device - The context containing device information.
+     * @param command - The desired device command.
+     * @returns True if the handler can execute the command, false otherwise.
+     */
+    canExecuteCommand(device: DeviceContext, command: DeviceCommand): boolean;
+
+    /**
+     * Executes the device command for the specific connector.
+     * @param device - The context containing device information.
+     * @param connectorConfig - The parsed configuration for the connector.
+     * @param command - The desired device command.
+     * @param params - Command-specific parameters.
+     * @returns Promise resolving to true if the command was executed successfully.
+     * @throws Error if the execution fails (e.g., API error, missing data).
+     */
+    executeCommand(
+        device: DeviceContext, 
+        connectorConfig: any, // Type can be refined if needed
+        command: DeviceCommand,
+        params?: Record<string, any>
+    ): Promise<boolean>;
+
+    /**
+     * Returns an array of raw device types that this handler can send commands to.
+     * @returns An array of raw device type strings.
+     */
+    getCommandableRawTypes(): string[];
 } 

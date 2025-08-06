@@ -4,9 +4,9 @@ import AutomationForm from "@/components/features/automations/AutomationForm";
 import { db } from "@/data/db";
 import { connectors, devices, locations, spaces } from "@/data/db/schema"; // Import locations and spaces
 import { type AutomationConfig, type AutomationTrigger } from '@/lib/automation-schemas';
-import { DeviceType, ArmedState } from "@/lib/mappings/definitions"; 
+import { DeviceType, ArmedState, DeviceCommand } from "@/lib/mappings/definitions"; 
 import type { Option as MultiSelectOption } from "@/components/ui/multi-select-combobox";
-import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions"; // Import actionHandlers and IDeviceActionHandler
+import { actionHandlers, commandHandlers, type IDeviceActionHandler, type IDeviceCommandHandler } from "@/lib/device-actions"; // Import actionHandlers, commandHandlers and their types
 import { inArray, asc } from "drizzle-orm"; // Import inArray and asc
 import type { Metadata } from 'next';
 import { getDeviceTypeIconName } from '@/lib/mappings/presentation'; // Use getDeviceTypeIconName instead of getDeviceTypeIcon directly
@@ -45,6 +45,8 @@ async function getAvailableConnectors(orgDb: ReturnType<typeof createOrgScopedDb
 
 async function getAvailableTargetDevices(orgDb: ReturnType<typeof createOrgScopedDb>) {
     const allSupportedRawTypesByAnyHandler = new Set<string>();
+    
+    // Add types from action handlers (for state changes)
     actionHandlers.forEach((handler: IDeviceActionHandler) => {
         if (typeof handler.getControllableRawTypes === 'function') {
             handler.getControllableRawTypes().forEach((rawType: string) => {
@@ -52,6 +54,16 @@ async function getAvailableTargetDevices(orgDb: ReturnType<typeof createOrgScope
             });
         }
     });
+    
+    // Add types from command handlers (for device commands like PLAY_AUDIO)
+    commandHandlers.forEach((handler: IDeviceCommandHandler) => {
+        if (typeof handler.getCommandableRawTypes === 'function') {
+            handler.getCommandableRawTypes().forEach((rawType: string) => {
+                allSupportedRawTypesByAnyHandler.add(rawType);
+            });
+        }
+    });
+    
     const rawTypesArray = Array.from(allSupportedRawTypesByAnyHandler);
 
     if (rawTypesArray.length === 0) {
@@ -67,6 +79,19 @@ async function getAvailableTargetDevices(orgDb: ReturnType<typeof createOrgScope
         .filter((d: any) => rawTypesArray.includes(d.type))
         .map((d: any) => {
             const stdType = d.standardizedDeviceType as DeviceType;
+            
+            // Check if this device supports PLAY_AUDIO command
+            const supportsAudio = commandHandlers.some(handler => {
+                const mockDeviceContext = {
+                    id: d.id,
+                    deviceId: d.id,
+                    type: d.type, // Use raw device type
+                    connectorId: d.connectorId,
+                    rawDeviceData: null
+                };
+                return handler.canExecuteCommand(mockDeviceContext, DeviceCommand.PLAY_AUDIO);
+            });
+            
             return {
                 id: d.id,
                 name: d.name,
@@ -75,7 +100,9 @@ async function getAvailableTargetDevices(orgDb: ReturnType<typeof createOrgScope
                     ? getDeviceTypeIconName(stdType)
                     : getDeviceTypeIconName(DeviceType.Unmapped),
                 spaceId: d.spaceId,
-                locationId: d.locationId
+                locationId: d.locationId,
+                rawType: d.type, // Include raw device type for command filtering
+                supportsAudio, // Server-side computed audio capability
             };
         });
     return mappedDevices;

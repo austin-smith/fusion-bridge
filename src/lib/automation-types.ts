@@ -1,4 +1,4 @@
-import { Power, Bookmark, Globe, TriangleAlert, HelpCircle, Bell, ShieldCheck, ShieldOff } from 'lucide-react';
+import { Power, Bookmark, Globe, TriangleAlert, HelpCircle, Bell, ShieldCheck, ShieldOff, Volume2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { StandardizedEvent } from '@/types/events';
 
@@ -50,6 +50,7 @@ export enum AutomationActionType {
   SEND_PUSH_NOTIFICATION = 'sendPushNotification',
   ARM_ALARM_ZONE = 'armAlarmZone',
   DISARM_ALARM_ZONE = 'disarmAlarmZone',
+  PLAY_AUDIO = 'playAudio',
   // Add other action types here
 }
 
@@ -242,6 +243,34 @@ export const ACTION_TYPE_INFO: Record<AutomationActionType, ActionTypeInfo> = {
         }
       }
       return `→ Disarm Alarm Zone(s): Config pending`;
+    }
+  },
+
+  [AutomationActionType.PLAY_AUDIO]: {
+    displayName: 'Play Sound',
+    icon: Volume2,
+    iconColorClass: 'text-indigo-600 dark:text-indigo-400',
+    bgColorClass: 'bg-indigo-50/40 dark:bg-indigo-950/20',
+    borderColorClass: 'border-indigo-200 dark:border-indigo-800',
+    formatter: (params, contextData) => {
+      if (!params) return '→ (No parameters)';
+      
+      const deviceId = params.targetDeviceInternalId;
+      const message = params.messageTemplate || '';
+      const tone = params.toneTemplate;
+      const devices = contextData?.devices || [];
+      const device = devices.find(d => d.id === deviceId);
+      const deviceName = device?.name || 'Unknown device';
+      
+      // Create a preview of the message (truncated if too long)
+      const messagePreview = message.length > 30 ? `${message.substring(0, 30)}...` : message;
+      
+      let result = `→ "${messagePreview}" on ${deviceName}`;
+      if (tone) {
+        result += ` (${tone} tone)`;
+      }
+      
+      return result;
     }
   }
 };

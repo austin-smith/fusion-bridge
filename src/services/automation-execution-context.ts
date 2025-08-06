@@ -7,12 +7,12 @@ import type { StandardizedEvent } from '@/types/events';
 import type { EventWithContext } from '@/lib/automation-types';
 import type { OrgScopedDb } from '@/lib/db/org-scoped-db';
 import type { AutomationConfig, AutomationAction } from '@/lib/automation-schemas';
-import { AutomationConfigSchema, SetDeviceStateActionParamsSchema, ArmAlarmZoneActionParamsSchema, DisarmAlarmZoneActionParamsSchema, SendPushNotificationActionParamsSchema } from '@/lib/automation-schemas';
+import { AutomationConfigSchema, SetDeviceStateActionParamsSchema, ArmAlarmZoneActionParamsSchema, DisarmAlarmZoneActionParamsSchema, SendPushNotificationActionParamsSchema, PlayAudioActionParamsSchema } from '@/lib/automation-schemas';
 import { AutomationTriggerType, AutomationActionType } from '@/lib/automation-types';
 import { Engine } from 'json-rules-engine';
 import type { JsonRuleGroup } from '@/lib/automation-schemas';
-import { ActionableState, ArmedState, EVENT_TYPE_DISPLAY_MAP, EVENT_CATEGORY_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP, DeviceType } from '@/lib/mappings/definitions';
-import { requestDeviceStateChange } from '@/lib/device-actions';
+import { ActionableState, ArmedState, EVENT_TYPE_DISPLAY_MAP, EVENT_CATEGORY_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP, DeviceType, DeviceCommand } from '@/lib/mappings/definitions';
+import { requestDeviceStateChange, requestDeviceCommand } from '@/lib/device-actions';
 import { getPushoverConfiguration } from '@/data/repositories/service-configurations';
 import { sendPushoverNotification } from '@/services/drivers/pushover';
 import type { ResolvedPushoverMessageParams } from '@/types/pushover-types';
@@ -344,6 +344,54 @@ async function executeAutomationAction(action: AutomationAction, context: Record
       console.log(`[Automation Action Executor] Executing setDeviceState. Target: ${params.targetDeviceInternalId}, State: ${params.targetState}`);
       await requestDeviceStateChange(params.targetDeviceInternalId, params.targetState as ActionableState);
       console.log(`[Automation Action Executor] Successfully requested state change for ${params.targetDeviceInternalId} to ${params.targetState}`);
+      break;
+    }
+
+    case AutomationActionType.PLAY_AUDIO: {
+      const params = action.params as z.infer<typeof PlayAudioActionParamsSchema>;
+      if (!params.targetDeviceInternalId || typeof params.targetDeviceInternalId !== 'string') {
+        throw new Error(`Invalid or missing targetDeviceInternalId for playAudio action.`);
+      }
+      if (!params.messageTemplate || typeof params.messageTemplate !== 'string') {
+        throw new Error(`Invalid or missing messageTemplate for playAudio action.`);
+      }
+
+      console.log(`[Automation Action Executor] Executing playAudio. Target: ${params.targetDeviceInternalId}`);
+
+      // Resolve token templates for audio parameters
+      const resolvedParams = resolveTokens(params, stdEvent, tokenFactContext, thumbnailContext) as typeof params;
+      
+      // Prepare audio parameters with resolved templates
+      const audioParams: Record<string, any> = {
+        message: resolvedParams.messageTemplate
+      };
+
+      // Add optional parameters if provided and valid
+      if (resolvedParams.toneTemplate && resolvedParams.toneTemplate !== 'none') {
+        audioParams.tone = resolvedParams.toneTemplate;
+      }
+
+      if (resolvedParams.volumeTemplate) {
+        const volume = parseInt(resolvedParams.volumeTemplate, 10);
+        if (!isNaN(volume) && volume >= 1 && volume <= 100) {
+          audioParams.volume = volume;
+        } else {
+          console.warn(`[Automation Action Executor] Invalid volume value: ${resolvedParams.volumeTemplate}, skipping`);
+        }
+      }
+
+      if (resolvedParams.repeatTemplate) {
+        const repeat = parseInt(resolvedParams.repeatTemplate, 10);
+        if (!isNaN(repeat) && repeat >= 0 && repeat <= 10) {
+          audioParams.repeat = repeat;
+        } else {
+          console.warn(`[Automation Action Executor] Invalid repeat value: ${resolvedParams.repeatTemplate}, skipping`);
+        }
+      }
+
+      // Execute the device command using the device command registry
+      await requestDeviceCommand(params.targetDeviceInternalId, DeviceCommand.PLAY_AUDIO, audioParams);
+      console.log(`[Automation Action Executor] Successfully requested audio playback on device ${params.targetDeviceInternalId}`);
       break;
     }
 

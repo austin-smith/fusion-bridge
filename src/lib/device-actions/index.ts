@@ -1,32 +1,41 @@
 import { db } from '@/data/db';
 import { devices, connectors } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
-import { ActionableState } from '../mappings/definitions';
+import { ActionableState, DeviceCommand } from '../mappings/definitions';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import type { YoLinkConfig } from '@/services/drivers/yolink';
 // Import other driver types as needed, e.g.:
 // import type { PikoConfig } from '@/services/drivers/piko'; 
 // import type { GeneaConfig } from '@/services/drivers/genea';
 // --- BEGIN Registry Imports ---
-import type { IDeviceActionHandler, DeviceContext } from './types';
-import { YoLinkActionHandler } from './yolink-handler';
+import type { IDeviceActionHandler, IDeviceCommandHandler, DeviceContext } from './types';
+import { YoLinkHandler } from './yolink-handler';
 // Import other handlers as they are created:
 // import { PikoActionHandler } from './device-actions/piko-handler';
 // --- END Registry Imports ---
 
 // --- BEGIN Handler Registry ---
 // Instantiate handlers and add them to the registry
-const actionHandlers: IDeviceActionHandler[] = [
-    new YoLinkActionHandler(),
+const handlers = [
+    new YoLinkHandler(), // Implements both IDeviceActionHandler and IDeviceCommandHandler
     // Add other handler instances here:
     // new PikoActionHandler(), 
 ];
+
+// Separate accessors for type safety
+const actionHandlers: IDeviceActionHandler[] = handlers.filter(h => 
+    'canHandle' in h && 'executeStateChange' in h
+) as IDeviceActionHandler[];
+
+const commandHandlers: IDeviceCommandHandler[] = handlers.filter(h => 
+    'canExecuteCommand' in h && 'executeCommand' in h
+) as IDeviceCommandHandler[];
 // --- END Handler Registry ---
 
-// --- BEGIN Export actionHandlers and types ---
-export { actionHandlers };
-export type { IDeviceActionHandler, DeviceContext }; // Also export types
-// --- END Export actionHandlers and types ---
+// --- BEGIN Export handlers and types ---
+export { actionHandlers, commandHandlers };
+export type { IDeviceActionHandler, IDeviceCommandHandler, DeviceContext };
+// --- END Export handlers and types ---
 
 /**
  * Attempts to change the state of a device via its connector driver.
@@ -113,6 +122,96 @@ export async function requestDeviceStateChange(
             throw error; 
         } else {
             throw new Error('An unknown error occurred while changing device state.');
+        }
+    }
+}
+
+/**
+ * Executes a command on a device via its connector driver.
+ * This acts as an abstraction layer over different vendor APIs, using the same handler registry.
+ * 
+ * @param internalDeviceId The internal database ID of the device record.
+ * @param command The desired device command (e.g., PLAY_AUDIO).
+ * @param params Optional command-specific parameters.
+ * @returns Promise resolving to true if the command was successfully executed.
+ * @throws Error for configuration issues, unsupported devices/commands, or driver errors.
+ */
+export async function requestDeviceCommand(
+    internalDeviceId: string, 
+    command: DeviceCommand,
+    params?: Record<string, any>
+): Promise<boolean> {
+    console.log(`[DeviceActions] Requesting command ${command} for internal device ID ${internalDeviceId}`);
+
+    try {
+        // 1. Fetch Device Info (reusing same logic as requestDeviceStateChange)
+        const device = await db.query.devices.findFirst({
+            where: eq(devices.id, internalDeviceId),
+            columns: {
+                id: true,
+                deviceId: true, // Vendor's device ID
+                type: true,     // Raw device type from vendor
+                connectorId: true,
+                rawDeviceData: true,
+            }
+        });
+
+        if (!device) {
+            console.error(`[DeviceActions] Device with internal ID ${internalDeviceId} not found.`);
+            throw new Error(`Device not found.`);
+        }
+
+        // Cast to the context type for handlers
+        const deviceContext: DeviceContext = device;
+        console.log(`[DeviceActions] Found device: ${deviceContext.deviceId}, Type: ${deviceContext.type}`);
+
+        // 2. Fetch Connector Info & Config (reusing same logic)
+        const connector = await db.query.connectors.findFirst({
+            where: eq(connectors.id, deviceContext.connectorId),
+            columns: {
+                id: true,
+                category: true,
+                cfg_enc: true,
+            }
+        });
+
+        if (!connector) {
+            console.error(`[DeviceActions] Connector ${deviceContext.connectorId} for device ${internalDeviceId} not found.`);
+            throw new Error(`Connector configuration not found for device.`);
+        }
+
+        console.log(`[DeviceActions] Found connector: ${connector.id}, Category: ${connector.category}`);
+
+        // 3. Parse Config (reusing same logic)
+        let parsedConfig: any;
+        try {
+            parsedConfig = JSON.parse(connector.cfg_enc);
+        } catch (e) {
+            console.error(`[DeviceActions] Failed to parse configuration for connector ${connector.id}:`, e);
+            throw new Error(`Invalid connector configuration.`);
+        }
+
+        // 4. Find and Execute Appropriate Command Handler
+        const handler = commandHandlers.find(h => 
+            h.category === connector.category && h.canExecuteCommand(deviceContext, command)
+        );
+
+        if (!handler) {
+            console.warn(`[DeviceActions] No suitable command handler found for category '${connector.category}', device type '${deviceContext.type}', and command '${command}'.`);
+            throw new Error(`Command '${command}' is not supported for this device type or connector.`);
+        }
+
+        console.log(`[DeviceActions] Using command handler for category: ${handler.category}`);
+        // Delegate execution to the found handler
+        return await handler.executeCommand(deviceContext, parsedConfig, command, params);
+
+    } catch (error) {
+        console.error(`[DeviceActions] Error during requestDeviceCommand for ${internalDeviceId}:`, error);
+        // Re-throw the error to be handled by the caller
+        if (error instanceof Error) {
+            throw error; 
+        } else {
+            throw new Error('An unknown error occurred while executing device command.');
         }
     }
 } 
