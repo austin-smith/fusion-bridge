@@ -1,1 +1,0 @@
-ALTER TABLE `locations` ADD `floor_plan` text;

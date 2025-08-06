@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "485ea5de-0588-48c7-8a06-88d98b484984",
+  "id": "920cf8e8-1995-48b4-b0ac-7d687aeaa076",
   "prevId": "4844a583-387c-43ff-a669-bd9827ae3668",
   "tables": {
     "account": {
@@ -1273,6 +1273,182 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "device_overlays": {
+      "name": "device_overlays",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "floor_plan_id": {
+          "name": "floor_plan_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "x": {
+          "name": "x",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "y": {
+          "name": "y",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_by_user_id": {
+          "name": "updated_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "device_overlays_device_floor_plan_unique_idx": {
+          "name": "device_overlays_device_floor_plan_unique_idx",
+          "columns": [
+            "device_id",
+            "floor_plan_id"
+          ],
+          "isUnique": true
+        },
+        "device_overlays_organization_idx": {
+          "name": "device_overlays_organization_idx",
+          "columns": [
+            "organization_id"
+          ],
+          "isUnique": false
+        },
+        "device_overlays_floor_plan_idx": {
+          "name": "device_overlays_floor_plan_idx",
+          "columns": [
+            "floor_plan_id"
+          ],
+          "isUnique": false
+        },
+        "device_overlays_device_idx": {
+          "name": "device_overlays_device_idx",
+          "columns": [
+            "device_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "device_overlays_device_id_devices_id_fk": {
+          "name": "device_overlays_device_id_devices_id_fk",
+          "tableFrom": "device_overlays",
+          "tableTo": "devices",
+          "columnsFrom": [
+            "device_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "device_overlays_floor_plan_id_floor_plans_id_fk": {
+          "name": "device_overlays_floor_plan_id_floor_plans_id_fk",
+          "tableFrom": "device_overlays",
+          "tableTo": "floor_plans",
+          "columnsFrom": [
+            "floor_plan_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "device_overlays_organization_id_organization_id_fk": {
+          "name": "device_overlays_organization_id_organization_id_fk",
+          "tableFrom": "device_overlays",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "device_overlays_created_by_user_id_user_id_fk": {
+          "name": "device_overlays_created_by_user_id_user_id_fk",
+          "tableFrom": "device_overlays",
+          "tableTo": "user",
+          "columnsFrom": [
+            "created_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "device_overlays_updated_by_user_id_user_id_fk": {
+          "name": "device_overlays_updated_by_user_id_user_id_fk",
+          "tableFrom": "device_overlays",
+          "tableTo": "user",
+          "columnsFrom": [
+            "updated_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "devices": {
       "name": "devices",
       "columns": {
@@ -1560,6 +1736,147 @@
           "tableTo": "connectors",
           "columnsFrom": [
             "connector_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "floor_plans": {
+      "name": "floor_plans",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "location_id": {
+          "name": "location_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "floor_plan_data": {
+          "name": "floor_plan_data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_by_user_id": {
+          "name": "updated_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "floor_plans_location_idx": {
+          "name": "floor_plans_location_idx",
+          "columns": [
+            "location_id"
+          ],
+          "isUnique": false
+        },
+        "floor_plans_organization_idx": {
+          "name": "floor_plans_organization_idx",
+          "columns": [
+            "organization_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "floor_plans_location_id_locations_id_fk": {
+          "name": "floor_plans_location_id_locations_id_fk",
+          "tableFrom": "floor_plans",
+          "tableTo": "locations",
+          "columnsFrom": [
+            "location_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "floor_plans_organization_id_organization_id_fk": {
+          "name": "floor_plans_organization_id_organization_id_fk",
+          "tableFrom": "floor_plans",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "floor_plans_created_by_user_id_user_id_fk": {
+          "name": "floor_plans_created_by_user_id_user_id_fk",
+          "tableFrom": "floor_plans",
+          "tableTo": "user",
+          "columnsFrom": [
+            "created_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "floor_plans_updated_by_user_id_user_id_fk": {
+          "name": "floor_plans_updated_by_user_id_user_id_fk",
+          "tableFrom": "floor_plans",
+          "tableTo": "user",
+          "columnsFrom": [
+            "updated_by_user_id"
           ],
           "columnsTo": [
             "id"
@@ -1939,13 +2256,6 @@
         "sun_times_updated_at": {
           "name": "sun_times_updated_at",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "floor_plan": {
-          "name": "floor_plan",
-          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
