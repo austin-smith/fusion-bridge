@@ -37,8 +37,18 @@ interface ViewportState {
   scale: number;
 }
 
+// The minimum allowed zoom scale for the floor plan canvas.
+// Prevents zooming out too far, which would make the image too small to be useful.
+// Chosen as 0.1 to allow significant zoom-out while keeping the image visible.
 const MIN_SCALE = 0.1;
+
+// The maximum allowed zoom scale for the floor plan canvas.
+// Prevents zooming in too far, which could cause pixelation or performance issues.
+// Chosen as 5 to allow detailed inspection without excessive magnification.
 const MAX_SCALE = 5;
+
+// The factor by which the zoom changes on each zoom-in or zoom-out action.
+// A value of 1.1 provides a smooth and gradual zoom experience.
 const ZOOM_FACTOR = 1.1;
 
 export function FloorPlanCanvas({

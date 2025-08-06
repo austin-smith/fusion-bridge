@@ -3,6 +3,22 @@ export interface FileValidationResult {
   errors: string[];
 }
 
+// Centralized configuration for allowed file types
+export const ALLOWED_FILE_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'application/pdf',
+  'image/svg+xml'
+] as const;
+
+export const ALLOWED_EXTENSIONS = [
+  '.png',
+  '.jpg', 
+  '.jpeg',
+  '.pdf',
+  '.svg'
+] as const;
+
 export function validateFloorPlanFile(file: File): FileValidationResult {
   const errors: string[] = [];
   
@@ -13,23 +29,15 @@ export function validateFloorPlanFile(file: File): FileValidationResult {
   }
   
   // Type validation
-  const allowedTypes = [
-    'image/png',
-    'image/jpeg',
-    'application/pdf',
-    'image/svg+xml'
-  ];
-  
-  if (!allowedTypes.includes(file.type)) {
+  if (!ALLOWED_FILE_TYPES.includes(file.type as any)) {
     errors.push('File must be PNG, JPG, PDF, or SVG format');
   }
   
   // Extension validation (backup check)
-  const allowedExtensions = ['.png', '.jpg', '.jpeg', '.pdf', '.svg'];
   const fileExtension = file.name.split('.').pop()?.toLowerCase();
   
-  if (!fileExtension || !allowedExtensions.includes(`.${fileExtension}`)) {
-    errors.push('File must have a valid extension (.png, .jpg, .jpeg, .pdf, .svg)');
+  if (!fileExtension || !ALLOWED_EXTENSIONS.includes(`.${fileExtension}` as any)) {
+    errors.push(`File must have a valid extension (${ALLOWED_EXTENSIONS.join(', ')})`);
   }
   
   // Filename validation
@@ -43,7 +51,7 @@ export function validateFloorPlanFile(file: File): FileValidationResult {
   }
   
   // Filename safety check
-  const dangerousChars = /[<>:"/\\|?*\x00-\x1f]/;
+  const dangerousChars = /[<>:"/\\|?*%&\x00-\x1f]|%[0-9A-Fa-f]{2}/;
   if (dangerousChars.test(file.name)) {
     errors.push('Filename contains invalid characters');
   }
@@ -57,7 +65,8 @@ export function validateFloorPlanFile(file: File): FileValidationResult {
 export function sanitizeFilename(filename: string): string {
   // Remove dangerous characters and limit length
   return filename
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+    .replace(/[<>:"/\\|?*%&\x00-\x1f]/g, '_')
+    .replace(/%[0-9A-Fa-f]{2}/g, '_')
     .replace(/\s+/g, '_')
     .substring(0, 100);
 }

@@ -89,6 +89,15 @@ const deviceTypeLabels: Record<string, string> = {
   [DeviceType.Unmapped]: '?',
 };
 
+// Scaling and sizing constants
+const BASE_SIZE = 24;
+const SCALE_FACTOR = 0.5;
+const MIN_SCALE = 0.3;
+const FONT_SIZE_RATIO = 0.3;
+const MIN_FONT_SIZE = 8;
+const MIN_STROKE_WIDTH = 1;
+const BASE_STROKE_WIDTH = 2;
+
 export function DeviceOverlayIcon({
   overlay,
   position,
@@ -110,11 +119,10 @@ export function DeviceOverlayIcon({
   const label = deviceTypeLabels[deviceType] || '?';
 
   // Calculate responsive sizing based on canvas scale
-  const baseSize = 24;
-  const size = baseSize / Math.max(canvasScale * 0.5, 0.3); // Keep readable at all zoom levels
+  const size = BASE_SIZE / Math.max(canvasScale * SCALE_FACTOR, MIN_SCALE); // Keep readable at all zoom levels
   const radius = size / 2;
-  const fontSize = Math.max(8, size * 0.3);
-  const strokeWidth = Math.max(1, 2 / canvasScale);
+  const fontSize = Math.max(MIN_FONT_SIZE, size * FONT_SIZE_RATIO);
+  const strokeWidth = Math.max(MIN_STROKE_WIDTH, BASE_STROKE_WIDTH / canvasScale);
 
   // State-based styling
   const isOffline = overlay.device.status === 'offline';

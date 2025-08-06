@@ -3,7 +3,7 @@ import { join, extname } from 'path';
 import { createReadStream, type ReadStream } from 'fs';
 import { randomUUID } from 'crypto';
 import { getStorageConfig, getFloorPlanStoragePath } from './config';
-import { validateFloorPlanFile } from './file-validation';
+import { validateFloorPlanFile, ALLOWED_EXTENSIONS } from './file-validation';
 
 export interface FloorPlanData {
   filename: string;           // Original filename (for display)
@@ -73,9 +73,10 @@ export class FileStorageService {
     }
 
     // Ensure it looks like a UUID-based filename with safe extension
-    const uuidFilenameRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|jpeg|pdf|svg)$/i;
+    const extensionPattern = ALLOWED_EXTENSIONS.map(ext => ext.replace('.', '')).join('|');
+    const uuidFilenameRegex = new RegExp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(${extensionPattern})$`, 'i');
     if (!uuidFilenameRegex.test(filename)) {
-      throw new Error('Invalid filename: must be a UUID-based filename with a safe extension (png, jpg, jpeg, pdf, svg)');
+      throw new Error(`Invalid filename: must be a UUID-based filename with a safe extension (${ALLOWED_EXTENSIONS.join(', ')})`);
     }
   }
 
@@ -104,14 +105,16 @@ export class FileStorageService {
   private getContentTypeFromExtension(filename: string): string {
     const ext = extname(filename).toLowerCase();
     
-    switch (ext) {
-      case '.png': return 'image/png';
-      case '.jpg':
-      case '.jpeg': return 'image/jpeg';
-      case '.pdf': return 'application/pdf';
-      case '.svg': return 'image/svg+xml';
-      default: return 'application/octet-stream';
-    }
+    // Use centralized mapping based on allowed extensions
+    const contentTypeMap: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.pdf': 'application/pdf',
+      '.svg': 'image/svg+xml'
+    };
+    
+    return contentTypeMap[ext] || 'application/octet-stream';
   }
 
   /**
