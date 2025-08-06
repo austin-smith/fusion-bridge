@@ -45,7 +45,10 @@ export function getStorageConfig(): StorageConfig {
   };
 }
 
-export function getFloorPlanStoragePath(organizationId: string, locationId: string): string {
+export function getFloorPlanStoragePath(organizationId: string, locationId: string, floorPlanId?: string): string {
   const config = getStorageConfig();
+  if (floorPlanId) {
+    return join(config.baseDir, organizationId, 'floor-plans', locationId, floorPlanId);
+  }
   return join(config.baseDir, organizationId, 'floor-plans', locationId);
 }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { FloorPlanData } from '@/lib/storage/file-storage';
+import type { FloorPlan } from '@/types';
 
 // PDF.js types
 interface PDFDocumentProxy {
@@ -50,7 +51,7 @@ interface UsePdfRendererOptions {
  * Handles PDF loading, page rendering, and canvas management
  */
 export function usePdfRenderer(
-  source: string | FloorPlanData | null,
+  source: string | FloorPlan | FloorPlanData | null,
   locationId?: string,
   options: UsePdfRendererOptions = {}
 ): UsePdfRendererResult {
@@ -245,7 +246,7 @@ export function usePdfRenderer(
  * Generate the appropriate PDF URL from various source types
  */
 function generatePdfUrl(
-  source: string | FloorPlanData | null,
+  source: string | FloorPlan | FloorPlanData | null,
   locationId?: string
 ): string | null {
   if (!source) {
@@ -257,8 +258,18 @@ function generatePdfUrl(
     return source;
   }
 
-  // If source is FloorPlanData, construct the serving URL
-  if (typeof source === 'object' && source.filePath && locationId) {
+  // If source is a FloorPlan object (new format)
+  if (typeof source === 'object' && 'id' in source && source.floorPlanData && locationId) {
+    const internalFilename = source.floorPlanData.filePath?.split('/').pop();
+    if (!internalFilename) {
+      console.error('Invalid floor plan file path:', source.floorPlanData.filePath);
+      return null;
+    }
+    return `/api/locations/${locationId}/floor-plans/${source.id}?file=${internalFilename}`;
+  }
+
+  // If source is FloorPlanData (legacy format), construct the old serving URL
+  if (typeof source === 'object' && 'filePath' in source && source.filePath && locationId) {
     const internalFilename = source.filePath.split('/').pop();
     if (!internalFilename) {
       console.error('Invalid floor plan file path:', source.filePath);
@@ -273,7 +284,7 @@ function generatePdfUrl(
 /**
  * Check if the source represents a PDF file
  */
-export function isPdfSource(source: string | FloorPlanData | null): boolean {
+export function isPdfSource(source: string | FloorPlan | FloorPlanData | null): boolean {
   if (!source) {
     return false;
   }
@@ -282,8 +293,15 @@ export function isPdfSource(source: string | FloorPlanData | null): boolean {
     return source.toLowerCase().includes('.pdf');
   }
 
-  if (typeof source === 'object' && source.contentType) {
-    return source.contentType === 'application/pdf';
+  if (typeof source === 'object') {
+    // Handle FloorPlan object (new format)
+    if ('id' in source && source.floorPlanData) {
+      return source.floorPlanData.contentType === 'application/pdf';
+    }
+    // Handle FloorPlanData object (legacy format)
+    if ('contentType' in source && source.contentType) {
+      return source.contentType === 'application/pdf';
+    }
   }
 
   return false;

@@ -4,17 +4,40 @@ import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
 import type { CreateDeviceOverlayPayload } from '@/types/device-overlay';
 
-// Get device overlays for a location
+interface FloorPlanOverlayRouteContext extends RouteContext {
+  params: Promise<{ id: string; planId: string }>;
+}
+
+// Get device overlays for a specific floor plan
 export const GET = withOrganizationAuth(async (
   req: NextRequest,
   authContext: OrganizationAuthContext,
-  context: RouteContext
+  context: FloorPlanOverlayRouteContext
 ) => {
   try {
-    const { id: locationId } = await context.params;
-    
+    const { id: locationId, planId } = await context.params;
+    // Verify floor plan exists and belongs to organization
     const orgDb = createOrgScopedDb(authContext.organizationId);
-    const overlays = await orgDb.deviceOverlays.findByLocation(locationId);
+    const floorPlans = await orgDb.floorPlans.findById(planId);
+    
+    if (floorPlans.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Floor plan not found' },
+        { status: 404 }
+      );
+    }
+    
+    const floorPlan = floorPlans[0];
+    
+    // Verify location matches
+    if (floorPlan.locationId !== locationId) {
+      return NextResponse.json(
+        { success: false, error: 'Floor plan does not belong to this location' },
+        { status: 403 }
+      );
+    }
+    
+    const overlays = await orgDb.deviceOverlays.findByFloorPlan(planId);
     
     return NextResponse.json({
       success: true,
@@ -27,8 +50,8 @@ export const GET = withOrganizationAuth(async (
           standardizedDeviceType: overlay.device.standardizedDeviceType,
           standardizedDeviceSubtype: overlay.device.standardizedDeviceSubtype,
           status: overlay.device.status,
-          connectorCategory: overlay.connector.category,
-          connectorName: overlay.connector.name
+          connectorCategory: overlay.connector?.category || null,
+          connectorName: overlay.connector?.name || null
         }
       }))
     });
@@ -41,14 +64,14 @@ export const GET = withOrganizationAuth(async (
   }
 });
 
-// Create a new device overlay
+// Create a new device overlay for a specific floor plan
 export const POST = withOrganizationAuth(async (
   req: NextRequest,
   authContext: OrganizationAuthContext,
-  context: RouteContext
+  context: FloorPlanOverlayRouteContext
 ) => {
   try {
-    const { id: locationId } = await context.params;
+    const { id: locationId, planId } = await context.params;
     
     if (!authContext.userId) {
       return NextResponse.json(
@@ -59,11 +82,11 @@ export const POST = withOrganizationAuth(async (
     
     const payload: CreateDeviceOverlayPayload = await req.json();
     
-    // Validate payload
-    if (!payload.deviceId || !payload.locationId || 
+    // Validate payload  
+    if (!payload.deviceId || !payload.floorPlanId ||
         typeof payload.x !== 'number' || typeof payload.y !== 'number') {
       return NextResponse.json(
-        { success: false, error: 'Invalid payload: deviceId, locationId, x, and y are required' },
+        { success: false, error: 'Invalid payload: deviceId, floorPlanId, x, and y are required' },
         { status: 400 }
       );
     }
@@ -76,23 +99,43 @@ export const POST = withOrganizationAuth(async (
       );
     }
     
-    // Ensure locationId matches route parameter
-    if (payload.locationId !== locationId) {
+    // Ensure floorPlanId matches route parameter
+    if (payload.floorPlanId !== planId) {
       return NextResponse.json(
-        { success: false, error: 'Location ID mismatch' },
+        { success: false, error: 'Floor plan ID mismatch' },
         { status: 400 }
       );
     }
     
     const orgDb = createOrgScopedDb(authContext.organizationId);
     
-    // Check if device overlay already exists for this device and location
-    const existing = await orgDb.deviceOverlays.findByDeviceAndLocation(
-      payload.deviceId, 
-      locationId
+    // Verify floor plan exists and belongs to organization
+    const floorPlans = await orgDb.floorPlans.findById(planId);
+    
+    if (floorPlans.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Floor plan not found' },
+        { status: 404 }
+      );
+    }
+    
+    const floorPlan = floorPlans[0];
+    
+    // Verify location matches
+    if (floorPlan.locationId !== locationId) {
+      return NextResponse.json(
+        { success: false, error: 'Floor plan does not belong to this location' },
+        { status: 403 }
+      );
+    }
+    
+    // Check if device is already placed on this floor plan
+    const existingOverlay = await orgDb.deviceOverlays.findByDeviceAndFloorPlan(
+      payload.deviceId,
+      payload.floorPlanId
     );
     
-    if (existing.length > 0) {
+    if (existingOverlay.length > 0) {
       return NextResponse.json(
         { success: false, error: 'Device is already placed on this floor plan' },
         { status: 409 }
@@ -102,11 +145,9 @@ export const POST = withOrganizationAuth(async (
     // Create the overlay
     const result = await orgDb.deviceOverlays.create({
       deviceId: payload.deviceId,
-      locationId: locationId,
+      floorPlanId: payload.floorPlanId,
       x: payload.x,
       y: payload.y,
-      rotation: payload.rotation,
-      scale: payload.scale,
       createdByUserId: authContext.userId
     });
     

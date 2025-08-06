@@ -1,5 +1,5 @@
 import { db } from '@/data/db';
-import { locations, devices, connectors, events, pikoServers, automations, keypadPins, user, spaces, spaceDevices, alarmZones, alarmZoneDevices, deviceOverlays } from '@/data/db/schema';
+import { locations, devices, connectors, events, pikoServers, automations, keypadPins, user, spaces, spaceDevices, alarmZones, alarmZoneDevices, deviceOverlays, floorPlans } from '@/data/db/schema';
 import { eq, and, exists, getTableColumns, desc, count, inArray, ne, like, or, gte, lte, type SQL } from 'drizzle-orm';
 
 /**
@@ -867,8 +867,8 @@ export class OrgScopedDb {
 
   // Device overlay methods (organization-scoped)
   readonly deviceOverlays = {
-    // Find all device overlays for a specific location
-    findByLocation: (locationId: string) =>
+    // Find all device overlays for a specific floor plan
+    findByFloorPlan: (floorPlanId: string) =>
       db.select({
         ...getTableColumns(deviceOverlays),
         device: {
@@ -889,29 +889,66 @@ export class OrgScopedDb {
       .innerJoin(devices, eq(deviceOverlays.deviceId, devices.id))
       .innerJoin(connectors, eq(devices.connectorId, connectors.id))
       .where(and(
-        eq(deviceOverlays.locationId, locationId),
+        eq(deviceOverlays.floorPlanId, floorPlanId),
         eq(deviceOverlays.organizationId, this.orgId)
       ))
       .orderBy(devices.name),
 
-    // Find specific device overlay by device and location
-    findByDeviceAndLocation: (deviceId: string, locationId: string) =>
+    // Find all device overlays for a specific location (all floor plans)
+    findByLocation: (locationId: string) =>
+      db.select({
+        ...getTableColumns(deviceOverlays),
+        device: {
+          id: devices.id,
+          name: devices.name,
+          type: devices.type,
+          standardizedDeviceType: devices.standardizedDeviceType,
+          standardizedDeviceSubtype: devices.standardizedDeviceSubtype,
+          status: devices.status
+        },
+        connector: {
+          id: connectors.id,
+          name: connectors.name,
+          category: connectors.category
+        }
+      })
+      .from(deviceOverlays)
+      .innerJoin(devices, eq(deviceOverlays.deviceId, devices.id))
+      .innerJoin(connectors, eq(devices.connectorId, connectors.id))
+      .innerJoin(floorPlans, eq(deviceOverlays.floorPlanId, floorPlans.id))
+      .where(and(
+        eq(floorPlans.locationId, locationId),
+        eq(deviceOverlays.organizationId, this.orgId)
+      ))
+      .orderBy(devices.name),
+
+    // Find specific device overlay by device and floor plan
+    findByDeviceAndFloorPlan: (deviceId: string, floorPlanId: string) =>
       db.select()
       .from(deviceOverlays)
       .where(and(
         eq(deviceOverlays.deviceId, deviceId),
-        eq(deviceOverlays.locationId, locationId),
+        eq(deviceOverlays.floorPlanId, floorPlanId),
+        eq(deviceOverlays.organizationId, this.orgId)
+      )),
+
+    // Find specific device overlay by device and location (through floor plans)
+    findByDeviceAndLocation: (deviceId: string, locationId: string) =>
+      db.select()
+      .from(deviceOverlays)
+      .innerJoin(floorPlans, eq(deviceOverlays.floorPlanId, floorPlans.id))
+      .where(and(
+        eq(deviceOverlays.deviceId, deviceId),
+        eq(floorPlans.locationId, locationId),
         eq(deviceOverlays.organizationId, this.orgId)
       )),
 
     // Create new device overlay position
     create: (data: {
       deviceId: string;
-      locationId: string;
+      floorPlanId: string;
       x: number;
       y: number;
-      rotation?: number;
-      scale?: number;
       createdByUserId: string;
     }) =>
       db.insert(deviceOverlays)
@@ -922,12 +959,10 @@ export class OrgScopedDb {
         })
         .returning(),
 
-    // Update existing device overlay position
-    update: (deviceId: string, locationId: string, data: {
+    // Update existing device overlay position by ID
+    update: (overlayId: string, data: {
       x?: number;
       y?: number;
-      rotation?: number;
-      scale?: number;
       updatedByUserId: string;
     }) =>
       db.update(deviceOverlays)
@@ -936,8 +971,7 @@ export class OrgScopedDb {
           updatedAt: new Date()
         })
         .where(and(
-          eq(deviceOverlays.deviceId, deviceId),
-          eq(deviceOverlays.locationId, locationId),
+          eq(deviceOverlays.id, overlayId),
           eq(deviceOverlays.organizationId, this.orgId)
         ))
         .returning(),
@@ -945,11 +979,9 @@ export class OrgScopedDb {
     // Upsert device overlay position (create or update)
     upsert: async (data: {
       deviceId: string;
-      locationId: string;
+      floorPlanId: string;
       x: number;
       y: number;
-      rotation?: number;
-      scale?: number;
       userId: string;
     }) => {
       // Check if overlay exists
@@ -957,7 +989,7 @@ export class OrgScopedDb {
         .from(deviceOverlays)
         .where(and(
           eq(deviceOverlays.deviceId, data.deviceId),
-          eq(deviceOverlays.locationId, data.locationId),
+          eq(deviceOverlays.floorPlanId, data.floorPlanId),
           eq(deviceOverlays.organizationId, this.orgId)
         ))
         .limit(1);
@@ -968,14 +1000,12 @@ export class OrgScopedDb {
           .set({
             x: data.x,
             y: data.y,
-            rotation: data.rotation,
-            scale: data.scale,
             updatedByUserId: data.userId,
             updatedAt: new Date()
           })
           .where(and(
             eq(deviceOverlays.deviceId, data.deviceId),
-            eq(deviceOverlays.locationId, data.locationId),
+            eq(deviceOverlays.floorPlanId, data.floorPlanId),
             eq(deviceOverlays.organizationId, this.orgId)
           ))
           .returning();
@@ -984,12 +1014,10 @@ export class OrgScopedDb {
         return db.insert(deviceOverlays)
           .values({
             deviceId: data.deviceId,
-            locationId: data.locationId,
+            floorPlanId: data.floorPlanId,
             organizationId: this.orgId,
             x: data.x,
             y: data.y,
-            rotation: data.rotation,
-            scale: data.scale,
             createdByUserId: data.userId,
             updatedByUserId: data.userId
           })
@@ -997,12 +1025,19 @@ export class OrgScopedDb {
       }
     },
 
-    // Delete device overlay position
-    delete: (deviceId: string, locationId: string) =>
+    // Delete device overlay position by ID
+    delete: (overlayId: string) =>
       db.delete(deviceOverlays)
         .where(and(
-          eq(deviceOverlays.deviceId, deviceId),
-          eq(deviceOverlays.locationId, locationId),
+          eq(deviceOverlays.id, overlayId),
+          eq(deviceOverlays.organizationId, this.orgId)
+        )),
+
+    // Delete all overlays for a floor plan (useful when floor plan is deleted)
+    deleteByFloorPlan: (floorPlanId: string) =>
+      db.delete(deviceOverlays)
+        .where(and(
+          eq(deviceOverlays.floorPlanId, floorPlanId),
           eq(deviceOverlays.organizationId, this.orgId)
         )),
 
@@ -1010,8 +1045,76 @@ export class OrgScopedDb {
     deleteByLocation: (locationId: string) =>
       db.delete(deviceOverlays)
         .where(and(
-          eq(deviceOverlays.locationId, locationId),
+          exists(
+            db.select().from(floorPlans)
+              .where(and(
+                eq(floorPlans.id, deviceOverlays.floorPlanId),
+                eq(floorPlans.locationId, locationId)
+              ))
+          ),
           eq(deviceOverlays.organizationId, this.orgId)
+        ))
+  };
+
+  // Floor plan methods (organization-scoped)
+  readonly floorPlans = {
+    // Find all floor plans for a specific location
+    findByLocation: (locationId: string) =>
+      db.select()
+        .from(floorPlans)
+        .where(and(
+          eq(floorPlans.locationId, locationId),
+          eq(floorPlans.organizationId, this.orgId)
+        ))
+        .orderBy(floorPlans.createdAt),
+
+    // Find specific floor plan by ID
+    findById: (id: string) =>
+      db.select()
+        .from(floorPlans)
+        .where(and(
+          eq(floorPlans.id, id),
+          eq(floorPlans.organizationId, this.orgId)
+        )),
+
+    // Create new floor plan
+    create: (data: {
+      name: string;
+      locationId: string;
+      floorPlanData?: any;
+      createdByUserId: string;
+    }) =>
+      db.insert(floorPlans)
+        .values({
+          ...data,
+          organizationId: this.orgId,
+          updatedByUserId: data.createdByUserId
+        })
+        .returning(),
+
+    // Update floor plan
+    update: (id: string, data: {
+      name?: string;
+      floorPlanData?: any;
+      updatedByUserId: string;
+    }) =>
+      db.update(floorPlans)
+        .set({
+          ...data,
+          updatedAt: new Date()
+        })
+        .where(and(
+          eq(floorPlans.id, id),
+          eq(floorPlans.organizationId, this.orgId)
+        ))
+        .returning(),
+
+    // Delete floor plan
+    delete: (id: string) =>
+      db.delete(floorPlans)
+        .where(and(
+          eq(floorPlans.id, id),
+          eq(floorPlans.organizationId, this.orgId)
         ))
   };
   

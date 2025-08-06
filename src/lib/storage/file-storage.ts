@@ -118,12 +118,12 @@ export class FileStorageService {
    * Extract internal filename from floor plan file path
    */
   private getInternalFilenameFromPath(filePath: string): string {
-    // filePath format: "orgId/floor-plans/locationId/uuid.ext"
+    // filePath format: "orgId/floor-plans/locationId/floorPlanId/uuid.ext"
     const parts = filePath.split('/');
-    if (parts.length !== 4 || parts[1] !== 'floor-plans') {
+    if (parts.length !== 5 || parts[1] !== 'floor-plans') {
       throw new Error('Invalid floor plan file path format');
     }
-    return parts[3]; // The filename part
+    return parts[4]; // The filename part
   }
 
   /**
@@ -137,24 +137,26 @@ export class FileStorageService {
   }
 
   /**
-   * Save floor plan file for a location
+   * Save floor plan file
    */
   async saveFloorPlan(
     organizationId: string,
     locationId: string,
+    floorPlanId: string,
     file: File,
     userId: string
   ): Promise<SaveFileResult> {
     // Validate input parameters for security
     this.validateId(organizationId, 'organizationId');
     this.validateId(locationId, 'locationId');
+    this.validateId(floorPlanId, 'floorPlanId');
     this.validateId(userId, 'userId');
 
     // Validate file
     this.validateFile(file);
 
-    // Get storage directory
-    const storageDir = getFloorPlanStoragePath(organizationId, locationId);
+    // Get storage directory with floor plan ID
+    const storageDir = getFloorPlanStoragePath(organizationId, locationId, floorPlanId);
     await this.ensureDirectory(storageDir);
 
     // Generate internal filename (UUID-based)
@@ -170,7 +172,7 @@ export class FileStorageService {
     const uploadedAt = new Date();
 
     // Create relative file path from storage root
-    const relativeFilePath = join(organizationId, 'floor-plans', locationId, internalFilename);
+    const relativeFilePath = join(organizationId, 'floor-plans', locationId, floorPlanId, internalFilename);
 
     // Create floor plan data object
     const floorPlanData: FloorPlanData = {
@@ -189,20 +191,22 @@ export class FileStorageService {
   }
 
   /**
-   * Delete floor plan file using internal filename
+   * Delete floor plan file
    */
   async deleteFloorPlan(
     organizationId: string,
     locationId: string,
+    floorPlanId: string,
     internalFilename: string
   ): Promise<void> {
     // Validate input parameters for security
     this.validateId(organizationId, 'organizationId');
     this.validateId(locationId, 'locationId');
+    this.validateId(floorPlanId, 'floorPlanId');
     this.validateFilename(internalFilename);
 
     try {
-      const storageDir = getFloorPlanStoragePath(organizationId, locationId);
+      const storageDir = getFloorPlanStoragePath(organizationId, locationId, floorPlanId);
       const filePath = join(storageDir, internalFilename);
       
       await unlink(filePath);
@@ -218,10 +222,11 @@ export class FileStorageService {
   async deleteFloorPlanFromData(
     organizationId: string,
     locationId: string,
+    floorPlanId: string,
     floorPlanData: FloorPlanData
   ): Promise<void> {
     const internalFilename = this.getInternalFilenameFromPath(floorPlanData.filePath);
-    await this.deleteFloorPlan(organizationId, locationId, internalFilename);
+    await this.deleteFloorPlan(organizationId, locationId, floorPlanId, internalFilename);
   }
 
   /**
@@ -230,14 +235,16 @@ export class FileStorageService {
   async getFloorPlanStream(
     organizationId: string,
     locationId: string,
+    floorPlanId: string,
     filename: string
   ): Promise<{ stream: ReadStream; metadata: FileMetadata }> {
     // Validate input parameters for security
     this.validateId(organizationId, 'organizationId');
     this.validateId(locationId, 'locationId');
+    this.validateId(floorPlanId, 'floorPlanId');
     this.validateFilename(filename);
 
-    const storageDir = getFloorPlanStoragePath(organizationId, locationId);
+    const storageDir = getFloorPlanStoragePath(organizationId, locationId, floorPlanId);
     const filePath = join(storageDir, filename);
 
     // Check if file exists
@@ -270,15 +277,17 @@ export class FileStorageService {
   async floorPlanExists(
     organizationId: string,
     locationId: string,
+    floorPlanId: string,
     filename: string
   ): Promise<boolean> {
     // Validate input parameters for security
     this.validateId(organizationId, 'organizationId');
     this.validateId(locationId, 'locationId');
+    this.validateId(floorPlanId, 'floorPlanId');
     this.validateFilename(filename);
 
     try {
-      const storageDir = getFloorPlanStoragePath(organizationId, locationId);
+      const storageDir = getFloorPlanStoragePath(organizationId, locationId, floorPlanId);
       const filePath = join(storageDir, filename);
       await access(filePath);
       return true;

@@ -8,14 +8,16 @@ import { FloorPlanCanvasDynamic, DevicePalette } from '.';
 import { useDeviceOverlays } from '@/hooks/floor-plan/device-overlays';
 import { useFusionStore } from '@/stores/store';
 import { toast } from 'sonner';
-import type { FloorPlanData } from '@/lib/storage/file-storage';
+import type { FloorPlan, DeviceWithConnector, Space } from '@/types';
 
 interface FloorPlanDetailProps {
-  floorPlan: FloorPlanData | null;
+  floorPlan: FloorPlan | null;
   locationId: string;
   onFloorPlanUpdated?: () => void;
   onDelete?: () => void;
   showActions?: boolean;
+  allDevices: DeviceWithConnector[];
+  spaces: Space[];
 }
 
 export function FloorPlanDetail({
@@ -23,18 +25,14 @@ export function FloorPlanDetail({
   locationId,
   onFloorPlanUpdated,
   onDelete,
-  showActions = true
+  showActions = true,
+  allDevices,
+  spaces
 }: FloorPlanDetailProps) {
   const [isReplacing, setIsReplacing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [deviceSearchTerm, setDeviceSearchTerm] = useState('');
-
-  // Get devices and spaces from store
-  const { allDevices, spaces } = useFusionStore((state) => ({
-    allDevices: state.allDevices,
-    spaces: state.spaces
-  }));
 
   // Get device overlays and management functions
   const {
@@ -46,7 +44,11 @@ export function FloorPlanDetail({
     updateOverlay,
     deleteOverlay,
     selectOverlay
-  } = useDeviceOverlays({ locationId });
+  } = useDeviceOverlays({ 
+    locationId, 
+    floorPlanId: floorPlan?.id || '',
+    enabled: !!floorPlan?.id
+  });
 
   // Create set of device IDs that are already placed on floor plan
   const placedDeviceIds = new Set(overlays.map(overlay => overlay.deviceId));
@@ -67,15 +69,15 @@ export function FloorPlanDetail({
   };
 
   const handleUpload = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile || !floorPlan) return;
     
     setIsUploading(true);
     try {
       const formData = new FormData();
       formData.append('floorPlan', selectedFile);
       
-      const response = await fetch(`/api/locations/${locationId}/floor-plan`, {
-        method: 'POST',
+      const response = await fetch(`/api/locations/${locationId}/floor-plans/${floorPlan.id}`, {
+        method: 'PUT',
         body: formData,
       });
       
@@ -106,35 +108,28 @@ export function FloorPlanDetail({
   };
 
   // Generate serving URL for floor plan
-  const getServingUrl = (floorPlanData: FloorPlanData) => {
-    const internalFilename = floorPlanData.filePath?.split('/').pop();
+  const getServingUrl = (floorPlan: FloorPlan) => {
+    if (!floorPlan.floorPlanData) {
+      console.log('🔍 No floor plan data found');
+      return '#';
+    }
+    
+    const internalFilename = floorPlan.floorPlanData.filePath?.split('/').pop();
     if (!internalFilename) {
-      console.error('Invalid floor plan file path:', floorPlanData.filePath);
+      console.error('Invalid floor plan file path:', floorPlan.floorPlanData.filePath);
       return '#'; // Return placeholder URL to avoid crashes
     }
-    return `/api/locations/${locationId}/floor-plan?file=${internalFilename}`;
+    const url = `/api/locations/${locationId}/floor-plans/${floorPlan.id}?file=${internalFilename}`;
+    console.log('🔍 Generated floor plan URL:', url);
+    console.log('🔍 Floor plan data:', floorPlan.floorPlanData);
+    return url;
   };
 
-  // Handle initial upload state (no floor plan)
+  // Handle no floor plan case
   if (!floorPlan) {
     return (
-      <div className="space-y-4">
-        <FloorPlanUpload
-          onFileSelect={handleFileSelect}
-          onFileRemove={handleFileRemove}
-          selectedFile={selectedFile}
-          isUploading={isUploading}
-        />
-        {selectedFile && (
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={handleFileRemove}>
-              Cancel
-            </Button>
-            <Button onClick={handleUpload} disabled={isUploading}>
-              {isUploading ? 'Uploading...' : 'Upload Floor Plan'}
-            </Button>
-          </div>
-        )}
+      <div className="text-center py-8">
+        <p className="text-muted-foreground">No floor plan selected</p>
       </div>
     );
   }

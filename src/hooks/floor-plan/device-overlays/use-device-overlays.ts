@@ -29,6 +29,8 @@ interface UseDeviceOverlaysResult {
 interface UseDeviceOverlaysOptions {
   /** Location ID to fetch overlays for */
   locationId: string;
+  /** Floor plan ID to fetch overlays for */
+  floorPlanId: string;
   /** Whether to automatically fetch on mount */
   enabled?: boolean;
 }
@@ -37,7 +39,8 @@ interface UseDeviceOverlaysOptions {
  * Hook for managing device overlay state and operations
  */
 export function useDeviceOverlays({ 
-  locationId, 
+  locationId,
+  floorPlanId,
   enabled = true 
 }: UseDeviceOverlaysOptions): UseDeviceOverlaysResult {
   const [overlays, setOverlays] = useState<DeviceOverlayWithDevice[]>([]);
@@ -46,13 +49,13 @@ export function useDeviceOverlays({
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
 
   const fetchOverlays = useCallback(async () => {
-    if (!locationId || !enabled) return;
+    if (!locationId || !floorPlanId || !enabled) return;
     
     setIsLoading(true);
     setError(null);
     
     try {
-      const response = await fetch(`/api/locations/${locationId}/floor-plan/device-overlays`);
+      const response = await fetch(`/api/locations/${locationId}/floor-plans/${floorPlanId}/device-overlays`);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch device overlays: ${response.statusText}`);
@@ -72,13 +75,13 @@ export function useDeviceOverlays({
     } finally {
       setIsLoading(false);
     }
-  }, [locationId, enabled]);
+  }, [locationId, floorPlanId, enabled]);
 
   const createOverlay = useCallback(async (payload: CreateDeviceOverlayPayload) => {
     setError(null);
     
     try {
-      const response = await fetch(`/api/locations/${locationId}/floor-plan/device-overlays`, {
+      const response = await fetch(`/api/locations/${locationId}/floor-plans/${floorPlanId}/device-overlays`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -104,13 +107,13 @@ export function useDeviceOverlays({
       console.error('Error creating device overlay:', err);
       throw err; // Re-throw so caller can handle
     }
-  }, [locationId, fetchOverlays]);
+  }, [locationId, floorPlanId, fetchOverlays]);
 
   const updateOverlay = useCallback(async (overlayId: string, updates: UpdateDeviceOverlayPayload) => {
     setError(null);
     
     try {
-      const response = await fetch(`/api/locations/${locationId}/floor-plan/device-overlays/${overlayId}`, {
+      const response = await fetch(`/api/locations/${locationId}/floor-plans/${floorPlanId}/device-overlays/${overlayId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -142,13 +145,13 @@ export function useDeviceOverlays({
       await fetchOverlays();
       throw err; // Re-throw so caller can handle
     }
-  }, [locationId, fetchOverlays]);
+  }, [locationId, floorPlanId, fetchOverlays]);
 
   const deleteOverlay = useCallback(async (overlayId: string) => {
     setError(null);
     
     try {
-      const response = await fetch(`/api/locations/${locationId}/floor-plan/device-overlays/${overlayId}`, {
+      const response = await fetch(`/api/locations/${locationId}/floor-plans/${floorPlanId}/device-overlays/${overlayId}`, {
         method: 'DELETE',
       });
       
@@ -175,7 +178,7 @@ export function useDeviceOverlays({
       console.error('Error deleting device overlay:', err);
       throw err; // Re-throw so caller can handle
     }
-  }, [locationId, selectedOverlayId]);
+  }, [locationId, floorPlanId, selectedOverlayId]);
 
   const selectOverlay = useCallback((overlay: DeviceOverlayWithDevice | null) => {
     setSelectedOverlayId(overlay?.id || null);

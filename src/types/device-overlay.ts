@@ -8,16 +8,12 @@
 export interface DeviceOverlayPosition {
   /** Device's internal UUID */
   deviceId: string;
-  /** Location's internal UUID where the floor plan belongs */
-  locationId: string;
+  /** Floor plan's internal UUID */
+  floorPlanId: string;
   /** Normalized X coordinate (0-1 scale) relative to floor plan width */
   x: number;
   /** Normalized Y coordinate (0-1 scale) relative to floor plan height */
   y: number;
-  /** Optional rotation in degrees (0-360) */
-  rotation?: number;
-  /** Optional scale factor (default 1.0) */
-  scale?: number;
   /** When the position was created */
   createdAt: Date;
   /** When the position was last updated */
@@ -40,11 +36,9 @@ export interface DeviceOverlayData extends DeviceOverlayPosition {
  */
 export interface CreateDeviceOverlayPayload {
   deviceId: string;
-  locationId: string;
+  floorPlanId: string;
   x: number;
   y: number;
-  rotation?: number;
-  scale?: number;
 }
 
 /**
@@ -53,8 +47,6 @@ export interface CreateDeviceOverlayPayload {
 export interface UpdateDeviceOverlayPayload {
   x?: number;
   y?: number;
-  rotation?: number;
-  scale?: number;
 }
 
 /**

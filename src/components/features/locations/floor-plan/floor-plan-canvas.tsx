@@ -12,10 +12,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
-import type { FloorPlanData } from '@/lib/storage/file-storage';
+import type { FloorPlan } from '@/types';
 
 export interface FloorPlanCanvasProps {
-  floorPlan: FloorPlanData | null;
+  floorPlan: FloorPlan | null;
   locationId: string;
   className?: string;
   width?: number;
@@ -84,8 +84,9 @@ export function FloorPlanCanvas({
   const finalHeight = height || canvasSize.height;
 
   // Determine source type and use appropriate hook
-  const isImage = isImageSource(floorPlan);
-  const isPdf = isPdfSource(floorPlan);
+  const floorPlanData = floorPlan?.floorPlanData || null;
+  const isImage = isImageSource(floorPlanData);
+  const isPdf = isPdfSource(floorPlanData);
 
   // Image loading hook
   const imageResult = useFloorPlanImage(
@@ -252,9 +253,14 @@ export function FloorPlanCanvas({
       }
 
       // Create the device overlay
+      if (!floorPlan?.id) {
+        toast.error('No floor plan selected');
+        return;
+      }
+      
       createOverlay({
         deviceId: deviceData.deviceId,
-        locationId,
+        floorPlanId: floorPlan.id,
         x: normalizedPosition.x,
         y: normalizedPosition.y
       }).then(() => {
@@ -268,7 +274,7 @@ export function FloorPlanCanvas({
       console.error('Error handling device drop:', error);
       toast.error('Failed to place device on floor plan');
     }
-  }, [viewport, currentResult.dimensions, locationId, createOverlay]);
+  }, [viewport, currentResult.dimensions, createOverlay, floorPlan?.id]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault(); // Allow drop

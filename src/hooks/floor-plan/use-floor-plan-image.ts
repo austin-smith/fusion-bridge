@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import useImage from 'use-image';
 import type { FloorPlanData } from '@/lib/storage/file-storage';
+import type { FloorPlan } from '@/types';
 
 export interface UseFloorPlanImageResult {
   image: HTMLImageElement | undefined;
@@ -25,7 +26,7 @@ interface UseFloorPlanImageOptions {
  * Works with both direct image URLs and floor plan data objects
  */
 export function useFloorPlanImage(
-  source: string | FloorPlanData | null,
+  source: string | FloorPlan | FloorPlanData | null,
   locationId?: string,
   options: UseFloorPlanImageOptions = {}
 ): UseFloorPlanImageResult {
@@ -79,7 +80,7 @@ export function useFloorPlanImage(
  * Generate the appropriate image URL from various source types
  */
 function generateImageUrl(
-  source: string | FloorPlanData | null,
+  source: string | FloorPlan | FloorPlanData | null,
   locationId?: string
 ): string | null {
   if (!source) {
@@ -91,8 +92,18 @@ function generateImageUrl(
     return source;
   }
 
-  // If source is FloorPlanData, construct the serving URL
-  if (typeof source === 'object' && source.filePath && locationId) {
+  // If source is a FloorPlan object (new format)
+  if (typeof source === 'object' && 'id' in source && source.floorPlanData && locationId) {
+    const internalFilename = source.floorPlanData.filePath?.split('/').pop();
+    if (!internalFilename) {
+      console.error('Invalid floor plan file path:', source.floorPlanData.filePath);
+      return null;
+    }
+    return `/api/locations/${locationId}/floor-plans/${source.id}?file=${internalFilename}`;
+  }
+
+  // If source is FloorPlanData (legacy format), construct the old serving URL
+  if (typeof source === 'object' && 'filePath' in source && source.filePath && locationId) {
     const internalFilename = source.filePath.split('/').pop();
     if (!internalFilename) {
       console.error('Invalid floor plan file path:', source.filePath);
@@ -107,7 +118,7 @@ function generateImageUrl(
 /**
  * Check if the source represents an image file
  */
-export function isImageSource(source: string | FloorPlanData | null): boolean {
+export function isImageSource(source: string | FloorPlan | FloorPlanData | null): boolean {
   if (!source) {
     return false;
   }
@@ -118,8 +129,15 @@ export function isImageSource(source: string | FloorPlanData | null): boolean {
     return imageExtensions.some(ext => source.toLowerCase().includes(ext));
   }
 
-  if (typeof source === 'object' && source.contentType) {
-    return source.contentType.startsWith('image/');
+  if (typeof source === 'object') {
+    // Handle FloorPlan object (new format)
+    if ('id' in source && source.floorPlanData) {
+      return source.floorPlanData.contentType?.startsWith('image/') || false;
+    }
+    // Handle FloorPlanData object (legacy format)
+    if ('contentType' in source && source.contentType) {
+      return source.contentType.startsWith('image/');
+    }
   }
 
   return false;

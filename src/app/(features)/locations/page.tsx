@@ -7,7 +7,7 @@ import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, Panel
 import { LocationEditDialog } from '@/components/features/locations/location-edit-dialog';
 import { LocationWeatherIcon } from '@/components/features/locations/location-weather-icon';
 import { FloorPlanIndicator } from '@/components/features/locations/floor-plan/floor-plan-indicator';
-import { FloorPlanDetail } from '@/components/features/locations/floor-plan/floor-plan-detail';
+import { FloorPlanManager } from '@/components/features/locations/floor-plan';
 import { SpaceEditDialog } from '@/components/features/locations/spaces/space-edit-dialog';
 import { SpaceDeviceAssignmentDialog } from '@/components/features/locations/spaces/space-device-assignment-dialog';
 import { CameraWallDialog } from '@/components/features/common/camera-wall-dialog';
@@ -317,40 +317,7 @@ export default function LocationsPage() {
     setIsFloorPlanViewerOpen(true);
   };
 
-  const handleFloorPlanDelete = async () => {
-    if (!selectedLocationForFloorPlan) return;
-    
-    try {
-      const response = await fetch(`/api/locations/${selectedLocationForFloorPlan.id}/floor-plan`, {
-        method: 'DELETE',
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete floor plan');
-      }
-      
-      toast.success('Floor plan deleted successfully');
-      await fetchLocations(); // Refresh locations to update floor plan data
-      setIsFloorPlanViewerOpen(false);
-    } catch (error) {
-      console.error('Error deleting floor plan:', error);
-      toast.error('Failed to delete floor plan');
-    }
-  };
-
-  const handleFloorPlanUpdated = async () => {
-    await fetchLocations(); // Refresh locations to get updated floor plan data
-  };
-
-  // Update selected location when locations change (after upload)
-  useEffect(() => {
-    if (selectedLocationForFloorPlan) {
-      const updatedLocation = locations.find(loc => loc.id === selectedLocationForFloorPlan.id);
-      if (updatedLocation && updatedLocation.floorPlan !== selectedLocationForFloorPlan.floorPlan) {
-        setSelectedLocationForFloorPlan(updatedLocation);
-      }
-    }
-  }, [locations, selectedLocationForFloorPlan]);
+  // Floor plan handlers are now managed by FloorPlanManager component
 
   // Tree view handlers
   const handleTreeSelectItem = useCallback((item: { type: 'location' | 'space', location: Location | null, space: Space | null }) => {
@@ -866,16 +833,13 @@ export default function LocationsPage() {
                       {selectedLocationForFloorPlan.name}
                     </DialogTitle>
                     <p className="text-sm text-muted-foreground">
-                      {selectedLocationForFloorPlan.floorPlan ? 'Floor Plan' : 'Add Floor Plan'}
+                      Floor Plans
                     </p>
                   </div>
                 </div>
               </DialogHeader>
-              <FloorPlanDetail
-                floorPlan={selectedLocationForFloorPlan.floorPlan as FloorPlanData | null}
+              <FloorPlanManager
                 locationId={selectedLocationForFloorPlan.id}
-                onFloorPlanUpdated={handleFloorPlanUpdated}
-                onDelete={handleFloorPlanDelete}
               />
             </DialogContent>
           </Dialog>

@@ -126,6 +126,17 @@ export interface Location {
   children?: Location[];
 }
 
+export interface FloorPlan {
+  id: string;
+  name: string;
+  locationId: string;
+  organizationId: string;
+  floorPlanData: FloorPlanData | null;
+  createdAt: Date;
+  updatedAt: Date;
+  createdByUserId: string;
+  updatedByUserId: string;
+}
 
 
 export interface ArmingSchedule {
