@@ -884,7 +884,110 @@ export async function getDeviceState(
     }
   }
 }
-// --- END Add getDeviceState Function --- 
+// --- END Add getDeviceState Function ---
+
+// --- BEGIN Add playAudio Function ---
+/**
+ * Plays audio on a YoLink SpeakerHub device.
+ * @param connectorId The ID of the connector for fetching/updating its config.
+ * @param config YoLink configuration (uaid, clientSecret, and potentially existing token info)
+ * @param deviceId The target device's YoLink ID (deviceId from API)
+ * @param deviceToken The target device's specific token (token from API)
+ * @param params Audio parameters including tone, message, volume, and repeat
+ * @returns Promise resolving to the API response data on success.
+ * @throws Error if the operation fails or parameters are invalid.
+ */
+export async function playAudio(
+  connectorId: string,
+  config: YoLinkConfig,
+  deviceId: string,
+  deviceToken: string,
+  params: {
+    tone?: string;
+    message: string;
+    volume?: number;
+    repeat?: number;
+  }
+): Promise<any> {
+  console.log(`playAudio called for connector ${connectorId}, device ${deviceId}`);
+
+  if (!config.uaid || !config.clientSecret) {
+    console.error('Missing YoLink UAID or Client Secret for playAudio.');
+    throw new Error('Missing YoLink UAID or Client Secret.');
+  }
+  if (!deviceId || !deviceToken) {
+    console.error(`Missing deviceId (${deviceId}) or deviceToken (${!!deviceToken}) for playAudio.`);
+    throw new Error('Missing YoLink deviceId or deviceToken for audio playback.');
+  }
+  if (!params.message || typeof params.message !== 'string') {
+    console.error('Missing or invalid message parameter for playAudio.');
+    throw new Error('Message parameter is required for audio playback.');
+  }
+
+  // Validate tone parameter if provided
+  if (params.tone && !['Emergency', 'Alert', 'Warn', 'Tip'].includes(params.tone)) {
+    console.error(`Invalid tone parameter: ${params.tone}`);
+    throw new Error('Tone must be one of: Emergency, Alert, Warn, Tip');
+  }
+
+  // Validate volume parameter if provided
+  if (params.volume !== undefined && (typeof params.volume !== 'number' || params.volume < 1 || params.volume > 100)) {
+    console.error(`Invalid volume parameter: ${params.volume}`);
+    throw new Error('Volume must be a number between 1 and 100');
+  }
+
+  // Validate repeat parameter if provided
+  if (params.repeat !== undefined && (typeof params.repeat !== 'number' || params.repeat < 0 || params.repeat > 10)) {
+    console.error(`Invalid repeat parameter: ${params.repeat}`);
+    throw new Error('Repeat must be a number between 0 and 10');
+  }
+
+  try {
+    // Build the API request parameters
+    const apiParams: Record<string, any> = {
+      message: params.message
+    };
+
+    // Add optional parameters only if provided
+    if (params.tone) {
+      apiParams.tone = params.tone;
+    }
+    if (params.volume !== undefined) {
+      apiParams.volume = params.volume;
+    }
+    if (params.repeat !== undefined) {
+      apiParams.repeat = params.repeat;
+    }
+
+    const requestBody = {
+      method: 'SpeakerHub.playAudio',
+      targetDevice: deviceId,
+      token: deviceToken,
+      params: apiParams
+    };
+
+    const operationName = 'playAudio';
+    console.log(`Calling callYoLinkApi for ${operationName} with params:`, apiParams);
+    const result = await callYoLinkApi<any>(
+      connectorId,
+      config,
+      requestBody,
+      operationName
+    );
+
+    console.log(`Successfully executed ${operationName} for device ${deviceId}. Result:`, result);
+    return result;
+
+  } catch (error) {
+    console.error(`[playAudio][${connectorId}] Error during playAudio for device ${deviceId}:`, error);
+    if (error instanceof Error) {
+      throw new Error(`Failed to play audio on YoLink device for ${connectorId}: ${error.message}`);
+    } else {
+      throw new Error(`Failed to play audio on YoLink device for ${connectorId} due to an unknown error.`);
+    }
+  }
+}
+// --- END Add playAudio Function --- 
 
 // --- BEGIN PASTE AND EXPORT HELPER FUNCTION ---
 /**

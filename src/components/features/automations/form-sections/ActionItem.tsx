@@ -30,6 +30,7 @@ import type {
     SendPushNotificationActionParamsSchema,
     ArmAlarmZoneActionParamsSchema,
     DisarmAlarmZoneActionParamsSchema,
+    PlayAudioActionParamsSchema,
 } from '@/lib/automation-schemas';
 import { AutomationActionType, getActionTitle, getActionIconProps, getActionStyling, formatActionDetail, AutomationTriggerType } from '@/lib/automation-types';
 import { ActionableState, ArmedState } from '@/lib/mappings/definitions';
@@ -66,7 +67,7 @@ const ACTION_GROUPS = [
     {
         id: 'device-control',
         label: 'Device Control',
-        actions: [AutomationActionType.SET_DEVICE_STATE]
+        actions: [AutomationActionType.SET_DEVICE_STATE, AutomationActionType.PLAY_AUDIO]
     },
     {
         id: 'other',
@@ -83,6 +84,8 @@ type TargetDeviceOption = {
     iconName: string;
     spaceId?: string | null;
     locationId?: string | null;
+    rawType?: string; // Add raw device type for proper command filtering
+    supportsAudio?: boolean; // Server-side computed flag for audio capability
 };
 
 type ZoneOption = Pick<typeof alarmZones.$inferSelect, 'id' | 'name' | 'locationId'>;
@@ -93,11 +96,23 @@ const ACTIONABLE_STATE_DISPLAY_MAP: Record<ActionableState, string> = {
     [ActionableState.SET_OFF]: "Turn Off",
 };
 
+// YoLink SpeakerHub tone options
+const YOLINK_TONE_OPTIONS = [
+    { value: 'Alert', label: 'Alert' },
+    { value: 'Emergency', label: 'Emergency' },
+    { value: 'Tip', label: 'Tip' },
+    { value: 'Warn', label: 'Warn' },
+] as const;
+
+
+
 export type InsertableFieldNames = 
     | keyof z.infer<typeof CreateEventActionParamsSchema>
     | keyof z.infer<typeof CreateBookmarkParamsSchema>
     | Exclude<keyof z.infer<typeof SendHttpRequestActionParamsSchema>, 'headers'>
+    | keyof z.infer<typeof SetDeviceStateActionParamsSchema>
     | keyof z.infer<typeof SendPushNotificationActionParamsSchema>
+    | keyof z.infer<typeof PlayAudioActionParamsSchema>
     | `headers.${number}.keyTemplate`
     | `headers.${number}.valueTemplate`;
 
@@ -207,6 +222,16 @@ export function ActionItem({
             scoping: 'ALL_ZONES_IN_SCOPE',
             targetZoneIds: []
         } as z.infer<typeof DisarmAlarmZoneActionParamsSchema>;
+    } else if (newType === AutomationActionType.PLAY_AUDIO) {
+        // Filter to only devices that support audio (server-side computed flag)
+        const audioCapableDevices = sortedAvailableTargetDevices.filter(device => device.supportsAudio);
+        newActionParams = {
+            targetDeviceInternalId: audioCapableDevices.length > 0 ? audioCapableDevices[0].id : '',
+            toneTemplate: '',
+            messageTemplate: '',
+            volumeTemplate: '',
+            repeatTemplate: ''
+        } as z.infer<typeof PlayAudioActionParamsSchema>;
     } else { 
         console.warn(`Unexpected action type: ${value}. Defaulting to minimal params.`); 
         newActionParams = {} as any;
@@ -221,7 +246,8 @@ export function ActionItem({
     if (triggerType === AutomationTriggerType.SCHEDULED) {
         return allTypes.filter(type => 
             type === AutomationActionType.ARM_ALARM_ZONE || 
-            type === AutomationActionType.DISARM_ALARM_ZONE
+            type === AutomationActionType.DISARM_ALARM_ZONE ||
+            type === AutomationActionType.PLAY_AUDIO
         );
     }
     return allTypes;
@@ -583,6 +609,168 @@ export function ActionItem({
                                   </FormDescription>
                               </div>
                           </>
+                      )}
+                      
+                      {actionType === AutomationActionType.PLAY_AUDIO && (
+                        <>
+                            <div className="flex flex-col space-y-4 mt-2">
+                                <FormLabel className="mb-1 mt-2">Audio Configuration</FormLabel>
+                                
+                                {/* Device Selection */}
+                                <FormField
+                                    control={form.control}
+                                    name={`config.actions.${index}.params.targetDeviceInternalId`}
+                                    render={({ field, fieldState }) => {
+                                        // Filter to only devices that support audio (server-side computed flag)
+                                        const audioCapableDevices = sortedAvailableTargetDevices.filter(device => device.supportsAudio);
+                                        
+                                        return (
+                                            <FormItem>
+                                                <FormLabel>Hub Device</FormLabel>
+                                                <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
+                                                    <FormControl>
+                                                        <SelectTrigger className={cn("w-[300px]", fieldState.error && 'border-destructive')}>
+                                                            <SelectValue placeholder="Select device..." />
+                                                        </SelectTrigger>
+                                                    </FormControl>
+                                                    <SelectContent>
+                                                        {audioCapableDevices.map(device => {
+                                                            const IconComponent = getIconComponentByName(device.iconName) || HelpCircle;
+                                                            return (
+                                                                <SelectItem key={device.id} value={device.id}>
+                                                                    <div className="flex items-center">
+                                                                        <IconComponent className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+                                                                        <span>{device.name}</span>
+                                                                    </div>
+                                                                </SelectItem>
+                                                            );
+                                                        })}
+                                                        {audioCapableDevices.length === 0 && (
+                                                            <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                                                                No devices found for audio playback.
+                                                            </div>
+                                                        )}
+                                                    </SelectContent>
+                                                </Select>
+                                                <FormDescription className={descriptionStyles}>
+                                                    Select the device to play audio on. Audio actions require compatible speaker hardware.
+                                                </FormDescription>
+                                            </FormItem>
+                                        );
+                                    }}
+                                />
+
+                                {/* Message Field */}
+                                <FormField
+                                    control={form.control}
+                                    name={`config.actions.${index}.params.messageTemplate`}
+                                    render={({ field, fieldState }) => (
+                                        <FormItem>
+                                            <div className="flex items-center justify-between">
+                                                <FormLabel>Message</FormLabel>
+                                                <TokenInserter
+                                                    tokens={AVAILABLE_AUTOMATION_TOKENS}
+                                                    onInsert={(token) => handleInsertToken('messageTemplate', index, token, 'action')}
+                                                />
+                                            </div>
+                                            <FormControl>
+                                                <Textarea
+                                                    {...field}
+                                                    disabled={isLoading}
+                                                    placeholder="Enter the text-to-speech message..."
+                                                    className={cn("min-h-[80px]", fieldState.error && 'border-destructive')}
+                                                />
+                                            </FormControl>
+                                            <FormDescription className={descriptionStyles}>
+                                                The message to be spoken using text-to-speech. Supports automation tokens.
+                                            </FormDescription>
+                                        </FormItem>
+                                    )}
+                                />
+
+                                {/* Tone Field (Optional) */}
+                                <FormField
+                                    control={form.control}
+                                    name={`config.actions.${index}.params.toneTemplate`}
+                                    render={({ field, fieldState }) => (
+                                        <FormItem>
+                                            <FormLabel>Tone (Optional)</FormLabel>
+                                            <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
+                                                <FormControl>
+                                                    <SelectTrigger className={cn("w-[200px]", fieldState.error && 'border-destructive')}>
+                                                        <SelectValue placeholder="Select tone..." />
+                                                    </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    <SelectItem value="none">No tone</SelectItem>
+                                                    {YOLINK_TONE_OPTIONS.map(tone => (
+                                                        <SelectItem key={tone.value} value={tone.value}>
+                                                            {tone.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FormDescription className={descriptionStyles}>
+                                                Optional alert tone to play before the message.
+                                            </FormDescription>
+                                        </FormItem>
+                                    )}
+                                />
+
+                                {/* Volume and Repeat Row */}
+                                <div className="flex items-end space-x-4">
+                                    {/* Volume Field (Optional) */}
+                                    <FormField
+                                        control={form.control}
+                                        name={`config.actions.${index}.params.volumeTemplate`}
+                                        render={({ field, fieldState }) => (
+                                            <FormItem className="flex-grow">
+                                                <FormLabel>Volume (Optional)</FormLabel>
+                                                <FormControl>
+                                                    <Input
+                                                        {...field}
+                                                        disabled={isLoading}
+                                                        placeholder="1-100"
+                                                        type="number"
+                                                        min="1"
+                                                        max="100"
+                                                        className={cn("w-[120px]", fieldState.error && 'border-destructive')}
+                                                    />
+                                                </FormControl>
+                                                <FormDescription className={descriptionStyles}>
+                                                    Volume level (1-100). Uses device default if not specified.
+                                                </FormDescription>
+                                            </FormItem>
+                                        )}
+                                    />
+
+                                    {/* Repeat Field (Optional) */}
+                                    <FormField
+                                        control={form.control}
+                                        name={`config.actions.${index}.params.repeatTemplate`}
+                                        render={({ field, fieldState }) => (
+                                            <FormItem className="flex-grow">
+                                                <FormLabel>Repeat (Optional)</FormLabel>
+                                                <FormControl>
+                                                    <Input
+                                                        {...field}
+                                                        disabled={isLoading}
+                                                        placeholder="0-10"
+                                                        type="number"
+                                                        min="0"
+                                                        max="10"
+                                                        className={cn("w-[120px]", fieldState.error && 'border-destructive')}
+                                                    />
+                                                </FormControl>
+                                                <FormDescription className={descriptionStyles}>
+                                                    Number of times to repeat (0-10). 0 = no repeat.
+                                                </FormDescription>
+                                            </FormItem>
+                                        )}
+                                    />
+                                </div>
+                            </div>
+                        </>
                       )}
                       
                       {actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && (

@@ -7,8 +7,8 @@ import { eq, inArray, asc } from "drizzle-orm";
 import { redirect, notFound } from 'next/navigation';
 import { AutomationConfigSchema, type AutomationConfig, type AutomationAction, type TemporalCondition } from "@/lib/automation-schemas";
 import { AutomationTriggerType } from "@/lib/automation-types";
-import { DeviceType } from "@/lib/mappings/definitions";
-import { actionHandlers, type IDeviceActionHandler } from "@/lib/device-actions";
+import { DeviceType, DeviceCommand } from "@/lib/mappings/definitions";
+import { actionHandlers, commandHandlers, type IDeviceActionHandler, type IDeviceCommandHandler } from "@/lib/device-actions";
 import { getDeviceTypeIconName } from "@/lib/mappings/presentation";
 import type { Location, Space, AlarmZone } from '@/types';
 import { auth } from "@/lib/auth/server";
@@ -174,8 +174,10 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
 
   // --- START: Process allDevicesResult to create the two lists ---
   
-  // Determine controllable raw types from action handlers
+  // Determine controllable raw types from both action handlers AND command handlers
   const allSupportedRawTypesByAnyHandler = new Set<string>();
+  
+  // Add types from action handlers (for state changes)
   actionHandlers.forEach((handler: IDeviceActionHandler) => {
       if (typeof handler.getControllableRawTypes === 'function') {
           const rawTypes = handler.getControllableRawTypes();
@@ -184,15 +186,39 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
           });
       } 
   });
+  
+  // Add types from command handlers (for device commands like PLAY_AUDIO)
+  commandHandlers.forEach((handler: IDeviceCommandHandler) => {
+      if (typeof handler.getCommandableRawTypes === 'function') {
+          const rawTypes = handler.getCommandableRawTypes();
+          rawTypes.forEach((rawType: string) => {
+              allSupportedRawTypesByAnyHandler.add(rawType);
+          });
+      } 
+  });
+  
   const rawTypesArray = Array.from(allSupportedRawTypesByAnyHandler);
 
   // 1. Determine Targetable Devices (for Actions)
-  let formAvailableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; spaceId?: string | null; locationId?: string | null; }> = [];
+  let formAvailableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; spaceId?: string | null; locationId?: string | null; rawType?: string; supportsAudio?: boolean; }> = [];
   if (rawTypesArray.length > 0) {
       formAvailableTargetDevices = allDevicesResult
           .filter((d: any) => rawTypesArray.includes(d.type)) // Filter by controllable raw types
           .map((d: any) => {
               const stdType = d.standardizedDeviceType as DeviceType;
+              
+              // Check if this device supports PLAY_AUDIO command
+              const supportsAudio = commandHandlers.some(handler => {
+                  const mockDeviceContext = {
+                      id: d.id,
+                      deviceId: d.id,
+                      type: d.type, // Use raw device type
+                      connectorId: d.connectorId,
+                      rawDeviceData: null
+                  };
+                  return handler.canExecuteCommand(mockDeviceContext, DeviceCommand.PLAY_AUDIO);
+              });
+              
               // This list is for Action targets, display fields are important.
               return {
                   id: d.id,
@@ -201,6 +227,8 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
                   iconName: d.standardizedDeviceType ? getDeviceTypeIconName(stdType) : getDeviceTypeIconName(DeviceType.Unmapped),
                   spaceId: d.spaceId, // Include spaceId for display/context
                   locationId: d.locationId, // Include locationId for scoping
+                  rawType: d.type, // Include raw device type for command filtering
+                  supportsAudio, // Server-side computed audio capability
               };
           });
   }

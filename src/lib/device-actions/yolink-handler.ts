@@ -1,33 +1,90 @@
-import type { IDeviceActionHandler, DeviceContext } from './types';
-import { ActionableState } from '@/lib/mappings/definitions';
+import type { IDeviceActionHandler, IDeviceCommandHandler, DeviceContext } from './types';
+import { ActionableState, DeviceCommand } from '@/lib/mappings/definitions';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import type { YoLinkConfig } from '@/services/drivers/yolink';
 
-const SUPPORTED_YOLINK_TYPES = ['Switch', 'Outlet', 'MultiOutlet', 'Manipulator'];
+const SUPPORTED_STATE_TYPES = ['Switch', 'Outlet', 'MultiOutlet', 'Manipulator'];
 const SUPPORTED_ACTIONS = [ActionableState.SET_ON, ActionableState.SET_OFF];
 
-export class YoLinkActionHandler implements IDeviceActionHandler {
+const SUPPORTED_COMMAND_TYPES = ['SpeakerHub'];
+const SUPPORTED_COMMANDS = [DeviceCommand.PLAY_AUDIO];
+
+export class YoLinkHandler implements IDeviceActionHandler, IDeviceCommandHandler {
     readonly category = 'yolink';
 
+    // --- IDeviceActionHandler Implementation (State Changes) ---
     public getControllableRawTypes(): string[] {
-        return SUPPORTED_YOLINK_TYPES;
+        return SUPPORTED_STATE_TYPES;
     }
 
     canHandle(device: DeviceContext, newState: ActionableState): boolean {
-        const isSupportedType = SUPPORTED_YOLINK_TYPES.includes(device.type);
+        const isSupportedType = SUPPORTED_STATE_TYPES.includes(device.type);
         const isSupportedAction = SUPPORTED_ACTIONS.includes(newState);
-        // Could add checks for presence of token in rawDeviceData if desired, but execute will handle it
         return isSupportedType && isSupportedAction;
+    }
+
+    // --- IDeviceCommandHandler Implementation (Commands) ---
+    public getCommandableRawTypes(): string[] {
+        return SUPPORTED_COMMAND_TYPES;
+    }
+
+    canExecuteCommand(device: DeviceContext, command: DeviceCommand): boolean {
+        const isSupportedType = SUPPORTED_COMMAND_TYPES.includes(device.type);
+        const isSupportedCommand = SUPPORTED_COMMANDS.includes(command);
+        return isSupportedType && isSupportedCommand;
     }
 
     async executeStateChange(
         device: DeviceContext, 
-        connectorConfig: YoLinkConfig, // Specify type
+        connectorConfig: YoLinkConfig,
         newState: ActionableState
     ): Promise<boolean> {
         console.log(`[YoLinkHandler] Executing state change for ${device.deviceId} to ${newState}`);
+        
+        const deviceToken = this.extractDeviceToken(device);
+        const targetYoLinkState: 'open' | 'close' = newState === ActionableState.SET_ON ? 'open' : 'close';
 
-        // 1. Parse Raw Data to get Device Token
+        try {
+            console.log(`[YoLinkHandler] Calling yolinkDriver.setDeviceState for ${device.deviceId} with state ${targetYoLinkState}`);
+            await yolinkDriver.setDeviceState(
+                device.connectorId,
+                connectorConfig,
+                device.deviceId,
+                deviceToken,
+                device.type,
+                targetYoLinkState
+            );
+            console.log(`[YoLinkHandler] YoLink state change successful for ${device.deviceId}`);
+            return true;
+        } catch (error) {
+            console.error(`[YoLinkHandler] Error calling yolinkDriver.setDeviceState for ${device.deviceId}:`, error);
+            throw error;
+        }
+    }
+
+    async executeCommand(
+        device: DeviceContext, 
+        connectorConfig: YoLinkConfig,
+        command: DeviceCommand,
+        params?: Record<string, any>
+    ): Promise<boolean> {
+        console.log(`[YoLinkHandler] Executing command ${command} for ${device.deviceId}`);
+        
+        const deviceToken = this.extractDeviceToken(device);
+
+        switch (command) {
+            case DeviceCommand.PLAY_AUDIO:
+                return await this.executePlayAudioCommand(device, connectorConfig, deviceToken, params);
+            default:
+                console.warn(`[YoLinkHandler] Unsupported DeviceCommand ${command} reached execute.`);
+                throw new Error(`Unsupported command ${command} for this YoLink device.`);
+        }
+    }
+
+    /**
+     * Shared method to extract device token from raw device data
+     */
+    private extractDeviceToken(device: DeviceContext): string {
         if (!device.rawDeviceData) {
             console.error(`[YoLinkHandler] Missing rawDeviceData for YoLink device ${device.deviceId}.`);
             throw new Error('Missing required device data (rawDeviceData). Sync needed?');
@@ -49,35 +106,40 @@ export class YoLinkActionHandler implements IDeviceActionHandler {
             throw new Error('Missing required device token in raw data.');
         }
 
-        // 2. Map ActionableState to YoLink command
-        let targetYoLinkState: 'open' | 'close';
-        if (newState === ActionableState.SET_ON) {
-            targetYoLinkState = 'open';
-        } else if (newState === ActionableState.SET_OFF) {
-            targetYoLinkState = 'close';
-        } else {
-            // This should theoretically not be reached if canHandle is correct
-            console.warn(`[YoLinkHandler] Unsupported ActionableState ${newState} reached execute.`);
-            throw new Error(`Unsupported action ${newState} for this YoLink device.`);
-        }
+        return deviceToken;
+    }
 
-        // 3. Call YoLink Driver
+    /**
+     * Executes PLAY_AUDIO command on YoLink SpeakerHub devices
+     */
+    private async executePlayAudioCommand(
+        device: DeviceContext,
+        connectorConfig: YoLinkConfig,
+        deviceToken: string,
+        params?: Record<string, any>
+    ): Promise<boolean> {
+        // Extract audio parameters from the provided params
+        const audioParams = {
+            tone: params?.tone,
+            message: params?.message || 'Test audio message',
+            volume: params?.volume,
+            repeat: params?.repeat
+        };
+
         try {
-            console.log(`[YoLinkHandler] Calling yolinkDriver.setDeviceState for ${device.deviceId} with token ${!!deviceToken} and state ${targetYoLinkState}`);
-            await yolinkDriver.setDeviceState(
+            console.log(`[YoLinkHandler] Calling yolinkDriver.playAudio for ${device.deviceId} with params:`, audioParams);
+            await yolinkDriver.playAudio(
                 device.connectorId,
                 connectorConfig,
-                device.deviceId, // Vendor ID
+                device.deviceId,
                 deviceToken,
-                device.type,     // Raw type
-                targetYoLinkState
+                audioParams
             );
-            console.log(`[YoLinkHandler] YoLink state change successful for ${device.deviceId}`);
+            console.log(`[YoLinkHandler] YoLink audio playback successful for ${device.deviceId}`);
             return true;
         } catch (error) {
-            console.error(`[YoLinkHandler] Error calling yolinkDriver.setDeviceState for ${device.deviceId}:`, error);
-            // Re-throw the error to be handled by the main function/API endpoint
-            throw error; 
+            console.error(`[YoLinkHandler] Error calling yolinkDriver.playAudio for ${device.deviceId}:`, error);
+            throw error;
         }
     }
 } 

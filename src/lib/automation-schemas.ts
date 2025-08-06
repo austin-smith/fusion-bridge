@@ -194,6 +194,33 @@ export const DisarmAlarmZoneActionParamsSchema = z.object({
     message: "targetZoneIds must be provided and non-empty when scoping is SPECIFIC_ZONES",
     path: ['targetZoneIds'], // Path of the error
 });
+
+// Schema for play audio action parameters
+export const PlayAudioActionParamsSchema = z.object({
+    targetDeviceInternalId: z.string().min(1, 'Device is required'),
+    toneTemplate: z.string().optional().refine(val => {
+        if (!val) return true; // Optional field
+        return ['Emergency', 'Alert', 'Warn', 'Tip'].includes(val);
+    }, {
+        message: 'Tone must be one of: Emergency, Alert, Warn, Tip'
+    }),
+    messageTemplate: z.string().min(1, 'Message is required'),
+    volumeTemplate: z.string().optional().refine(val => {
+        if (!val) return true; // Optional field
+        const num = parseInt(val, 10);
+        return !isNaN(num) && num >= 1 && num <= 100;
+    }, {
+        message: 'Volume must be a number between 1 and 100'
+    }),
+    repeatTemplate: z.string().optional().refine(val => {
+        if (!val) return true; // Optional field
+        const num = parseInt(val, 10);
+        return !isNaN(num) && num >= 0 && num <= 10;
+    }, {
+        message: 'Repeat must be a number between 0 and 10'
+    }),
+});
+
 // --- End Enums & Schemas ---
 
 // Schema for a single action within an automation
@@ -225,6 +252,7 @@ export const AutomationActionSchema = z.discriminatedUnion("type", [
   // z.object({ type: z.literal("sendNotification"), params: SendNotificationParamsSchema }),
   z.object({ type: z.literal(AutomationActionType.ARM_ALARM_ZONE), params: ArmAlarmZoneActionParamsSchema }).strict(),
   z.object({ type: z.literal(AutomationActionType.DISARM_ALARM_ZONE), params: DisarmAlarmZoneActionParamsSchema }).strict(),
+  z.object({ type: z.literal(AutomationActionType.PLAY_AUDIO), params: PlayAudioActionParamsSchema }).strict(),
 ]);
 
 // Type helper for a single action
@@ -394,7 +422,8 @@ export type AutomationActionParams =
     | z.infer<typeof SetDeviceStateActionParamsSchema>
     | z.infer<typeof SendPushNotificationActionParamsSchema>
     | z.infer<typeof ArmAlarmZoneActionParamsSchema> 
-    | z.infer<typeof DisarmAlarmZoneActionParamsSchema>;
+    | z.infer<typeof DisarmAlarmZoneActionParamsSchema>
+    | z.infer<typeof PlayAudioActionParamsSchema>;
 
 // The file should end here, removing any subsequent erroneous definitions. 
 

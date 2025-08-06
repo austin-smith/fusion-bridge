@@ -135,6 +135,14 @@ export enum ActionableState {
 }
 // --- END Add ActionableState Enum ---
 
+// --- BEGIN Add DeviceCommand Enum ---
+// Represents device function calls/commands, independent of vendor implementations
+export enum DeviceCommand {
+  PLAY_AUDIO = 'PLAY_AUDIO',
+  // Future: TAKE_PHOTO = 'TAKE_PHOTO', PLAY_CHIME = 'PLAY_CHIME', etc.
+}
+// --- END Add DeviceCommand Enum ---
+
 // Union type for all possible intermediate states
 export type IntermediateState = BinaryState | ContactState | SensorAlertState | LockStatus | ErrorState;
 
