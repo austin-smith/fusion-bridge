@@ -74,7 +74,7 @@ export const GET = withOrganizationAuth(async (
     );
     
     // Create response with proper headers
-    const response = new NextResponse(stream as any, {
+    const response = new NextResponse(stream as unknown as ReadableStream<Uint8Array>, {
       status: 200,
       headers: {
         'Content-Type': metadata.contentType,

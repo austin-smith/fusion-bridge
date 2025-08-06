@@ -12,6 +12,10 @@ import { getDeviceTypeIcon, getDisplayStateIcon, getDisplayStateColorClass } fro
 import { cn } from '@/lib/utils';
 import type { DeviceWithConnector, Space } from '@/types/index';
 
+// Drag image offset constants - centers the drag preview under cursor
+const DRAG_IMAGE_OFFSET_X = 60; // Half of drag preview width (w-30 = 120px)
+const DRAG_IMAGE_OFFSET_Y = 20; // Half of drag preview height (h-10 = 40px)
+
 export interface DevicePaletteProps {
   devices: DeviceWithConnector[];
   spaces: Space[];
@@ -64,7 +68,7 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
     
     // Use the hidden React element as drag preview
     if (dragPreviewRef.current) {
-      e.dataTransfer.setDragImage(dragPreviewRef.current, 60, 20);
+      e.dataTransfer.setDragImage(dragPreviewRef.current, DRAG_IMAGE_OFFSET_X, DRAG_IMAGE_OFFSET_Y);
     }
   };
 

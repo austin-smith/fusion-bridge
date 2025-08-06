@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +22,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import type { FloorPlan } from '@/types';
 
 interface FloorPlanTabsProps {
@@ -41,6 +51,9 @@ export function FloorPlanTabs({
 }: FloorPlanTabsProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [floorPlanToDelete, setFloorPlanToDelete] = useState<FloorPlan | null>(null);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [floorPlanToRename, setFloorPlanToRename] = useState<FloorPlan | null>(null);
+  const [newName, setNewName] = useState('');
 
   const handleDeleteClick = (floorPlan: FloorPlan) => {
     setFloorPlanToDelete(floorPlan);
@@ -56,12 +69,24 @@ export function FloorPlanTabs({
   };
 
   const handleRenameClick = (floorPlan: FloorPlan) => {
-    // This would trigger a rename dialog in the parent component
-    // For now, we'll use a simple prompt
-    const newName = prompt('Enter new name for floor plan:', floorPlan.name);
-    if (newName && newName.trim() && newName !== floorPlan.name) {
-      onFloorPlanUpdate(floorPlan.id, newName.trim());
+    setFloorPlanToRename(floorPlan);
+    setNewName(floorPlan.name);
+    setRenameDialogOpen(true);
+  };
+
+  const handleRenameConfirm = async () => {
+    if (floorPlanToRename && newName.trim() && newName.trim() !== floorPlanToRename.name) {
+      await onFloorPlanUpdate(floorPlanToRename.id, newName.trim());
+      setRenameDialogOpen(false);
+      setFloorPlanToRename(null);
+      setNewName('');
     }
+  };
+
+  const handleRenameCancel = () => {
+    setRenameDialogOpen(false);
+    setFloorPlanToRename(null);
+    setNewName('');
   };
 
   if (floorPlans.length === 0) {
@@ -117,6 +142,52 @@ export function FloorPlanTabs({
           </div>
         ))}
       </div>
+
+      {/* Rename Dialog */}
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Rename Floor Plan</DialogTitle>
+            <DialogDescription>
+              Enter a new name for &ldquo;{floorPlanToRename?.name}&rdquo;.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="name" className="text-right">
+                Name
+              </Label>
+              <Input
+                id="name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="col-span-3"
+                placeholder="Enter floor plan name"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleRenameConfirm();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    handleRenameCancel();
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleRenameCancel}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleRenameConfirm}
+              disabled={!newName.trim() || newName.trim() === floorPlanToRename?.name}
+            >
+              Rename
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
