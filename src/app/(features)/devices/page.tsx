@@ -454,7 +454,12 @@ export default function DevicesPage() {
                 <TooltipTrigger asChild>
                   <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
                     <IconComponent className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-xs max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap">{typeInfo.type}</span>
+                    <span className="text-xs max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap">
+                      {typeInfo.type}
+                      {typeInfo.subtype && (
+                        <span className="text-muted-foreground ml-1">/ {typeInfo.subtype}</span>
+                      )}
+                    </span>
                   </Badge>
                 </TooltipTrigger>
                 <TooltipContent>

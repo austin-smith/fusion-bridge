@@ -240,6 +240,7 @@ export const getDisplayStateColorClass = (state?: DisplayState): string => {
         case MOTION_DETECTED:
         case LEAK_DETECTED:
         case VIBRATION_DETECTED:
+        case RECORDING:
         case ERROR:
             // Use a distinct but not overly bright color
             return 'text-gray-700 dark:text-gray-300'; 
@@ -251,11 +252,14 @@ export const getDisplayStateColorClass = (state?: DisplayState): string => {
         case NO_MOTION:
         case DRY:
         case NO_VIBRATION:
+        case OFFLINE:
+        case ONLINE:
+        case UNAUTHORIZED:
             return 'text-muted-foreground'; 
 
         default:
             // Default to muted for any unknown states
-            console.warn(`[getDisplayStateColorClass] Unknown state: ${state}, using default muted color.`);
+            console.log(`[getDisplayStateColorClass] Unknown state: ${state}, using default muted color.`);
             return 'text-muted-foreground'; 
     }
 };

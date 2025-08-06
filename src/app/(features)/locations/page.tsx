@@ -3,16 +3,18 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box } from 'lucide-react';
-import { WeatherIcon } from '@/components/ui/weather-icon';
-import { LocationEditDialog } from '@/components/features/locations/locations/location-edit-dialog';
-import { LocationWeatherIcon } from '@/components/features/locations/locations/location-weather-icon';
+import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box, PencilRuler } from 'lucide-react';
+import { LocationEditDialog } from '@/components/features/locations/location-edit-dialog';
+import { LocationWeatherIcon } from '@/components/features/locations/location-weather-icon';
+import { FloorPlanIndicator } from '@/components/features/locations/floor-plan/floor-plan-indicator';
+import { FloorPlanManager } from '@/components/features/locations/floor-plan';
 import { SpaceEditDialog } from '@/components/features/locations/spaces/space-edit-dialog';
 import { SpaceDeviceAssignmentDialog } from '@/components/features/locations/spaces/space-device-assignment-dialog';
 import { CameraWallDialog } from '@/components/features/common/camera-wall-dialog';
 import { SpaceCard } from '@/components/features/locations/spaces/SpaceCard';
-import { LocationTreeView } from '@/components/features/locations/locations/location-tree-view';
+import { LocationTreeView } from '@/components/features/locations/location-tree-view';
 import type { Location, Space, DeviceWithConnector } from "@/types/index";
+import type { FloorPlanData } from '@/lib/storage/file-storage';
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -31,6 +33,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { cn } from '@/lib/utils';
@@ -117,6 +125,8 @@ export default function LocationsPage() {
   const [spaceToAssignDevice, setSpaceToAssignDevice] = useState<Space | null>(null);
   const [isCameraWallDialogOpen, setIsCameraWallDialogOpen] = useState(false);
   const [selectedSpaceForCameraWall, setSelectedSpaceForCameraWall] = useState<Space | null>(null);
+  const [isFloorPlanViewerOpen, setIsFloorPlanViewerOpen] = useState(false);
+  const [selectedLocationForFloorPlan, setSelectedLocationForFloorPlan] = useState<Location | null>(null);
   const [expandedSpaceDevices, setExpandedSpaceDevices] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -294,6 +304,20 @@ export default function LocationsPage() {
       setSelectedSpaceForCameraWall(null);
     }
   };
+
+  // Floor plan handlers
+  const handleViewFloorPlan = (location: Location) => {
+    setSelectedLocationForFloorPlan(location);
+    setIsFloorPlanViewerOpen(true);
+  };
+
+  const handleUploadFloorPlan = (location: Location) => {
+    // For upload, open the floor plan detail dialog too
+    setSelectedLocationForFloorPlan(location);
+    setIsFloorPlanViewerOpen(true);
+  };
+
+  // Floor plan handlers are now managed by FloorPlanManager component
 
   // Tree view handlers
   const handleTreeSelectItem = useCallback((item: { type: 'location' | 'space', location: Location | null, space: Space | null }) => {
@@ -572,6 +596,11 @@ export default function LocationsPage() {
                                            </div>
                                          </div>
                                          <div className="flex items-center gap-1 flex-shrink-0">
+                                                                                         <FloorPlanIndicator
+                                              locationId={location.id}
+                                              onViewFloorPlan={() => handleViewFloorPlan(location)}
+                                              onUploadFloorPlan={() => handleUploadFloorPlan(location)}
+                                            />
                                              <DropdownMenu>
                                                  <DropdownMenuTrigger asChild>
                                                     <Button variant="ghost" size="icon" className="h-7 w-7">
@@ -788,6 +817,32 @@ export default function LocationsPage() {
               device.deviceTypeInfo?.type === DeviceType.Camera
             )}
           />
+        )}
+
+        {/* Floor Plan Detail Dialog */}
+        {selectedLocationForFloorPlan && (
+          <Dialog open={isFloorPlanViewerOpen} onOpenChange={setIsFloorPlanViewerOpen}>
+            <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-hidden">
+              <DialogHeader>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted">
+                    <PencilRuler className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <DialogTitle className="text-xl">
+                      {selectedLocationForFloorPlan.name}
+                    </DialogTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Floor Plans
+                    </p>
+                  </div>
+                </div>
+              </DialogHeader>
+              <FloorPlanManager
+                locationId={selectedLocationForFloorPlan.id}
+              />
+            </DialogContent>
+          </Dialog>
         )}
       </div>
     </DndContext>

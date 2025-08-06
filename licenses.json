@@ -393,6 +393,13 @@
     "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/json-rules-engine",
     "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/json-rules-engine/LICENSE"
   },
+  "konva@9.3.22": {
+    "licenses": "MIT",
+    "repository": "https://github.com/konvajs/konva",
+    "publisher": "Anton Lavrenov",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/konva",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/konva/LICENSE"
+  },
   "lodash-es@4.17.21": {
     "licenses": "MIT",
     "repository": "https://github.com/lodash/lodash",
@@ -467,6 +474,12 @@
     "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/p-retry",
     "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/p-retry/license"
   },
+  "pdfjs-dist@5.4.54": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/mozilla/pdf.js",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/pdfjs-dist",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/pdfjs-dist/LICENSE"
+  },
   "pluralize@8.0.0": {
     "licenses": "MIT",
     "repository": "https://github.com/blakeembrey/pluralize",
@@ -520,6 +533,12 @@
     "publisher": "Goran Gajic",
     "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-icons",
     "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-icons/LICENSE"
+  },
+  "react-konva@19.0.7": {
+    "licenses": "MIT",
+    "repository": "https://github.com/konvajs/react-konva",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-konva",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-konva/LICENSE"
   },
   "react-markdown@10.1.0": {
     "licenses": "MIT",
@@ -656,6 +675,12 @@
     "url": "nik@xnim.me",
     "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/use-debounce",
     "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/use-debounce/LICENSE"
+  },
+  "use-image@1.1.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/konvajs/use-image",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/use-image",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/use-image/LICENSE"
   },
   "uuid@11.1.0": {
     "licenses": "MIT",

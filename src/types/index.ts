@@ -2,6 +2,7 @@
 import { TypedDeviceInfo } from '@/lib/mappings/definitions';
 import { ArmedState } from '@/lib/mappings/definitions'; // <-- Import the enum
 import { DisplayState } from '@/lib/mappings/definitions'; // <-- Import DisplayState
+import type { FloorPlanData } from '@/lib/storage/file-storage';
 
 // Connector type for the database entities
 export interface Connector {
@@ -68,6 +69,23 @@ export type DeviceWithConnector = {
   spaceName?: string | null;
 };
 
+// Device overlay types for floor plan positioning
+export type {
+  DeviceOverlayPosition,
+  DeviceOverlayData,
+  CreateDeviceOverlayPayload,
+  UpdateDeviceOverlayPayload,
+  DeviceOverlayWithDevice,
+  CanvasCoordinates,
+  CanvasDimensions
+} from './device-overlay';
+
+export {
+  normalizedToCanvas,
+  canvasToNormalized,
+  isValidNormalizedCoordinate
+} from './device-overlay';
+
 // Interface for Piko Server details (based on DB schema)
 export interface PikoServer {
   serverId: string;
@@ -100,6 +118,7 @@ export interface Location {
   sunriseTime?: string | null; // "HH:mm" format in local timezone
   sunsetTime?: string | null;  // "HH:mm" format in local timezone
   sunTimesUpdatedAt?: Date | null;
+  floorPlan?: FloorPlanData | null; // Floor plan metadata
   createdAt: Date;
   updatedAt: Date;
   activeArmingScheduleId?: string | null;
@@ -107,6 +126,17 @@ export interface Location {
   children?: Location[];
 }
 
+export interface FloorPlan {
+  id: string;
+  name: string;
+  locationId: string;
+  organizationId: string;
+  floorPlanData: FloorPlanData | null;
+  createdAt: Date;
+  updatedAt: Date;
+  createdByUserId: string;
+  updatedByUserId: string;
+}
 
 
 export interface ArmingSchedule {

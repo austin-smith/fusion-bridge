@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, uniqueIndex, index, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, primaryKey, uniqueIndex, index, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { relations, sql } from "drizzle-orm";
 import type { AutomationConfig } from "@/lib/automation-schemas"; // Import the config type
 import { ArmedState } from '@/lib/mappings/definitions'; // <-- Import the enum
@@ -754,5 +754,93 @@ export const organizationSettingsRelations = relations(organizationSettings, ({ 
   organization: one(organization, {
     fields: [organizationSettings.organizationId],
     references: [organization.id],
+  }),
+}));
+
+// --- Floor Plans Table ---
+export const floorPlans = sqliteTable("floor_plans", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  locationId: text("location_id").notNull().references(() => locations.id, { onDelete: 'cascade' }),
+  organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: 'cascade' }),
+  floorPlanData: text("floor_plan_data", { mode: "json" }), // FloorPlanData as JSON
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  createdByUserId: text("created_by_user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+  updatedByUserId: text("updated_by_user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  locationIdx: index("floor_plans_location_idx").on(table.locationId),
+  organizationIdx: index("floor_plans_organization_idx").on(table.organizationId),
+}));
+
+// Relations for Floor Plans
+export const floorPlansRelations = relations(floorPlans, ({ one, many }) => ({
+  location: one(locations, {
+    fields: [floorPlans.locationId],
+    references: [locations.id],
+  }),
+  organization: one(organization, {
+    fields: [floorPlans.organizationId],
+    references: [organization.id],
+  }),
+  createdByUser: one(user, {
+    fields: [floorPlans.createdByUserId],
+    references: [user.id],
+    relationName: 'floorPlanCreatedBy',
+  }),
+  updatedByUser: one(user, {
+    fields: [floorPlans.updatedByUserId],
+    references: [user.id],
+    relationName: 'floorPlanUpdatedBy',
+  }),
+  deviceOverlays: many(deviceOverlays),
+}));
+
+// --- Device Overlay Table ---
+export const deviceOverlays = sqliteTable("device_overlays", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  deviceId: text("device_id").notNull().references(() => devices.id, { onDelete: 'cascade' }),
+  floorPlanId: text("floor_plan_id").notNull().references(() => floorPlans.id, { onDelete: 'cascade' }),
+  organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: 'cascade' }),
+  // Normalized coordinates (0-1 scale) for responsive positioning
+  x: real("x").notNull(), // Normalized X coordinate (0-1)
+  y: real("y").notNull(), // Normalized Y coordinate (0-1)
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  createdByUserId: text("created_by_user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+  updatedByUserId: text("updated_by_user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  // Unique constraint: one device can only have one position per floor plan
+  deviceFloorPlanUniqueIdx: uniqueIndex("device_overlays_device_floor_plan_unique_idx")
+    .on(table.deviceId, table.floorPlanId),
+  // Indexes for efficient queries
+  organizationIdx: index("device_overlays_organization_idx").on(table.organizationId),
+  floorPlanIdx: index("device_overlays_floor_plan_idx").on(table.floorPlanId),
+  deviceIdx: index("device_overlays_device_idx").on(table.deviceId),
+}));
+
+// Relations for Device Overlays
+export const deviceOverlaysRelations = relations(deviceOverlays, ({ one }) => ({
+  device: one(devices, {
+    fields: [deviceOverlays.deviceId],
+    references: [devices.id],
+  }),
+  floorPlan: one(floorPlans, {
+    fields: [deviceOverlays.floorPlanId],
+    references: [floorPlans.id],
+  }),
+  organization: one(organization, {
+    fields: [deviceOverlays.organizationId],
+    references: [organization.id],
+  }),
+  createdByUser: one(user, {
+    fields: [deviceOverlays.createdByUserId],
+    references: [user.id],
+    relationName: 'deviceOverlayCreatedBy',
+  }),
+  updatedByUser: one(user, {
+    fields: [deviceOverlays.updatedByUserId],
+    references: [user.id],
+    relationName: 'deviceOverlayUpdatedBy',
   }),
 }));

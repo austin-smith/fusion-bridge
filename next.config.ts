@@ -13,6 +13,32 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  webpack: (config, { isServer }) => {
+    // Exclude canvas and konva from server-side bundle
+    if (isServer) {
+      config.externals = [
+        ...(config.externals || []),
+        'canvas',
+        'konva',
+        'react-konva'
+      ];
+    } else {
+      // Client-side fallbacks
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        canvas: false,
+        fs: false,
+      };
+    }
+    
+    // Handle PDF.js worker
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'pdfjs-dist/build/pdf.worker.entry': 'pdfjs-dist/build/pdf.worker.min.mjs',
+    };
+    
+    return config;
+  },
 };
 
 const withSerwist = withSerwistInit({
