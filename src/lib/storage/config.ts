@@ -13,8 +13,8 @@ export interface StorageConfig {
 export function getStorageConfig(): StorageConfig {
   const storageDir = process.env.STORAGE_DIR;
   
-  if (!storageDir) {
-    throw new Error('STORAGE_DIR environment variable is not set');
+  if (typeof storageDir !== 'string' || storageDir.trim() === '') {
+    throw new Error('STORAGE_DIR environment variable is not set or is empty');
   }
   
   // If it's an absolute path, use as-is, otherwise resolve based on environment

@@ -72,10 +72,10 @@ export class FileStorageService {
       throw new Error('Invalid filename: contains control characters');
     }
 
-    // Ensure it looks like a UUID-based filename with extension
-    const uuidFilenameRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-zA-Z0-9]{1,10}$/i;
+    // Ensure it looks like a UUID-based filename with safe extension
+    const uuidFilenameRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|jpeg|pdf|svg)$/i;
     if (!uuidFilenameRegex.test(filename)) {
-      throw new Error('Invalid filename: must be a UUID-based filename with extension');
+      throw new Error('Invalid filename: must be a UUID-based filename with a safe extension (png, jpg, jpeg, pdf, svg)');
     }
   }
 

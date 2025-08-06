@@ -9,7 +9,7 @@ export function validateFloorPlanFile(file: File): FileValidationResult {
   // Size validation (5MB)
   const maxSize = 5 * 1024 * 1024;
   if (file.size > maxSize) {
-    errors.push(`File size must be less than ${maxSize / (1024 * 1024)}MB`);
+    errors.push(`File size must be less than ${(maxSize / (1024 * 1024)).toFixed(0)}MB`);
   }
   
   // Type validation

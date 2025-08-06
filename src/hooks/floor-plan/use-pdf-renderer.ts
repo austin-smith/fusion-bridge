@@ -89,12 +89,19 @@ export function usePdfRenderer(
         // Dynamically import PDF.js to avoid SSR issues
         const pdfjsLib = await import('pdfjs-dist');
         
-        // Set worker source using bundled worker
+        // Set worker source with fallback for different bundling environments
         if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-            'pdfjs-dist/build/pdf.worker.min.mjs',
-            import.meta.url
-          ).toString();
+          try {
+            // Try using bundled worker first (modern bundlers)
+            pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+              'pdfjs-dist/build/pdf.worker.min.mjs',
+              import.meta.url
+            ).toString();
+          } catch (error) {
+            // Fallback for older bundlers or environments that don't support import.meta.url
+            console.warn('Using CDN fallback for PDF.js worker due to bundler compatibility:', error);
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@5.4.54/build/pdf.worker.min.mjs';
+          }
         }
 
         // Load the PDF document
