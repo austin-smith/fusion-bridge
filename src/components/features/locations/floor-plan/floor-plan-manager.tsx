@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Plus } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFloorPlans } from '@/hooks/floor-plan/use-floor-plans';
 import { FloorPlanTabs } from './floor-plan-tabs';
-import { FloorPlanDetail } from './floor-plan-detail';
+import { FloorPlanDetail, type FloorPlanDetailRef } from './floor-plan-detail';
 import { FloorPlanUploadDialog } from './floor-plan-upload-dialog';
 import { FloorPlanNameDialog } from './floor-plan-name-dialog';
 import { FloorPlanLoadingSkeleton } from './floor-plan-loading-skeleton';
@@ -23,6 +23,10 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
   const [floorPlanToRename, setFloorPlanToRename] = useState<{ id: string; currentName: string } | null>(null);
+  
+  // Zoom control state
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const floorPlanDetailRef = useRef<FloorPlanDetailRef>(null);
 
   const { allDevices, spaces } = useFusionStore();
 
@@ -97,6 +101,19 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
     }
   };
 
+  // Zoom control handlers
+  const handleZoomIn = () => {
+    floorPlanDetailRef.current?.zoomIn();
+  };
+
+  const handleZoomOut = () => {
+    floorPlanDetailRef.current?.zoomOut();
+  };
+
+  const handleResetZoom = () => {
+    floorPlanDetailRef.current?.resetZoom();
+  };
+
   const activeFloorPlan = floorPlans.find(fp => fp.id === activeFloorPlanId) || null;
 
   if (error) {
@@ -133,19 +150,55 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
             isLoading={isLoading}
           />
           
-          <Button
-            onClick={() => setIsUploadDialogOpen(true)}
-            size="sm"
-          >
-            <Plus className="h-4 w-4" />
-            Add Floor Plan
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Zoom Controls */}
+            {activeFloorPlan && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleZoomIn}
+                  title="Zoom In"
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleZoomOut}
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetZoom}
+                  title="Reset Zoom"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+                
+                {/* Divider */}
+                <div className="h-4 w-px bg-border mx-1" />
+              </>
+            )}
+            
+            <Button
+              onClick={() => setIsUploadDialogOpen(true)}
+              size="sm"
+            >
+              <Plus className="h-4 w-4" />
+              Add Floor Plan
+            </Button>
+          </div>
         </div>
       )}
 
       {/* Floor plan content */}
       {activeFloorPlan ? (
         <FloorPlanDetail
+          ref={floorPlanDetailRef}
           floorPlan={activeFloorPlan}
           locationId={locationId}
           onFloorPlanUpdated={refetch}

@@ -29,6 +29,13 @@ export interface FloorPlanCanvasProps {
   updateOverlay: (overlayId: string, updates: UpdateDeviceOverlayPayload) => Promise<void>;
   deleteOverlay: (overlayId: string) => Promise<void>;
   selectOverlay: (overlay: DeviceOverlayWithDevice | null) => void;
+  // Zoom control props
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onResetZoom?: () => void;
+  canZoomIn?: boolean;
+  canZoomOut?: boolean;
+  onZoomActionsReady?: (actions: { zoomIn: () => void; zoomOut: () => void; resetZoom: () => void }) => void;
 }
 
 interface ViewportState {
@@ -64,29 +71,46 @@ export function FloorPlanCanvas({
   createOverlay,
   updateOverlay,
   deleteOverlay,
-  selectOverlay
+  selectOverlay,
+  onZoomIn,
+  onZoomOut,
+  onResetZoom,
+  canZoomIn,
+  canZoomOut,
+  onZoomActionsReady
 }: FloorPlanCanvasProps) {
   const stageRef = useRef<Konva.Stage>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState<ViewportState>({ x: 0, y: 0, scale: 1 });
   const [isDragging, setIsDragging] = useState(false);
-  const [canvasSize, setCanvasSize] = useState({ width: width || 800, height: height || 600 });
+  const [canvasSize, setCanvasSize] = useState({ width: width || 1200, height: height || 800 });
 
   // Update canvas size when container resizes
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current && !width && !height) {
         const rect = containerRef.current.getBoundingClientRect();
+        
+        // Ensure we have meaningful dimensions
+        const newWidth = Math.max(rect.width, 800);
+        const newHeight = Math.max(rect.height, 600);
+        
         setCanvasSize({
-          width: rect.width || 800,
-          height: rect.height || 600
+          width: newWidth,
+          height: newHeight
         });
       }
     };
 
-    updateSize();
+    // Use a small delay to ensure the container is properly sized
+    const timeoutId = setTimeout(updateSize, 100);
+    updateSize(); // Also call immediately
+    
     window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', updateSize);
+    };
   }, [width, height]);
 
   // Use provided dimensions or calculated ones
@@ -139,10 +163,12 @@ export function FloorPlanCanvas({
     const { width: assetWidth, height: assetHeight } = currentResult.dimensions;
     const scaleX = finalWidth / assetWidth;
     const scaleY = finalHeight / assetHeight;
-    const scale = Math.min(scaleX, scaleY, 1); // Don't scale up by default
+    const scale = Math.min(scaleX, scaleY); // Scale to fit available space
 
     const centeredX = (finalWidth - assetWidth * scale) / 2;
     const centeredY = (finalHeight - assetHeight * scale) / 2;
+
+
 
     setViewport({
       x: centeredX,
@@ -160,18 +186,47 @@ export function FloorPlanCanvas({
 
   // Zoom functions
   const zoomIn = useCallback(() => {
-    setViewport(prev => ({
-      ...prev,
-      scale: Math.min(prev.scale * ZOOM_FACTOR, MAX_SCALE)
-    }));
-  }, []);
+    if (onZoomIn) {
+      onZoomIn();
+    } else {
+      setViewport(prev => ({
+        ...prev,
+        scale: Math.min(prev.scale * ZOOM_FACTOR, MAX_SCALE)
+      }));
+    }
+  }, [onZoomIn]);
 
   const zoomOut = useCallback(() => {
-    setViewport(prev => ({
-      ...prev,
-      scale: Math.max(prev.scale / ZOOM_FACTOR, MIN_SCALE)
-    }));
-  }, []);
+    if (onZoomOut) {
+      onZoomOut();
+    } else {
+      setViewport(prev => ({
+        ...prev,
+        scale: Math.max(prev.scale / ZOOM_FACTOR, MIN_SCALE)
+      }));
+    }
+  }, [onZoomOut]);
+
+  const resetZoom = useCallback(() => {
+    if (onResetZoom) {
+      onResetZoom();
+    } else {
+      resetViewport();
+    }
+  }, [onResetZoom, resetViewport]);
+
+  // Expose zoom functions to parent
+  useEffect(() => {
+    if (onZoomActionsReady) {
+      onZoomActionsReady({
+        zoomIn,
+        zoomOut,
+        resetZoom
+      });
+    }
+  }, [onZoomActionsReady, zoomIn, zoomOut, resetZoom]);
+
+
 
   // Handle wheel zoom
   const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
@@ -357,41 +412,13 @@ export function FloorPlanCanvas({
   return (
     <div 
       ref={containerRef}
-      className={cn("relative border rounded-lg overflow-hidden bg-muted/20", className)}
+      className={cn("relative w-full h-full min-h-[400px]", className)}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      {/* Toolbar */}
-      <div className="absolute top-4 right-4 z-10 flex gap-2">
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={zoomIn}
-          disabled={viewport.scale >= MAX_SCALE}
-          className="h-8 w-8 bg-background/80 backdrop-blur-sm"
-        >
-          <ZoomIn className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={zoomOut}
-          disabled={viewport.scale <= MIN_SCALE}
-          className="h-8 w-8 bg-background/80 backdrop-blur-sm"
-        >
-          <ZoomOut className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={resetViewport}
-          className="h-8 w-8 bg-background/80 backdrop-blur-sm"
-        >
-          <RotateCcw className="h-4 w-4" />
-        </Button>
-        
-        {/* Delete Button - only show when device is selected */}
-        {selectedOverlayId && (
+      {/* Delete Button - only show when device is selected */}
+      {selectedOverlayId && (
+        <div className="absolute top-4 right-4 z-10">
           <Button
             variant="destructive"
             size="icon"
@@ -401,8 +428,8 @@ export function FloorPlanCanvas({
           >
             <Trash2 className="h-4 w-4" />
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* PDF Page Controls */}
       {isPdf && pdfResult.numPages > 1 && (
@@ -472,6 +499,8 @@ export function FloorPlanCanvas({
             image={sourceAsset}
             width={currentResult.dimensions?.width}
             height={currentResult.dimensions?.height}
+            x={0}
+            y={0}
           />
         </Layer>
         
@@ -489,8 +518,9 @@ export function FloorPlanCanvas({
             onUpdateOverlay={updateOverlay}
             onEditOverlay={(overlay) => {
               // TODO: Implement edit overlay dialog
-              console.log('Edit overlay:', overlay);
+          
             }}
+
           />
         )}
       </Stage>

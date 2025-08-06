@@ -28,6 +28,7 @@ export interface DeviceOverlayLayerProps {
   onUpdateOverlay?: (overlayId: string, updates: UpdateDeviceOverlayPayload) => void;
   /** Callback when an overlay is double-clicked (for editing) */
   onEditOverlay?: (overlay: DeviceOverlayWithDevice) => void;
+
 }
 
 export function DeviceOverlayLayer({
@@ -100,6 +101,8 @@ export function DeviceOverlayLayer({
           { x: overlay.x, y: overlay.y },
           canvasDimensions
         );
+        
+
 
         const isSelected = selectedOverlayId === overlay.id;
         const isDragging = draggingOverlayId === overlay.id;

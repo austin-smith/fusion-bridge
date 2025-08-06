@@ -137,11 +137,13 @@ export function DeviceOverlayIcon({
     onDoubleClick?.(overlay);
   };
 
-  const handleDragStart = () => {
+  const handleDragStart = (e: any) => {
+    e.cancelBubble = true; // Prevent event from bubbling to Stage
     onDragStart?.(overlay);
   };
 
   const handleDragMove = (e: any) => {
+    e.cancelBubble = true; // Prevent event from bubbling to Stage
     const newPosition = {
       x: e.target.x(),
       y: e.target.y()
@@ -150,10 +152,13 @@ export function DeviceOverlayIcon({
   };
 
   const handleDragEnd = (e: any) => {
+    e.cancelBubble = true; // Prevent event from bubbling to Stage
+    // Get position relative to the layer (which contains the floor plan image)
     const newPosition = {
       x: e.target.x(),
       y: e.target.y()
     };
+
     onDragEnd?.(overlay, newPosition);
   };
 

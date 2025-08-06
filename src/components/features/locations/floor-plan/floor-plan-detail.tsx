@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { Upload, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FloorPlanUpload } from './floor-plan-upload';
@@ -9,6 +9,12 @@ import { useDeviceOverlays } from '@/hooks/floor-plan/device-overlays';
 import { useFusionStore } from '@/stores/store';
 import { toast } from 'sonner';
 import type { FloorPlan, DeviceWithConnector, Space } from '@/types';
+
+export interface FloorPlanDetailRef {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  resetZoom: () => void;
+}
 
 interface FloorPlanDetailProps {
   floorPlan: FloorPlan | null;
@@ -20,7 +26,7 @@ interface FloorPlanDetailProps {
   spaces: Space[];
 }
 
-export function FloorPlanDetail({
+export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailProps>(({
   floorPlan,
   locationId,
   onFloorPlanUpdated,
@@ -28,11 +34,18 @@ export function FloorPlanDetail({
   showActions = true,
   allDevices,
   spaces
-}: FloorPlanDetailProps) {
+}, ref) => {
   const [isReplacing, setIsReplacing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [deviceSearchTerm, setDeviceSearchTerm] = useState('');
+  
+  // Zoom state to pass to canvas
+  const [zoomActions, setZoomActions] = useState<{
+    zoomIn: () => void;
+    zoomOut: () => void;
+    resetZoom: () => void;
+  } | null>(null);
 
   // Get device overlays and management functions
   const {
@@ -59,6 +72,19 @@ export function FloorPlanDetail({
       toast.error(`Device overlay error: ${overlaysError}`);
     }
   }, [overlaysError]);
+
+  // Expose zoom functions through ref
+  useImperativeHandle(ref, () => ({
+    zoomIn: () => {
+      zoomActions?.zoomIn();
+    },
+    zoomOut: () => {
+      zoomActions?.zoomOut();
+    },
+    resetZoom: () => {
+      zoomActions?.resetZoom();
+    }
+  }), [zoomActions]);
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
@@ -110,7 +136,7 @@ export function FloorPlanDetail({
   // Generate serving URL for floor plan
   const getServingUrl = (floorPlan: FloorPlan) => {
     if (!floorPlan.floorPlanData) {
-      console.log('🔍 No floor plan data found');
+  
       return '#';
     }
     
@@ -120,8 +146,7 @@ export function FloorPlanDetail({
       return '#'; // Return placeholder URL to avoid crashes
     }
     const url = `/api/locations/${locationId}/floor-plans/${floorPlan.id}?file=${internalFilename}`;
-    console.log('🔍 Generated floor plan URL:', url);
-    console.log('🔍 Floor plan data:', floorPlan.floorPlanData);
+
     return url;
   };
 
@@ -166,7 +191,7 @@ export function FloorPlanDetail({
 
   // Handle viewing mode with interactive canvas
   const handleCanvasLoad = (dimensions: { width: number; height: number }) => {
-    console.log('Floor plan loaded with dimensions:', dimensions);
+
   };
 
   const handleCanvasError = (error: string) => {
@@ -183,7 +208,7 @@ export function FloorPlanDetail({
   return (
     <div className="space-y-4 max-w-full overflow-hidden">
       {/* Two-panel layout: Device Palette + Canvas */}
-      <div className="flex gap-4 h-[600px] min-w-0">
+      <div className="flex gap-4 h-[80vh] min-h-[600px] min-w-0">
         {/* Device Palette */}
         <div className="w-72 flex-shrink-0">
           <DevicePalette
@@ -211,6 +236,7 @@ export function FloorPlanDetail({
             updateOverlay={updateOverlay}
             deleteOverlay={deleteOverlay}
             selectOverlay={selectOverlay}
+            onZoomActionsReady={setZoomActions}
             className="w-full h-full"
           />
         </div>
@@ -231,4 +257,6 @@ export function FloorPlanDetail({
       )}
     </div>
   );
-}
+});
+
+FloorPlanDetail.displayName = 'FloorPlanDetail';

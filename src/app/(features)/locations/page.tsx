@@ -822,7 +822,7 @@ export default function LocationsPage() {
         {/* Floor Plan Detail Dialog */}
         {selectedLocationForFloorPlan && (
           <Dialog open={isFloorPlanViewerOpen} onOpenChange={setIsFloorPlanViewerOpen}>
-            <DialogContent className="max-w-6xl">
+            <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-hidden">
               <DialogHeader>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted">
