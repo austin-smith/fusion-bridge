@@ -3,7 +3,8 @@ import { join, extname } from 'path';
 import { createReadStream, type ReadStream } from 'fs';
 import { randomUUID } from 'crypto';
 import { getStorageConfig, getFloorPlanStoragePath } from './config';
-import { validateFloorPlanFile, ALLOWED_EXTENSIONS } from './file-validation';
+import { validateFloorPlanFile } from './file-validation';
+import { ALLOWED_EXTENSIONS, getContentTypeFromExtension } from './file-types';
 
 export interface FloorPlanData {
   filename: string;           // Original filename (for display)
@@ -99,23 +100,7 @@ export class FileStorageService {
     return `${randomUUID()}${ext}`;
   }
 
-  /**
-   * Get content type from file extension
-   */
-  private getContentTypeFromExtension(filename: string): string {
-    const ext = extname(filename).toLowerCase();
-    
-    // Use centralized mapping based on allowed extensions
-    const contentTypeMap: Record<string, string> = {
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.pdf': 'application/pdf',
-      '.svg': 'image/svg+xml'
-    };
-    
-    return contentTypeMap[ext] || 'application/octet-stream';
-  }
+
 
   /**
    * Extract internal filename from floor plan file path
@@ -183,7 +168,7 @@ export class FileStorageService {
       uploadedAt: uploadedAt.toISOString(),
       uploadedByUserId: userId,
       size: stats.size,
-      contentType: file.type || this.getContentTypeFromExtension(file.name),
+      contentType: file.type || getContentTypeFromExtension(file.name),
       filePath: relativeFilePath
     };
 
@@ -261,7 +246,7 @@ export class FileStorageService {
     const stats = await stat(filePath);
     
     // Determine content type from extension
-    const contentType = this.getContentTypeFromExtension(filename);
+    const contentType = getContentTypeFromExtension(filename);
 
     return {
       stream: createReadStream(filePath),

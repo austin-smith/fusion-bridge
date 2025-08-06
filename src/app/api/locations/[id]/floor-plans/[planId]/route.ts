@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Readable } from 'stream';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { fileStorage, type FloorPlanData } from '@/lib/storage/file-storage';
+import { convertToWebStream } from '@/lib/stream-utils';
 import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
 
 interface FloorPlanRouteContext extends RouteContext {
@@ -74,17 +74,8 @@ export const GET = withOrganizationAuth(async (
       filename
     );
     
-    // Convert Node.js ReadStream to Web ReadableStream for NextResponse
-    let webStream: ReadableStream<Uint8Array>;
-    if (typeof (stream as any).getReader === 'function') {
-      // Already a web ReadableStream
-      webStream = stream as unknown as ReadableStream<Uint8Array>;
-    } else if (stream instanceof Readable && typeof Readable.toWeb === 'function') {
-      // Node.js Readable, convert to web ReadableStream
-      webStream = Readable.toWeb(stream) as ReadableStream<Uint8Array>;
-    } else {
-      throw new Error('Unsupported stream type - expected Node.js Readable or Web ReadableStream');
-    }
+    // Convert Node.js ReadStream or Web ReadableStream to Web ReadableStream for NextResponse
+    const webStream = convertToWebStream(stream);
 
     // Create response with proper headers
     const response = new NextResponse(webStream, {

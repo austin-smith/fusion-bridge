@@ -1,23 +1,9 @@
+import { ALLOWED_FILE_TYPES, ALLOWED_EXTENSIONS } from './file-types';
+
 export interface FileValidationResult {
   isValid: boolean;
   errors: string[];
 }
-
-// Centralized configuration for allowed file types
-export const ALLOWED_FILE_TYPES = [
-  'image/png',
-  'image/jpeg',
-  'application/pdf',
-  'image/svg+xml'
-] as const;
-
-export const ALLOWED_EXTENSIONS = [
-  '.png',
-  '.jpg', 
-  '.jpeg',
-  '.pdf',
-  '.svg'
-] as const;
 
 export function validateFloorPlanFile(file: File): FileValidationResult {
   const errors: string[] = [];

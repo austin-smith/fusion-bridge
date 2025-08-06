@@ -12,9 +12,17 @@ import { getDeviceTypeIcon, getDisplayStateIcon, getDisplayStateColorClass } fro
 import { cn } from '@/lib/utils';
 import type { DeviceWithConnector, Space } from '@/types/index';
 
-// Drag image offset constants - centers the drag preview under cursor
-const DRAG_IMAGE_OFFSET_X = 60; // Half of drag preview width (w-30 = 120px)
-const DRAG_IMAGE_OFFSET_Y = 20; // Half of drag preview height (h-10 = 40px)
+/**
+ * Calculate drag image offset to center the preview under the cursor
+ * Returns half the element's dimensions for proper centering
+ */
+function calculateDragOffset(element: HTMLElement): { x: number; y: number } {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: rect.width / 2,
+    y: rect.height / 2
+  };
+}
 
 export interface DevicePaletteProps {
   devices: DeviceWithConnector[];
@@ -66,9 +74,10 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
     // Set visual feedback
     e.dataTransfer.effectAllowed = 'copy';
     
-    // Use the hidden React element as drag preview
+    // Use the hidden React element as drag preview with dynamic offset calculation
     if (dragPreviewRef.current) {
-      e.dataTransfer.setDragImage(dragPreviewRef.current, DRAG_IMAGE_OFFSET_X, DRAG_IMAGE_OFFSET_Y);
+      const offset = calculateDragOffset(dragPreviewRef.current);
+      e.dataTransfer.setDragImage(dragPreviewRef.current, offset.x, offset.y);
     }
   };
 
