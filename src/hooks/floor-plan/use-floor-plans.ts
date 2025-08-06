@@ -23,11 +23,14 @@ export function useFloorPlans({
   enabled = true
 }: UseFloorPlansOptions): UseFloorPlansResult {
   const [floorPlans, setFloorPlans] = useState<FloorPlan[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchFloorPlans = useCallback(async () => {
-    if (!locationId || !enabled) return;
+    if (!locationId || !enabled) {
+      setIsLoading(false);
+      return;
+    }
     
     setIsLoading(true);
     setError(null);

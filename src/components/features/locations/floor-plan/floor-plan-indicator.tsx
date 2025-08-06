@@ -1,26 +1,37 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { PencilRuler } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import type { FloorPlanData } from '@/lib/storage/file-storage';
 
 interface FloorPlanIndicatorProps {
-  floorPlan: FloorPlanData | null;
+  locationId: string;
   onViewFloorPlan: () => void;
   onUploadFloorPlan: () => void;
   className?: string;
 }
 
 export function FloorPlanIndicator({
-  floorPlan,
+  locationId,
   onViewFloorPlan,
   onUploadFloorPlan,
   className
 }: FloorPlanIndicatorProps) {
-  const hasFloorPlan = !!floorPlan;
+  const [hasFloorPlans, setHasFloorPlans] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Quick check without loading state to avoid UI flicker
+    fetch(`/api/locations/${locationId}/floor-plans`)
+      .then(response => response.json())
+      .then(data => {
+        setHasFloorPlans(data.success && data.floorPlans && data.floorPlans.length > 0);
+      })
+      .catch(() => setHasFloorPlans(false));
+  }, [locationId]);
+
+  const hasFloorPlan = hasFloorPlans;
 
   return (
     <Tooltip>

@@ -596,11 +596,11 @@ export default function LocationsPage() {
                                            </div>
                                          </div>
                                          <div className="flex items-center gap-1 flex-shrink-0">
-                                             <FloorPlanIndicator
-                                               floorPlan={location.floorPlan as FloorPlanData | null}
-                                               onViewFloorPlan={() => handleViewFloorPlan(location)}
-                                               onUploadFloorPlan={() => handleUploadFloorPlan(location)}
-                                             />
+                                                                                         <FloorPlanIndicator
+                                              locationId={location.id}
+                                              onViewFloorPlan={() => handleViewFloorPlan(location)}
+                                              onUploadFloorPlan={() => handleUploadFloorPlan(location)}
+                                            />
                                              <DropdownMenu>
                                                  <DropdownMenuTrigger asChild>
                                                     <Button variant="ghost" size="icon" className="h-7 w-7">

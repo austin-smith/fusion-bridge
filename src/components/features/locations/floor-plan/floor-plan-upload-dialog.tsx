@@ -130,12 +130,12 @@ export function FloorPlanUploadDialog({
             >
               {isSubmitting || isLoading ? (
                 <>
-                  <Upload className="h-4 w-4 mr-2 animate-spin" />
+                  <Upload className="h-4 w-4 animate-spin" />
                   Uploading...
                 </>
               ) : (
                 <>
-                  <Upload className="h-4 w-4 mr-2" />
+                  <Upload className="h-4 w-4" />
                   Upload Floor Plan
                 </>
               )}

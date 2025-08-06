@@ -8,15 +8,17 @@ import { FloorPlanTabs } from './floor-plan-tabs';
 import { FloorPlanDetail } from './floor-plan-detail';
 import { FloorPlanUploadDialog } from './floor-plan-upload-dialog';
 import { FloorPlanNameDialog } from './floor-plan-name-dialog';
+import { FloorPlanLoadingSkeleton } from './floor-plan-loading-skeleton';
 import { useFusionStore } from '@/stores/store';
 import { toast } from 'sonner';
 
 interface FloorPlanManagerProps {
   locationId: string;
+  expectedToHaveFloorPlans?: boolean;
   className?: string;
 }
 
-export function FloorPlanManager({ locationId, className }: FloorPlanManagerProps) {
+export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false, className }: FloorPlanManagerProps) {
   const [activeFloorPlanId, setActiveFloorPlanId] = useState<string | null>(null);
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
@@ -104,6 +106,15 @@ export function FloorPlanManager({ locationId, className }: FloorPlanManagerProp
         <Button onClick={refetch} className="mt-4">
           Retry
         </Button>
+      </div>
+    );
+  }
+
+  // Show loading skeleton when loading, regardless of expected state
+  if (isLoading) {
+    return (
+      <div className={className}>
+        <FloorPlanLoadingSkeleton />
       </div>
     );
   }
