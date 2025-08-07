@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, EyeIcon, Image as ImageIcon, AlertCircle, Loader2, PlayIcon, Gamepad, Box, Building, Shield } from "lucide-react";
+import { Check, Copy, EyeIcon, Image as ImageIcon, AlertCircle, Loader2, PlayIcon, Gamepad, Box, Building, Shield, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,13 +21,15 @@ import {
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { toast } from 'sonner';
-import { getDeviceTypeIcon, getDisplayStateIcon } from '@/lib/mappings/presentation';
+import { getDeviceTypeIcon, getDisplayStateIcon, getEventCategoryIcon } from '@/lib/mappings/presentation';
 import { 
   TypedDeviceInfo, 
   DisplayState, 
   DeviceType, 
   EventType, 
-  EVENT_TYPE_DISPLAY_MAP 
+  EVENT_TYPE_DISPLAY_MAP,
+  EVENT_SUBTYPE_DISPLAY_MAP,
+  EventCategory
 } from '@/lib/mappings/definitions';
 import { cn, formatConnectorCategory } from "@/lib/utils";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
@@ -52,6 +54,7 @@ interface EventData {
   connectorCategory: string;
   eventCategory: string;
   eventType: string;
+  eventSubtype?: string;
   rawEventType?: string;
   displayState?: DisplayState;
   bestShotUrlComponents?: {
@@ -65,6 +68,8 @@ interface EventData {
 
 interface EventDetailDialogContentProps {
   event: EventData;
+  events?: EventData[]; // Array of events for navigation
+  buttonStyle?: 'default' | 'overlay'; // Style for the trigger button
 }
 
 // Define DetailRow component locally for now
@@ -82,8 +87,18 @@ const DetailRow = ({label, value, monospace = false, breakAll = false}: {label: 
 
 
 
-export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> = ({ event }) => {
+export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> = ({ event, events, buttonStyle = 'default' }) => {
   const [isCopied, setIsCopied] = useState(false);
+  
+  // Navigation state for multiple events
+  const [currentEventIndex, setCurrentEventIndex] = useState(() => {
+    if (!events) return 0;
+    return events.findIndex(e => e.eventUuid === event.eventUuid) || 0;
+  });
+  
+  // Use current event from navigation or fallback to provided event
+  const currentEvent = events ? events[currentEventIndex] : event;
+  const hasMultipleEvents = events && events.length > 1;
 
   // Get store data for location/space/alarm zone lookup
   const spaces = useFusionStore((state) => state.spaces);
@@ -93,8 +108,8 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
 
   // Find the device in store using deviceId and connectorId
   const eventDevice = useMemo(() => {
-    return allDevices.find(d => d.deviceId === event.deviceId && d.connectorId === event.connectorId);
-  }, [allDevices, event.deviceId, event.connectorId]);
+    return allDevices.find(d => d.deviceId === currentEvent.deviceId && d.connectorId === currentEvent.connectorId);
+  }, [allDevices, currentEvent.deviceId, currentEvent.connectorId]);
 
   // Find which space contains this device
   const deviceSpace = useMemo(() => {
@@ -132,18 +147,18 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
   };
 
   // Use the raw payload for the JSON view tab
-  const eventDataForJson = event.rawPayload || {};
+  const eventDataForJson = currentEvent.rawPayload || {};
   const jsonString = JSON.stringify(eventDataForJson, null, 2);
 
   // Get mapped type info & state icon for the modal header
-  const typeInfo = event.deviceTypeInfo || { type: DeviceType.Unmapped }; // Default if missing
+  const typeInfo = currentEvent.deviceTypeInfo || { type: DeviceType.Unmapped }; // Default if missing
   const DeviceIcon = getDeviceTypeIcon(typeInfo.type);
-  const StateIcon = event.displayState ? getDisplayStateIcon(event.displayState) : null;
+  const StateIcon = currentEvent.displayState ? getDisplayStateIcon(currentEvent.displayState) : null;
 
   // Construct Media Thumbnail URL if best shot is available
   let mediaThumbnailUrl: string | null = null;
-  if (event.bestShotUrlComponents) {
-    const { type, pikoSystemId, connectorId, objectTrackId, cameraId } = event.bestShotUrlComponents;
+  if (currentEvent.bestShotUrlComponents) {
+    const { type, pikoSystemId, connectorId, objectTrackId, cameraId } = currentEvent.bestShotUrlComponents;
     
     if (connectorId && objectTrackId && cameraId) {
       const apiUrl = new URL('/api/piko/best-shot', window.location.origin);
@@ -158,7 +173,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
       
       mediaThumbnailUrl = apiUrl.toString();
     } else {
-      console.error("Missing core components required for Media Thumbnail URL:", event.bestShotUrlComponents);
+      console.error("Missing core components required for Media Thumbnail URL:", currentEvent.bestShotUrlComponents);
     }
   }
 
@@ -167,19 +182,19 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
     const options: any = {};
     
     // Handle best shot events
-    if (event.bestShotUrlComponents) {
-      options.bestShotUrlComponents = event.bestShotUrlComponents;
-      options.staticThumbnailUrl = `/api/piko/best-shot?connectorId=${event.bestShotUrlComponents.connectorId}&cameraId=${event.bestShotUrlComponents.cameraId}&objectTrackId=${event.bestShotUrlComponents.objectTrackId}`;
+    if (currentEvent.bestShotUrlComponents) {
+      options.bestShotUrlComponents = currentEvent.bestShotUrlComponents;
+      options.staticThumbnailUrl = `/api/piko/best-shot?connectorId=${currentEvent.bestShotUrlComponents.connectorId}&cameraId=${currentEvent.bestShotUrlComponents.cameraId}&objectTrackId=${currentEvent.bestShotUrlComponents.objectTrackId}`;
     }
     
     // Always include timestamp for video positioning
-    options.timestamp = event.timestamp;
+    options.timestamp = currentEvent.timestamp;
     
     // Pass the already-available space name
     options.spaceName = deviceSpace?.name || null;
     
     return options;
-  }, [event, deviceSpace]);
+  }, [currentEvent, deviceSpace]);
 
   // Use the shared hook to determine camera configuration
   const { shouldShowMedia, mediaConfig } = useDeviceCameraConfig(
@@ -194,24 +209,61 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8">
-          <EyeIcon className="h-4 w-4" />
-           <span className="sr-only">View Event Details</span>
-        </Button>
+        {buttonStyle === 'overlay' ? (
+          <Button 
+            variant="outline"
+            size="icon"
+            className="h-10 w-10 rounded-full bg-background/80 hover:bg-background/95 text-foreground/80 hover:text-foreground"
+            title="View event details"
+          >
+            <EyeIcon className="h-5 w-5" />
+            <span className="sr-only">View Event Details</span>
+          </Button>
+        ) : (
+          <Button variant="ghost" size="icon" className="h-8 w-8">
+            <EyeIcon className="h-4 w-4" />
+            <span className="sr-only">View Event Details</span>
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader className="pb-4 border-b">
-          <div className="flex items-center gap-2">
-            <DeviceIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <DialogTitle>
-              {EVENT_TYPE_DISPLAY_MAP[event.eventType as EventType] || event.eventType || event.eventCategory || 'Event Details'}
-            </DialogTitle>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <DeviceIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+              <DialogTitle>
+                {EVENT_TYPE_DISPLAY_MAP[currentEvent.eventType as EventType] || currentEvent.eventType || currentEvent.eventCategory || 'Event Details'}
+              </DialogTitle>
+            </div>
+            {hasMultipleEvents && (
+              <div className="flex items-center gap-2 mr-8">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCurrentEventIndex(Math.max(0, currentEventIndex - 1))}
+                  disabled={currentEventIndex === 0}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm text-muted-foreground px-2">
+                  {currentEventIndex + 1} of {events!.length}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCurrentEventIndex(Math.min(events!.length - 1, currentEventIndex + 1))}
+                  disabled={currentEventIndex === events!.length - 1}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
           <DialogDescription asChild>
            <div className="pt-2 text-sm text-muted-foreground flex items-center justify-start gap-1.5 flex-wrap">
              <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-               <ConnectorIcon connectorCategory={event.connectorCategory} size={12} />
-               <span className="text-xs">{event.connectorName || formatConnectorCategory(event.connectorCategory)}</span>
+               <ConnectorIcon connectorCategory={currentEvent.connectorCategory} size={12} />
+               <span className="text-xs">{currentEvent.connectorName || formatConnectorCategory(currentEvent.connectorCategory)}</span>
              </Badge>
              <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
                <DeviceIcon className="h-3 w-3 text-muted-foreground" /> 
@@ -222,10 +274,22 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                  )}
                </span>
              </Badge>
-             {event.displayState && StateIcon && (
+             <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+               {(() => {
+                 const CategoryIcon = getEventCategoryIcon(currentEvent.eventCategory as EventCategory);
+                 return <CategoryIcon className="h-3 w-3 text-muted-foreground" />;
+               })()}
+               <span className="text-xs">{EVENT_TYPE_DISPLAY_MAP[currentEvent.eventType as EventType] || currentEvent.eventType}</span>
+             </Badge>
+             {currentEvent.eventSubtype && (
+               <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                 <span className="text-xs">{EVENT_SUBTYPE_DISPLAY_MAP[currentEvent.eventSubtype as keyof typeof EVENT_SUBTYPE_DISPLAY_MAP] ?? currentEvent.eventSubtype}</span>
+               </Badge>
+             )}
+             {currentEvent.displayState && StateIcon && (
                <Badge variant="secondary" className="inline-flex items-center gap-1.5 py-0.5 px-2 font-normal">
                   {React.createElement(StateIcon, { className: "h-3 w-3" })}
-                  <span>{event.displayState}</span>
+                  <span>{currentEvent.displayState}</span>
                </Badge>
              )}
             </div>
@@ -260,10 +324,10 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
               <div className="rounded-md border p-0 text-sm">
                 {
                   (() => {
-                    const deviceName = event.deviceName || event.deviceId || 'Unknown Device';
-                    const typeInfo = event.deviceTypeInfo || { type: DeviceType.Unmapped };
+                    const deviceName = currentEvent.deviceName || currentEvent.deviceId || 'Unknown Device';
+                    const typeInfo = currentEvent.deviceTypeInfo || { type: DeviceType.Unmapped };
                     const DeviceIcon = getDeviceTypeIcon(typeInfo.type);
-                    const eventPayload = event.payload || {};
+                    const eventPayload = currentEvent.payload || {};
 
                     // Prepare entries for the Device Information section
                     const deviceInfoEntries: { 
@@ -287,14 +351,14 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                           </Badge>
                         )
                       },
-                      { key: 'Device ID', value: event.deviceId, monospace: true, breakAll: true },
+                      { key: 'Device ID', value: currentEvent.deviceId, monospace: true, breakAll: true },
                     ];
 
                     // Also add Object Track ID if available
-                    if (event.bestShotUrlComponents?.objectTrackId) {
+                    if (currentEvent.bestShotUrlComponents?.objectTrackId) {
                         deviceInfoEntries.push({
                             key: 'Object Track ID',
-                            value: event.bestShotUrlComponents.objectTrackId,
+                            value: currentEvent.bestShotUrlComponents.objectTrackId,
                             monospace: true,
                             breakAll: true
                         });
@@ -369,7 +433,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                           </>
                         )}
 
-                        {event.displayState && StateIcon && (
+                        {currentEvent.displayState && StateIcon && (
                           <>
                             <div className="py-2"> 
                               <div className="flex items-center space-x-2">
@@ -382,7 +446,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                               value={
                                 <Badge variant="outline" className="inline-flex items-center gap-1.5 py-0.5 px-2 font-normal">
                                   {React.createElement(StateIcon, { className: "h-3 w-3 flex-shrink-0" })}
-                                  {event.displayState}
+                                  {currentEvent.displayState}
                                 </Badge>
                               } 
                             />
@@ -399,10 +463,10 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                               </div>
                             </div>
                             {/* Display Original Event Type if available */}
-                            {event.rawEventType && (
+                            {currentEvent.rawEventType && (
                               <DetailRow
                                 label="Original Event Type"
-                                value={event.rawEventType}
+                                value={currentEvent.rawEventType}
                                 monospace // Use monospace for potentially technical strings
                               />
                             )}

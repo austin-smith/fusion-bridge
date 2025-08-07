@@ -12,16 +12,16 @@ interface EventCardSkeletonProps {
 }
 
 export const EventCardSkeleton: React.FC<EventCardSkeletonProps> = ({ cardSize = 'large' }) => {
-  // Simple card size classes
+  // Card size classes for full-width thumbnail layout
   const cardSizeClass = (() => {
     switch (cardSize) {
       case 'small':
-        return "min-h-[80px]";
+        return "min-h-[160px]"; // Reduced for better image aspect ratio
       case 'medium':
-        return "min-h-[120px]";
+        return "min-h-[200px]"; // Reduced for better image aspect ratio
       case 'large':
       default:
-        return "min-h-[140px]";
+        return "min-h-[200px]"; // Reduced for better image aspect ratio
     }
   })();
 
@@ -31,11 +31,11 @@ export const EventCardSkeleton: React.FC<EventCardSkeletonProps> = ({ cardSize =
         <Skeleton className="h-5 w-3/4 mb-1.5" />
         <Skeleton className="h-3 w-1/2" />
       </CardHeader>
-      <CardContent className="p-3 pt-0 flex-grow flex flex-col justify-center items-center">
-        <div className="aspect-video w-full bg-muted rounded-md flex items-center justify-center">
+      <div className="relative flex-grow flex flex-col overflow-hidden">
+        <div className="absolute inset-0 bg-muted flex items-center justify-center">
             <Skeleton className="h-10 w-10 rounded-full" />
         </div>
-      </CardContent>
+      </div>
     </Card>
   );
 }; 
