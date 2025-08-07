@@ -307,6 +307,7 @@ export enum EventType {
   OBJECT_REMOVED = 'OBJECT_REMOVED',           // Object removal detection
   MOTION_DETECTED = 'MOTION_DETECTED',         // Camera motion detection (analytics)
   SOUND_DETECTED = 'SOUND_DETECTED',           // Camera sound detection (analytics)
+  LICENSE_PLATE_DETECTED = 'LICENSE_PLATE_DETECTED', // License plate recognition (ANPR/LPR)
   LOITERING = 'LOITERING',
   LINE_CROSSING = 'LINE_CROSSING',
   ARMED_PERSON = 'ARMED_PERSON',
@@ -390,6 +391,7 @@ export const OBJECT_DETECTED_DISPLAY = 'Object Detected';
 export const OBJECT_REMOVED_DISPLAY = 'Object Removed';
 export const MOTION_DETECTED_DISPLAY = 'Motion Detected';
 export const SOUND_DETECTED_DISPLAY = 'Sound Detected';
+export const LICENSE_PLATE_DETECTED_DISPLAY = 'License Plate Detected';
 export const LOITERING_DISPLAY = 'Loitering';
 export const LINE_CROSSING_DISPLAY = 'Line Crossing';
 export const ARMED_PERSON_DISPLAY = 'Armed Person Detected';
@@ -427,6 +429,7 @@ export const EVENT_TYPE_DISPLAY_MAP = {
   [EventType.OBJECT_REMOVED]: OBJECT_REMOVED_DISPLAY,
   [EventType.MOTION_DETECTED]: MOTION_DETECTED_DISPLAY,
   [EventType.SOUND_DETECTED]: SOUND_DETECTED_DISPLAY,
+  [EventType.LICENSE_PLATE_DETECTED]: LICENSE_PLATE_DETECTED_DISPLAY,
   [EventType.LOITERING]: LOITERING_DISPLAY,
   [EventType.LINE_CROSSING]: LINE_CROSSING_DISPLAY,
   [EventType.ARMED_PERSON]: ARMED_PERSON_DISPLAY,

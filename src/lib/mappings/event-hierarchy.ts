@@ -63,6 +63,7 @@ export const EVENT_HIERARCHY = {
     [EventType.OBJECT_REMOVED]: [],
     [EventType.MOTION_DETECTED]: [],
     [EventType.SOUND_DETECTED]: [],
+    [EventType.LICENSE_PLATE_DETECTED]: [],
     [EventType.LOITERING]: [],
     [EventType.LINE_CROSSING]: [],
     [EventType.ARMED_PERSON]: [],

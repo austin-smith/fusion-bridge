@@ -19,6 +19,7 @@ export const PIKO_INPUT_PORT_MAP = {
   'cvedia.rt.crossing': () => createEventClassification(EventType.LINE_CROSSING),
   'objectremovedetector': () => createEventClassification(EventType.OBJECT_REMOVED),
   'cvedia.rt.object_removed': () => createEventClassification(EventType.OBJECT_REMOVED),
+  'udp.videoa.anpr': () => createEventClassification(EventType.LICENSE_PLATE_DETECTED),
 } as const;
 
 /**
