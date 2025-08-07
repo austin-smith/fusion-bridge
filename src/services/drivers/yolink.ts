@@ -981,9 +981,18 @@ export async function playAudio(
   } catch (error) {
     console.error(`[playAudio][${connectorId}] Error during playAudio for device ${deviceId}:`, error);
     if (error instanceof Error) {
-      throw new Error(`Failed to play audio on YoLink device for ${connectorId}: ${error.message}`);
+      // Provide more user-friendly error messages for common scenarios
+      if (error.message.includes('Cannot connect to the device') || error.message.includes('000201') || error.message.includes('000203')) {
+        throw new Error(`Unable to play audio: Device appears to be offline or unreachable. Please check device connectivity.`);
+      } else if (error.message.includes('Device is busy') || error.message.includes('020104')) {
+        throw new Error(`Unable to play audio: Device is currently busy. Please try again in a moment.`);
+      } else if (error.message.includes('API token') || error.message.includes('000103') || error.message.includes('010104')) {
+        throw new Error(`Unable to play audio: YoLink authentication issue. Please check connector configuration.`);
+      } else {
+        throw new Error(`Failed to play audio: ${error.message}`);
+      }
     } else {
-      throw new Error(`Failed to play audio on YoLink device for ${connectorId} due to an unknown error.`);
+      throw new Error(`Failed to play audio due to an unknown error.`);
     }
   }
 }

@@ -94,6 +94,8 @@ const descriptionStyles = "text-xs text-muted-foreground mt-1";
 const ACTIONABLE_STATE_DISPLAY_MAP: Record<ActionableState, string> = {
     [ActionableState.SET_ON]: "Turn On",
     [ActionableState.SET_OFF]: "Turn Off",
+    [ActionableState.SET_LOCKED]: "Lock",
+    [ActionableState.SET_UNLOCKED]: "Unlock",
 };
 
 // YoLink SpeakerHub tone options

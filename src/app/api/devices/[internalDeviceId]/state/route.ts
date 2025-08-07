@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import { createOrgScopedDb } from '@/lib/db/org-scoped-db';
 import { requestDeviceStateChange } from '@/lib/device-actions';
-import { ActionableState, DisplayState, ON, OFF } from '@/lib/mappings/definitions';
+import { ActionableState, DisplayState, ON, OFF, LOCKED, UNLOCKED } from '@/lib/mappings/definitions';
 import { z } from 'zod';
 import { db } from '@/data/db';
 import { devices } from '@/data/db/schema';
@@ -81,6 +81,10 @@ export const POST = withOrganizationAuth(async (
             newDisplayState = ON;
         } else if (requestBody.state === ActionableState.SET_OFF) {
             newDisplayState = OFF;
+        } else if (requestBody.state === ActionableState.SET_LOCKED) {
+            newDisplayState = LOCKED;
+        } else if (requestBody.state === ActionableState.SET_UNLOCKED) {
+            newDisplayState = UNLOCKED;
         } else {
             console.warn(`[API StateChange] Unhandled ActionableState for DB update: ${requestBody.state}`);
         }

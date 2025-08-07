@@ -131,7 +131,8 @@ export enum ErrorState {
 export enum ActionableState {
   SET_ON = 'SET_ON',
   SET_OFF = 'SET_OFF',
-  // Future: SET_LOCKED = 'SET_LOCKED', SET_UNLOCKED = 'SET_UNLOCKED', SET_BRIGHTNESS = 'SET_BRIGHTNESS', etc.
+  SET_LOCKED = 'SET_LOCKED',
+  SET_UNLOCKED = 'SET_UNLOCKED',
 }
 // --- END Add ActionableState Enum ---
 
