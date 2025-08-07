@@ -10,6 +10,7 @@ import type { YoLinkConfig } from '@/services/drivers/yolink';
 // --- BEGIN Registry Imports ---
 import type { IDeviceActionHandler, IDeviceCommandHandler, DeviceContext } from './types';
 import { YoLinkHandler } from './yolink-handler';
+import { GeneaHandler } from './genea-handler';
 // Import other handlers as they are created:
 // import { PikoActionHandler } from './device-actions/piko-handler';
 // --- END Registry Imports ---
@@ -18,6 +19,7 @@ import { YoLinkHandler } from './yolink-handler';
 // Instantiate handlers and add them to the registry
 const handlers = [
     new YoLinkHandler(), // Implements both IDeviceActionHandler and IDeviceCommandHandler
+    new GeneaHandler(), // Implements IDeviceActionHandler for door lock/unlock
     // Add other handler instances here:
     // new PikoActionHandler(), 
 ];

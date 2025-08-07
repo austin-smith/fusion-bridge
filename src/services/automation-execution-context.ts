@@ -390,8 +390,13 @@ async function executeAutomationAction(action: AutomationAction, context: Record
       }
 
       // Execute the device command using the device command registry
-      await requestDeviceCommand(params.targetDeviceInternalId, DeviceCommand.PLAY_AUDIO, audioParams);
-      console.log(`[Automation Action Executor] Successfully requested audio playback on device ${params.targetDeviceInternalId}`);
+      try {
+        await requestDeviceCommand(params.targetDeviceInternalId, DeviceCommand.PLAY_AUDIO, audioParams);
+        console.log(`[Automation Action Executor] Successfully requested audio playback on device ${params.targetDeviceInternalId}`);
+      } catch (error) {
+        console.error(`[Automation Action Executor] Failed to execute playAudio on device ${params.targetDeviceInternalId}:`, error);
+        throw error; // Re-throw to be handled by the outer action execution error handling
+      }
       break;
     }
 

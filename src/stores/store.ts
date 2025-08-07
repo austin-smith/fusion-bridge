@@ -3,7 +3,7 @@ import { produce, Draft, enableMapSet } from 'immer';
 import { toast } from 'sonner'; // <-- Import toast
 import { PikoServer } from '@/types';
 import type { StandardizedEvent, EnrichedEvent } from '@/types/events';
-import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, ArmedState, ActionableState, ON, OFF, EVENT_CATEGORY_DISPLAY_MAP } from '@/lib/mappings/definitions';
+import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, ArmedState, ActionableState, ON, OFF, LOCKED, UNLOCKED, EVENT_CATEGORY_DISPLAY_MAP } from '@/lib/mappings/definitions';
 import type { DeviceWithConnector, ConnectorWithConfig, Location, Space, AlarmZone, ApiResponse, ArmingSchedule, AlarmZoneTriggerOverride, CreateTriggerOverrideData } from '@/types/index';
 // Re-export the ArmingSchedule type
 export type { ArmingSchedule } from '@/types/index';
@@ -1603,12 +1603,25 @@ export const useFusionStore = create<FusionState>((set, get) => ({
 
   // --- Centralized Action to execute device state change ---
   executeDeviceAction: async (internalDeviceId: string, newState: ActionableState) => {
-    const stateDesc = newState === ActionableState.SET_ON ? 'on' : 'off';
+    let stateDesc: string;
+    if (newState === ActionableState.SET_ON) stateDesc = 'on';
+    else if (newState === ActionableState.SET_OFF) stateDesc = 'off';
+    else if (newState === ActionableState.SET_LOCKED) stateDesc = 'locked';
+    else if (newState === ActionableState.SET_UNLOCKED) stateDesc = 'unlocked';
+    else stateDesc = 'unknown state';
+
     // 1. Set Loading State
     set(produce((draft: Draft<FusionState>) => {
       draft.deviceActionLoading.set(internalDeviceId, true);
     }));
-    const loadingToastId = toast.loading(`Turning device ${stateDesc}...`);
+    
+    let loadingMessage: string;
+    if (newState === ActionableState.SET_LOCKED || newState === ActionableState.SET_UNLOCKED) {
+      loadingMessage = newState === ActionableState.SET_LOCKED ? 'Locking device...' : 'Unlocking device...';
+    } else {
+      loadingMessage = `Turning device ${stateDesc}...`;
+    }
+    const loadingToastId = toast.loading(loadingMessage);
 
     try {
       const baseUrl = process.env.APP_URL || '';
@@ -1625,18 +1638,44 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       }
 
       // 3. Optimistic UI Update (using existing action)
-      const newDisplayState = newState === ActionableState.SET_ON ? ON : OFF;
+      let newDisplayState: DisplayState;
+      if (newState === ActionableState.SET_ON) newDisplayState = ON;
+      else if (newState === ActionableState.SET_OFF) newDisplayState = OFF;
+      else if (newState === ActionableState.SET_LOCKED) newDisplayState = LOCKED;
+      else if (newState === ActionableState.SET_UNLOCKED) newDisplayState = UNLOCKED;
+      else {
+        console.warn(`[Store] executeDeviceAction: Unhandled ActionableState: ${newState}`);
+        newDisplayState = ON; // Fallback
+      }
+      
       get().updateSingleDeviceState(internalDeviceId, newDisplayState); // Call existing action
       console.log(`[Store] executeDeviceAction: Manually updated store for ${internalDeviceId} to ${newDisplayState}`);
 
       // 4. Success Feedback
-      toast.success(`Device command sent successfully. State updated.`);
+      let successMessage: string;
+      if (newState === ActionableState.SET_LOCKED) {
+        successMessage = 'Device locked successfully.';
+      } else if (newState === ActionableState.SET_UNLOCKED) {
+        successMessage = 'Device unlocked successfully.';
+      } else {
+        successMessage = 'Device command sent successfully. State updated.';
+      }
+      toast.success(successMessage);
 
     } catch (err) {
       // 5. Error Handling
       console.error(`[Store] Error setting device state for ${internalDeviceId}:`, err);
-      const message = err instanceof Error ? err.message : `Failed to turn device ${stateDesc}.`;
-      toast.error(message);
+      let errorMessage: string;
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      } else if (newState === ActionableState.SET_LOCKED) {
+        errorMessage = 'Failed to lock device.';
+      } else if (newState === ActionableState.SET_UNLOCKED) {
+        errorMessage = 'Failed to unlock device.';
+      } else {
+        errorMessage = `Failed to turn device ${stateDesc}.`;
+      }
+      toast.error(errorMessage);
     } finally {
       // 6. Clear Loading State
       toast.dismiss(loadingToastId);

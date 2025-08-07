@@ -234,6 +234,172 @@ export async function testGeneaConnection(config: unknown): Promise<GeneaTestRes
 
 // --- Function to fetch doors ---
 /**
+ * Locks a Genea door.
+ * @param config - The Genea connector configuration containing the API key.
+ * @param doorUuid - The UUID of the door to lock.
+ * @returns A promise that resolves to true if the door was successfully locked.
+ */
+export async function lockGeneaDoor(config: GeneaConfig, doorUuid: string): Promise<boolean> {
+  // Validate the config
+  const validation = z.object({ 
+    apiKey: z.string().min(1)
+  }).safeParse(config);
+
+  if (!validation.success) {
+    console.error("Invalid Genea config provided for locking door:", validation.error);
+    throw new Error('Invalid configuration: API Key is required.');
+  }
+
+  if (!doorUuid || typeof doorUuid !== 'string') {
+    console.error("Invalid door UUID provided for locking:", doorUuid);
+    throw new Error('Invalid door UUID provided.');
+  }
+
+  const { apiKey } = validation.data;
+
+  try {
+    console.log(`[Genea Driver] Locking door ${doorUuid}...`);
+    
+    const response = await fetch(`${GENEA_API_BASE_URL}/v2/door/${doorUuid}/lock`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = `Genea API returned status: ${response.status} when locking door ${doorUuid}`;
+      let detailedError = null;
+      
+      try {
+        const errorBody = await response.json();
+        detailedError = errorBody;
+        
+        // Extract more specific error information
+        if (response.status === 422) {
+          if (errorBody?.meta?.message) {
+            errorMessage = errorBody.meta.message;
+          } else if (errorBody?.error?.message) {
+            errorMessage = errorBody.error.message;
+          } else {
+            errorMessage = `Door lock failed - request cannot be processed (device may be offline, in maintenance mode, or access restricted)`;
+          }
+        } else {
+          errorMessage = errorBody?.meta?.message || errorBody?.error?.message || errorBody?.error || errorMessage;
+        }
+      } catch (e) {
+        console.warn("Could not parse error response body from Genea lock API.");
+        if (response.status === 422) {
+          errorMessage = `Door lock failed - request cannot be processed (device may be offline, in maintenance mode, or access restricted)`;
+        }
+      }
+      
+      console.error(`[Genea Driver] Lock error for ${doorUuid}:`, { status: response.status, errorMessage, detailedError });
+      throw new Error(errorMessage);
+    }
+
+    const responseBody = await response.json();
+    console.log(`[Genea Driver] Successfully locked door ${doorUuid}. Response:`, responseBody?.meta?.message || 'Success');
+    
+    // Verify the door is actually locked in the response
+    if (responseBody?.data?.is_locked === true) {
+      return true;
+    } else {
+      console.warn(`[Genea Driver] Door ${doorUuid} lock command succeeded but door may not be locked. Response:`, responseBody);
+      return true; // Still return true since API call succeeded
+    }
+
+  } catch (error: unknown) {
+    console.error(`[Genea Driver] Error locking door ${doorUuid}:`, error);
+    throw error instanceof Error ? error : new Error(`Unknown error locking door ${doorUuid}`);
+  }
+}
+
+/**
+ * Unlocks a Genea door.
+ * @param config - The Genea connector configuration containing the API key.
+ * @param doorUuid - The UUID of the door to unlock.
+ * @returns A promise that resolves to true if the door was successfully unlocked.
+ */
+export async function unlockGeneaDoor(config: GeneaConfig, doorUuid: string): Promise<boolean> {
+  // Validate the config
+  const validation = z.object({ 
+    apiKey: z.string().min(1)
+  }).safeParse(config);
+
+  if (!validation.success) {
+    console.error("Invalid Genea config provided for unlocking door:", validation.error);
+    throw new Error('Invalid configuration: API Key is required.');
+  }
+
+  if (!doorUuid || typeof doorUuid !== 'string') {
+    console.error("Invalid door UUID provided for unlocking:", doorUuid);
+    throw new Error('Invalid door UUID provided.');
+  }
+
+  const { apiKey } = validation.data;
+
+  try {
+    console.log(`[Genea Driver] Unlocking door ${doorUuid}...`);
+    
+    const response = await fetch(`${GENEA_API_BASE_URL}/v2/door/${doorUuid}/unlock`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = `Genea API returned status: ${response.status} when unlocking door ${doorUuid}`;
+      let detailedError = null;
+      
+      try {
+        const errorBody = await response.json();
+        detailedError = errorBody;
+        
+        // Extract more specific error information
+        if (response.status === 422) {
+          if (errorBody?.meta?.message) {
+            errorMessage = errorBody.meta.message;
+          } else if (errorBody?.error?.message) {
+            errorMessage = errorBody.error.message;
+          } else {
+            errorMessage = `Door unlock failed - request cannot be processed (device may be offline, in maintenance mode, or access restricted)`;
+          }
+        } else {
+          errorMessage = errorBody?.meta?.message || errorBody?.error?.message || errorBody?.error || errorMessage;
+        }
+      } catch (e) {
+        console.warn("Could not parse error response body from Genea unlock API.");
+        if (response.status === 422) {
+          errorMessage = `Door unlock failed - request cannot be processed (device may be offline, in maintenance mode, or access restricted)`;
+        }
+      }
+      
+      console.error(`[Genea Driver] Unlock error for ${doorUuid}:`, { status: response.status, errorMessage, detailedError });
+      throw new Error(errorMessage);
+    }
+
+    const responseBody = await response.json();
+    console.log(`[Genea Driver] Successfully unlocked door ${doorUuid}. Response:`, responseBody?.meta?.message || 'Success');
+    
+    // Verify the door is actually unlocked in the response
+    if (responseBody?.data?.is_locked === false) {
+      return true;
+    } else {
+      console.warn(`[Genea Driver] Door ${doorUuid} unlock command succeeded but door may not be unlocked. Response:`, responseBody);
+      return true; // Still return true since API call succeeded
+    }
+
+  } catch (error: unknown) {
+    console.error(`[Genea Driver] Error unlocking door ${doorUuid}:`, error);
+    throw error instanceof Error ? error : new Error(`Unknown error unlocking door ${doorUuid}`);
+  }
+}
+
+/**
  * Fetches all doors for a given Genea customer.
  * @param config - The Genea connector configuration containing the API key and customer UUID.
  * @returns A promise that resolves with an array of GeneaDoor objects.

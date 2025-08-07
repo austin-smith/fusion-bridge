@@ -49,6 +49,29 @@ We use a combination of the Strategy and Registry patterns:
 
 The API endpoint `POST /api/devices/[internalDeviceId]/state` uses the `requestDeviceStateChange` function to process state change requests initiated from the frontend or other services.
 
+## Supported Connectors
+
+### YoLink
+- **Device Types:** Switch, Outlet, MultiOutlet, Manipulator
+- **Actions:** SET_ON, SET_OFF
+- **Commands:** PLAY_AUDIO (SpeakerHub devices)
+
+### Genea  
+- **Device Types:** Door
+- **Actions:** SET_LOCKED, SET_UNLOCKED
+- **Notes:** Uses door UUID as deviceId. Handles 422 validation errors when door is already in target state.
+
+## Error Handling
+
+### Genea 422 Errors
+HTTP status code 422 indicates "Unprocessable Entity" - the request was well-formed but contains semantic errors. For door lock/unlock operations, this usually means:
+- Invalid device state transition (e.g., trying to unlock an already unlocked door)
+- Missing required parameters for the operation
+- Device is in a state that prevents the requested action (offline, maintenance mode, emergency lockdown active)
+- Conflicting access permissions or security constraints
+
+Note: When controllers go offline, remote unlock capabilities become unavailable until connectivity is restored.
+
 ## Extending for New Connectors
 
 To add state change capabilities for a new connector type (e.g., 'newConnector'):

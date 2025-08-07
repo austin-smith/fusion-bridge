@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from "@/components/ui/input";
 import { toast } from 'sonner';
-import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network, PowerIcon, PowerOffIcon, HelpCircle, MoreHorizontal, InfoIcon, ChevronDown, Plug } from 'lucide-react';
+import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network, PowerIcon, PowerOffIcon, HelpCircle, MoreHorizontal, InfoIcon, ChevronDown, Plug, Lock, Unlock } from 'lucide-react';
 import { DeviceWithConnector, ConnectorWithConfig, PikoServer } from '@/types';
 import { getDeviceTypeIcon, getDisplayStateIcon } from "@/lib/mappings/presentation";
 import { 
@@ -13,7 +13,9 @@ import {
   ActionableState,
   DeviceType,
   ON,
-  OFF
+  OFF,
+  LOCKED,
+  UNLOCKED
 } from '@/lib/mappings/definitions';
 import { useFusionStore } from '@/stores/store';
 import {
@@ -514,17 +516,24 @@ export default function DevicesPage() {
         cell: ({ row }) => {
           const device = row.original; 
           // --- BEGIN Action Button Logic ---
-          const isActionable = 
+          const isYoLinkActionable = 
             device.connectorCategory === 'yolink' && 
             (device.deviceTypeInfo.type === DeviceType.Switch || device.deviceTypeInfo.type === DeviceType.Outlet);
           
+          const isGeneaDoor = 
+            device.connectorCategory === 'genea' && 
+            device.deviceTypeInfo.type === DeviceType.Door;
+          
+          const isActionable = isYoLinkActionable || isGeneaDoor;
+          
           // Read loading state from the store
           const isLoading = deviceActionLoading.get(device.internalId) ?? false;
-          // --- BEGIN Revert State Check ---
-          // Revert to checking displayState, acknowledging it's not yet populated correctly
+          
+          // State checks for different device types
           const isOn = device.displayState === ON; 
           const isOff = device.displayState === OFF;
-          // --- END Revert State Check ---
+          const isLocked = device.displayState === LOCKED;
+          const isUnlocked = device.displayState === UNLOCKED;
 
           const dialogProps: DeviceDetailProps = {
             ...device,
@@ -565,23 +574,46 @@ export default function DevicesPage() {
                 {isActionable && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => {
-                        executeDeviceAction(
-                          device.internalId, 
-                          isOn ? ActionableState.SET_OFF : ActionableState.SET_ON
-                        );
-                      }}
-                      disabled={isLoading} // Disable while action is processing
-                    >
-                      {/* Conditionally show icon based on state */}
-                      {isOn ? (
-                        <PowerOffIcon className="h-4 w-4 text-red-600" /> 
-                      ) : (
-                        <PowerIcon className="h-4 w-4 text-green-600" />
-                      )}
-                      {isOn ? 'Turn Off' : 'Turn On'}
-                    </DropdownMenuItem>
+                    {isYoLinkActionable && (
+                      <DropdownMenuItem
+                        onClick={() => {
+                          executeDeviceAction(
+                            device.internalId, 
+                            isOn ? ActionableState.SET_OFF : ActionableState.SET_ON
+                          );
+                        }}
+                        disabled={isLoading}
+                      >
+                        {isOn ? (
+                          <PowerOffIcon className="h-4 w-4 text-red-600" /> 
+                        ) : (
+                          <PowerIcon className="h-4 w-4 text-green-600" />
+                        )}
+                        {isOn ? 'Turn Off' : 'Turn On'}
+                      </DropdownMenuItem>
+                    )}
+                    {isGeneaDoor && (
+                      <>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            executeDeviceAction(device.internalId, ActionableState.SET_LOCKED);
+                          }}
+                          disabled={isLoading || isLocked}
+                        >
+                          <Lock className="h-4 w-4 text-red-600" />
+                          Lock Door
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            executeDeviceAction(device.internalId, ActionableState.SET_UNLOCKED);
+                          }}
+                          disabled={isLoading || isUnlocked}
+                        >
+                          <Unlock className="h-4 w-4 text-green-600" />
+                          Unlock Door
+                        </DropdownMenuItem>
+                      </>
+                    )}
                   </>
                 )}
               </DropdownMenuContent>
