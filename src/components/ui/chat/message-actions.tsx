@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { useFusionStore } from '@/stores/store';
 import { toast } from 'sonner';
 import { ActionableState, ArmedState } from '@/lib/mappings/definitions';
-import { ShieldCheck, ShieldOff, Power, PowerOff, Loader2 } from 'lucide-react';
+import { ShieldCheck, ShieldOff, Power, PowerOff, Lock, Unlock, Loader2 } from 'lucide-react';
 import type { 
   ChatAction, 
   DeviceActionMetadata, 
@@ -48,7 +48,9 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
 
     const actionDescription = actionType === 'arm' ? 'armed' : 
                             actionType === 'disarm' ? 'disarmed' :
-                            actionType === 'device-on' ? 'turned on' : 'turned off';
+                            actionType === 'device-on' ? 'turned on' : 
+                            actionType === 'device-off' ? 'turned off' :
+                            actionType === 'device-lock' ? 'locked' : 'unlocked';
     const itemType = actionType.startsWith('device') ? 'devices' : 'alarm zones';
     
     const items = actions.map(action => {
@@ -105,11 +107,23 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
     const metadata = action.metadata as DeviceActionMetadata;
     return metadata.action === ActionableState.SET_OFF;
   });
+  
+  const deviceLockActions = deviceActions.filter(action => {
+    const metadata = action.metadata as DeviceActionMetadata;
+    return metadata.action === ActionableState.SET_LOCKED;
+  });
+  
+  const deviceUnlockActions = deviceActions.filter(action => {
+    const metadata = action.metadata as DeviceActionMetadata;
+    return metadata.action === ActionableState.SET_UNLOCKED;
+  });
 
   const hasBulkArmOperation = armActions.length > 1;
   const hasBulkDisarmOperation = disarmActions.length > 1;
   const hasBulkDeviceOnOperation = deviceOnActions.length > 1;
   const hasBulkDeviceOffOperation = deviceOffActions.length > 1;
+  const hasBulkDeviceLockOperation = deviceLockActions.length > 1;
+  const hasBulkDeviceUnlockOperation = deviceUnlockActions.length > 1;
 
   const executeAction = async (action: ChatAction): Promise<void> => {
     try {
@@ -124,8 +138,15 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
         const isAccountSettingsNavigation = !!(metadata as any).accountSettingsTab;
         
         if (addMessage && !isExternalLink && !isSettingsNavigation && !isAccountSettingsNavigation &&
-            (metadata.action === ActionableState.SET_ON || metadata.action === ActionableState.SET_OFF)) {
-          const actionWord = metadata.action === ActionableState.SET_ON ? 'turned on' : 'turned off';
+            (metadata.action === ActionableState.SET_ON || metadata.action === ActionableState.SET_OFF ||
+             metadata.action === ActionableState.SET_LOCKED || metadata.action === ActionableState.SET_UNLOCKED)) {
+          let actionWord: string;
+          if (metadata.action === ActionableState.SET_ON) actionWord = 'turned on';
+          else if (metadata.action === ActionableState.SET_OFF) actionWord = 'turned off';
+          else if (metadata.action === ActionableState.SET_LOCKED) actionWord = 'locked';
+          else if (metadata.action === ActionableState.SET_UNLOCKED) actionWord = 'unlocked';
+          else actionWord = 'controlled';
+          
           const confirmationMessage = `✅ Successfully ${actionWord} ${metadata.deviceName}`;
           addMessage(confirmationMessage);
         }
@@ -196,7 +217,7 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
     }
   };
 
-  const handleBulkAction = async (actionType: 'arm' | 'disarm' | 'device-on' | 'device-off') => {
+  const handleBulkAction = async (actionType: 'arm' | 'disarm' | 'device-on' | 'device-off' | 'device-lock' | 'device-unlock') => {
     let targetActions: ChatAction[];
     
     switch (actionType) {
@@ -211,6 +232,12 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
         break;
       case 'device-off':
         targetActions = deviceOffActions;
+        break;
+      case 'device-lock':
+        targetActions = deviceLockActions;
+        break;
+      case 'device-unlock':
+        targetActions = deviceUnlockActions;
         break;
       default:
         return;
@@ -239,7 +266,9 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
         // Fallback to toast if addMessage not available
         const actionDescription = actionType === 'arm' ? 'armed' : 
                                 actionType === 'disarm' ? 'disarmed' :
-                                actionType === 'device-on' ? 'turned on' : 'turned off';
+                                actionType === 'device-on' ? 'turned on' : 
+                                actionType === 'device-off' ? 'turned off' :
+                                actionType === 'device-lock' ? 'locked' : 'unlocked';
         const itemType = actionType.startsWith('device') ? 'devices' : 'alarm zones';
         toast.success(`Successfully ${actionDescription} ${targetActions.length} ${itemType}`);
       }
@@ -344,6 +373,46 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
             </Badge>
           </Button>
         )}
+        
+        {hasBulkDeviceLockOperation && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => handleBulkAction('device-lock')}
+            disabled={bulkActionLoading === 'device-lock'}
+            className="flex items-center gap-2"
+          >
+            {bulkActionLoading === 'device-lock' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Lock className="h-4 w-4" />
+            )}
+            Lock All Devices
+            <Badge variant="secondary" className="ml-1">
+              {deviceLockActions.length}
+            </Badge>
+          </Button>
+        )}
+        
+        {hasBulkDeviceUnlockOperation && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => handleBulkAction('device-unlock')}
+            disabled={bulkActionLoading === 'device-unlock'}
+            className="flex items-center gap-2"
+          >
+            {bulkActionLoading === 'device-unlock' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Unlock className="h-4 w-4" />
+            )}
+            Unlock All Devices
+            <Badge variant="secondary" className="ml-1">
+              {deviceUnlockActions.length}
+            </Badge>
+          </Button>
+        )}
 
         {/* Individual action buttons (exclude bulk operations) */}
         {validActions
@@ -362,10 +431,14 @@ export function MessageActions({ actions, className, addMessage }: MessageAction
               const metadata = action.metadata as DeviceActionMetadata;
               const isOnAction = metadata.action === ActionableState.SET_ON;
               const isOffAction = metadata.action === ActionableState.SET_OFF;
+              const isLockAction = metadata.action === ActionableState.SET_LOCKED;
+              const isUnlockAction = metadata.action === ActionableState.SET_UNLOCKED;
               
               // Hide individual buttons if we're showing bulk buttons for this type
               if (isOnAction && hasBulkDeviceOnOperation) return false;
               if (isOffAction && hasBulkDeviceOffOperation) return false;
+              if (isLockAction && hasBulkDeviceLockOperation) return false;
+              if (isUnlockAction && hasBulkDeviceUnlockOperation) return false;
               
               return true;
             }

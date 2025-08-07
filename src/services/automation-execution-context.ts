@@ -7,7 +7,7 @@ import type { StandardizedEvent } from '@/types/events';
 import type { EventWithContext } from '@/lib/automation-types';
 import type { OrgScopedDb } from '@/lib/db/org-scoped-db';
 import type { AutomationConfig, AutomationAction } from '@/lib/automation-schemas';
-import { AutomationConfigSchema, SetDeviceStateActionParamsSchema, ArmAlarmZoneActionParamsSchema, DisarmAlarmZoneActionParamsSchema, SendPushNotificationActionParamsSchema, PlayAudioActionParamsSchema } from '@/lib/automation-schemas';
+import { AutomationConfigSchema, SetDeviceStateActionParamsSchema, ArmAlarmZoneActionParamsSchema, DisarmAlarmZoneActionParamsSchema, SendPushNotificationActionParamsSchema, PlayAudioActionParamsSchema, LockDeviceActionParamsSchema, UnlockDeviceActionParamsSchema } from '@/lib/automation-schemas';
 import { AutomationTriggerType, AutomationActionType } from '@/lib/automation-types';
 import { Engine } from 'json-rules-engine';
 import type { JsonRuleGroup } from '@/lib/automation-schemas';
@@ -344,6 +344,30 @@ async function executeAutomationAction(action: AutomationAction, context: Record
       console.log(`[Automation Action Executor] Executing setDeviceState. Target: ${params.targetDeviceInternalId}, State: ${params.targetState}`);
       await requestDeviceStateChange(params.targetDeviceInternalId, params.targetState as ActionableState);
       console.log(`[Automation Action Executor] Successfully requested state change for ${params.targetDeviceInternalId} to ${params.targetState}`);
+      break;
+    }
+
+    case AutomationActionType.LOCK_DEVICE: {
+      const params = action.params as z.infer<typeof LockDeviceActionParamsSchema>;
+      if (!params.targetDeviceInternalId || typeof params.targetDeviceInternalId !== 'string') {
+        throw new Error(`Invalid or missing targetDeviceInternalId for lockDevice action.`);
+      }
+      
+      console.log(`[Automation Action Executor] Executing lockDevice. Target: ${params.targetDeviceInternalId}`);
+      await requestDeviceStateChange(params.targetDeviceInternalId, ActionableState.SET_LOCKED);
+      console.log(`[Automation Action Executor] Successfully requested lock for ${params.targetDeviceInternalId}`);
+      break;
+    }
+
+    case AutomationActionType.UNLOCK_DEVICE: {
+      const params = action.params as z.infer<typeof UnlockDeviceActionParamsSchema>;
+      if (!params.targetDeviceInternalId || typeof params.targetDeviceInternalId !== 'string') {
+        throw new Error(`Invalid or missing targetDeviceInternalId for unlockDevice action.`);
+      }
+      
+      console.log(`[Automation Action Executor] Executing unlockDevice. Target: ${params.targetDeviceInternalId}`);
+      await requestDeviceStateChange(params.targetDeviceInternalId, ActionableState.SET_UNLOCKED);
+      console.log(`[Automation Action Executor] Successfully requested unlock for ${params.targetDeviceInternalId}`);
       break;
     }
 

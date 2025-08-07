@@ -19,7 +19,7 @@ import {
     FormItem,
     FormLabel,
 } from "@/components/ui/form";
-import { Trash2, HelpCircle, Users, ShieldCheck, ShieldOff } from 'lucide-react';
+import { Trash2, HelpCircle, Users, ShieldCheck, ShieldOff, Lock, Unlock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
     AutomationAction,
@@ -31,6 +31,8 @@ import type {
     ArmAlarmZoneActionParamsSchema,
     DisarmAlarmZoneActionParamsSchema,
     PlayAudioActionParamsSchema,
+    LockDeviceActionParamsSchema,
+    UnlockDeviceActionParamsSchema,
 } from '@/lib/automation-schemas';
 import { AutomationActionType, getActionTitle, getActionIconProps, getActionStyling, formatActionDetail, AutomationTriggerType } from '@/lib/automation-types';
 import { ActionableState, ArmedState } from '@/lib/mappings/definitions';
@@ -60,6 +62,11 @@ const ACTION_GROUPS = [
         actions: [AutomationActionType.CREATE_EVENT, AutomationActionType.CREATE_BOOKMARK]
     },
     {
+        id: 'access-control',
+        label: 'Access Control',
+        actions: [AutomationActionType.LOCK_DEVICE, AutomationActionType.UNLOCK_DEVICE]
+    },
+    {
         id: 'alarm',
         label: 'Alarm',
         actions: [AutomationActionType.ARM_ALARM_ZONE, AutomationActionType.DISARM_ALARM_ZONE]
@@ -76,6 +83,36 @@ const ACTION_GROUPS = [
     }
 ] as const;
 
+// Helper function to format device display with location/space hierarchy
+const formatDeviceDisplayName = (device: TargetDeviceOption, allLocations: any[], allSpaces: any[]) => {
+    const location = allLocations?.find(loc => loc.id === device.locationId);
+    const space = allSpaces?.find(sp => sp.id === device.spaceId);
+    
+    let hierarchy = '';
+    if (location?.name) {
+        hierarchy += location.name;
+        if (space?.name) {
+            hierarchy += ` › ${space.name}`;
+        }
+        hierarchy += ' › ';
+    } else if (space?.name) {
+        hierarchy += `${space.name} › `;
+    }
+    
+    return `${hierarchy}${device.name}`;
+};
+
+// Helper function to get selected device display name
+const getSelectedDeviceDisplayName = (
+    deviceId: string, 
+    devices: TargetDeviceOption[], 
+    allLocations: any[], 
+    allSpaces: any[]
+) => {
+    const device = devices.find(d => d.id === deviceId);
+    return device ? formatDeviceDisplayName(device, allLocations, allSpaces) : '';
+};
+
 type ConnectorSelect = typeof connectors.$inferSelect;
 type TargetDeviceOption = {
     id: string;
@@ -86,6 +123,8 @@ type TargetDeviceOption = {
     locationId?: string | null;
     rawType?: string; // Add raw device type for proper command filtering
     supportsAudio?: boolean; // Server-side computed flag for audio capability
+    supportsLocking?: boolean; // Server-side computed flag for lock capability
+    connectorCategory?: string; // Connector category for capability detection
 };
 
 type ZoneOption = Pick<typeof alarmZones.$inferSelect, 'id' | 'name' | 'locationId'>;
@@ -137,6 +176,8 @@ interface ActionItemProps {
   sortedAvailableTargetDevices: TargetDeviceOption[];
   sortedAvailableZones: ZoneOption[];
   currentRuleLocationScope?: { id: string; name: string } | null;
+  allLocations: any[]; // Location data for hierarchy display
+  allSpaces: any[]; // Space data for hierarchy display
 }
 
 export function ActionItem({
@@ -152,6 +193,8 @@ export function ActionItem({
   sortedAvailableTargetDevices,
   sortedAvailableZones,
   currentRuleLocationScope,
+  allLocations,
+  allSpaces,
 }: ActionItemProps) {
   const actionType = form.watch(`config.actions.${index}.type`);
   const actionParams = form.watch(`config.actions.${index}.params`);
@@ -234,6 +277,14 @@ export function ActionItem({
             volumeTemplate: '',
             repeatTemplate: ''
         } as z.infer<typeof PlayAudioActionParamsSchema>;
+    } else if (newType === AutomationActionType.LOCK_DEVICE) {
+        newActionParams = {
+            targetDeviceInternalId: ''
+        } as z.infer<typeof LockDeviceActionParamsSchema>;
+    } else if (newType === AutomationActionType.UNLOCK_DEVICE) {
+        newActionParams = {
+            targetDeviceInternalId: ''
+        } as z.infer<typeof UnlockDeviceActionParamsSchema>;
     } else { 
         console.warn(`Unexpected action type: ${value}. Defaulting to minimal params.`); 
         newActionParams = {} as any;
@@ -433,6 +484,9 @@ export function ActionItem({
                           {actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && "Sends a push notification via the Pushover service."}
                           {actionType === AutomationActionType.ARM_ALARM_ZONE && "Arms one or more alarm zones, either specific ones or all within the rule's scope."}
                           {actionType === AutomationActionType.DISARM_ALARM_ZONE && "Disarms one or more alarm zones, either specific ones or all within the rule's scope."}
+                          {actionType === AutomationActionType.PLAY_AUDIO && "Plays an audio message on a compatible hub device."}
+                          {actionType === AutomationActionType.LOCK_DEVICE && "Locks a compatible door or access control device."}
+                          {actionType === AutomationActionType.UNLOCK_DEVICE && "Unlocks a compatible door or access control device."}
                           {!Object.values(AutomationActionType).includes(actionType as any) && "Select an action type to see parameters."}
                       </p>
                       
@@ -1035,6 +1089,130 @@ export function ActionItem({
                                       )}
                                   />
                               )}
+                          </>
+                      )}
+
+                      {/* === LOCK DEVICE FIELDS === */}
+                      {actionType === AutomationActionType.LOCK_DEVICE && (
+                          <>
+                              <div className="flex flex-col space-y-2 mt-2">
+                                  <FormLabel className="mb-1 mt-2">Device Lock Control</FormLabel>
+                                  <FormField
+                                      control={form.control}
+                                      name={`config.actions.${index}.params.targetDeviceInternalId`}
+                                      render={({ field, fieldState }) => {
+                                          // Filter to only devices that support locking (server-side computed flag)
+                                          const lockCapableDevices = sortedAvailableTargetDevices.filter(device => device.supportsLocking);
+                                          
+                                          return (
+                                              <FormItem>
+                                                  <FormLabel>Door to Lock</FormLabel>
+                                                  <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
+                                                      <FormControl>
+                                                          <SelectTrigger className={cn("w-[300px]", fieldState.error && 'border-destructive')}>
+                                                              <SelectValue placeholder="Select door..." />
+                                                          </SelectTrigger>
+                                                      </FormControl>
+                                                      <SelectContent>
+                                                          {lockCapableDevices.map(device => (
+                                                              <SelectItem key={device.id} value={device.id} className="py-2">
+                                                                  <div className="flex items-center w-full">
+                                                                      <Lock className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+                                                                      <div className="flex flex-col flex-1 min-w-0">
+                                                                          <span className="font-medium truncate">{device.name}</span>
+                                                                          {(device.locationId || device.spaceId) && (
+                                                                              <span className="text-xs text-muted-foreground truncate">
+                                                                                  {(() => {
+                                                                                      const location = allLocations?.find(loc => loc.id === device.locationId);
+                                                                                      const space = allSpaces?.find(sp => sp.id === device.spaceId);
+                                                                                      if (location?.name) {
+                                                                                          return space?.name ? `${location.name} › ${space.name}` : location.name;
+                                                                                      }
+                                                                                      return space?.name || '';
+                                                                                  })()}
+                                                                              </span>
+                                                                          )}
+                                                                      </div>
+                                                                  </div>
+                                                              </SelectItem>
+                                                          ))}
+                                                          {lockCapableDevices.length === 0 && (
+                                                              <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                                                                  No lockable devices found.
+                                                              </div>
+                                                          )}
+                                                      </SelectContent>
+                                                  </Select>
+                                                  <FormDescription className={descriptionStyles}>
+                                                      Select the door or access control device to lock when this automation runs.
+                                                  </FormDescription>
+                                              </FormItem>
+                                          );
+                                      }}
+                                  />
+                              </div>
+                          </>
+                      )}
+
+                      {/* === UNLOCK DEVICE FIELDS === */}
+                      {actionType === AutomationActionType.UNLOCK_DEVICE && (
+                          <>
+                              <div className="flex flex-col space-y-2 mt-2">
+                                  <FormLabel className="mb-1 mt-2">Device Unlock Control</FormLabel>
+                                  <FormField
+                                      control={form.control}
+                                      name={`config.actions.${index}.params.targetDeviceInternalId`}
+                                      render={({ field, fieldState }) => {
+                                          // Filter to only devices that support locking (server-side computed flag)
+                                          const lockCapableDevices = sortedAvailableTargetDevices.filter(device => device.supportsLocking);
+                                          
+                                          return (
+                                              <FormItem>
+                                                  <FormLabel>Door to Unlock</FormLabel>
+                                                  <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
+                                                      <FormControl>
+                                                          <SelectTrigger className={cn("w-[300px]", fieldState.error && 'border-destructive')}>
+                                                              <SelectValue placeholder="Select door..." />
+                                                          </SelectTrigger>
+                                                      </FormControl>
+                                                      <SelectContent>
+                                                          {lockCapableDevices.map(device => (
+                                                              <SelectItem key={device.id} value={device.id} className="py-2">
+                                                                  <div className="flex items-center w-full">
+                                                                      <Unlock className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+                                                                      <div className="flex flex-col flex-1 min-w-0">
+                                                                          <span className="font-medium truncate">{device.name}</span>
+                                                                          {(device.locationId || device.spaceId) && (
+                                                                              <span className="text-xs text-muted-foreground truncate">
+                                                                                  {(() => {
+                                                                                      const location = allLocations?.find(loc => loc.id === device.locationId);
+                                                                                      const space = allSpaces?.find(sp => sp.id === device.spaceId);
+                                                                                      if (location?.name) {
+                                                                                          return space?.name ? `${location.name} › ${space.name}` : location.name;
+                                                                                      }
+                                                                                      return space?.name || '';
+                                                                                  })()}
+                                                                              </span>
+                                                                          )}
+                                                                      </div>
+                                                                  </div>
+                                                              </SelectItem>
+                                                          ))}
+                                                          {lockCapableDevices.length === 0 && (
+                                                              <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                                                                  No lockable devices found.
+                                                              </div>
+                                                          )}
+                                                      </SelectContent>
+                                                  </Select>
+                                                  <FormDescription className={descriptionStyles}>
+                                                      Select the door or access control device to unlock when this automation runs.
+                                                  </FormDescription>
+                                              </FormItem>
+                                          );
+                                      }}
+                                  />
+                              </div>
                           </>
                       )}
                       
