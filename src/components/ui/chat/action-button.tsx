@@ -97,7 +97,9 @@ export function ActionButton({
           className={cn(
             "h-auto px-3 py-2 hover:bg-accent focus:bg-accent",
             "transition-all duration-200 flex items-center gap-2",
-            "max-w-[200px] min-w-0", // Add width constraints
+            // Let flexbox handle sizing naturally within flex-wrap container
+            // Ensure text can truncate but maintain minimum usable width
+            "flex-shrink min-w-0 max-w-full",
             isExecuting && "cursor-not-allowed",
             className
           )}

@@ -1985,9 +1985,15 @@ async function getApiDocumentation(args: any): Promise<FunctionExecutionResult> 
   }
 }
 
-async function lockDevice(orgDb: any, args: any): Promise<FunctionExecutionResult> {
-  const { deviceName } = args;
-  
+// Helper function for device lock/unlock operations
+async function handleDeviceLockOperation(
+  orgDb: any, 
+  deviceName: string, 
+  targetAction: ActionableState, 
+  targetState: DisplayState,
+  operationName: string,
+  actionIcon: string
+): Promise<FunctionExecutionResult> {
   try {
     // Get all devices
     const devices = await orgDb.devices.findAll();
@@ -2040,12 +2046,12 @@ async function lockDevice(orgDb: any, args: any): Promise<FunctionExecutionResul
       rawDeviceData: targetDevice.rawDeviceData
     };
     
-    const canLock = supportedHandler.canHandle(deviceContext, ActionableState.SET_LOCKED);
+    const canPerformAction = supportedHandler.canHandle(deviceContext, targetAction);
     
-    if (!canLock) {
+    if (!canPerformAction) {
       return {
         aiData: {
-          error: `Device '${deviceName}' does not support lock operation`,
+          error: `Device '${deviceName}' does not support ${operationName} operation`,
           deviceName,
           totalCount: 0
         }
@@ -2055,17 +2061,17 @@ async function lockDevice(orgDb: any, args: any): Promise<FunctionExecutionResul
     const currentState = targetDevice.displayState as DisplayState | undefined;
     const actions: ChatAction[] = [];
     
-    // Only add lock action if device is not already locked
-    if (currentState !== LOCKED) {
+    // Only add action if device is not already in target state
+    if (currentState !== targetState) {
       actions.push({
-        id: `device-${targetDevice.id}-lock`,
+        id: `device-${targetDevice.id}-${operationName}`,
         type: 'device',
-        label: `Lock ${targetDevice.name}`,
-        icon: 'Lock',
+        label: `${operationName.charAt(0).toUpperCase() + operationName.slice(1)} ${targetDevice.name}`,
+        icon: actionIcon,
         metadata: {
           internalDeviceId: targetDevice.id,
           deviceName: targetDevice.name,
-          action: ActionableState.SET_LOCKED,
+          action: targetAction,
           currentState: currentState,
           connectorCategory: targetDevice.connector.category,
           deviceType: targetDevice.type
@@ -2078,8 +2084,8 @@ async function lockDevice(orgDb: any, args: any): Promise<FunctionExecutionResul
         deviceName: targetDevice.name,
         currentState: currentState || 'unknown',
         totalCount: 1,
-        canPerformAction: currentState !== LOCKED,
-        actionReason: currentState === LOCKED ? `${targetDevice.name} is already locked` : undefined,
+        canPerformAction: currentState !== targetState,
+        actionReason: currentState === targetState ? `${targetDevice.name} is already ${operationName}ed` : undefined,
         devices: [{
           id: targetDevice.id,
           name: targetDevice.name,
@@ -2096,10 +2102,10 @@ async function lockDevice(orgDb: any, args: any): Promise<FunctionExecutionResul
       }
     };
   } catch (error) {
-    console.error('[lockDevice] Error:', error);
+    console.error(`[${operationName}Device] Error:`, error);
     return {
       aiData: {
-        error: error instanceof Error ? error.message : 'Failed to lock device',
+        error: error instanceof Error ? error.message : `Failed to ${operationName} device`,
         deviceName,
         totalCount: 0
       }
@@ -2107,124 +2113,26 @@ async function lockDevice(orgDb: any, args: any): Promise<FunctionExecutionResul
   }
 }
 
+async function lockDevice(orgDb: any, args: any): Promise<FunctionExecutionResult> {
+  const { deviceName } = args;
+  return handleDeviceLockOperation(
+    orgDb, 
+    deviceName, 
+    ActionableState.SET_LOCKED, 
+    LOCKED, 
+    'lock', 
+    'Lock'
+  );
+}
+
 async function unlockDevice(orgDb: any, args: any): Promise<FunctionExecutionResult> {
   const { deviceName } = args;
-  
-  try {
-    // Get all devices
-    const devices = await orgDb.devices.findAll();
-    
-    // Find the specific device by name (case-insensitive)
-    const targetDevice = devices.find((device: any) => 
-      device.name && device.name.toLowerCase() === deviceName.toLowerCase()
-    );
-    
-    if (!targetDevice) {
-      return {
-        aiData: {
-          error: `Device '${deviceName}' not found`,
-          deviceName,
-          totalCount: 0
-        }
-      };
-    }
-    
-    // Check if device is controllable
-    if (!targetDevice.id || !targetDevice.name || !targetDevice.connector?.category) {
-      return {
-        aiData: {
-          error: `Device '${deviceName}' is missing required data and cannot be controlled`,
-          deviceName,
-          totalCount: 0
-        }
-      };
-    }
-
-    const supportedHandler = actionHandlers.find(handler => 
-      handler.category === targetDevice.connector.category
-    );
-    
-    if (!supportedHandler) {
-      return {
-        aiData: {
-          error: `Device '${deviceName}' is not controllable (no handler for ${targetDevice.connector.category})`,
-          deviceName,
-          totalCount: 0
-        }
-      };
-    }
-    
-    const deviceContext = {
-      id: targetDevice.id,
-      deviceId: targetDevice.deviceId,
-      type: targetDevice.type,
-      connectorId: targetDevice.connectorId,
-      rawDeviceData: targetDevice.rawDeviceData
-    };
-    
-    const canUnlock = supportedHandler.canHandle(deviceContext, ActionableState.SET_UNLOCKED);
-    
-    if (!canUnlock) {
-      return {
-        aiData: {
-          error: `Device '${deviceName}' does not support unlock operation`,
-          deviceName,
-          totalCount: 0
-        }
-      };
-    }
-    
-    const currentState = targetDevice.displayState as DisplayState | undefined;
-    const actions: ChatAction[] = [];
-    
-    // Only add unlock action if device is not already unlocked
-    if (currentState !== UNLOCKED) {
-      actions.push({
-        id: `device-${targetDevice.id}-unlock`,
-        type: 'device',
-        label: `Unlock ${targetDevice.name}`,
-        icon: 'Unlock',
-        metadata: {
-          internalDeviceId: targetDevice.id,
-          deviceName: targetDevice.name,
-          action: ActionableState.SET_UNLOCKED,
-          currentState: currentState,
-          connectorCategory: targetDevice.connector.category,
-          deviceType: targetDevice.type
-        } as DeviceActionMetadata
-      });
-    }
-    
-    return {
-      aiData: {
-        deviceName: targetDevice.name,
-        currentState: currentState || 'unknown',
-        totalCount: 1,
-        canPerformAction: currentState !== UNLOCKED,
-        actionReason: currentState === UNLOCKED ? `${targetDevice.name} is already unlocked` : undefined,
-        devices: [{
-          id: targetDevice.id,
-          name: targetDevice.name,
-          type: targetDevice.type,
-          status: targetDevice.status || 'unknown',
-          displayState: currentState,
-          connectorCategory: targetDevice.connector.category,
-          space: targetDevice.spaceId,
-          location: targetDevice.locationId
-        }]
-      },
-      uiData: {
-        actions: actions.length > 0 ? actions : undefined
-      }
-    };
-  } catch (error) {
-    console.error('[unlockDevice] Error:', error);
-    return {
-      aiData: {
-        error: error instanceof Error ? error.message : 'Failed to unlock device',
-        deviceName,
-        totalCount: 0
-      }
-    };
-  }
+  return handleDeviceLockOperation(
+    orgDb, 
+    deviceName, 
+    ActionableState.SET_UNLOCKED, 
+    UNLOCKED, 
+    'unlock', 
+    'Unlock'
+  );
 } 
