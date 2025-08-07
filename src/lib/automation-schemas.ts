@@ -221,6 +221,18 @@ export const PlayAudioActionParamsSchema = z.object({
     }),
 });
 
+// --- BEGIN Lock/Unlock Device Action Schemas ---
+export const LockDeviceActionParamsSchema = z.object({
+    targetDeviceInternalId: z.string().uuid("Target device ID must be a valid UUID"),
+    // Future: unlockAfterSeconds?: z.number().int().positive().optional()
+});
+
+export const UnlockDeviceActionParamsSchema = z.object({
+    targetDeviceInternalId: z.string().uuid("Target device ID must be a valid UUID"),
+    // Future: lockAfterSeconds?: z.number().int().positive().optional()
+});
+// --- END Lock/Unlock Device Action Schemas ---
+
 // --- End Enums & Schemas ---
 
 // Schema for a single action within an automation
@@ -253,6 +265,8 @@ export const AutomationActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal(AutomationActionType.ARM_ALARM_ZONE), params: ArmAlarmZoneActionParamsSchema }).strict(),
   z.object({ type: z.literal(AutomationActionType.DISARM_ALARM_ZONE), params: DisarmAlarmZoneActionParamsSchema }).strict(),
   z.object({ type: z.literal(AutomationActionType.PLAY_AUDIO), params: PlayAudioActionParamsSchema }).strict(),
+  z.object({ type: z.literal(AutomationActionType.LOCK_DEVICE), params: LockDeviceActionParamsSchema }).strict(),
+  z.object({ type: z.literal(AutomationActionType.UNLOCK_DEVICE), params: UnlockDeviceActionParamsSchema }).strict(),
 ]);
 
 // Type helper for a single action
@@ -423,7 +437,9 @@ export type AutomationActionParams =
     | z.infer<typeof SendPushNotificationActionParamsSchema>
     | z.infer<typeof ArmAlarmZoneActionParamsSchema> 
     | z.infer<typeof DisarmAlarmZoneActionParamsSchema>
-    | z.infer<typeof PlayAudioActionParamsSchema>;
+    | z.infer<typeof PlayAudioActionParamsSchema>
+    | z.infer<typeof LockDeviceActionParamsSchema>
+    | z.infer<typeof UnlockDeviceActionParamsSchema>;
 
 // The file should end here, removing any subsequent erroneous definitions. 
 

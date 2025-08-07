@@ -83,7 +83,7 @@ interface AutomationFormProps {
     initialData: AutomationFormData;
     availableConnectors: Pick<ConnectorSelect, 'id' | 'name' | 'category'>[];
     sourceDeviceTypeOptions: any;
-    availableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; spaceId?: string | null; locationId?: string | null; }>;
+    availableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; spaceId?: string | null; locationId?: string | null; rawType?: string; supportsAudio?: boolean; supportsLocking?: boolean; }>;
     devicesForConditions: Array<{ id: string; name: string; spaceId?: string | null; locationId?: string | null; }>;
     allLocations: Location[];
     allSpaces: Space[];
@@ -901,6 +901,8 @@ export default function AutomationForm({
                                 sortedAvailableTargetDevices={sortedAvailableTargetDevices}
                                 sortedAvailableZones={sortedAvailableAlarmZones}
                                 currentRuleLocationScope={currentRuleLocationScope}
+                                allLocations={safeAllLocations}
+                                allSpaces={safeAllSpaces}
                             />
                         </CardContent>
                     </Card>

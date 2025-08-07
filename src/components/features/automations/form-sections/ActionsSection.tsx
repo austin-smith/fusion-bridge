@@ -50,6 +50,8 @@ interface ActionsSectionProps {
     // Add new props
     sortedAvailableZones: ZoneOptionForActionsSection[]; 
     currentRuleLocationScope?: { id: string; name: string } | null;
+    allLocations: any[]; // Location data for hierarchy display
+    allSpaces: any[]; // Space data for hierarchy display
 }
 
 export function ActionsSection({
@@ -62,6 +64,8 @@ export function ActionsSection({
     // Destructure new props
     sortedAvailableZones,
     currentRuleLocationScope,
+    allLocations,
+    allSpaces,
 }: ActionsSectionProps) {
     const { fields: actionsFields, append: appendAction, remove: removeAction } = useFieldArray({
         control: form.control,
@@ -133,6 +137,8 @@ export function ActionsSection({
                         // Pass down the new props
                         sortedAvailableZones={sortedAvailableZones}
                         currentRuleLocationScope={currentRuleLocationScope}
+                        allLocations={allLocations}
+                        allSpaces={allSpaces}
                     />
                 ))}
             </Accordion>

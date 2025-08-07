@@ -4,7 +4,7 @@ import AutomationForm from "@/components/features/automations/AutomationForm";
 import { db } from "@/data/db";
 import { connectors, devices, locations, spaces } from "@/data/db/schema"; // Import locations and spaces
 import { type AutomationConfig, type AutomationTrigger } from '@/lib/automation-schemas';
-import { DeviceType, ArmedState, DeviceCommand } from "@/lib/mappings/definitions"; 
+import { DeviceType, ArmedState, DeviceCommand, ActionableState } from "@/lib/mappings/definitions"; 
 import type { Option as MultiSelectOption } from "@/components/ui/multi-select-combobox";
 import { actionHandlers, commandHandlers, type IDeviceActionHandler, type IDeviceCommandHandler } from "@/lib/device-actions"; // Import actionHandlers, commandHandlers and their types
 import { inArray, asc } from "drizzle-orm"; // Import inArray and asc
@@ -92,6 +92,19 @@ async function getAvailableTargetDevices(orgDb: ReturnType<typeof createOrgScope
                 return handler.canExecuteCommand(mockDeviceContext, DeviceCommand.PLAY_AUDIO);
             });
             
+            // Check if this device supports locking actions
+            const supportsLocking = actionHandlers.some(handler => {
+                const mockDeviceContext = {
+                    id: d.id,
+                    deviceId: d.id,
+                    type: d.type, // Use raw device type
+                    connectorId: d.connectorId,
+                    rawDeviceData: null
+                };
+                return handler.canHandle(mockDeviceContext, ActionableState.SET_LOCKED) || 
+                       handler.canHandle(mockDeviceContext, ActionableState.SET_UNLOCKED);
+            });
+            
             return {
                 id: d.id,
                 name: d.name,
@@ -103,6 +116,7 @@ async function getAvailableTargetDevices(orgDb: ReturnType<typeof createOrgScope
                 locationId: d.locationId,
                 rawType: d.type, // Include raw device type for command filtering
                 supportsAudio, // Server-side computed audio capability
+                supportsLocking, // Server-side computed locking capability
             };
         });
     return mappedDevices;

@@ -1,4 +1,4 @@
-import { Power, Bookmark, Globe, TriangleAlert, HelpCircle, Bell, ShieldCheck, ShieldOff, Volume2 } from 'lucide-react';
+import { Power, Bookmark, Globe, TriangleAlert, HelpCircle, Bell, ShieldCheck, ShieldOff, Volume2, Lock, Unlock } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { StandardizedEvent } from '@/types/events';
 
@@ -51,6 +51,8 @@ export enum AutomationActionType {
   ARM_ALARM_ZONE = 'armAlarmZone',
   DISARM_ALARM_ZONE = 'disarmAlarmZone',
   PLAY_AUDIO = 'playAudio',
+  LOCK_DEVICE = 'lockDevice',
+  UNLOCK_DEVICE = 'unlockDevice',
   // Add other action types here
 }
 
@@ -271,6 +273,42 @@ export const ACTION_TYPE_INFO: Record<AutomationActionType, ActionTypeInfo> = {
       }
       
       return result;
+    }
+  },
+
+  [AutomationActionType.LOCK_DEVICE]: {
+    displayName: 'Lock Device',
+    icon: Lock,
+    iconColorClass: 'text-red-600 dark:text-red-400',
+    bgColorClass: 'bg-red-50/40 dark:bg-red-950/20',
+    borderColorClass: 'border-red-200 dark:border-red-800',
+    formatter: (params, contextData) => {
+      if (!params) return '→ (No parameters)';
+      
+      const deviceId = params.targetDeviceInternalId;
+      const devices = contextData?.devices || [];
+      const device = devices.find(d => d.id === deviceId);
+      const deviceName = device?.name || 'Unknown device';
+      
+      return `→ Lock ${deviceName}`;
+    }
+  },
+
+  [AutomationActionType.UNLOCK_DEVICE]: {
+    displayName: 'Unlock Device',
+    icon: Unlock,
+    iconColorClass: 'text-green-600 dark:text-green-400',
+    bgColorClass: 'bg-green-50/40 dark:bg-green-950/20',
+    borderColorClass: 'border-green-200 dark:border-green-800',
+    formatter: (params, contextData) => {
+      if (!params) return '→ (No parameters)';
+      
+      const deviceId = params.targetDeviceInternalId;
+      const devices = contextData?.devices || [];
+      const device = devices.find(d => d.id === deviceId);
+      const deviceName = device?.name || 'Unknown device';
+      
+      return `→ Unlock ${deviceName}`;
     }
   }
 };
