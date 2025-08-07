@@ -9,6 +9,8 @@ import { ServerInit } from '@/components/layout/server-init';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { ChatAIAssistant } from '@/components/features/ai-assistant/ChatAIAssistant';
 import { useOrganizationSync } from '@/hooks/use-organization-sync';
+import { useThemeKeyboardShortcut } from '@/hooks/use-theme-keyboard-shortcut';
+import { ThemeSwitcherModal } from '@/components/common/theme-switcher-modal';
 
 // Component to handle global state effects like toasts
 function GlobalStateEffects() {
@@ -32,6 +34,18 @@ interface ClientProvidersProps {
 
 export const AuthContext = createContext<{ initialUserRole: string | null }>({ initialUserRole: null });
 
+// Component to handle theme keyboard shortcut inside ThemeProvider context
+function ThemeKeyboardShortcutHandler() {
+  const { isModalOpen, setIsModalOpen } = useThemeKeyboardShortcut();
+  
+  return (
+    <ThemeSwitcherModal 
+      isOpen={isModalOpen} 
+      onClose={() => setIsModalOpen(false)} 
+    />
+  );
+}
+
 export function ClientProviders({ children, initialSidebarOpen = true, initialUserRole = null }: ClientProvidersProps) {
   // Sync Better Auth organization state to Zustand store
   useOrganizationSync();
@@ -43,6 +57,7 @@ export function ClientProviders({ children, initialSidebarOpen = true, initialUs
       enableSystem
       disableTransitionOnChange
     >
+      <ThemeKeyboardShortcutHandler />
       <ToasterProvider />
       <ServerInit />
       <GlobalStateEffects />
