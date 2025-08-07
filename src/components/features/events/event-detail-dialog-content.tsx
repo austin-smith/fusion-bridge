@@ -406,14 +406,27 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                                 monospace // Use monospace for potentially technical strings
                               />
                             )}
-                            {payloadEntries.map(({ key, value }) => (
-                              <DetailRow 
-                                key={key} 
-                                label={key.charAt(0).toUpperCase() + key.slice(1)} 
-                                // Display value, handle potential null/undefined explicitly
-                                value={value !== null && value !== undefined ? String(value) : 'N/A'} 
-                              />
-                            ))}
+                            {payloadEntries.map(({ key, value }) => {
+                              // Convert HTML breaks to line breaks for better readability
+                              if (typeof value === 'string' && value.includes('<br')) {
+                                const textWithBreaks = value.replace(/<br\s*\/?>/gi, '\n');
+                                return (
+                                  <DetailRow 
+                                    key={key} 
+                                    label={key.charAt(0).toUpperCase() + key.slice(1)} 
+                                    value={<div className="whitespace-pre-wrap">{textWithBreaks}</div>}
+                                  />
+                                );
+                              }
+                              
+                              return (
+                                <DetailRow 
+                                  key={key} 
+                                  label={key.charAt(0).toUpperCase() + key.slice(1)} 
+                                  value={value !== null && value !== undefined ? String(value) : 'N/A'} 
+                                />
+                              );
+                            })}
                           </>
                         )}
                       </div>
