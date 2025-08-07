@@ -417,20 +417,46 @@ export default function DevicesPage() {
         header: "Device Name",
         enableSorting: true,
         enableColumnFilter: true,
-        cell: ({ row }) => (
-          <TooltipProvider delayDuration={100}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="font-medium max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap">
-                  {row.getValue('name')}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                {row.getValue('name')}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ),
+        cell: ({ row }) => {
+          const device = row.original;
+          const dialogProps: DeviceDetailProps = {
+            ...device,
+            internalId: device.internalId,
+            url: device.url ?? undefined, 
+            model: device.model ?? undefined, 
+            vendor: device.vendor ?? undefined, 
+            serverName: device.serverName ?? undefined,
+            serverId: device.serverId ?? undefined,
+            connectorName: device.connectorName ?? 'Unknown', 
+            deviceTypeInfo: device.deviceTypeInfo ?? getDeviceTypeInfo('unknown', 'unknown'),
+            createdAt: device.createdAt,
+            updatedAt: device.updatedAt,
+            spaceId: device.spaceId ?? undefined,
+            spaceName: device.spaceName ?? undefined,
+            rawDeviceData: device.rawDeviceData ?? undefined,
+          };
+
+          return (
+            <TooltipProvider delayDuration={100}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button 
+                    className="font-medium max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap text-left hover:underline cursor-pointer"
+                    onClick={() => {
+                      setSelectedDevice(dialogProps);
+                      setIsDetailDialogOpen(true);
+                    }}
+                  >
+                    {row.getValue('name')}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {row.getValue('name')} (click to view details)
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          );
+        },
       },
       // --- Device Type Column (Moved to third) --- //
       {
@@ -535,89 +561,67 @@ export default function DevicesPage() {
           const isLocked = device.displayState === LOCKED;
           const isUnlocked = device.displayState === UNLOCKED;
 
-          const dialogProps: DeviceDetailProps = {
-            ...device,
-            internalId: device.internalId, // Explicitly ensure internalId is correct
-            url: device.url ?? undefined, 
-            model: device.model ?? undefined, 
-            vendor: device.vendor ?? undefined, 
-            serverName: device.serverName ?? undefined,
-            serverId: device.serverId ?? undefined,
-            connectorName: device.connectorName ?? 'Unknown', 
-            deviceTypeInfo: device.deviceTypeInfo ?? getDeviceTypeInfo('unknown', 'unknown'),
-            createdAt: device.createdAt, // Assuming these exist on DisplayedDevice
-            updatedAt: device.updatedAt, // Assuming these exist on DisplayedDevice
-            spaceId: device.spaceId ?? undefined, // Include space ID
-            spaceName: device.spaceName ?? undefined, // Include space name
-            rawDeviceData: device.rawDeviceData ?? undefined, // Include raw device data
-          };
-          
           return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0" disabled={isLoading}>
-                  <span className="sr-only">Open menu</span>
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />} 
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
+            <div className="flex items-center gap-1">
+              {/* Primary action buttons */}
+              {isYoLinkActionable && (
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => {
-                    setSelectedDevice(dialogProps);
-                    setIsDetailDialogOpen(true);
+                    executeDeviceAction(
+                      device.internalId, 
+                      isOn ? ActionableState.SET_OFF : ActionableState.SET_ON
+                    );
                   }}
+                  disabled={isLoading}
+                  className="h-7 px-2 text-xs"
                 >
-                  <InfoIcon className="h-4 w-4" />
-                  View Details
-                </DropdownMenuItem>
-                
-                {isActionable && (
-                  <>
-                    <DropdownMenuSeparator />
-                    {isYoLinkActionable && (
-                      <DropdownMenuItem
-                        onClick={() => {
-                          executeDeviceAction(
-                            device.internalId, 
-                            isOn ? ActionableState.SET_OFF : ActionableState.SET_ON
-                          );
-                        }}
-                        disabled={isLoading}
-                      >
-                        {isOn ? (
-                          <PowerOffIcon className="h-4 w-4 text-red-600" /> 
-                        ) : (
-                          <PowerIcon className="h-4 w-4 text-green-600" />
-                        )}
-                        {isOn ? 'Turn Off' : 'Turn On'}
-                      </DropdownMenuItem>
-                    )}
-                    {isGeneaDoor && (
-                      <>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            executeDeviceAction(device.internalId, ActionableState.SET_LOCKED);
-                          }}
-                          disabled={isLoading || isLocked}
-                        >
-                          <Lock className="h-4 w-4 text-red-600" />
-                          Lock Door
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            executeDeviceAction(device.internalId, ActionableState.SET_UNLOCKED);
-                          }}
-                          disabled={isLoading || isUnlocked}
-                        >
-                          <Unlock className="h-4 w-4 text-green-600" />
-                          Unlock Door
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {isLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : isOn ? (
+                    <>
+                      <PowerOffIcon className="h-3 w-3" />
+                      Turn Off
+                    </>
+                  ) : (
+                    <>
+                      <PowerIcon className="h-3 w-3" />
+                      Turn On
+                    </>
+                  )}
+                </Button>
+              )}
+              
+              {isGeneaDoor && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    executeDeviceAction(
+                      device.internalId, 
+                      isLocked ? ActionableState.SET_UNLOCKED : ActionableState.SET_LOCKED
+                    );
+                  }}
+                  disabled={isLoading}
+                  className="h-7 px-2 text-xs"
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : isLocked ? (
+                    <>
+                      <Unlock className="h-3 w-3" />
+                      Unlock
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="h-3 w-3" />
+                      Lock
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
           );
         },
       },
