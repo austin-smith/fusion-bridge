@@ -31,7 +31,6 @@ export const EVENT_HIERARCHY = {
   [EventCategory.ACCESS_CONTROL]: {
     [EventType.ACCESS_GRANTED]: [
       EventSubtype.NORMAL,
-      EventSubtype.REMOTE_OVERRIDE,
       EventSubtype.PASSBACK_RETURN,
     ],
     [EventType.ACCESS_DENIED]: [
@@ -61,6 +60,14 @@ export const EVENT_HIERARCHY = {
       EventSubtype.PRESSED,
       EventSubtype.HELD,
       EventSubtype.MOTION,
+    ],
+    [EventType.ACCESS_OVERRIDE]: [
+      EventSubtype.REMOTE_UNLOCK,
+      EventSubtype.QUICK_GRANT,
+    ],
+    [EventType.DOOR_ACCESS_MODE_CHANGED]: [
+      EventSubtype.CARD_ONLY,
+      EventSubtype.UNLOCKED,
     ],
   },
 

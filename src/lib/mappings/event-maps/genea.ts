@@ -48,7 +48,8 @@ export const GENEA_EVENT_MAP = {
     EventType.ACCESS_DENIED
   ),
   'SEQUR_ACCESS_DENIED_CARD_NOT_FOUND': createEventClassification(
-    EventType.ACCESS_DENIED
+    EventType.ACCESS_DENIED,
+    EventSubtype.INVALID_CREDENTIAL
   ),
   'SEQUR_ACCESS_DENIED_COUNT_EXCEEDED': createEventClassification(
     EventType.ACCESS_DENIED
@@ -111,6 +112,12 @@ export const GENEA_EVENT_MAP = {
     EventType.ACCESS_GRANTED,
     EventSubtype.NORMAL
   ),
+
+  // Access Override Events
+  'SEQUR_HOST_INITIATED_REQUEST_DOOR_USE_NOT_VERIFIED': createEventClassification(
+    EventType.ACCESS_OVERRIDE,
+    EventSubtype.QUICK_GRANT
+  ),
   
   // Diagnostics Events
   'OSDP_READER_ONLINE_STATUS_UPDATE': createEventClassification(
@@ -126,13 +133,36 @@ export const GENEA_UNKNOWN_EVENT = createEventClassification(
 );
 
 /**
- * Special handler for complex Genea events that require additional_info analysis
- * Analyzes additional_info to determine the specific event type based on action and state changes
+ * List of Genea event actions that require complex payload analysis
+ * These events cannot be mapped statically and need handleComplexGeneaEvent()
+ */
+export const GENEA_COMPLEX_EVENT_ACTIONS = [
+  'SEQUR_DOOR_POSITION_SENSOR_ALARM',
+  'SEQUR_DOOR_POSITION_SENSOR_SECURE',
+  'SEQUR_DOOR_ACCESS_MODE_UNLOCKED',
+  'SEQUR_DOOR_ACCESS_MODE_CARD_ONLY',
+] as const;
+
+/**
+ * Special handler for complex Genea events that require payload analysis
+ * Analyzes additional_info, eventMessage, and other payload fields to determine the specific event type
  */
 export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): EventClassification<EventType> {
-  const { event_action, additional_info: additionalInfo } = payload;
+  const { event_action, actor, additional_info: additionalInfo } = payload;
   
-  if (event_action === 'SEQUR_DOOR_POSITION_SENSOR_ALARM') {
+  // Handle access mode events that require actorType analysis
+  if (event_action === 'SEQUR_DOOR_ACCESS_MODE_UNLOCKED') {
+    if (actor?.type === 'SYSTEM') {
+      // Persistent access mode change (system-initiated)
+      return createEventClassification(EventType.DOOR_ACCESS_MODE_CHANGED, EventSubtype.UNLOCKED);
+    } else if (actor?.type === 'API_KEY') {
+      // One-time remote unlock command (API-initiated)
+      return createEventClassification(EventType.ACCESS_OVERRIDE, EventSubtype.REMOTE_UNLOCK);
+    }
+  } else if (event_action === 'SEQUR_DOOR_ACCESS_MODE_CARD_ONLY') {
+    // Always a persistent access mode change, regardless of who initiated it
+    return createEventClassification(EventType.DOOR_ACCESS_MODE_CHANGED, EventSubtype.CARD_ONLY);
+  } else if (event_action === 'SEQUR_DOOR_POSITION_SENSOR_ALARM') {
     // Handle alarm events - check current state
     const isForcedOpen = additionalInfo?.['Forced Open State']?.includes('Current : Yes');
     const isHeldOpen = additionalInfo?.['Held Open State']?.includes('Current : Yes');
@@ -166,8 +196,14 @@ export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): Even
       // Door secured but we couldn't determine what violation was resolved
       return createEventClassification(EventType.DOOR_SECURED);
     }
+  }
+  
+  // Fallback for unhandled access mode event combinations
+  if (event_action === 'SEQUR_DOOR_ACCESS_MODE_UNLOCKED' || event_action === 'SEQUR_DOOR_ACCESS_MODE_CARD_ONLY') {
+    console.warn(`[Genea Mapping] Unknown access mode event combination: action=${event_action}, actorType=${actor?.type} for event ${payload.uuid}`);
   } else {
     console.warn(`[Genea Mapping] Unsupported complex event action: ${event_action} for event ${payload.uuid}`);
-    return GENEA_UNKNOWN_EVENT;
   }
+  
+  return GENEA_UNKNOWN_EVENT;
 }

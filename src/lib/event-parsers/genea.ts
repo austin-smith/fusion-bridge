@@ -2,7 +2,7 @@ import { StandardizedEvent } from '@/types/events';
 import { GeneaEventWebhookPayload } from '@/types/genea';
 import { EventCategory, EventType, EventSubtype } from '@/lib/mappings/definitions';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
-import { GENEA_EVENT_MAP, GENEA_UNKNOWN_EVENT, handleComplexGeneaEvent } from '@/lib/mappings/event-maps/genea';
+import { GENEA_EVENT_MAP, GENEA_UNKNOWN_EVENT, GENEA_COMPLEX_EVENT_ACTIONS, handleComplexGeneaEvent } from '@/lib/mappings/event-maps/genea';
 import crypto from 'crypto';
 
 
@@ -74,8 +74,8 @@ export async function parseGeneaEvent(
     type = eventClassification.type;
     subtype = eventClassification.subtype;
     console.log(`[Genea Parser] Mapped event action '${event_action}' to ${type}${subtype ? ` / ${subtype}` : ''}`);
-  } else if (event_action === 'SEQUR_DOOR_POSITION_SENSOR_ALARM' || event_action === 'SEQUR_DOOR_POSITION_SENSOR_SECURE') {
-    // Handle complex events that require additional_info analysis
+  } else if (GENEA_COMPLEX_EVENT_ACTIONS.includes(event_action as any)) {
+    // Handle complex events that require payload analysis
     const complexClassification = handleComplexGeneaEvent(payload);
     category = complexClassification.category;
     type = complexClassification.type;
