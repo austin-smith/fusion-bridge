@@ -494,12 +494,6 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                                                   <StateIcon className="h-3 w-3" />
                                                   {event.displayState}
                                                 </Badge>
-                                              ) : (event.eventType === EventType.BUTTON_PRESSED || event.eventType === EventType.BUTTON_LONG_PRESSED) ? (
-                                                // Special case for Smart Fob button events - simple inline
-                                                <Badge variant="outline" className="text-[10px] h-5 inline-flex items-center gap-1">
-                                                  <Gamepad className="h-3 w-3" />
-                                                  Button {String(event.payload?.buttonNumber || '?')} {event.eventType === EventType.BUTTON_LONG_PRESSED ? '(Long)' : ''}
-                                                </Badge>
                                               ) : (event.eventType !== EventType.STATE_CHANGED && event.eventType !== EventType.BATTERY_LEVEL_CHANGED) ? (
                                                 // For other significant events, show Type / Subtype styled like the table view
                                                 (() => {

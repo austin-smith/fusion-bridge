@@ -726,27 +726,7 @@ export default function EventsPage() {
         const eventType = row.original.eventType as EventType;
         const eventSubtype = row.original.eventSubtype;
         
-        // Special case for Smart Fob button events - simple inline
-        if (eventType === EventType.BUTTON_PRESSED || eventType === EventType.BUTTON_LONG_PRESSED) {
-          const buttonNumber = row.original.payload?.buttonNumber;
-          const buttonText = `Button ${buttonNumber || '?'}${eventType === EventType.BUTTON_LONG_PRESSED ? ' (Long)' : ''}`;
-          
-          return (
-            <TooltipProvider delayDuration={100}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant="outline" className="font-normal inline-flex items-center gap-1">
-                    <Gamepad className="h-3 w-3" />
-                    <span>{buttonText}</span>
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{buttonText}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          );
-        }
+        // No special casing for button events; use generic mapping like other types
         
         // Regular event type handling
         const typeDisplayName = EVENT_TYPE_DISPLAY_MAP[eventType] || eventType;
