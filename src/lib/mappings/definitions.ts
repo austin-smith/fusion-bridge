@@ -346,6 +346,10 @@ export enum EventSubtype {
   HELD = 'HELD',
   MOTION = 'MOTION',
 
+  // --- Used with EventType.DOOR_SECURED ---
+  FORCED_OPEN_RESOLVED = 'FORCED_OPEN_RESOLVED',
+  HELD_OPEN_RESOLVED = 'HELD_OPEN_RESOLVED',
+
   // --- Used with EventType.OBJECT_DETECTED --- 
   PERSON = 'PERSON',
   VEHICLE = 'VEHICLE',
@@ -380,6 +384,9 @@ export const EVENT_SUBTYPE_DISPLAY_MAP: Record<EventSubtype, string> = {
     [EventSubtype.PRESSED]: 'REX Pressed',
     [EventSubtype.HELD]: 'REX Held',
     [EventSubtype.MOTION]: 'REX Motion',
+    // Door Secured Types
+    [EventSubtype.FORCED_OPEN_RESOLVED]: 'Forced Open Resolved',
+    [EventSubtype.HELD_OPEN_RESOLVED]: 'Held Open Resolved',
     // Object Detection Types
     [EventSubtype.PERSON]: 'Person',
     [EventSubtype.VEHICLE]: 'Vehicle',

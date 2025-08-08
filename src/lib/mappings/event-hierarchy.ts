@@ -47,7 +47,10 @@ export const EVENT_HIERARCHY = {
     ],
     [EventType.DOOR_HELD_OPEN]: [],
     [EventType.DOOR_FORCED_OPEN]: [],
-    [EventType.DOOR_SECURED]: [],
+    [EventType.DOOR_SECURED]: [
+      EventSubtype.FORCED_OPEN_RESOLVED,
+      EventSubtype.HELD_OPEN_RESOLVED,
+    ],
     [EventType.EXIT_REQUEST]: [
       EventSubtype.PRESSED,
       EventSubtype.HELD,

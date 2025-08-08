@@ -149,7 +149,19 @@ export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): Even
     const unlockChanged = additionalInfo?.['Unlocked']?.includes('Current : Yes');
     
     console.debug(`[Genea Mapping] Door secured - resolved violations: forced=${wasForced}, held=${wasHeld}, unlocked=${unlockChanged} for event ${payload.uuid}`);
-    return createEventClassification(EventType.DOOR_SECURED);
+    
+    // Determine appropriate subtype based on what was resolved
+    if (wasForced && wasHeld) {
+      // Both violations resolved - for now, prioritize forced open as it's typically more severe
+      return createEventClassification(EventType.DOOR_SECURED, EventSubtype.FORCED_OPEN_RESOLVED);
+    } else if (wasForced) {
+      return createEventClassification(EventType.DOOR_SECURED, EventSubtype.FORCED_OPEN_RESOLVED);
+    } else if (wasHeld) {
+      return createEventClassification(EventType.DOOR_SECURED, EventSubtype.HELD_OPEN_RESOLVED);
+    } else {
+      // Door secured but we couldn't determine what violation was resolved
+      return createEventClassification(EventType.DOOR_SECURED);
+    }
   } else {
     console.warn(`[Genea Mapping] Unsupported complex event action: ${event_action} for event ${payload.uuid}`);
     return GENEA_UNKNOWN_EVENT;
