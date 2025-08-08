@@ -79,8 +79,9 @@ function setupGracefulShutdown() {
     clearTimeout(shutdownTimeout);
     console.log('[Instrumentation Node] Graceful shutdown complete');
     
-    // Let process exit naturally - removing forced exit to prevent npm conflicts
-    // Railway container will terminate cleanly
+    // Force exit immediately - don't wait for remaining handles
+    // Railway deployment should complete cleanly
+    process.exit(0);
   };
   
   // Register handlers only once
