@@ -63,22 +63,14 @@ function setupGracefulShutdown() {
       try {
         const { sseConnectionManager } = await import('@/lib/redis/connection-manager');
         // Stop all SSE operations first to prevent race conditions
-        console.log('[Instrumentation Node] Initiating SSE manager shutdown...');
         sseConnectionManager.shutdown();
-        console.log('[Instrumentation Node] Notifying SSE clients of shutdown...');
         await Promise.race([
           sseConnectionManager.notifyShutdown(5000),
           new Promise((_, reject) => setTimeout(() => reject(new Error('SSE timeout')), 2000))
         ]);
-        console.log('[Instrumentation Node] SSE shutdown complete');
       } catch (error) {
         console.error('[Instrumentation Node] SSE notification failed:', error);
       }
-
-      // Skip dynamic imports during shutdown to avoid hanging
-      // The modules may have initialization code that hangs during shutdown
-      console.log('[Instrumentation Node] Skipping service cleanup to prevent hanging during shutdown');
-      console.log('[Instrumentation Node] Services will be cleaned up by process termination');
 
     } catch (criticalError) {
       console.error('[Instrumentation Node] Critical shutdown error:', criticalError);

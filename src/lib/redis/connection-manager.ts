@@ -481,7 +481,6 @@ class SSEConnectionManager {
   shutdown(): void {
     this.isShuttingDown = true;
     this.stopPeriodicCleanup();
-    console.log('[SSE Manager] Shutdown initiated - all operations stopped');
   }
 
   // For graceful shutdown
