@@ -202,10 +202,6 @@ export function useDeviceCameraConfig(
     return Math.max(0, Math.min(selectedCameraIndex, availableCameras.length - 1));
   }, [selectedCameraIndex, availableCameras.length]);
 
-  // Update selected index if it becomes invalid
-  if (validSelectedIndex !== selectedCameraIndex) {
-    setSelectedCameraIndex(validSelectedIndex);
-  }
 
   // Build media configuration for selected camera
   const mediaConfig = useMemo(() => {
@@ -249,13 +245,15 @@ export function useDeviceCameraConfig(
   };
 
   const selectNext = () => {
+    if (availableCameras.length === 0) return;
     setSelectedCameraIndex((prev) => (prev + 1) % availableCameras.length);
   };
 
   const selectPrevious = () => {
-    setSelectedCameraIndex((prev) => 
-      prev === 0 ? availableCameras.length - 1 : prev - 1);
-  };
+    if (availableCameras.length === 0) return;
+    setSelectedCameraIndex((prev) =>
+      prev <= 0 ? availableCameras.length - 1 : prev - 1);
+    };
 
   return {
     shouldShowMedia: availableCameras.length > 0,

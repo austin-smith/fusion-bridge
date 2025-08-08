@@ -137,16 +137,17 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
       spaceIds.includes(device.spaceId)
     );
 
-    // If we have a selected camera from the carousel, prioritize it
+    // Determine selected camera device if available
+    let selectedCameraDevice: DeviceWithConnector | undefined;
     if (cameras.length > 0 && selectedCameraIndex < cameras.length) {
-      const selectedCamera = allDevices.find(d => d.id === cameras[selectedCameraIndex].id);
-      if (selectedCamera) {
-        // Put selected camera first in the list for thumbnail generation
-        spaceCameras = [selectedCamera, ...spaceCameras.filter(c => c.id !== selectedCamera.id)];
+      selectedCameraDevice = allDevices.find(d => d.id === cameras[selectedCameraIndex].id);
+      if (selectedCameraDevice) {
+        // Put selected camera first in the list for any downstream logic
+        spaceCameras = [selectedCameraDevice, ...spaceCameras.filter(c => c.id !== selectedCameraDevice!.id)];
       }
     }
     
-    // Try to find the best event for thumbnail (most recent analytics event preferred)
+    // Choose a representative event/time
     let bestEvent: EnrichedEvent | undefined;
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i];
@@ -156,14 +157,16 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         break;
       }
     }
-    
-    // If no best shot event, use the most recent event
-    if (!bestEvent) {
-      bestEvent = events[events.length - 1];
+
+    const representativeTimestamp = (bestEvent?.timestamp ?? events[events.length - 1]?.timestamp) || Date.now();
+
+    // If a selected camera exists, always show its thumbnail at the representative time
+    if (selectedCameraDevice) {
+      return `/api/piko/device-thumbnail?connectorId=${selectedCameraDevice.connectorId}&cameraId=${selectedCameraDevice.deviceId}&timestamp=${representativeTimestamp}`;
     }
     
-    // Get thumbnail source and build URL
-    const source = getThumbnailSource(bestEvent, spaceCameras);
+    // Fallback: previous logic (best-shot or space camera)
+    const source = getThumbnailSource(bestEvent || events[events.length - 1], spaceCameras);
     if (!source) return undefined;
     
     return buildThumbnailUrl(source);
@@ -336,6 +339,7 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
              <div className="absolute inset-0 bg-muted group/thumbnail">
                {!imageFailed ? (
                  <Image 
+                   key={thumbnailUrl}
                    src={thumbnailUrl} 
                    alt={`${spaceName ?? 'Event'} thumbnail`} 
                    fill

@@ -93,7 +93,8 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
   // Navigation state for multiple events
   const [currentEventIndex, setCurrentEventIndex] = useState(() => {
     if (!events) return 0;
-    return events.findIndex(e => e.eventUuid === event.eventUuid) || 0;
+    const foundIndex = events.findIndex(e => e.eventUuid === event.eventUuid);
+    return foundIndex >= 0 ? foundIndex : 0;
   });
   
   // Use current event from navigation or fallback to provided event
