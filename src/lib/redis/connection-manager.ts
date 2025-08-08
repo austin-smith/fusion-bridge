@@ -21,6 +21,7 @@ class SSEConnectionManager {
   private initialized = false;
   private hadRedisError = false;
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private isShuttingDown = false;
   
   // Enhanced monitoring
   private cleanupStats = {
@@ -39,7 +40,10 @@ class SSEConnectionManager {
 
   constructor() {
     this.setupGlobalSubscriber();
-    this.startPeriodicCleanup();
+    // Only start periodic cleanup if not shutting down
+    if (!this.isShuttingDown) {
+      this.startPeriodicCleanup();
+    }
   }
 
   private setupGlobalSubscriber() {
@@ -474,6 +478,12 @@ class SSEConnectionManager {
       totalCleanupsRun: 0
     };
     console.log(`[SSE Manager] Statistics reset`);
+  }
+
+  // For graceful shutdown - call this first to prevent new cleanup tasks
+  shutdown(): void {
+    this.isShuttingDown = true;
+    this.stopPeriodicCleanup();
   }
 
   // For graceful shutdown
