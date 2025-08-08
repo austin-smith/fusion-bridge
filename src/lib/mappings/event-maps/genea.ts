@@ -1,5 +1,5 @@
 import { EventType, EventSubtype, EventCategory } from '../definitions';
-import { createEventClassification } from '../event-hierarchy';
+import { createEventClassification, type EventClassification } from '../event-hierarchy';
 import type { GeneaEventWebhookPayload } from '@/types/genea';
 
 /**
@@ -129,7 +129,7 @@ export const GENEA_UNKNOWN_EVENT = createEventClassification(
  * Special handler for complex Genea events that require additional_info analysis
  * Analyzes additional_info to determine the specific event type based on action and state changes
  */
-export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): { category: EventCategory; type: EventType; subtype?: EventSubtype } {
+export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): EventClassification<EventType> {
   const { event_action, additional_info: additionalInfo } = payload;
   
   if (event_action === 'SEQUR_DOOR_POSITION_SENSOR_ALARM') {
@@ -139,7 +139,7 @@ export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): { ca
     } else if (additionalInfo?.['Held Open State']?.includes('Current : Yes')) {
       return createEventClassification(EventType.DOOR_HELD_OPEN);
     } else {
-      console.warn(`[Genea Mapping] Unknown door position sensor alarm state for event ${payload.uuid}:`, additionalInfo);
+      console.warn(`[Genea Mapping] Unknown door position sensor alarm state for event ${payload.uuid} with action ${event_action}`);
       return GENEA_UNKNOWN_EVENT;
     }
   } else if (event_action === 'SEQUR_DOOR_POSITION_SENSOR_SECURE') {
@@ -148,10 +148,10 @@ export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): { ca
     const wasHeld = additionalInfo?.['Held Open State']?.includes('Prior : Yes, Current : No');
     const unlockChanged = additionalInfo?.['Unlocked']?.includes('Current : Yes');
     
-    console.log(`[Genea Mapping] Door secured - resolved violations: forced=${wasForced}, held=${wasHeld}, unlocked=${unlockChanged} for event ${payload.uuid}`);
+    console.debug(`[Genea Mapping] Door secured - resolved violations: forced=${wasForced}, held=${wasHeld}, unlocked=${unlockChanged} for event ${payload.uuid}`);
     return createEventClassification(EventType.DOOR_SECURED);
   } else {
-    console.warn(`[Genea Mapping] Unknown door position sensor event action: ${event_action} for event ${payload.uuid}`);
+    console.warn(`[Genea Mapping] Unsupported complex event action: ${event_action} for event ${payload.uuid}`);
     return GENEA_UNKNOWN_EVENT;
   }
 }
