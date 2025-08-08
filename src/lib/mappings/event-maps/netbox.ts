@@ -23,12 +23,12 @@ export const NETBOX_EVENT_MAP = {
     EventSubtype.PRESSED
   ),
   'Unlock': createEventClassification(
-    EventType.ACCESS_GRANTED, 
-    EventSubtype.REMOTE_OVERRIDE
+    EventType.ACCESS_OVERRIDE,
+    EventSubtype.REMOTE_UNLOCK
   ),
   'Momentary Unlock': createEventClassification(
-    EventType.ACCESS_GRANTED, 
-    EventSubtype.REMOTE_OVERRIDE
+    EventType.ACCESS_OVERRIDE,
+    EventSubtype.QUICK_GRANT
   ),
   'Elevator Access Denied': createEventClassification(
     EventType.ACCESS_DENIED, 

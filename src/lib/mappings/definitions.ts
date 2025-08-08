@@ -302,6 +302,8 @@ export enum EventType {
   DOOR_FORCED_OPEN = 'DOOR_FORCED_OPEN',
   DOOR_SECURED = 'DOOR_SECURED',                 // Door returned to secure state after violation
   EXIT_REQUEST = 'EXIT_REQUEST',                 // Added (See EventSubtype)
+  ACCESS_OVERRIDE = 'ACCESS_OVERRIDE',           // Operator/API overrides distinct from credential decisions
+  DOOR_ACCESS_MODE_CHANGED = 'DOOR_ACCESS_MODE_CHANGED', // Persistent access policy/mode changes
 
   // --- Category: ANALYTICS ---
   ANALYTICS_EVENT = 'ANALYTICS_EVENT',       // General or unknown analytics event
@@ -339,8 +341,15 @@ export enum EventSubtype {
 
   // --- Used with EventType.ACCESS_GRANTED ---
   NORMAL = 'NORMAL',
-  REMOTE_OVERRIDE = 'REMOTE_OVERRIDE',
   PASSBACK_RETURN = 'PASSBACK_RETURN',
+
+  // --- Used with EventType.ACCESS_OVERRIDE ---
+  REMOTE_UNLOCK = 'REMOTE_UNLOCK',
+  QUICK_GRANT = 'QUICK_GRANT',
+
+  // --- Used with EventType.DOOR_ACCESS_MODE_CHANGED ---
+  CARD_ONLY = 'CARD_ONLY',
+  UNLOCKED = 'UNLOCKED',
 
   // --- Used with EventType.EXIT_REQUEST --- (Added)
   PRESSED = 'PRESSED',
@@ -385,8 +394,13 @@ export const EVENT_SUBTYPE_DISPLAY_MAP: Record<EventSubtype, string> = {
     [EventSubtype.PIN_REQUIRED]: 'PIN Required',
     // Access Granted Reasons
     [EventSubtype.NORMAL]: 'Normal Access',
-    [EventSubtype.REMOTE_OVERRIDE]: 'Remote Override',
     [EventSubtype.PASSBACK_RETURN]: 'Anti-Passback Return',
+    // Access Override Reasons
+    [EventSubtype.REMOTE_UNLOCK]: 'Remote Unlock',
+    [EventSubtype.QUICK_GRANT]: 'Quick Grant',
+    // Access Mode Changes
+    [EventSubtype.CARD_ONLY]: 'Card Only',
+    [EventSubtype.UNLOCKED]: 'Unlocked (Unlimited Access)',
     // Exit Request Types (Added)
     [EventSubtype.PRESSED]: 'REX Pressed',
     [EventSubtype.HELD]: 'REX Held',
@@ -429,6 +443,8 @@ export const DOOR_SECURED_DISPLAY = 'Door Secured';
 export const ACCESS_GRANTED_DISPLAY = 'Access Granted';
 export const ACCESS_DENIED_DISPLAY = 'Access Denied';
 export const EXIT_REQUEST_DISPLAY = 'Exit Request';
+export const ACCESS_OVERRIDE_DISPLAY = 'Access Override';
+export const DOOR_ACCESS_MODE_CHANGED_DISPLAY = 'Door Access Mode Changed';
 
 // --- EVENT TYPE DISPLAY MAP --- 
 // Grouped visually by Category for clarity
@@ -447,6 +463,8 @@ export const EVENT_TYPE_DISPLAY_MAP = {
   [EventType.DOOR_FORCED_OPEN]: DOOR_FORCED_OPEN_DISPLAY,
   [EventType.DOOR_SECURED]: DOOR_SECURED_DISPLAY,
   [EventType.EXIT_REQUEST]: EXIT_REQUEST_DISPLAY,
+  [EventType.ACCESS_OVERRIDE]: ACCESS_OVERRIDE_DISPLAY,
+  [EventType.DOOR_ACCESS_MODE_CHANGED]: DOOR_ACCESS_MODE_CHANGED_DISPLAY,
   
   // ANALYTICS
   [EventType.ANALYTICS_EVENT]: GENERIC_ANALYTICS_DISPLAY,
