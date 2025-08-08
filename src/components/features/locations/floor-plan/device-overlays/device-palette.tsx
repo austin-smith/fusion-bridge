@@ -173,7 +173,7 @@ export function DevicePalette({
   className,
   placedDeviceIds = new Set()
 }: DevicePaletteProps) {
-  const [collapsedSpaces, setCollapsedSpaces] = useState<Set<string>>(new Set());
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(new Set());
 
   // Group devices by space assignment
   const groupedDevices = useMemo(() => {
@@ -248,15 +248,15 @@ export function DevicePalette({
     return sortedGroups;
   }, [devices, spaces, locationId, searchTerm, placedDeviceIds]);
 
-  const toggleSpaceCollapse = (groupKey: string) => {
-    setCollapsedSpaces(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(groupKey)) {
-        newSet.delete(groupKey);
+  const toggleGroupExpansion = (groupKey: string) => {
+    setExpandedGroupKeys(previousExpandedKeys => {
+      const nextExpandedKeys = new Set(previousExpandedKeys);
+      if (nextExpandedKeys.has(groupKey)) {
+        nextExpandedKeys.delete(groupKey);
       } else {
-        newSet.add(groupKey);
+        nextExpandedKeys.add(groupKey);
       }
-      return newSet;
+      return nextExpandedKeys;
     });
   };
 
@@ -305,13 +305,13 @@ export function DevicePalette({
         ) : (
           groupedDevices.map((group) => {
             const groupKey = group.spaceId || 'unassigned';
-            const isCollapsed = collapsedSpaces.has(groupKey);
+            const isExpanded = expandedGroupKeys.has(groupKey);
 
             return (
               <Collapsible
                 key={groupKey}
-                open={!isCollapsed}
-                onOpenChange={() => toggleSpaceCollapse(groupKey)}
+                open={isExpanded}
+                onOpenChange={() => toggleGroupExpansion(groupKey)}
               >
                 <CollapsibleTrigger asChild>
                   <Button
@@ -326,7 +326,7 @@ export function DevicePalette({
                     </span>
                     <div className={cn(
                       "transition-transform duration-200",
-                      isCollapsed ? "rotate-0" : "rotate-90"
+                      isExpanded ? "rotate-90" : "rotate-0"
                     )}>
                       <Plus className="h-3 w-3" />
                     </div>
