@@ -96,7 +96,10 @@ export async function parseGeneaEvent(
     ...(subtype && { subtype }),
     deviceInfo,
     payload: {
+      eventType: event_type,
+      eventAction: event_action,
       eventMessage: event_message,
+      ...(payload.additional_info?.description && { description: payload.additional_info.description }),
       ...(door?.name && { doorName: door.name }),
       ...(location?.[0]?.name && { locationName: location[0].name }),
       ...(actor?.type && { actorType: actor.type }),
