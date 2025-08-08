@@ -517,19 +517,12 @@ class SSEConnectionManager {
     }
 
     this.cleanupInterval = setInterval(() => {
-      if (!this.isShuttingDown) {
-        this.performPeriodicCleanup();
-      }
+      this.performPeriodicCleanup();
     }, this.CLEANUP_INTERVAL_MS);
     console.log(`[SSE Manager] Periodic cleanup started with interval: ${this.CLEANUP_INTERVAL_MS}ms`);
   }
 
   private performPeriodicCleanup() {
-    // Skip cleanup if shutdown has been initiated
-    if (this.isShuttingDown) {
-      return;
-    }
-    
     this.cleanupStats.totalCleanupsRun++;
     const now = Date.now();
     const staleConnections: string[] = [];
