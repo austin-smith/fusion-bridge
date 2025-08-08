@@ -9,6 +9,9 @@ import { AlertCircle } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
+import type { CameraInfo } from '@/hooks/use-device-camera-config';
+import { CameraCarouselControls, CameraIndicator } from '@/components/features/common/camera-carousel';
+
 export interface CameraMediaSectionProps {
   // Thumbnail configuration
   thumbnailMode: 'live-auto-refresh' | 'static-url';
@@ -35,6 +38,13 @@ export interface CameraMediaSectionProps {
   className?: string;
   title?: string;
   titleElement?: React.ReactNode; // Optional React element for custom title rendering
+  
+  // NEW: Multi-camera support
+  cameras?: CameraInfo[];
+  selectedCameraIndex?: number;
+  onCameraChange?: (index: number) => void;
+  showCameraCarousel?: boolean;
+  carouselLayout?: 'dots' | 'dropdown' | 'arrows-only';
 }
 
 // Time ago component for auto-refresh mode
@@ -210,7 +220,13 @@ export const CameraMediaSection: React.FC<CameraMediaSectionProps> = ({
   disableFullscreen = false,
   className,
   title = "LIVE VIEW",
-  titleElement
+  titleElement,
+  // NEW: Multi-camera props
+  cameras = [],
+  selectedCameraIndex = 0,
+  onCameraChange,
+  showCameraCarousel = false,
+  carouselLayout = 'dots'
 }) => {
   // State for live auto-refresh mode
   const [liveThumbnailUrl, setLiveThumbnailUrl] = useState<string | null>(null);
@@ -409,16 +425,32 @@ export const CameraMediaSection: React.FC<CameraMediaSectionProps> = ({
         <img ref={preloaderImgRef} alt="" style={{ display: 'none' }} />
       )}
 
-      <div className="flex items-center space-x-2 py-2">
-        {titleElement ? (
-          <div className="text-xs font-medium text-muted-foreground">{titleElement}</div>
-        ) : (
-          <>
-            <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground">{title}</span>
-          </>
+      <div className="flex items-center justify-between py-2">
+        <div className="flex items-center space-x-2">
+          {titleElement ? (
+            <div className="text-xs font-medium text-muted-foreground">{titleElement}</div>
+          ) : (
+            <>
+              <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium text-muted-foreground">{title}</span>
+            </>
+          )}
+        </div>
+        
+        {/* Camera Carousel Controls */}
+        {showCameraCarousel && cameras.length > 1 && onCameraChange && (
+          <CameraCarouselControls
+            cameras={cameras}
+            selectedIndex={selectedCameraIndex}
+            onCameraChange={onCameraChange}
+            layout={carouselLayout}
+            size="sm"
+          />
         )}
-        <div className="h-px grow bg-border"></div>
+        
+        {!showCameraCarousel && (
+          <div className="h-px grow bg-border ml-2"></div>
+        )}
       </div>
       
       {/* Conditionally render Player or Thumbnail */}
@@ -481,6 +513,8 @@ export const CameraMediaSection: React.FC<CameraMediaSectionProps> = ({
           )}
         </div>
       )}
+      
+
     </div>
   );
 }; 

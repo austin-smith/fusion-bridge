@@ -196,8 +196,15 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
     return options;
   }, [currentEvent, deviceSpace]);
 
-  // Use the shared hook to determine camera configuration
-  const { shouldShowMedia, mediaConfig } = useDeviceCameraConfig(
+  // Use the enhanced hook for multi-camera configuration
+  const {
+    shouldShowMedia,
+    hasMultipleCameras,
+    cameras,
+    selectedCameraIndex,
+    mediaConfig,
+    selectCamera
+  } = useDeviceCameraConfig(
     eventDevice || null,
     eventCameraOptions
   );
@@ -304,21 +311,27 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
           <TabsContent value="details" className="mt-4">
             <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-4">
               {/* MEDIA THUMBNAIL/PLAYER */} 
-                              {shouldShowMedia && mediaConfig && (
-                  <CameraMediaSection
-                    thumbnailMode={mediaConfig.thumbnailMode}
-                    thumbnailUrl={mediaConfig.thumbnailUrl}
-                    connectorId={mediaConfig.connectorId}
-                    cameraId={mediaConfig.cameraId}
-                    refreshInterval={mediaConfig.refreshInterval}
-                    videoConfig={mediaConfig.videoConfig}
-                    showManualRefresh={false}
-                    showTimeAgo={mediaConfig.thumbnailMode === "live-auto-refresh"}
-                    className="mb-4"
-                    title={mediaConfig.title}
-                    titleElement={mediaConfig.titleElement}
-                  />
-                )}
+              {shouldShowMedia && mediaConfig && (
+                <CameraMediaSection
+                  thumbnailMode={mediaConfig.thumbnailMode}
+                  thumbnailUrl={mediaConfig.thumbnailUrl}
+                  connectorId={mediaConfig.connectorId}
+                  cameraId={mediaConfig.cameraId}
+                  refreshInterval={mediaConfig.refreshInterval}
+                  videoConfig={mediaConfig.videoConfig}
+                  showManualRefresh={false}
+                  showTimeAgo={mediaConfig.thumbnailMode === "live-auto-refresh"}
+                  className="mb-4"
+                  title={mediaConfig.title}
+                  titleElement={mediaConfig.titleElement}
+                  // Enhanced: Multi-camera carousel support
+                  cameras={cameras}
+                  selectedCameraIndex={selectedCameraIndex}
+                  onCameraChange={selectCamera}
+                  showCameraCarousel={hasMultipleCameras}
+                  carouselLayout={cameras.length > 6 ? 'dropdown' : 'dots'}
+                />
+              )}
 
               {/* Existing Details Section (wrapped in a div for spacing) */}
               <div className="rounded-md border p-0 text-sm">

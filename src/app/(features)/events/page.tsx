@@ -90,6 +90,8 @@ import { EventCardView } from '@/components/features/events/EventCardView';
 import { EventCardViewSkeleton } from '@/components/features/events/event-card-view-skeleton';
 import { LocationSpaceSelector } from '@/components/common/LocationSpaceSelector';
 import { VideoPlaybackDialog, type VideoPlaybackDialogProps } from '@/components/features/events/video-playback-dialog';
+import { findSpaceCameras } from '@/services/event-thumbnail-resolver';
+import type { CameraInfo } from '@/hooks/use-device-camera-config';
 import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
 import { TimeFilterDropdown } from '@/components/features/events/TimeFilterDropdown';
 import { ExportButton } from '@/components/common/ExportButton';
@@ -209,7 +211,10 @@ export default function EventsPage() {
   const [isVideoPlayerOpen, setIsVideoPlayerOpen] = useState(false);
   const [videoPlayerProps, setVideoPlayerProps] = useState<Omit<VideoPlaybackDialogProps, 'isOpen' | 'onOpenChange'> | null>(null);
   
-  // Unified video handler for both normal and full screen modes
+  // Track whether view preferences have been initialized to prevent skeleton race condition
+  const [preferencesInitialized, setPreferencesInitialized] = useState(false);
+  
+  // Enhanced video handler with camera carousel support
   const handlePlayVideo = useCallback((
     bestShotEvent: EnrichedEvent | undefined,
     spacePikoCamera: DeviceWithConnector | null,
@@ -221,6 +226,31 @@ export default function EventsPage() {
     let targetPositionMs: number | undefined;
     let targetDeviceName: string | undefined;
 
+    // Find all cameras in the space for carousel functionality
+    let spaceCameras: DeviceWithConnector[] = [];
+    let selectedCameraIndex = 0;
+
+    // Determine space ID from the event or camera
+    let spaceId: string | undefined;
+    if (bestShotEvent) {
+      // For events, find the device and its space
+      const eventDevice = allDevices.find(d => 
+        d.deviceId === bestShotEvent.deviceId && d.connectorId === bestShotEvent.connectorId
+      );
+      spaceId = eventDevice?.spaceId || undefined;
+    } else if (spacePikoCamera) {
+      spaceId = spacePikoCamera.spaceId || undefined;
+    }
+
+    // Find all cameras in the space
+    if (spaceId) {
+      spaceCameras = allDevices.filter(device => 
+        device.spaceId === spaceId &&
+        device.connectorCategory === 'piko' && 
+        device.deviceTypeInfo?.type === 'Camera'
+      );
+    }
+
     // Use the bestShotEvent if available
     if (bestShotEvent && bestShotEvent.bestShotUrlComponents) {
       targetConnectorId = bestShotEvent.bestShotUrlComponents.connectorId;
@@ -228,6 +258,12 @@ export default function EventsPage() {
       targetCameraId = bestShotEvent.bestShotUrlComponents.cameraId;
       targetPositionMs = bestShotEvent.timestamp - 5000; // Start 5s before event
       targetDeviceName = bestShotEvent.deviceName;
+
+      // Find the index of the best shot camera in the space cameras list
+      selectedCameraIndex = spaceCameras.findIndex(cam => 
+        cam.connectorId === targetConnectorId && cam.deviceId === targetCameraId
+      );
+      if (selectedCameraIndex === -1) selectedCameraIndex = 0;
     } else if (spacePikoCamera) {
       // Fallback to space camera for live view if no specific event context
       targetConnectorId = spacePikoCamera.connectorId;
@@ -237,7 +273,22 @@ export default function EventsPage() {
       targetCameraId = spacePikoCamera.deviceId;
       targetPositionMs = undefined; // Live view
       targetDeviceName = spacePikoCamera.name;
+
+      // Find the index of the selected camera
+      selectedCameraIndex = spaceCameras.findIndex(cam => cam.id === spacePikoCamera.id);
+      if (selectedCameraIndex === -1) selectedCameraIndex = 0;
     }
+
+    // Convert DeviceWithConnector to CameraInfo for carousel
+    const cameraInfoList: CameraInfo[] = spaceCameras.map(camera => ({
+      id: camera.id,
+      name: camera.name,
+      connectorId: camera.connectorId,
+      cameraId: camera.deviceId,
+      pikoSystemId: allDevices.find(d => d.id === camera.id)?.pikoServerDetails?.systemId,
+      spaceName: undefined, // Not needed for video dialog
+      spaceId: camera.spaceId || undefined
+    }));
 
     if (targetConnectorId && targetCameraId) {
       setVideoPlayerProps({
@@ -245,8 +296,11 @@ export default function EventsPage() {
         pikoSystemId: targetPikoSystemId,
         cameraId: targetCameraId,
         positionMs: targetPositionMs,
-        title: targetPositionMs ? `Event Playback - ${targetDeviceName || targetCameraId}` : `Live View - ${targetDeviceName || targetCameraId}`,
-        deviceName: targetDeviceName || targetCameraId
+        title: targetPositionMs ? `Event Playback` : `Live View`,
+        deviceName: targetDeviceName || targetCameraId,
+        // Enhanced: Camera carousel support
+        cameras: cameraInfoList,
+        initialCameraIndex: selectedCameraIndex
       });
       setIsVideoPlayerOpen(true);
     } else {
@@ -320,6 +374,7 @@ export default function EventsPage() {
   // Initialize view and filter preferences from localStorage (following app pattern)
   useEffect(() => {
     initializeViewPreferences();
+    setPreferencesInitialized(true);
     
     // Small delay to ensure data is loaded before showing filters
     const timer = setTimeout(() => {
@@ -1364,15 +1419,18 @@ export default function EventsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Show skeleton when loading OR when we should be loading but aren't yet */}
-        {isLoadingEvents || !eventsHasInitiallyLoaded ? (
+        {/* Show skeleton when loading AND preferences are initialized */}
+        {(isLoadingEvents || !eventsHasInitiallyLoaded) && preferencesInitialized ? (
           <div className="flex-shrink-0">
             {viewMode === 'card' 
               ? <EventCardViewSkeleton segmentCount={2} cardsPerSegment={4} cardSize={cardSize} />
               : <EventsTableSkeleton rowCount={15} columnCount={columns.length} />}
           </div>
+        ) : (isLoadingEvents || !eventsHasInitiallyLoaded) && !preferencesInitialized ? (
+          /* Don't show any skeleton while preferences are loading to avoid race condition */
+          <div className="flex-shrink-0"></div>
         ) : (
-          /* Show content only when we've successfully loaded at least once */
+          /* Show content when loaded */
           <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
             {viewMode === 'table' ? (
               <EventsTableView 

@@ -26,6 +26,8 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { EventDetailDialogContent } from './event-detail-dialog-content'; // <-- Import event detail dialog
 import { toast } from 'react-hot-toast';
 import { getThumbnailSource, findSpaceCameras, buildThumbnailUrl } from '@/services/event-thumbnail-resolver';
+import { useDeviceCameraConfig } from '@/hooks/use-device-camera-config';
+import { CameraCarouselControls } from '@/components/features/common/camera-carousel';
 
 // Define the structure for a group of events
 // This might be refined later based on the grouping logic in EventCardView
@@ -96,8 +98,27 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     }
     return `${format(startTime, 'h:mm:ss a')} - ${format(endTime, 'h:mm:ss a')}`;
   }, [startTime, endTime]);
+
+  // Find a representative device from the events to determine space cameras
+  const representativeDevice = useMemo(() => {
+    const deviceIds = events.map(e => e.deviceId);
+    return allDevices.find(d => deviceIds.includes(d.deviceId)) || null;
+  }, [events, allDevices]);
+
+  // Use multi-camera hook for enhanced camera functionality
+  const {
+    shouldShowMedia: shouldShowCameras,
+    hasMultipleCameras,
+    cameras,
+    selectedCameraIndex,
+    selectCamera,
+    selectNext,
+    selectPrevious
+  } = useDeviceCameraConfig(representativeDevice, {
+    spaceName: spaceName || undefined
+  });
   
-  // --- Find cameras for thumbnail logic --- 
+  // --- Enhanced thumbnail logic with camera selection support --- 
   const thumbnailUrl = useMemo(() => {
     // Find cameras based on space associations for devices in the events
     const deviceIds = events.map(e => e.deviceId);
@@ -110,11 +131,20 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     )];
     
     // Find cameras in the same spaces
-    const spaceCameras = allDevices.filter(device => 
+    let spaceCameras = allDevices.filter(device => 
       device.connectorCategory === 'piko' && 
       device.deviceTypeInfo?.type === 'Camera' &&
       spaceIds.includes(device.spaceId)
     );
+
+    // If we have a selected camera from the carousel, prioritize it
+    if (cameras.length > 0 && selectedCameraIndex < cameras.length) {
+      const selectedCamera = allDevices.find(d => d.id === cameras[selectedCameraIndex].id);
+      if (selectedCamera) {
+        // Put selected camera first in the list for thumbnail generation
+        spaceCameras = [selectedCamera, ...spaceCameras.filter(c => c.id !== selectedCamera.id)];
+      }
+    }
     
     // Try to find the best event for thumbnail (most recent analytics event preferred)
     let bestEvent: EnrichedEvent | undefined;
@@ -137,30 +167,14 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     if (!source) return undefined;
     
     return buildThumbnailUrl(source);
-  }, [events, allDevices]);
+  }, [events, allDevices, cameras, selectedCameraIndex]);
 
   const hasThumbnail = !!thumbnailUrl;
 
-  // --- Find camera for video playback logic ---
-  const spacePikoCamera = useMemo(() => {
-    const deviceIds = events.map(e => e.deviceId);
-    const devicesInGroup = allDevices.filter(d => deviceIds.includes(d.deviceId));
-    
-    // Get space IDs from devices that have space associations
-    const spaceIds = [...new Set(devicesInGroup
-      .map(d => d.spaceId)
-      .filter(Boolean)
-    )];
-    
-    // Find cameras in the same spaces
-    const spaceCameras = allDevices.filter(device => 
-      device.connectorCategory === 'piko' && 
-      device.deviceTypeInfo?.type === 'Camera' &&
-      spaceIds.includes(device.spaceId)
-    );
-    
-    return spaceCameras[0] || null;
-  }, [events, allDevices]);
+  // Get the currently selected camera for video playback (maintains compatibility)
+  const spacePikoCamera = cameras.length > 0 ? 
+    allDevices.find(d => d.id === cameras[selectedCameraIndex]?.id) || null : 
+    null;
 
   // --- Sizing Logic - SIMPLIFIED --- 
   const cardSizeClass = useMemo(() => {
@@ -296,7 +310,8 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         "border-l-4",
         severityStyles.borderClass,
         cardSizeClass, // Standard min-height
-        "bg-card" // Standard background
+        "bg-card",
+        "shadow-md hover:shadow-lg"
       )}>
         <CardHeader className={cn(
           "p-3 flex-shrink-0"
@@ -362,8 +377,24 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                     <PlayIcon className="h-5 w-5" />
                   </Button>
                 )}
-{events.length > 0 && <EventDetailDialogContent event={events[events.length - 1]} events={events} buttonStyle="overlay" />}
+                {events.length > 0 && <EventDetailDialogContent event={events[events.length - 1]} events={events} buttonStyle="overlay" />}
               </div>
+
+              {/* Camera Carousel Controls - Top Left */}
+              {hasMultipleCameras && (
+                <div className="absolute top-2 left-2 z-20">
+                  <div className="bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
+                    <CameraCarouselControls
+                      cameras={cameras}
+                      selectedIndex={selectedCameraIndex}
+                      onCameraChange={selectCamera}
+                      layout="dots"
+                      size="xs"
+                      className="text-white"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* --- METADATA OVERLAY: Event types + Device icons --- */}
               <div className="absolute bottom-1.5 right-1.5 z-10 flex items-center gap-1">
