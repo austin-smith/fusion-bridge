@@ -48,7 +48,8 @@ export const GENEA_EVENT_MAP = {
     EventType.ACCESS_DENIED
   ),
   'SEQUR_ACCESS_DENIED_CARD_NOT_FOUND': createEventClassification(
-    EventType.ACCESS_DENIED
+    EventType.ACCESS_DENIED,
+    EventSubtype.INVALID_CREDENTIAL
   ),
   'SEQUR_ACCESS_DENIED_COUNT_EXCEEDED': createEventClassification(
     EventType.ACCESS_DENIED
