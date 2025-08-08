@@ -160,14 +160,8 @@ export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): Even
       return createEventClassification(EventType.ACCESS_OVERRIDE, EventSubtype.REMOTE_UNLOCK);
     }
   } else if (event_action === 'SEQUR_DOOR_ACCESS_MODE_CARD_ONLY') {
-    if (actor?.type === 'SYSTEM') {
-      // Persistent access mode change (system-initiated)
-      return createEventClassification(EventType.DOOR_ACCESS_MODE_CHANGED, EventSubtype.CARD_ONLY);
-    } else if (actor?.type === 'API_KEY') {
-      // One-time remote lock command (API-initiated) - need to determine appropriate subtype
-      // For now, treating as CARD_ONLY mode change since it restricts access
-      return createEventClassification(EventType.ACCESS_OVERRIDE, EventSubtype.REMOTE_UNLOCK);
-    }
+    // Always a persistent access mode change, regardless of who initiated it
+    return createEventClassification(EventType.DOOR_ACCESS_MODE_CHANGED, EventSubtype.CARD_ONLY);
   } else if (event_action === 'SEQUR_DOOR_POSITION_SENSOR_ALARM') {
     // Handle alarm events - check current state
     const isForcedOpen = additionalInfo?.['Forced Open State']?.includes('Current : Yes');
