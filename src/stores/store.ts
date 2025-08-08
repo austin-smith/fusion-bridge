@@ -3089,6 +3089,41 @@ export const useFusionStore = create<FusionState>((set, get) => ({
               videoUrl: undefined,
               bestShotUrlComponents: undefined,
             };
+            // Client-side filter: honor current UI filters for incoming events
+            const state = get();
+            // Connector category
+            if (
+              state.eventsConnectorCategoryFilter &&
+              state.eventsConnectorCategoryFilter.toLowerCase() !== 'all' &&
+              mapped.connectorCategory !== state.eventsConnectorCategoryFilter
+            ) {
+              return; // drop
+            }
+            // Location
+            if (
+              state.eventsLocationFilter &&
+              state.eventsLocationFilter.toLowerCase() !== 'all' &&
+              mapped.locationId !== state.eventsLocationFilter
+            ) {
+              return; // drop
+            }
+            // Space
+            if (
+              state.eventsSpaceFilter &&
+              state.eventsSpaceFilter.toLowerCase() !== 'all' &&
+              mapped.spaceId !== state.eventsSpaceFilter
+            ) {
+              return; // drop
+            }
+            // Event category (compare against categoryId from message)
+            if (
+              Array.isArray(state.eventsEventCategoryFilter) &&
+              state.eventsEventCategoryFilter.length > 0 &&
+              msg.event?.categoryId &&
+              !state.eventsEventCategoryFilter.includes(msg.event.categoryId)
+            ) {
+              return; // drop
+            }
             pending.push(mapped);
             scheduleFlush();
           } catch {

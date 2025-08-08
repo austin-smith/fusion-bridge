@@ -45,8 +45,18 @@ export const EVENT_HIERARCHY = {
       EventSubtype.PIN_REQUIRED,
       EventSubtype.NORMAL,  // Generic access denied
     ],
+    [EventType.DOOR_ALARM]: [
+      EventSubtype.FORCED_OPEN,
+      EventSubtype.HELD_OPEN,
+      EventSubtype.FORCED_AND_HELD_OPEN,
+    ],
     [EventType.DOOR_HELD_OPEN]: [],
     [EventType.DOOR_FORCED_OPEN]: [],
+    [EventType.DOOR_SECURED]: [
+      EventSubtype.FORCED_OPEN_RESOLVED,
+      EventSubtype.HELD_OPEN_RESOLVED,
+      EventSubtype.FORCED_AND_HELD_OPEN_RESOLVED,
+    ],
     [EventType.EXIT_REQUEST]: [
       EventSubtype.PRESSED,
       EventSubtype.HELD,
