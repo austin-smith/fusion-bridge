@@ -75,60 +75,10 @@ function setupGracefulShutdown() {
         console.error('[Instrumentation Node] SSE notification failed:', error);
       }
 
-      // Clean up services in parallel (10 seconds max total)
-      try {
-        console.log('[Instrumentation Node] Loading service modules...');
-        const modules = await Promise.race([
-          Promise.all([
-            import('@/services/mqtt-service'),
-            import('@/services/piko-websocket-service'),
-            import('@/lib/redis/client'),
-            import('@/data/db')
-          ]),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Module import timeout')), 5000))
-        ]);
-        const [mqttModule, pikoModule, redisModule, dbModule] = modules;
-        console.log('[Instrumentation Node] Service modules loaded successfully');
-        
-        // Stop cron jobs immediately (sync)
-        console.log('[Instrumentation Node] Stopping cron jobs...');
-        const cronModule = await Promise.race([
-          import('@/lib/cron/scheduler'),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Cron import timeout')), 2000))
-        ]);
-        cronModule.stopCronJobs();
-        console.log('[Instrumentation Node] Cron jobs stopped');
-        
-        // Cleanup async services in parallel with individual timeouts
-        console.log('[Instrumentation Node] Starting individual service cleanups...');
-        
-        // Helper function to wrap each cleanup with individual timeout
-        const withTimeout = (promise: Promise<any>, name: string, timeoutMs: number) => {
-          return Promise.race([
-            promise.then(() => console.log(`[Instrumentation Node] ${name} cleanup complete`)),
-            new Promise((_, reject) => setTimeout(() => reject(new Error(`${name} cleanup timeout`)), timeoutMs))
-          ]);
-        };
-        
-        const cleanupResults = await Promise.allSettled([
-          withTimeout(mqttModule.cleanupAllMqttConnections(), 'MQTT', 3000),
-          withTimeout(pikoModule.cleanupAllPikoConnections(), 'Piko', 3000),
-          withTimeout(redisModule.closeRedisConnections(), 'Redis', 2000),
-          withTimeout(dbModule.closeDbConnection(), 'DB', 1000)
-        ]);
-        
-        // Log results
-        cleanupResults.forEach((result, index) => {
-          const services = ['MQTT', 'Piko', 'Redis', 'DB'];
-          if (result.status === 'rejected') {
-            console.error(`[Instrumentation Node] ${services[index]} cleanup failed:`, result.reason);
-          }
-        });
-        
-        console.log('[Instrumentation Node] All service cleanups attempted');
-      } catch (error) {
-        console.error('[Instrumentation Node] Service cleanup failed:', error);
-      }
+      // Skip dynamic imports during shutdown to avoid hanging
+      // The modules may have initialization code that hangs during shutdown
+      console.log('[Instrumentation Node] Skipping service cleanup to prevent hanging during shutdown');
+      console.log('[Instrumentation Node] Services will be cleaned up by process termination');
 
     } catch (criticalError) {
       console.error('[Instrumentation Node] Critical shutdown error:', criticalError);
