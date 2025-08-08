@@ -2,7 +2,7 @@ import { StandardizedEvent } from '@/types/events';
 import { GeneaEventWebhookPayload } from '@/types/genea';
 import { EventCategory, EventType, EventSubtype } from '@/lib/mappings/definitions';
 import { getDeviceTypeInfo } from '@/lib/mappings/identification';
-import { GENEA_EVENT_MAP, GENEA_UNKNOWN_EVENT } from '@/lib/mappings/event-maps/genea';
+import { GENEA_EVENT_MAP, GENEA_UNKNOWN_EVENT, GENEA_COMPLEX_EVENT_ACTIONS, handleComplexGeneaEvent } from '@/lib/mappings/event-maps/genea';
 import crypto from 'crypto';
 
 
@@ -74,6 +74,13 @@ export async function parseGeneaEvent(
     type = eventClassification.type;
     subtype = eventClassification.subtype;
     console.log(`[Genea Parser] Mapped event action '${event_action}' to ${type}${subtype ? ` / ${subtype}` : ''}`);
+  } else if (GENEA_COMPLEX_EVENT_ACTIONS.includes(event_action as any)) {
+    // Handle complex events that require payload analysis
+    const complexClassification = handleComplexGeneaEvent(payload);
+    category = complexClassification.category;
+    type = complexClassification.type;
+    subtype = complexClassification.subtype;
+    console.log(`[Genea Parser] Complex event mapped to ${type} for event ${eventUuid}`);
   } else {
     // Handle unmapped events
     console.warn(`[Genea Parser] Unmapped event action: '${event_action}' for event ${eventUuid}`);
@@ -96,7 +103,10 @@ export async function parseGeneaEvent(
     ...(subtype && { subtype }),
     deviceInfo,
     payload: {
+      eventType: event_type,
+      eventAction: event_action,
       eventMessage: event_message,
+      ...(payload.additional_info?.description && { description: payload.additional_info.description }),
       ...(door?.name && { doorName: door.name }),
       ...(location?.[0]?.name && { locationName: location[0].name }),
       ...(actor?.type && { actorType: actor.type }),

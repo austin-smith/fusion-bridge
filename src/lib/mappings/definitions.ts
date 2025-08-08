@@ -297,9 +297,13 @@ export enum EventType {
   // --- Category: ACCESS_CONTROL ---
   ACCESS_GRANTED = 'ACCESS_GRANTED',
   ACCESS_DENIED = 'ACCESS_DENIED',               // See EventSubtype for specific reasons
+  DOOR_ALARM = 'DOOR_ALARM',                     // Door position sensor alarm (see subtypes)
   DOOR_HELD_OPEN = 'DOOR_HELD_OPEN',
   DOOR_FORCED_OPEN = 'DOOR_FORCED_OPEN',
+  DOOR_SECURED = 'DOOR_SECURED',                 // Door returned to secure state after violation
   EXIT_REQUEST = 'EXIT_REQUEST',                 // Added (See EventSubtype)
+  ACCESS_OVERRIDE = 'ACCESS_OVERRIDE',           // Operator/API overrides distinct from credential decisions
+  DOOR_ACCESS_MODE_CHANGED = 'DOOR_ACCESS_MODE_CHANGED', // Persistent access policy/mode changes
 
   // --- Category: ANALYTICS ---
   ANALYTICS_EVENT = 'ANALYTICS_EVENT',       // General or unknown analytics event
@@ -337,13 +341,30 @@ export enum EventSubtype {
 
   // --- Used with EventType.ACCESS_GRANTED ---
   NORMAL = 'NORMAL',
-  REMOTE_OVERRIDE = 'REMOTE_OVERRIDE',
   PASSBACK_RETURN = 'PASSBACK_RETURN',
+
+  // --- Used with EventType.ACCESS_OVERRIDE ---
+  REMOTE_UNLOCK = 'REMOTE_UNLOCK',
+  QUICK_GRANT = 'QUICK_GRANT',
+
+  // --- Used with EventType.DOOR_ACCESS_MODE_CHANGED ---
+  CARD_ONLY = 'CARD_ONLY',
+  UNLOCKED = 'UNLOCKED',
 
   // --- Used with EventType.EXIT_REQUEST --- (Added)
   PRESSED = 'PRESSED',
   HELD = 'HELD',
   MOTION = 'MOTION',
+
+  // --- Used with EventType.DOOR_ALARM ---
+  FORCED_OPEN = 'FORCED_OPEN',
+  HELD_OPEN = 'HELD_OPEN',
+  FORCED_AND_HELD_OPEN = 'FORCED_AND_HELD_OPEN',
+
+  // --- Used with EventType.DOOR_SECURED ---
+  FORCED_OPEN_RESOLVED = 'FORCED_OPEN_RESOLVED',
+  HELD_OPEN_RESOLVED = 'HELD_OPEN_RESOLVED',
+  FORCED_AND_HELD_OPEN_RESOLVED = 'FORCED_AND_HELD_OPEN_RESOLVED',
 
   // --- Used with EventType.OBJECT_DETECTED --- 
   PERSON = 'PERSON',
@@ -373,12 +394,25 @@ export const EVENT_SUBTYPE_DISPLAY_MAP: Record<EventSubtype, string> = {
     [EventSubtype.PIN_REQUIRED]: 'PIN Required',
     // Access Granted Reasons
     [EventSubtype.NORMAL]: 'Normal Access',
-    [EventSubtype.REMOTE_OVERRIDE]: 'Remote Override',
     [EventSubtype.PASSBACK_RETURN]: 'Anti-Passback Return',
+    // Access Override Reasons
+    [EventSubtype.REMOTE_UNLOCK]: 'Remote Unlock',
+    [EventSubtype.QUICK_GRANT]: 'Quick Grant',
+    // Access Mode Changes
+    [EventSubtype.CARD_ONLY]: 'Card Only',
+    [EventSubtype.UNLOCKED]: 'Unlocked (Unlimited Access)',
     // Exit Request Types (Added)
     [EventSubtype.PRESSED]: 'REX Pressed',
     [EventSubtype.HELD]: 'REX Held',
     [EventSubtype.MOTION]: 'REX Motion',
+    // Door Alarm Types
+    [EventSubtype.FORCED_OPEN]: 'Forced Open',
+    [EventSubtype.HELD_OPEN]: 'Held Open',
+    [EventSubtype.FORCED_AND_HELD_OPEN]: 'Forced and Held Open',
+    // Door Secured Types
+    [EventSubtype.FORCED_OPEN_RESOLVED]: 'Forced Open Resolved',
+    [EventSubtype.HELD_OPEN_RESOLVED]: 'Held Open Resolved',
+    [EventSubtype.FORCED_AND_HELD_OPEN_RESOLVED]: 'Forced and Held Open Resolved',
     // Object Detection Types
     [EventSubtype.PERSON]: 'Person',
     [EventSubtype.VEHICLE]: 'Vehicle',
@@ -399,29 +433,38 @@ export const TAILGATING_DISPLAY = 'Tailgating';
 export const INTRUSION_DISPLAY = 'Intrusion';
 export const GENERIC_ANALYTICS_DISPLAY = 'Unmapped';
 export const STATE_CHANGED_DISPLAY = 'State Changed';
-export const DOOR_HELD_OPEN_DISPLAY = 'Door Held Open';
-export const DOOR_FORCED_OPEN_DISPLAY = 'Door Forced Open';
-export const ACCESS_GRANTED_DISPLAY = 'Access Granted';
-export const ACCESS_DENIED_DISPLAY = 'Access Denied';
-export const EXIT_REQUEST_DISPLAY = 'Exit Request'; // Added
+export const BATTERY_LEVEL_CHANGED_DISPLAY = 'Battery Level Changed';
 export const BUTTON_PRESSED_DISPLAY = 'Button Pressed';
 export const BUTTON_LONG_PRESSED_DISPLAY = 'Button Long Pressed';
+export const DOOR_ALARM_DISPLAY = 'Door Alarm';
+export const DOOR_HELD_OPEN_DISPLAY = 'Door Held Open';
+export const DOOR_FORCED_OPEN_DISPLAY = 'Door Forced Open';
+export const DOOR_SECURED_DISPLAY = 'Door Secured';
+export const ACCESS_GRANTED_DISPLAY = 'Access Granted';
+export const ACCESS_DENIED_DISPLAY = 'Access Denied';
+export const EXIT_REQUEST_DISPLAY = 'Exit Request';
+export const ACCESS_OVERRIDE_DISPLAY = 'Access Override';
+export const DOOR_ACCESS_MODE_CHANGED_DISPLAY = 'Door Access Mode Changed';
 
 // --- EVENT TYPE DISPLAY MAP --- 
 // Grouped visually by Category for clarity
 export const EVENT_TYPE_DISPLAY_MAP = {
   // DEVICE_STATE
   [EventType.STATE_CHANGED]: STATE_CHANGED_DISPLAY,
-  [EventType.BATTERY_LEVEL_CHANGED]: 'Battery Level Changed',
+  [EventType.BATTERY_LEVEL_CHANGED]: BATTERY_LEVEL_CHANGED_DISPLAY,
   [EventType.BUTTON_PRESSED]: BUTTON_PRESSED_DISPLAY,
   [EventType.BUTTON_LONG_PRESSED]: BUTTON_LONG_PRESSED_DISPLAY,
   
   // ACCESS_CONTROL
   [EventType.ACCESS_GRANTED]: ACCESS_GRANTED_DISPLAY,
   [EventType.ACCESS_DENIED]: ACCESS_DENIED_DISPLAY,
+  [EventType.DOOR_ALARM]: DOOR_ALARM_DISPLAY,
   [EventType.DOOR_HELD_OPEN]: DOOR_HELD_OPEN_DISPLAY,
   [EventType.DOOR_FORCED_OPEN]: DOOR_FORCED_OPEN_DISPLAY,
+  [EventType.DOOR_SECURED]: DOOR_SECURED_DISPLAY,
   [EventType.EXIT_REQUEST]: EXIT_REQUEST_DISPLAY,
+  [EventType.ACCESS_OVERRIDE]: ACCESS_OVERRIDE_DISPLAY,
+  [EventType.DOOR_ACCESS_MODE_CHANGED]: DOOR_ACCESS_MODE_CHANGED_DISPLAY,
   
   // ANALYTICS
   [EventType.ANALYTICS_EVENT]: GENERIC_ANALYTICS_DISPLAY,

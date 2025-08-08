@@ -31,7 +31,6 @@ export const EVENT_HIERARCHY = {
   [EventCategory.ACCESS_CONTROL]: {
     [EventType.ACCESS_GRANTED]: [
       EventSubtype.NORMAL,
-      EventSubtype.REMOTE_OVERRIDE,
       EventSubtype.PASSBACK_RETURN,
     ],
     [EventType.ACCESS_DENIED]: [
@@ -45,12 +44,30 @@ export const EVENT_HIERARCHY = {
       EventSubtype.PIN_REQUIRED,
       EventSubtype.NORMAL,  // Generic access denied
     ],
+    [EventType.DOOR_ALARM]: [
+      EventSubtype.FORCED_OPEN,
+      EventSubtype.HELD_OPEN,
+      EventSubtype.FORCED_AND_HELD_OPEN,
+    ],
     [EventType.DOOR_HELD_OPEN]: [],
     [EventType.DOOR_FORCED_OPEN]: [],
+    [EventType.DOOR_SECURED]: [
+      EventSubtype.FORCED_OPEN_RESOLVED,
+      EventSubtype.HELD_OPEN_RESOLVED,
+      EventSubtype.FORCED_AND_HELD_OPEN_RESOLVED,
+    ],
     [EventType.EXIT_REQUEST]: [
       EventSubtype.PRESSED,
       EventSubtype.HELD,
       EventSubtype.MOTION,
+    ],
+    [EventType.ACCESS_OVERRIDE]: [
+      EventSubtype.REMOTE_UNLOCK,
+      EventSubtype.QUICK_GRANT,
+    ],
+    [EventType.DOOR_ACCESS_MODE_CHANGED]: [
+      EventSubtype.CARD_ONLY,
+      EventSubtype.UNLOCKED,
     ],
   },
 

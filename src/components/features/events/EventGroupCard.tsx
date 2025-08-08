@@ -185,30 +185,26 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     if (hasThumbnail) {
       switch (cardSize) {
         case 'small':
-          return "min-h-[160px]"; // Reduced for better image aspect ratio
+          return "min-h-[192px]";
         case 'medium':
-          return "min-h-[200px]"; // Reduced for better image aspect ratio  
+          return "min-h-[232px]";
         case 'large':
         default:
-          return isRecentGroup 
-            ? (eventCount > 5 ? "min-h-[280px]" : "min-h-[240px]") // Reduced for better proportions
-            : (eventCount > 5 ? "min-h-[240px]" : "min-h-[200px]"); // Better aspect ratio
+          return "min-h-[272px]";
       }
     } else {
       // Non-thumbnail cards can use smaller heights
       switch (cardSize) {
         case 'small':
-          return "min-h-[80px]";
+          return "min-h-[112px]";
         case 'medium':
-          return "min-h-[120px]";
+          return "min-h-[152px]";
         case 'large':
         default:
-          return isRecentGroup 
-            ? (eventCount > 5 ? "min-h-[180px]" : "min-h-[140px]")
-            : (eventCount > 5 ? "min-h-[140px]" : "min-h-[120px]");
+          return "min-h-[172px]";
       }
     }
-  }, [eventCount, isRecentGroup, cardSize, hasThumbnail]);
+  }, [cardSize, hasThumbnail]);
 
   // --- Device Summary Calculation (as before) ---
   const deviceSummaries = useMemo(() => {
