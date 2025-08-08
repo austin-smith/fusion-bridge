@@ -40,10 +40,7 @@ class SSEConnectionManager {
 
   constructor() {
     this.setupGlobalSubscriber();
-    // Only start periodic cleanup if not shutting down
-    if (!this.isShuttingDown) {
-      this.startPeriodicCleanup();
-    }
+    this.startPeriodicCleanup();
   }
 
   private setupGlobalSubscriber() {
@@ -484,6 +481,7 @@ class SSEConnectionManager {
   shutdown(): void {
     this.isShuttingDown = true;
     this.stopPeriodicCleanup();
+    console.log('[SSE Manager] Shutdown initiated - all operations stopped');
   }
 
   // For graceful shutdown
@@ -520,12 +518,19 @@ class SSEConnectionManager {
     }
 
     this.cleanupInterval = setInterval(() => {
-      this.performPeriodicCleanup();
+      if (!this.isShuttingDown) {
+        this.performPeriodicCleanup();
+      }
     }, this.CLEANUP_INTERVAL_MS);
     console.log(`[SSE Manager] Periodic cleanup started with interval: ${this.CLEANUP_INTERVAL_MS}ms`);
   }
 
   private performPeriodicCleanup() {
+    // Skip cleanup if shutdown has been initiated
+    if (this.isShuttingDown) {
+      return;
+    }
+    
     this.cleanupStats.totalCleanupsRun++;
     const now = Date.now();
     const staleConnections: string[] = [];

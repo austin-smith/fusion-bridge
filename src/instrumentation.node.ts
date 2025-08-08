@@ -63,7 +63,7 @@ function setupGracefulShutdown() {
       try {
         const { sseConnectionManager } = await import('@/lib/redis/connection-manager');
         // Stop all SSE operations first to prevent race conditions
-        console.log('[Instrumentation Node] Stopping SSE manager...');
+        console.log('[Instrumentation Node] Initiating SSE manager shutdown...');
         sseConnectionManager.shutdown();
         console.log('[Instrumentation Node] Notifying SSE clients of shutdown...');
         await Promise.race([
