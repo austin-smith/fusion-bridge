@@ -541,7 +541,7 @@ export default function EventsPage() {
     return () => {
       stopEventsStream();
     };
-  }, [eventsHasInitiallyLoaded, isLoadingConnectors, connectors.length, startEventsStream, stopEventsStream]);
+  }, [eventsHasInitiallyLoaded, isLoadingConnectors, connectors.length, alarmEventsOnly, startEventsStream, stopEventsStream]);
 
   // Update server-side stream filters when relevant filters change
   useEffect(() => {

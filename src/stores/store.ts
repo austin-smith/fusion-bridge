@@ -3006,7 +3006,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   startEventsStream: (params) => {
     set({ eventsStreamStatus: 'connecting' });
     // Micro-batching with throttle to reduce render thrash during bursts
-    let pending: EnrichedEvent[] = [];
+    const pending: EnrichedEvent[] = [];
     let scheduled = false;
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     const FLUSH_INTERVAL_MS = 300;
@@ -3014,7 +3014,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
 
     const flushNow = () => {
       scheduled = false;
-      flushTimer && clearTimeout(flushTimer);
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+      }
       flushTimer = null;
       if (pending.length === 0) return;
       const toApply = pending.splice(0, MAX_PER_FLUSH);
