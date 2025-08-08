@@ -62,41 +62,14 @@ function setupGracefulShutdown() {
       // Notify SSE clients (2 seconds max)
       try {
         const { sseConnectionManager } = await import('@/lib/redis/connection-manager');
+        // Stop all SSE operations first to prevent race conditions
+        sseConnectionManager.shutdown();
         await Promise.race([
           sseConnectionManager.notifyShutdown(5000),
           new Promise((_, reject) => setTimeout(() => reject(new Error('SSE timeout')), 2000))
         ]);
-        // Stop periodic cleanup
-        sseConnectionManager.stopPeriodicCleanup();
       } catch (error) {
         console.error('[Instrumentation Node] SSE notification failed:', error);
-      }
-
-      // Clean up services in parallel (10 seconds max total)
-      try {
-        const [mqttModule, pikoModule, redisModule, dbModule] = await Promise.all([
-          import('@/services/mqtt-service'),
-          import('@/services/piko-websocket-service'),
-          import('@/lib/redis/client'),
-          import('@/data/db')
-        ]);
-        
-        // Stop cron jobs immediately (sync)
-        const { stopCronJobs } = await import('@/lib/cron/scheduler');
-        stopCronJobs();
-        
-        // Cleanup async services in parallel
-        await Promise.race([
-          Promise.allSettled([
-            mqttModule.cleanupAllMqttConnections(),
-            pikoModule.cleanupAllPikoConnections(),
-            redisModule.closeRedisConnections(),
-            dbModule.closeDbConnection()
-          ]),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Cleanup timeout')), 10000))
-        ]);
-      } catch (error) {
-        console.error('[Instrumentation Node] Service cleanup failed:', error);
       }
 
     } catch (criticalError) {
@@ -105,6 +78,9 @@ function setupGracefulShutdown() {
     
     clearTimeout(shutdownTimeout);
     console.log('[Instrumentation Node] Graceful shutdown complete');
+    
+    // Force exit immediately - don't wait for remaining handles
+    // Railway deployment should complete cleanly
     process.exit(0);
   };
   
