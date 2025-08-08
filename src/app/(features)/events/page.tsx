@@ -356,7 +356,9 @@ export default function EventsPage() {
     eventsPagination,
     eventsHasInitiallyLoaded,
     fetchEvents,
-    autoRefreshEvents,
+    startEventsStream,
+    stopEventsStream,
+    updateEventsStreamFilters,
     setEventsPagination,
     resetEventsState,
   } = useFusionStore((state) => ({
@@ -366,7 +368,9 @@ export default function EventsPage() {
     eventsPagination: state.eventsPagination,
     eventsHasInitiallyLoaded: state.eventsHasInitiallyLoaded,
     fetchEvents: state.fetchEvents,
-    autoRefreshEvents: state.autoRefreshEvents,
+    startEventsStream: state.startEventsStream,
+    stopEventsStream: state.stopEventsStream,
+    updateEventsStreamFilters: state.updateEventsStreamFilters,
     setEventsPagination: state.setEventsPagination,
     resetEventsState: state.resetEventsState,
   }));
@@ -528,57 +532,21 @@ export default function EventsPage() {
     eventsHasInitiallyLoaded
   ]);
 
-  // Smart auto-refresh - polls every 5 seconds when page is visible, only on first page
+  // Realtime events stream: start when initial load is done and connectors available; stop on unmount
   useEffect(() => {
-    // Only set up auto-refresh after initial load and when we have connectors
     if (!eventsHasInitiallyLoaded || isLoadingConnectors || connectors.length === 0) {
       return;
     }
-
-    let intervalId: NodeJS.Timeout;
-    
-    const startAutoRefresh = () => {
-      intervalId = setInterval(() => {
-        // Only refresh if page is visible and on first page
-        if (!document.hidden && eventsPagination.pageIndex === 0) {
-          autoRefreshEvents();
-        }
-      }, 5000); // Smart refresh every 5 seconds
-    };
-
-    // Handle page visibility changes
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Page is hidden, stop auto-refresh
-        if (intervalId) {
-          clearInterval(intervalId);
-        }
-      } else {
-        // Page is visible, start auto-refresh
-        startAutoRefresh();
-      }
-    };
-
-    // Start initial auto-refresh
-    startAutoRefresh();
-
-    // Listen for page visibility changes
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // Cleanup on unmount
+    startEventsStream({ alarmEventsOnly });
     return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      stopEventsStream();
     };
-  }, [
-    eventsHasInitiallyLoaded,
-    isLoadingConnectors,
-    connectors.length,
-    autoRefreshEvents,
-    eventsPagination.pageIndex // Only include pageIndex to restart when changing pages
-  ]);
+  }, [eventsHasInitiallyLoaded, isLoadingConnectors, connectors.length, alarmEventsOnly, startEventsStream, stopEventsStream]);
+
+  // Update server-side stream filters when relevant filters change
+  useEffect(() => {
+    updateEventsStreamFilters({ alarmEventsOnly });
+  }, [alarmEventsOnly, updateEventsStreamFilters]);
 
   const toggleCardViewFullScreen = () => { // Simpler toggle, actual API calls in useEffect
     if (!document.fullscreenElement) {
