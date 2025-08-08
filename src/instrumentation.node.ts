@@ -78,31 +78,54 @@ function setupGracefulShutdown() {
       // Clean up services in parallel (10 seconds max total)
       try {
         console.log('[Instrumentation Node] Loading service modules...');
-        const [mqttModule, pikoModule, redisModule, dbModule] = await Promise.all([
-          import('@/services/mqtt-service'),
-          import('@/services/piko-websocket-service'),
-          import('@/lib/redis/client'),
-          import('@/data/db')
+        const modules = await Promise.race([
+          Promise.all([
+            import('@/services/mqtt-service'),
+            import('@/services/piko-websocket-service'),
+            import('@/lib/redis/client'),
+            import('@/data/db')
+          ]),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Module import timeout')), 5000))
         ]);
+        const [mqttModule, pikoModule, redisModule, dbModule] = modules;
+        console.log('[Instrumentation Node] Service modules loaded successfully');
         
         // Stop cron jobs immediately (sync)
         console.log('[Instrumentation Node] Stopping cron jobs...');
-        const { stopCronJobs } = await import('@/lib/cron/scheduler');
-        stopCronJobs();
+        const cronModule = await Promise.race([
+          import('@/lib/cron/scheduler'),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Cron import timeout')), 2000))
+        ]);
+        cronModule.stopCronJobs();
         console.log('[Instrumentation Node] Cron jobs stopped');
         
-        // Cleanup async services in parallel
-        console.log('[Instrumentation Node] Cleaning up async services...');
-        await Promise.race([
-          Promise.allSettled([
-            mqttModule.cleanupAllMqttConnections(),
-            pikoModule.cleanupAllPikoConnections(),
-            redisModule.closeRedisConnections(),
-            dbModule.closeDbConnection()
-          ]),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Cleanup timeout')), 10000))
+        // Cleanup async services in parallel with individual timeouts
+        console.log('[Instrumentation Node] Starting individual service cleanups...');
+        
+        // Helper function to wrap each cleanup with individual timeout
+        const withTimeout = (promise: Promise<any>, name: string, timeoutMs: number) => {
+          return Promise.race([
+            promise.then(() => console.log(`[Instrumentation Node] ${name} cleanup complete`)),
+            new Promise((_, reject) => setTimeout(() => reject(new Error(`${name} cleanup timeout`)), timeoutMs))
+          ]);
+        };
+        
+        const cleanupResults = await Promise.allSettled([
+          withTimeout(mqttModule.cleanupAllMqttConnections(), 'MQTT', 3000),
+          withTimeout(pikoModule.cleanupAllPikoConnections(), 'Piko', 3000),
+          withTimeout(redisModule.closeRedisConnections(), 'Redis', 2000),
+          withTimeout(dbModule.closeDbConnection(), 'DB', 1000)
         ]);
-        console.log('[Instrumentation Node] Service cleanup complete');
+        
+        // Log results
+        cleanupResults.forEach((result, index) => {
+          const services = ['MQTT', 'Piko', 'Redis', 'DB'];
+          if (result.status === 'rejected') {
+            console.error(`[Instrumentation Node] ${services[index]} cleanup failed:`, result.reason);
+          }
+        });
+        
+        console.log('[Instrumentation Node] All service cleanups attempted');
       } catch (error) {
         console.error('[Instrumentation Node] Service cleanup failed:', error);
       }
@@ -114,12 +137,9 @@ function setupGracefulShutdown() {
     clearTimeout(shutdownTimeout);
     console.log('[Instrumentation Node] Graceful shutdown complete');
     
-    // Force exit after a short delay to ensure the process terminates
-    // This prevents hanging on any remaining handles
-    setTimeout(() => {
-      console.log('[Instrumentation Node] Force exiting process');
-      process.exit(0);
-    }, 100);
+    // Force exit immediately - don't wait for remaining handles
+    // Railway deployment should complete cleanly
+    process.exit(0);
   };
   
   // Register handlers only once
