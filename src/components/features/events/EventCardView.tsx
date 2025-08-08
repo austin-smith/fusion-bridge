@@ -41,7 +41,7 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices
   const gridClasses = useMemo(() => {
     switch (cardSize) {
       case 'small':
-        return 'grid grid-cols-1 gap-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8';
+        return 'grid grid-cols-1 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'; // Reduced from original 4/6/8 to 4/5/6 for slightly wider cards
       case 'medium':
         return 'grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
       case 'large':

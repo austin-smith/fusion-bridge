@@ -238,6 +238,9 @@ interface FusionState {
   eventsTimeStart: string | null; // ISO date string for custom range
   eventsTimeEnd: string | null;   // ISO date string for custom range
   
+  // Filter preferences loading state
+  eventsFiltersHaveLoaded: boolean;
+  
   // --- Reports Page Time Filters ---
   reportsTimeFilter: 'all' | 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisMonth' | 'custom';
   reportsTimeStart: string | null; // ISO date string for custom range
@@ -579,6 +582,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   eventsTimeFilter: 'all',
   eventsTimeStart: null,
   eventsTimeEnd: null,
+  
+  // Filter preferences loading state
+  eventsFiltersHaveLoaded: false,
   
   // --- Reports Page Time Filter Initial Values ---
   reportsTimeFilter: 'last7days', // Default to match current behavior
@@ -2202,7 +2208,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     
     // Only clear data if organization actually changed
     if (currentOrgId !== organizationId) {
-      console.log(`[Store] Organization changed from ${currentOrgId} to ${organizationId} - clearing scoped data`);
+      const isInitialAuth = currentOrgId === null && organizationId !== null;
+      console.log(`[Store] Organization changed from ${currentOrgId} to ${organizationId}${isInitialAuth ? ' (initial auth)' : ''} - clearing scoped data`);
       
       set({
         activeOrganizationId: organizationId,
@@ -2257,15 +2264,21 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         },
         eventsAbortController: null,
         eventsHasInitiallyLoaded: false,
-        // Reset organization-specific filters
-        eventsLocationFilter: 'all',
-        eventsSpaceFilter: 'all',
+        // Only reset organization-specific filters if this is an actual org change (not initial auth)
+        ...(isInitialAuth ? {} : {
+          eventsLocationFilter: 'all',
+          eventsSpaceFilter: 'all',
+        }),
+        // Reset filter loading state so preferences get reloaded
+        eventsFiltersHaveLoaded: false,
       });
       
-      // Update localStorage to persist the reset filters
-      localStorage.setItem('eventsLocationFilterPreference', 'all');
-      localStorage.setItem('eventsSpaceFilterPreference', 'all');
-      console.log('[Store] Reset organization-specific filters to "all"');
+      // Only update localStorage for location/space filters if this is an actual org change (not initial auth)
+      if (!isInitialAuth && typeof window !== 'undefined') {
+        localStorage.setItem('eventsLocationFilterPreference', 'all');
+        localStorage.setItem('eventsSpaceFilterPreference', 'all');
+        console.log('[Store] Reset organization-specific filters to "all"');
+      }
       
       // Auto-refetch data for new organization if we have one
       if (organizationId) {
@@ -2280,6 +2293,12 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         get().fetchDashboardEvents();
         get().fetchAutomations(); // Fetch automations
         get().fetchOpenAiStatus(); // Fetch OpenAI status
+        
+        // Reinitialize filter preferences after organization change with small delay
+        // to ensure location/space data is loaded first
+        setTimeout(() => {
+          get().initializeFilterPreferences();
+        }, 100);
       }
     } else {
       // Same organization, just update the ID (shouldn't happen but safe)
@@ -2668,7 +2687,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         // Time filters
         eventsTimeFilter: storedTimeFilter,
         eventsTimeStart: storedTimeStart,
-        eventsTimeEnd: storedTimeEnd
+        eventsTimeEnd: storedTimeEnd,
+        // Mark filters as loaded
+        eventsFiltersHaveLoaded: true
       });
       
       console.log('[FusionStore] Filter preferences loaded from localStorage:', { 
@@ -2678,16 +2699,17 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         eventCategoryFilter: eventCategoryFilter.length,
         alarmEventsOnly 
       });
-         } else {
+                } else {
        // Server-side fallback
        set({ 
          eventsLocationFilter: 'all',
          eventsSpaceFilter: 'all',
          eventsConnectorCategoryFilter: 'all', 
          eventsEventCategoryFilter: getDefaultEventCategories(),
-         eventsAlarmEventsOnly: false
+         eventsAlarmEventsOnly: false,
+         eventsFiltersHaveLoaded: true
        });
-     }
+    }
   },
   resetFiltersToDefaults: () => {
     const defaultEventCategories = getDefaultEventCategories();

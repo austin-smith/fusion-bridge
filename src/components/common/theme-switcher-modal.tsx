@@ -101,7 +101,7 @@ export function ThemeSwitcherModal({ isOpen, onClose }: ThemeSwitcherModalProps)
           <div className="pt-2 border-t text-center">
             <p className="text-xs text-muted-foreground">
               Use <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded">
-                {isMac ? '⌘ J' : 'Ctrl+J'}
+                {isMac ? '⌘J' : 'Ctrl+J'}
               </kbd> to cycle themes
             </p>
           </div>

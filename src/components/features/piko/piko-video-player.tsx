@@ -233,9 +233,9 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
           );
       } catch (e) {
         console.error("Error calling WebRTCStreamManager.connect:", e);
-        const errorMsg = e instanceof Error ? e.message : "Failed to initiate library connection.";
+        const errorMsg = e instanceof Error ? e.message : "Failed to initiate connection";
         setMediaInfoError(errorMsg);
-        toast.error(errorMsg);
+        toast.error(`Video Error: ${errorMsg}`);
       }
 
       return () => {

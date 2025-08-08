@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
 import { formatConnectorCategory } from '@/lib/utils';
 import type { TypedDeviceInfo } from '@/lib/mappings/definitions';
-import { AlertTriangle, MoreHorizontal, Clock, ListTree, Expand, ZoomIn, PlayIcon, Gamepad } from 'lucide-react';
+import { AlertTriangle, MoreHorizontal, Clock, ListTree, Expand, ZoomIn, PlayIcon, Gamepad, ImageOff, Info } from 'lucide-react';
 import { LOCKED, UNLOCKED, ON, OFF, OPEN, CLOSED, LEAK_DETECTED, DRY, MOTION_DETECTED, NO_MOTION, VIBRATION_DETECTED, NO_VIBRATION, SensorAlertState } from '@/lib/mappings/definitions'; // <-- Import specific states
 import type { DeviceWithConnector, Space } from '@/types/index';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"; // <-- Added Popover imports
@@ -22,8 +22,12 @@ import { Separator } from "@/components/ui/separator";
 import { SeverityLevel, getGroupSeverity } from '@/lib/mappings/severity'; // <-- Added severity imports
 import { Button } from "@/components/ui/button";
 import { ImagePreviewDialog } from './image-preview-dialog'; // <-- Import the new dialog
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { EventDetailDialogContent } from './event-detail-dialog-content'; // <-- Import event detail dialog
 import { toast } from 'react-hot-toast';
 import { getThumbnailSource, findSpaceCameras, buildThumbnailUrl } from '@/services/event-thumbnail-resolver';
+import { useDeviceCameraConfig } from '@/hooks/use-device-camera-config';
+import { CameraCarouselControls } from '@/components/features/common/camera-carousel';
 
 // Define the structure for a group of events
 // This might be refined later based on the grouping logic in EventCardView
@@ -94,8 +98,27 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     }
     return `${format(startTime, 'h:mm:ss a')} - ${format(endTime, 'h:mm:ss a')}`;
   }, [startTime, endTime]);
+
+  // Find a representative device from the events to determine space cameras
+  const representativeDevice = useMemo(() => {
+    const deviceIds = events.map(e => e.deviceId);
+    return allDevices.find(d => deviceIds.includes(d.deviceId)) || null;
+  }, [events, allDevices]);
+
+  // Use multi-camera hook for enhanced camera functionality
+  const {
+    shouldShowMedia: shouldShowCameras,
+    hasMultipleCameras,
+    cameras,
+    selectedCameraIndex,
+    selectCamera,
+    selectNext,
+    selectPrevious
+  } = useDeviceCameraConfig(representativeDevice, {
+    spaceName: spaceName || undefined
+  });
   
-  // --- Find cameras for thumbnail logic --- 
+  // --- Enhanced thumbnail logic with camera selection support --- 
   const thumbnailUrl = useMemo(() => {
     // Find cameras based on space associations for devices in the events
     const deviceIds = events.map(e => e.deviceId);
@@ -108,13 +131,23 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     )];
     
     // Find cameras in the same spaces
-    const spaceCameras = allDevices.filter(device => 
+    let spaceCameras = allDevices.filter(device => 
       device.connectorCategory === 'piko' && 
       device.deviceTypeInfo?.type === 'Camera' &&
       spaceIds.includes(device.spaceId)
     );
+
+    // Determine selected camera device if available
+    let selectedCameraDevice: DeviceWithConnector | undefined;
+    if (cameras.length > 0 && selectedCameraIndex < cameras.length) {
+      selectedCameraDevice = allDevices.find(d => d.id === cameras[selectedCameraIndex].id);
+      if (selectedCameraDevice) {
+        // Put selected camera first in the list for any downstream logic
+        spaceCameras = [selectedCameraDevice, ...spaceCameras.filter(c => c.id !== selectedCameraDevice!.id)];
+      }
+    }
     
-    // Try to find the best event for thumbnail (most recent analytics event preferred)
+    // Choose a representative event/time
     let bestEvent: EnrichedEvent | undefined;
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i];
@@ -124,55 +157,58 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         break;
       }
     }
-    
-    // If no best shot event, use the most recent event
-    if (!bestEvent) {
-      bestEvent = events[events.length - 1];
+
+    const representativeTimestamp = (bestEvent?.timestamp ?? events[events.length - 1]?.timestamp) || Date.now();
+
+    // If a selected camera exists, always show its thumbnail at the representative time
+    if (selectedCameraDevice) {
+      return `/api/piko/device-thumbnail?connectorId=${selectedCameraDevice.connectorId}&cameraId=${selectedCameraDevice.deviceId}&timestamp=${representativeTimestamp}`;
     }
     
-    // Get thumbnail source and build URL
-    const source = getThumbnailSource(bestEvent, spaceCameras);
+    // Fallback: previous logic (best-shot or space camera)
+    const source = getThumbnailSource(bestEvent || events[events.length - 1], spaceCameras);
     if (!source) return undefined;
     
     return buildThumbnailUrl(source);
-  }, [events, allDevices]);
+  }, [events, allDevices, cameras, selectedCameraIndex]);
 
-  // --- Find camera for video playback logic ---
-  const spacePikoCamera = useMemo(() => {
-    const deviceIds = events.map(e => e.deviceId);
-    const devicesInGroup = allDevices.filter(d => deviceIds.includes(d.deviceId));
-    
-    // Get space IDs from devices that have space associations
-    const spaceIds = [...new Set(devicesInGroup
-      .map(d => d.spaceId)
-      .filter(Boolean)
-    )];
-    
-    // Find cameras in the same spaces
-    const spaceCameras = allDevices.filter(device => 
-      device.connectorCategory === 'piko' && 
-      device.deviceTypeInfo?.type === 'Camera' &&
-      spaceIds.includes(device.spaceId)
-    );
-    
-    return spaceCameras[0] || null;
-  }, [events, allDevices]);
+  const hasThumbnail = !!thumbnailUrl;
+
+  // Get the currently selected camera for video playback (maintains compatibility)
+  const spacePikoCamera = cameras.length > 0 ? 
+    allDevices.find(d => d.id === cameras[selectedCameraIndex]?.id) || null : 
+    null;
 
   // --- Sizing Logic - SIMPLIFIED --- 
   const cardSizeClass = useMemo(() => {
-    switch (cardSize) {
-      case 'small':
-        return "min-h-[80px]";
-      case 'medium':
-        return "min-h-[120px]";
-      case 'large':
-      default:
-        return isRecentGroup 
-          ? (eventCount > 5 ? "min-h-[220px]" : "min-h-[180px]")
-          : (eventCount > 5 ? "min-h-[180px]" : "min-h-[140px]");
+    // For thumbnail cards, optimized for typical camera image aspect ratios (wider than tall)
+    if (hasThumbnail) {
+      switch (cardSize) {
+        case 'small':
+          return "min-h-[160px]"; // Reduced for better image aspect ratio
+        case 'medium':
+          return "min-h-[200px]"; // Reduced for better image aspect ratio  
+        case 'large':
+        default:
+          return isRecentGroup 
+            ? (eventCount > 5 ? "min-h-[280px]" : "min-h-[240px]") // Reduced for better proportions
+            : (eventCount > 5 ? "min-h-[240px]" : "min-h-[200px]"); // Better aspect ratio
+      }
+    } else {
+      // Non-thumbnail cards can use smaller heights
+      switch (cardSize) {
+        case 'small':
+          return "min-h-[80px]";
+        case 'medium':
+          return "min-h-[120px]";
+        case 'large':
+        default:
+          return isRecentGroup 
+            ? (eventCount > 5 ? "min-h-[180px]" : "min-h-[140px]")
+            : (eventCount > 5 ? "min-h-[140px]" : "min-h-[120px]");
+      }
     }
-  }, [eventCount, isRecentGroup, cardSize]);
-  const hasThumbnail = !!thumbnailUrl;
+  }, [eventCount, isRecentGroup, cardSize, hasThumbnail]);
 
   // --- Device Summary Calculation (as before) ---
   const deviceSummaries = useMemo(() => {
@@ -247,6 +283,8 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
   // --- END Severity Calculation --- 
   
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [failedThumbnailUrl, setFailedThumbnailUrl] = useState<string | null>(null);
+  const imageFailed = failedThumbnailUrl === thumbnailUrl;
 
   // Calculate bestShotEvent once, as it's used in multiple places
   const bestShotEvent = useMemo(() => {
@@ -275,7 +313,8 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         "border-l-4",
         severityStyles.borderClass,
         cardSizeClass, // Standard min-height
-        "bg-card" // Standard background
+        "bg-card",
+        "shadow-md hover:shadow-lg"
       )}>
         <CardHeader className={cn(
           "p-3 flex-shrink-0"
@@ -285,61 +324,52 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
               <CardTitle className="text-base font-medium mb-0.5 truncate">
                 {spaceName ?? 'Unassigned Space'}
               </CardTitle>
-              <CardDescription className="text-xs flex items-center">
+              <CardDescription className="text-xs flex items-center mb-1">
                 <Clock className="h-3 w-3 mr-1.5 text-muted-foreground" />
                 {timeRangeText}
               </CardDescription>
+
             </div>
           </div>
         </CardHeader>
-        <CardContent className={cn(
-          "p-3 pt-0 flex-grow flex flex-col min-h-0"
-        )}>
-          {hasThumbnail ? (
-            <div className="aspect-video bg-muted rounded-md relative overflow-hidden group/thumbnail">
-              <Image 
-                src={thumbnailUrl} 
-                alt={`${spaceName ?? 'Event'} thumbnail`} 
-                fill
-                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                className="object-contain transition-transform duration-200 group-hover/thumbnail:scale-105"
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-              />
-               {/* Fallback for image error */} 
-               <div 
-                 className="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground text-xs opacity-0"
-                 style={{ display: 'none' }}
-                 ref={(el) => { 
-                   if (el?.previousSibling instanceof HTMLImageElement) {
-                     el.previousSibling.addEventListener('error', () => {
-                       el.style.display = 'flex'; 
-                       el.style.opacity = '1';
-                     });
-                   }
-                 }}
-               >
-                 Error loading image
-               </div>
-
-              {/* Conditionally show event count badge */}
-              {eventCount > 1 && (
-                <div className="absolute top-1.5 left-1.5 z-10">
-                  <Badge variant="secondary" className="bg-black/60 hover:bg-black/70 backdrop-blur-sm">
-                    {eventCount} events
-                  </Badge>
+        {hasThumbnail && thumbnailUrl ? (
+           // Thumbnail layout - extends to card edges with overlaid header
+           <div className="relative flex-grow flex flex-col overflow-hidden">
+             {/* Thumbnail takes full available space */}
+             <div className="absolute inset-0 bg-muted group/thumbnail">
+               {!imageFailed ? (
+                 <Image 
+                   key={thumbnailUrl}
+                   src={thumbnailUrl} 
+                   alt={`${spaceName ?? 'Event'} thumbnail`} 
+                   fill
+                   sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                   className="object-cover transition-transform duration-200 group-hover/thumbnail:scale-105"
+                   priority={isRecentGroup}
+                   onError={() => setFailedThumbnailUrl(thumbnailUrl)}
+                 />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
+                  <div className="flex items-center justify-center h-12 w-12 rounded-full bg-background/80 border">
+                    <ImageOff className="h-6 w-6" />
+                  </div>
                 </div>
               )}
 
+
+
               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/thumbnail:opacity-100 transition-opacity duration-200 bg-black/30 space-x-2">
-                <Button 
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10 rounded-full bg-background/80 hover:bg-background/95 text-foreground/80 hover:text-foreground"
-                  onClick={() => setIsPreviewOpen(true)}
-                  title="View larger image"
-                >
-                  <ZoomIn className="h-5 w-5" />
-                </Button>
+                {!imageFailed && (
+                  <Button 
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 rounded-full bg-background/80 hover:bg-background/95 text-foreground/80 hover:text-foreground"
+                    onClick={() => setIsPreviewOpen(true)}
+                    title="View larger image"
+                  >
+                    <ZoomIn className="h-5 w-5" />
+                  </Button>
+                )}
                 {(bestShotEvent || spacePikoCamera) && (
                   <Button 
                     variant="outline"
@@ -351,126 +381,208 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                     <PlayIcon className="h-5 w-5" />
                   </Button>
                 )}
+                {events.length > 0 && <EventDetailDialogContent event={events[events.length - 1]} events={events} buttonStyle="overlay" />}
               </div>
 
-              {/* --- ICON OVERLAY uses deviceSummaries --- */}
-              {deviceSummaries.length > 0 && (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <div className="absolute bottom-1.5 right-1.5 z-10 flex items-center gap-0.5 p-0.5 rounded-sm bg-black/60 backdrop-blur-sm cursor-pointer hover:bg-black/75">
-                      {/* Use renamed variable for visible icons */}
-                      {visibleDeviceSummariesForOverlay.map(summary => {
-                        const Icon = getDeviceTypeIcon(summary.deviceTypeInfo.type);
-                        const hasSignificant = summary.significantEventTypes.size > 0;
-                        const stateColor = getDisplayStateColorClass(summary.latestDisplayState);
-                        return (
-                          <div key={summary.deviceId} className={cn("p-0.5 rounded-sm relative", 
-                              hasSignificant ? "bg-amber-500/30" : "bg-transparent"
-                            )}>
-                            <Icon className={cn("h-3.5 w-3.5", stateColor === 'text-muted-foreground' ? 'text-white/70' : stateColor)} />
+              {/* Camera Carousel Controls - Top Left */}
+              {hasMultipleCameras && (
+                <div className="absolute top-2 left-2 z-20">
+                  <div className="bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
+                    <CameraCarouselControls
+                      cameras={cameras}
+                      selectedIndex={selectedCameraIndex}
+                      onCameraChange={selectCamera}
+                      layout="dots"
+                      size="xs"
+                      className="text-white"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* --- METADATA OVERLAY: Event types + Device icons --- */}
+              <div className="absolute bottom-1.5 right-1.5 z-10 flex items-center gap-1">
+                {/* Event type badges */}
+                {(() => {
+                  const allEventTypes = new Set<EventType>();
+                  const significantEventTypes = new Set<EventType>();
+                  const eventTypeCounts = new Map<EventType, number>();
+                  
+                  // Collect all event types from the group and count them
+                  events.forEach(event => {
+                    if (event.eventType) {
+                      const eventType = event.eventType as EventType;
+                      allEventTypes.add(eventType);
+                      eventTypeCounts.set(eventType, (eventTypeCounts.get(eventType) || 0) + 1);
+                    }
+                  });
+                  
+                  // Also collect significant event types (prioritize these)
+                  deviceSummaries.forEach(summary => {
+                    summary.significantEventTypes.forEach(type => significantEventTypes.add(type));
+                  });
+                  
+                  // Prioritize significant events, then fall back to any events
+                  const eventTypesArray = significantEventTypes.size > 0 
+                    ? Array.from(significantEventTypes)
+                    : Array.from(allEventTypes);
+                  
+                  if (eventTypesArray.length === 0) return null;
+                  
+                  const firstEventType = eventTypesArray[0];
+                  const firstEventTypeCount = eventTypeCounts.get(firstEventType) || 0;
+                  const remainingTypesCount = eventTypesArray.length - 1;
+                  const totalEventsCount = events.length;
+                  
+                  // Get the most relevant device type for icon
+                  const primaryDeviceType = deviceSummaries.length > 0 
+                    ? deviceSummaries[0].deviceTypeInfo.type 
+                    : events[0]?.deviceTypeInfo?.type;
+                  const DeviceIcon = primaryDeviceType ? getDeviceTypeIcon(primaryDeviceType) : null;
+                  
+                  return (
+                    <div className="flex items-center gap-1">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Badge 
+                            variant="secondary" 
+                            className="text-[10px] h-4 px-1 bg-black/60 hover:bg-black/70 backdrop-blur-sm text-white flex-shrink-0 flex items-center gap-1 cursor-pointer"
+                          >
+                            {DeviceIcon && <DeviceIcon className="h-3 w-3" />}
+                            {EVENT_TYPE_DISPLAY_MAP[firstEventType] ?? firstEventType}
+                            {firstEventTypeCount > 1 && ` (${firstEventTypeCount}x)`}
+                          </Badge>
+                        </PopoverTrigger>
+                        <PopoverContent side="top" align="end" className="w-72 p-0 shadow-xl flex flex-col">
+                          <div className="p-3 flex-shrink-0">
+                            <p className="font-medium text-sm mb-2">Event Sequence</p>
                           </div>
-                        );
-                      })}
-                      {/* Use hiddenOverlayDeviceCount */}
-                      {(hiddenOverlayDeviceCount > 0) && (
-                          <div className="p-0.5 rounded-sm">
-                              <MoreHorizontal className="h-3.5 w-3.5 text-white/70" />
-                          </div>
-                      )}
-                    </div>
-                  </PopoverTrigger>
-                  <PopoverContent side="top" align="end" className="w-72 p-0 shadow-xl flex flex-col">
-                    <div className="p-3 flex-shrink-0">
-                      <p className="font-medium text-sm mb-2">Event Sequence</p>
-                    </div>
-                    <ScrollArea className="flex-grow min-h-0 w-full" type="scroll">
-                      {/* --- Integrated Timeline --- */}
-                      <div className="px-3 pb-3">
-                        <div className="relative border-l border-muted ml-1.5 pl-4 space-y-2">
-                          {events.map((event, index) => {
-                            const eventTime = new Date(event.timestamp);
-                            const DeviceIcon = getDeviceTypeIcon(event.deviceTypeInfo.type);
-                            const StateIcon = event.displayState ? getDisplayStateIcon(event.displayState) : null;
-                            const stateColor = getDisplayStateColorClass(event.displayState);
-                            
-                            return (
-                              <div key={event.eventUuid} className="relative">
-                                {/* Timeline node */}
-                                <div className="absolute left-[-21px] top-1 w-3.5 h-3.5 bg-background border-2 border-border rounded-full"></div>
-                                
-                                {/* Event content */}
-                                <div className="text-xs">
-                                  {/* Time */}
-                                  <div className="text-muted-foreground text-[11px] mb-0.5 flex items-center">
-                                    <Clock className="h-3 w-3 mr-1" />
-                                    {format(eventTime, 'h:mm:ss a')}
-                                  </div>
+                          <ScrollArea className="flex-grow min-h-0 w-full" type="scroll">
+                            {/* --- Integrated Timeline --- */}
+                            <div className="px-3 pb-3">
+                              <div className="relative border-l border-muted ml-1.5 pl-4 space-y-2">
+                                {events.map((event, index) => {
+                                  const eventTime = new Date(event.timestamp);
+                                  const DeviceIcon = getDeviceTypeIcon(event.deviceTypeInfo.type);
+                                  const StateIcon = event.displayState ? getDisplayStateIcon(event.displayState) : null;
+                                  const stateColor = getDisplayStateColorClass(event.displayState);
                                   
-                                  {/* Event summary */}
-                                  <div className="flex items-start gap-1 mb-1">
-                                    <DeviceIcon className="h-4 w-4 text-muted-foreground mt-0.5" />
-                                    <div className="flex-grow min-w-0">
-                                      <div className="font-medium truncate">
-                                        {event.deviceName || event.deviceId}
-                                      </div>
+                                  return (
+                                    <div key={event.eventUuid} className="relative">
+                                      {/* Timeline node */}
+                                      <div className="absolute left-[-21px] top-1 w-3.5 h-3.5 bg-background border-2 border-border rounded-full"></div>
                                       
-                                      <div className="flex items-center flex-wrap gap-1 mt-0.5">
-                                        {(event.eventType === EventType.STATE_CHANGED && event.displayState && StateIcon) ? (
-                                          <Badge variant="outline" className={cn("text-[10px] h-5 inline-flex items-center gap-1", stateColor)}>
-                                            <StateIcon className="h-3 w-3" />
-                                            {event.displayState}
-                                          </Badge>
-                                        ) : (event.eventType === EventType.BUTTON_PRESSED || event.eventType === EventType.BUTTON_LONG_PRESSED) ? (
-                                          // Special case for Smart Fob button events - simple inline
-                                          <Badge variant="outline" className="text-[10px] h-5 inline-flex items-center gap-1">
-                                            <Gamepad className="h-3 w-3" />
-                                            Button {String(event.payload?.buttonNumber || '?')} {event.eventType === EventType.BUTTON_LONG_PRESSED ? '(Long)' : ''}
-                                          </Badge>
-                                        ) : (event.eventType !== EventType.STATE_CHANGED && event.eventType !== EventType.BATTERY_LEVEL_CHANGED) ? (
-                                          // For other significant events, show Type / Subtype styled like the table view
-                                          (() => {
-                                            const typeName = EVENT_TYPE_DISPLAY_MAP[event.eventType as EventType] ?? event.eventType;
-                                            const subtypeName = event.eventSubtype ? (EVENT_SUBTYPE_DISPLAY_MAP[event.eventSubtype] ?? event.eventSubtype) : null;
-                                            const fullEventName = subtypeName ? `${typeName} / ${subtypeName}` : typeName;
+                                      {/* Event content */}
+                                      <div className="text-xs">
+                                        {/* Time */}
+                                        <div className="text-muted-foreground text-[11px] mb-0.5 flex items-center">
+                                          <Clock className="h-3 w-3 mr-1" />
+                                          {format(eventTime, 'h:mm:ss a')}
+                                        </div>
+                                        
+                                        {/* Event summary */}
+                                        <div className="flex items-start gap-1 mb-1">
+                                          <DeviceIcon className="h-4 w-4 text-muted-foreground mt-0.5" />
+                                          <div className="flex-grow min-w-0">
+                                            <div className="font-medium truncate">
+                                              {event.deviceName || event.deviceId}
+                                            </div>
                                             
-                                            return (
-                                              <TooltipProvider>
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    {/* Mimic table view badge style */}
-                                                    <Badge variant="outline" className="text-[10px] h-5 font-normal">
-                                                      {/* Span inside handles truncation */}
-                                                      <span className="block max-w-[150px] overflow-hidden text-ellipsis whitespace-nowrap">
-                                                        {typeName}
-                                                        {subtypeName && (
-                                                          <span className="text-muted-foreground ml-1">/ {subtypeName}</span>
-                                                        )}
-                                                      </span>
-                                                    </Badge>
-                                                  </TooltipTrigger>
-                                                  <TooltipContent>
-                                                    <p>{fullEventName}</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </TooltipProvider>
-                                            );
-                                          })()
-                                        ) : null}
+                                            <div className="flex items-center flex-wrap gap-1 mt-0.5">
+                                              {(event.eventType === EventType.STATE_CHANGED && event.displayState && StateIcon) ? (
+                                                <Badge variant="outline" className={cn("text-[10px] h-5 inline-flex items-center gap-1", stateColor)}>
+                                                  <StateIcon className="h-3 w-3" />
+                                                  {event.displayState}
+                                                </Badge>
+                                              ) : (event.eventType === EventType.BUTTON_PRESSED || event.eventType === EventType.BUTTON_LONG_PRESSED) ? (
+                                                // Special case for Smart Fob button events - simple inline
+                                                <Badge variant="outline" className="text-[10px] h-5 inline-flex items-center gap-1">
+                                                  <Gamepad className="h-3 w-3" />
+                                                  Button {String(event.payload?.buttonNumber || '?')} {event.eventType === EventType.BUTTON_LONG_PRESSED ? '(Long)' : ''}
+                                                </Badge>
+                                              ) : (event.eventType !== EventType.STATE_CHANGED && event.eventType !== EventType.BATTERY_LEVEL_CHANGED) ? (
+                                                // For other significant events, show Type / Subtype styled like the table view
+                                                (() => {
+                                                  const typeName = EVENT_TYPE_DISPLAY_MAP[event.eventType as EventType] ?? event.eventType;
+                                                  const subtypeName = event.eventSubtype ? (EVENT_SUBTYPE_DISPLAY_MAP[event.eventSubtype] ?? event.eventSubtype) : null;
+                                                  const fullEventName = subtypeName ? `${typeName} / ${subtypeName}` : typeName;
+                                                  
+                                                  return (
+                                                    <TooltipProvider>
+                                                      <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                          {/* Mimic table view badge style */}
+                                                          <Badge variant="outline" className="text-[10px] h-5 font-normal">
+                                                            {/* Span inside handles truncation */}
+                                                            <span className="block max-w-[150px] overflow-hidden text-ellipsis whitespace-nowrap">
+                                                              {typeName}
+                                                              {subtypeName && (
+                                                                <span className="text-muted-foreground ml-1">/ {subtypeName}</span>
+                                                              )}
+                                                            </span>
+                                                          </Badge>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent>
+                                                          <p>{fullEventName}</p>
+                                                        </TooltipContent>
+                                                      </Tooltip>
+                                                    </TooltipProvider>
+                                                  );
+                                                })()
+                                              ) : null}
+                                            </div>
+                                          </div>
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                </div>
+                                  );
+                                })}
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </ScrollArea>
-                  </PopoverContent>
-                </Popover>
-              )}
+                            </div>
+                          </ScrollArea>
+                        </PopoverContent>
+                      </Popover>
+                      {remainingTypesCount > 0 ? (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge 
+                                variant="secondary" 
+                                className="text-[10px] h-4 px-1 bg-black/60 hover:bg-black/70 backdrop-blur-sm text-white/80"
+                              >
+                                +{remainingTypesCount}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="text-xs">
+                                {eventTypesArray.slice(1).map(eventType => {
+                                  const count = eventTypeCounts.get(eventType) || 0;
+                                  const displayName = EVENT_TYPE_DISPLAY_MAP[eventType] ?? eventType;
+                                  return count > 1 ? `${displayName} (${count}x)` : displayName;
+                                }).join(', ')}
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : totalEventsCount > firstEventTypeCount && (
+                        <Badge 
+                          variant="secondary" 
+                          className="text-[10px] h-4 px-1 bg-black/60 hover:bg-black/70 backdrop-blur-sm text-white/80"
+                        >
+                          +{totalEventsCount - firstEventTypeCount}
+                        </Badge>
+                      )}
+                    </div>
+                  );
+                })()}
+
+              </div>
             </div>
-          ) : (
+          </div>
+        ) : (
+          <CardContent className={cn(
+            "p-3 pt-0 flex-grow flex flex-col min-h-0"
+          )}>
             <div className="flex-grow flex flex-col justify-center gap-1.5 py-1 px-3">
               {visibleFallbackSummaries.length > 0 ? (
                 <TooltipProvider>
@@ -512,13 +624,20 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                        {hiddenFallbackDeviceCount} more device{hiddenFallbackDeviceCount !== 1 ? 's' : ''}
                      </div>
                   )}
+                  {/* Event details access for cards without thumbnails */}
+                  <div className="flex justify-end mt-2">
+    {events.length > 0 && <EventDetailDialogContent event={events[events.length - 1]} events={events} buttonStyle="overlay" />}
+                  </div>
                 </TooltipProvider>
               ) : (
-                <p className="text-xs text-muted-foreground text-center m-auto">No device activity to summarize.</p>
+                <div className="flex flex-col items-center justify-center gap-2">
+                  <p className="text-xs text-muted-foreground text-center">No device activity to summarize.</p>
+  {events.length > 0 && <EventDetailDialogContent event={events[events.length - 1]} events={events} buttonStyle="overlay" />}
+                </div>
               )}
             </div>
-          )}
-        </CardContent>
+          </CardContent>
+        )}
       </Card>
 
       {/* Image Preview Dialog */}
@@ -529,6 +648,8 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         imageAlt={`${spaceName ?? 'Event'} - Preview`} 
         title={`Preview: ${spaceName ?? groupKey}`}
       />
+
+
     </>
   );
 }; 

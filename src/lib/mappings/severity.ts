@@ -20,17 +20,17 @@ export enum SeverityLevel {
 const getSeverityFromState = (state: DisplayState | undefined): SeverityLevel => {
     if (!state) return SeverityLevel.DEFAULT;
     switch (state) {
-        case OPEN:
-        case UNLOCKED:
         case LEAK_DETECTED:
         case MOTION_DETECTED:
         case VIBRATION_DETECTED:
         case ERROR:
             return SeverityLevel.WARNING;
-        case ON: // Previously INFO, now DEFAULT
+        case ON:
         case OFF:
+        case OPEN:
         case CLOSED:
         case LOCKED:
+        case UNLOCKED:
         case DRY:
         case NO_MOTION:
         case NO_VIBRATION:
