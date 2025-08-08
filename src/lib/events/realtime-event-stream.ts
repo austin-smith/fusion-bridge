@@ -25,6 +25,18 @@ class RealtimeEventStream {
   private handlers: StreamHandlers = {};
   private started = false;
 
+  private parseEventData(ev: MessageEvent, eventType: string): any | null {
+    try {
+      return JSON.parse(ev.data);
+    } catch (err) {
+      console.error(`SSE ${eventType} event: Invalid JSON`, { 
+        data: ev.data, 
+        error: err instanceof Error ? err.message : String(err) 
+      });
+      return null;
+    }
+  }
+
   start(params: StreamParams, handlers: StreamHandlers = {}) {
     this.params = { ...params };
     this.handlers = handlers;
@@ -75,46 +87,46 @@ class RealtimeEventStream {
     });
 
     es.addEventListener('event', (ev: MessageEvent) => {
-      try {
-        const data = JSON.parse(ev.data);
+      const data = this.parseEventData(ev, 'event');
+      if (data) {
         this.handlers.onEvent?.(data);
-      } catch (_) {}
+      }
     });
 
     // Some servers may emit default messages without an explicit event name
     es.addEventListener('message', (ev: MessageEvent) => {
-      try {
-        const data = JSON.parse(ev.data);
+      const data = this.parseEventData(ev, 'message');
+      if (data) {
         this.handlers.onEvent?.(data);
-      } catch (_) {}
+      }
     });
 
     es.addEventListener('arming', (ev: MessageEvent) => {
-      try {
-        const data = JSON.parse(ev.data);
+      const data = this.parseEventData(ev, 'arming');
+      if (data) {
         this.handlers.onArming?.(data);
-      } catch (_) {}
+      }
     });
 
     es.addEventListener('system', (ev: MessageEvent) => {
-      try {
-        const data = JSON.parse(ev.data);
+      const data = this.parseEventData(ev, 'system');
+      if (data) {
         this.handlers.onSystem?.(data);
-      } catch (_) {}
+      }
     });
 
     es.addEventListener('connection', (ev: MessageEvent) => {
-      try {
-        const data = JSON.parse(ev.data);
+      const data = this.parseEventData(ev, 'connection');
+      if (data) {
         this.handlers.onConnection?.(data);
-      } catch (_) {}
+      }
     });
 
     es.addEventListener('heartbeat', (ev: MessageEvent) => {
-      try {
-        const data = JSON.parse(ev.data);
+      const data = this.parseEventData(ev, 'heartbeat');
+      if (data) {
         this.handlers.onHeartbeat?.(data);
-      } catch (_) {}
+      }
     });
 
     es.addEventListener('error', (e: Event) => {

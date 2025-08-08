@@ -3020,16 +3020,17 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       flushTimer = null;
       if (pending.length === 0) return;
       const toApply = pending.splice(0, MAX_PER_FLUSH);
+      // Deduplicate against current seen set before calling set
+      const currentSeen = get().seenEventUuids;
+      const nextSeen = new Set(currentSeen);
+      const unique = toApply.filter(e => {
+        if (nextSeen.has(e.eventUuid)) return false;
+        nextSeen.add(e.eventUuid);
+        return true;
+      });
+      if (unique.length === 0) return;
       startTransition(() => {
         set((s) => {
-          // Deduplicate by UUID and update seen set
-          const nextSeen = new Set(s.seenEventUuids);
-          const unique = toApply.filter(e => {
-            if (nextSeen.has(e.eventUuid)) return false;
-            nextSeen.add(e.eventUuid);
-            return true;
-          });
-          if (unique.length === 0) return {} as any;
           if (s.eventsPagination.pageIndex === 0) {
             const nextEvents = [...unique, ...s.events].slice(0, 1000);
             return { events: nextEvents, seenEventUuids: nextSeen };
@@ -3091,7 +3092,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
             pending.push(mapped);
             scheduleFlush();
           } catch {
-            // ignore
+            // Intentionally ignore mapping errors to keep the stream resilient.
+            // Each event is independent; dropping a malformed one does not affect subsequent events.
           }
         },
         onSystem: () => set({ eventsStreamStatus: 'connected' }),
@@ -3113,28 +3115,32 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   },
 
   applyIncomingEvent: (event) => {
+    // Compute outside to avoid returning undefined from setter callback
+    const currentSeen = get().seenEventUuids;
+    if (currentSeen.has(event.eventUuid)) return;
+    const nextSeen = new Set(currentSeen);
+    nextSeen.add(event.eventUuid);
     set((s) => {
-      if (s.seenEventUuids.has(event.eventUuid)) return {} as any;
-      const nextSeen = new Set(s.seenEventUuids);
-      nextSeen.add(event.eventUuid);
       const nextEvents = [event, ...s.events].slice(0, 1000);
       return { events: nextEvents, seenEventUuids: nextSeen };
     });
   },
 
   bufferIncomingEvent: (event) => {
+    const currentSeen = get().seenEventUuids;
+    if (currentSeen.has(event.eventUuid)) return;
+    const nextSeen = new Set(currentSeen);
+    nextSeen.add(event.eventUuid);
     set((s) => {
-      if (s.seenEventUuids.has(event.eventUuid)) return {} as any;
-      const nextSeen = new Set(s.seenEventUuids);
-      nextSeen.add(event.eventUuid);
       const nextBuffered = [event, ...s.eventsBuffered].slice(0, 1000);
       return { eventsBuffered: nextBuffered, seenEventUuids: nextSeen };
     });
   },
 
   flushBufferedEvents: () => {
+    const { eventsBuffered } = get();
+    if (eventsBuffered.length === 0) return;
     set((s) => {
-      if (s.eventsBuffered.length === 0) return {} as any;
       const merged = [...s.eventsBuffered, ...s.events].slice(0, 1000);
       return { events: merged, eventsBuffered: [] };
     });
