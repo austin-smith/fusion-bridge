@@ -299,6 +299,7 @@ export enum EventType {
   ACCESS_DENIED = 'ACCESS_DENIED',               // See EventSubtype for specific reasons
   DOOR_HELD_OPEN = 'DOOR_HELD_OPEN',
   DOOR_FORCED_OPEN = 'DOOR_FORCED_OPEN',
+  DOOR_SECURED = 'DOOR_SECURED',                 // Door returned to secure state after violation
   EXIT_REQUEST = 'EXIT_REQUEST',                 // Added (See EventSubtype)
 
   // --- Category: ANALYTICS ---
@@ -401,6 +402,7 @@ export const GENERIC_ANALYTICS_DISPLAY = 'Unmapped';
 export const STATE_CHANGED_DISPLAY = 'State Changed';
 export const DOOR_HELD_OPEN_DISPLAY = 'Door Held Open';
 export const DOOR_FORCED_OPEN_DISPLAY = 'Door Forced Open';
+export const DOOR_SECURED_DISPLAY = 'Door Secured';
 export const ACCESS_GRANTED_DISPLAY = 'Access Granted';
 export const ACCESS_DENIED_DISPLAY = 'Access Denied';
 export const EXIT_REQUEST_DISPLAY = 'Exit Request'; // Added
@@ -421,6 +423,7 @@ export const EVENT_TYPE_DISPLAY_MAP = {
   [EventType.ACCESS_DENIED]: ACCESS_DENIED_DISPLAY,
   [EventType.DOOR_HELD_OPEN]: DOOR_HELD_OPEN_DISPLAY,
   [EventType.DOOR_FORCED_OPEN]: DOOR_FORCED_OPEN_DISPLAY,
+  [EventType.DOOR_SECURED]: DOOR_SECURED_DISPLAY,
   [EventType.EXIT_REQUEST]: EXIT_REQUEST_DISPLAY,
   
   // ANALYTICS
