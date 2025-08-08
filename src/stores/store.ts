@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { produce, Draft, enableMapSet } from 'immer';
 import { toast } from 'sonner'; // <-- Import toast
+import { startTransition } from 'react';
+import { realtimeEventStream } from '@/lib/events/realtime-event-stream';
 import { PikoServer } from '@/types';
 import type { StandardizedEvent, EnrichedEvent } from '@/types/events';
 import { DisplayState, TypedDeviceInfo, EventType, EventCategory, EventSubtype, ArmedState, ActionableState, ON, OFF, LOCKED, UNLOCKED, EVENT_CATEGORY_DISPLAY_MAP } from '@/lib/mappings/definitions';
@@ -263,6 +265,10 @@ interface FusionState {
   };
   eventsAbortController: AbortController | null;
   eventsHasInitiallyLoaded: boolean;
+  // --- Realtime stream state ---
+  eventsStreamStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
+  eventsBuffered: EnrichedEvent[];
+  seenEventUuids: Set<string>;
   
   // Actions
   setConnectors: (connectors: ConnectorWithConfig[]) => void;
@@ -443,6 +449,13 @@ interface FusionState {
     totalItems?: number;
   }>) => void;
   autoRefreshEvents: () => Promise<void>;
+  // --- Realtime stream actions ---
+  startEventsStream: (params: { alarmEventsOnly?: boolean }) => void;
+  stopEventsStream: () => void;
+  updateEventsStreamFilters: (params: Partial<{ alarmEventsOnly?: boolean }>) => void;
+  applyIncomingEvent: (event: EnrichedEvent) => void;
+  bufferIncomingEvent: (event: EnrichedEvent) => void;
+  flushBufferedEvents: () => void;
   resetEventsState: () => void;
 }
 
@@ -607,6 +620,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   },
   eventsAbortController: null,
   eventsHasInitiallyLoaded: false,
+  eventsStreamStatus: 'disconnected',
+  eventsBuffered: [],
+  seenEventUuids: new Set<string>(),
   
   // Actions
   setConnectors: (connectors) => set({ connectors }),
@@ -2986,10 +3002,155 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }
   },
 
+  // --- Realtime stream actions ---
+  startEventsStream: (params) => {
+    set({ eventsStreamStatus: 'connecting' });
+    // Micro-batching with throttle to reduce render thrash during bursts
+    let pending: EnrichedEvent[] = [];
+    let scheduled = false;
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const FLUSH_INTERVAL_MS = 300;
+    const MAX_PER_FLUSH = 48;
+
+    const flushNow = () => {
+      scheduled = false;
+      flushTimer && clearTimeout(flushTimer);
+      flushTimer = null;
+      if (pending.length === 0) return;
+      const toApply = pending.splice(0, MAX_PER_FLUSH);
+      startTransition(() => {
+        set((s) => {
+          // Deduplicate by UUID and update seen set
+          const nextSeen = new Set(s.seenEventUuids);
+          const unique = toApply.filter(e => {
+            if (nextSeen.has(e.eventUuid)) return false;
+            nextSeen.add(e.eventUuid);
+            return true;
+          });
+          if (unique.length === 0) return {} as any;
+          if (s.eventsPagination.pageIndex === 0) {
+            const nextEvents = [...unique, ...s.events].slice(0, 1000);
+            return { events: nextEvents, seenEventUuids: nextSeen };
+          } else {
+            const nextBuffered = [...unique, ...s.eventsBuffered].slice(0, 1000);
+            return { eventsBuffered: nextBuffered, seenEventUuids: nextSeen };
+          }
+        });
+      });
+      // If backlog remains, schedule another slice
+      if (pending.length > 0) scheduleFlush();
+    };
+
+    const scheduleFlush = () => {
+      if (scheduled) return;
+      scheduled = true;
+      flushTimer = setTimeout(flushNow, FLUSH_INTERVAL_MS);
+    };
+
+    realtimeEventStream.start(
+      { alarmEventsOnly: params.alarmEventsOnly },
+      {
+        onOpen: () => set({ eventsStreamStatus: 'connected' }),
+        onConnection: () => set({ eventsStreamStatus: 'connected' }),
+        onEvent: (msg: any) => {
+          try {
+            const timestampMs = Date.parse(msg.timestamp);
+            const deviceKey = `${msg.connectorId}:${msg.deviceId}`;
+            const deviceState = get().deviceStates.get(deviceKey);
+            const deviceTypeInfo = deviceState?.deviceInfo || getDeviceTypeInfo('unknown', 'unknown');
+            const connector = get().connectors.find(c => c.id === msg.connectorId);
+            const connectorCategory = connector?.category || (msg.connectorCategory || 'system');
+            const mapped: EnrichedEvent = {
+              id: 0,
+              eventUuid: msg.eventUuid,
+              timestamp: Number.isFinite(timestampMs) ? timestampMs : Date.now(),
+              payload: msg.event || null,
+              rawPayload: msg.rawEvent || null,
+              deviceId: msg.deviceId,
+              deviceInternalId: undefined,
+              deviceName: msg.deviceName,
+              connectorName: msg.connectorName,
+              deviceTypeInfo,
+              connectorCategory,
+              connectorId: msg.connectorId,
+              eventCategory: msg.event?.category,
+              eventType: msg.event?.type,
+              eventSubtype: msg.event?.subType,
+              rawEventType: msg.event?.typeId,
+              displayState: msg.event?.displayState,
+              spaceId: msg.spaceId,
+              spaceName: msg.spaceName,
+              locationId: msg.locationId,
+              locationName: msg.locationName,
+              thumbnailUrl: undefined,
+              videoUrl: undefined,
+              bestShotUrlComponents: undefined,
+            };
+            pending.push(mapped);
+            scheduleFlush();
+          } catch {
+            // ignore
+          }
+        },
+        onSystem: () => set({ eventsStreamStatus: 'connected' }),
+        onHeartbeat: () => {},
+        onError: () => set({ eventsStreamStatus: 'error' }),
+      }
+    );
+  },
+
+  stopEventsStream: () => {
+    realtimeEventStream.stop();
+    set({ eventsStreamStatus: 'disconnected' });
+  },
+
+  updateEventsStreamFilters: (params) => {
+    realtimeEventStream.update({
+      alarmEventsOnly: params.alarmEventsOnly,
+    });
+  },
+
+  applyIncomingEvent: (event) => {
+    set((s) => {
+      if (s.seenEventUuids.has(event.eventUuid)) return {} as any;
+      const nextSeen = new Set(s.seenEventUuids);
+      nextSeen.add(event.eventUuid);
+      const nextEvents = [event, ...s.events].slice(0, 1000);
+      return { events: nextEvents, seenEventUuids: nextSeen };
+    });
+  },
+
+  bufferIncomingEvent: (event) => {
+    set((s) => {
+      if (s.seenEventUuids.has(event.eventUuid)) return {} as any;
+      const nextSeen = new Set(s.seenEventUuids);
+      nextSeen.add(event.eventUuid);
+      const nextBuffered = [event, ...s.eventsBuffered].slice(0, 1000);
+      return { eventsBuffered: nextBuffered, seenEventUuids: nextSeen };
+    });
+  },
+
+  flushBufferedEvents: () => {
+    set((s) => {
+      if (s.eventsBuffered.length === 0) return {} as any;
+      const merged = [...s.eventsBuffered, ...s.events].slice(0, 1000);
+      return { events: merged, eventsBuffered: [] };
+    });
+  },
+
   setEventsPagination: (pagination) => {
-    set((state) => ({
-      eventsPagination: { ...state.eventsPagination, ...pagination }
-    }));
+    set((state) => {
+      const newPagination = { ...state.eventsPagination, ...pagination };
+      const onFirstPage = newPagination.pageIndex === 0;
+      const shouldFlush = onFirstPage && state.eventsBuffered.length > 0;
+      const mergedEvents = shouldFlush ? [...state.eventsBuffered, ...state.events] : state.events;
+      const pruned = mergedEvents.slice(0, 1000);
+      return {
+        eventsPagination: newPagination,
+        events: pruned,
+        eventsBuffered: shouldFlush ? [] : state.eventsBuffered,
+      };
+    });
   },
 
   resetEventsState: () => {
@@ -3012,6 +3173,9 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       },
       eventsAbortController: null,
       eventsHasInitiallyLoaded: false,
+      eventsStreamStatus: 'disconnected',
+      eventsBuffered: [],
+      seenEventUuids: new Set<string>(),
     });
   },
 

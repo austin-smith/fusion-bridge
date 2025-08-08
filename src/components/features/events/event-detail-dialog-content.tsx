@@ -97,8 +97,22 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
     return foundIndex >= 0 ? foundIndex : 0;
   });
   
+  // Keep index in bounds when the events array changes
+  useEffect(() => {
+    if (!events || events.length === 0) return;
+    if (currentEventIndex >= events.length) {
+      setCurrentEventIndex(events.length - 1);
+    }
+  }, [events, currentEventIndex]);
+  
   // Use current event from navigation or fallback to provided event
-  const currentEvent = events ? events[currentEventIndex] : event;
+  const currentEvent = useMemo(() => {
+    if (events && events.length > 0) {
+      const safeIndex = Math.min(currentEventIndex, events.length - 1);
+      return events[safeIndex] ?? event;
+    }
+    return event;
+  }, [events, currentEventIndex, event]);
   const hasMultipleEvents = events && events.length > 1;
 
   // Get store data for location/space/alarm zone lookup
@@ -109,8 +123,9 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
 
   // Find the device in store using deviceId and connectorId
   const eventDevice = useMemo(() => {
+    if (!currentEvent) return undefined;
     return allDevices.find(d => d.deviceId === currentEvent.deviceId && d.connectorId === currentEvent.connectorId);
-  }, [allDevices, currentEvent.deviceId, currentEvent.connectorId]);
+  }, [allDevices, currentEvent]);
 
   // Find which space contains this device
   const deviceSpace = useMemo(() => {
