@@ -151,9 +151,8 @@ export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): Even
     // Handle secure events - analyze what was resolved
     const wasForced = additionalInfo?.['Forced Open State']?.includes('Prior : Yes, Current : No');
     const wasHeld = additionalInfo?.['Held Open State']?.includes('Prior : Yes, Current : No');
-    const unlockChanged = additionalInfo?.['Unlocked']?.includes('Current : Yes');
     
-    console.debug(`[Genea Mapping] Door secured - resolved violations: forced=${wasForced}, held=${wasHeld}, unlocked=${unlockChanged} for event ${payload.uuid}`);
+    console.debug(`[Genea Mapping] Door secured - resolved violations: forced=${wasForced}, held=${wasHeld} for event ${payload.uuid}`);
     
     // Determine appropriate subtype based on what was resolved
     if (wasForced && wasHeld) {
