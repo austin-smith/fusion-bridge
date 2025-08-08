@@ -134,10 +134,15 @@ export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): Even
   
   if (event_action === 'SEQUR_DOOR_POSITION_SENSOR_ALARM') {
     // Handle alarm events - check current state
-    if (additionalInfo?.['Forced Open State']?.includes('Current : Yes')) {
-      return createEventClassification(EventType.DOOR_FORCED_OPEN);
-    } else if (additionalInfo?.['Held Open State']?.includes('Current : Yes')) {
-      return createEventClassification(EventType.DOOR_HELD_OPEN);
+    const isForcedOpen = additionalInfo?.['Forced Open State']?.includes('Current : Yes');
+    const isHeldOpen = additionalInfo?.['Held Open State']?.includes('Current : Yes');
+    
+    if (isForcedOpen && isHeldOpen) {
+      return createEventClassification(EventType.DOOR_ALARM, EventSubtype.FORCED_AND_HELD_OPEN);
+    } else if (isForcedOpen) {
+      return createEventClassification(EventType.DOOR_ALARM, EventSubtype.FORCED_OPEN);
+    } else if (isHeldOpen) {
+      return createEventClassification(EventType.DOOR_ALARM, EventSubtype.HELD_OPEN);
     } else {
       console.warn(`[Genea Mapping] Unknown door position sensor alarm state for event ${payload.uuid} with action ${event_action}`);
       return GENEA_UNKNOWN_EVENT;
@@ -152,8 +157,8 @@ export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): Even
     
     // Determine appropriate subtype based on what was resolved
     if (wasForced && wasHeld) {
-      // Both violations resolved - for now, prioritize forced open as it's typically more severe
-      return createEventClassification(EventType.DOOR_SECURED, EventSubtype.FORCED_OPEN_RESOLVED);
+      // Both violations resolved simultaneously
+      return createEventClassification(EventType.DOOR_SECURED, EventSubtype.FORCED_AND_HELD_OPEN_RESOLVED);
     } else if (wasForced) {
       return createEventClassification(EventType.DOOR_SECURED, EventSubtype.FORCED_OPEN_RESOLVED);
     } else if (wasHeld) {
