@@ -19,7 +19,7 @@ import {
     FormItem,
     FormLabel,
 } from "@/components/ui/form";
-import { Trash2, HelpCircle, Users, ShieldCheck, ShieldOff, Lock, Unlock } from 'lucide-react';
+import { Trash2, HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
     AutomationAction,
@@ -35,13 +35,21 @@ import type {
     UnlockDeviceActionParamsSchema,
 } from '@/lib/automation-schemas';
 import { AutomationActionType, getActionTitle, getActionIconProps, getActionStyling, formatActionDetail, AutomationTriggerType } from '@/lib/automation-types';
-import { ActionableState, ArmedState } from '@/lib/mappings/definitions';
+import { ActionableState, ArmedState, DeviceType } from '@/lib/mappings/definitions';
+import { presentAction } from '@/lib/device-actions/presentation';
+import {
+  isOnOffCapableOption,
+  getOnOffActionsForOption,
+  isAccessControlCapableOption,
+} from '@/lib/device-actions/capabilities';
 import { TokenInserter } from '@/components/features/automations/TokenInserter';
 import { AVAILABLE_AUTOMATION_TOKENS } from '@/lib/automation-tokens';
 import { SendHttpRequestActionFields } from './SendHttpRequestActionFields';
+import { SendPushNotificationActionFields } from '@/components/features/automations/actions/SendPushNotificationActionFields';
+import { DeviceSelectorCombo } from '@/components/features/automations/controls/DeviceSelectorCombo';
 import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
 import { getIconComponentByName } from '@/lib/mappings/presentation';
-import { priorityOptions } from '@/lib/pushover-constants';
+import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import type { connectors, alarmZones } from '@/data/db/schema';
 import type { z } from 'zod';
 import type { AutomationFormValues } from '../AutomationForm';
@@ -64,7 +72,7 @@ const ACTION_GROUPS = [
     {
         id: 'access-control',
         label: 'Access Control',
-        actions: [AutomationActionType.LOCK_DEVICE, AutomationActionType.UNLOCK_DEVICE]
+      actions: [AutomationActionType.LOCK_DEVICE, AutomationActionType.UNLOCK_DEVICE, AutomationActionType.QUICK_GRANT_DEVICE]
     },
     {
         id: 'alarm',
@@ -123,19 +131,13 @@ type TargetDeviceOption = {
     locationId?: string | null;
     rawType?: string; // Add raw device type for proper command filtering
     supportsAudio?: boolean; // Server-side computed flag for audio capability
-    supportsLocking?: boolean; // Server-side computed flag for lock capability
     connectorCategory?: string; // Connector category for capability detection
+    standardDeviceType?: import('@/lib/mappings/definitions').DeviceType;
 };
 
 type ZoneOption = Pick<typeof alarmZones.$inferSelect, 'id' | 'name' | 'locationId'>;
 
 const descriptionStyles = "text-xs text-muted-foreground mt-1";
-const ACTIONABLE_STATE_DISPLAY_MAP: Record<ActionableState, string> = {
-    [ActionableState.SET_ON]: "Turn On",
-    [ActionableState.SET_OFF]: "Turn Off",
-    [ActionableState.SET_LOCKED]: "Lock",
-    [ActionableState.SET_UNLOCKED]: "Unlock",
-};
 
 // YoLink SpeakerHub tone options
 const YOLINK_TONE_OPTIONS = [
@@ -145,7 +147,9 @@ const YOLINK_TONE_OPTIONS = [
     { value: 'Warn', label: 'Warn' },
 ] as const;
 
-// Shared component for lock/unlock device selection
+// DeviceSelectorCombo extracted to controls/DeviceSelectorCombo
+
+// Shared component for lock/unlock/quick-grant device selection (searchable)
 interface LockDeviceSelectionProps {
     form: UseFormReturn<AutomationFormValues>;
     actionIndex: number;
@@ -167,7 +171,6 @@ const LockDeviceSelection: React.FC<LockDeviceSelectionProps> = ({
     isLoading,
     fieldError
 }) => {
-    const IconComponent = actionType === 'lock' ? Lock : Unlock;
     const actionLabel = actionType === 'lock' ? 'Lock' : 'Unlock';
     const controlLabel = actionType === 'lock' ? 'Device Lock Control' : 'Device Unlock Control';
     const fieldLabel = actionType === 'lock' ? 'Door to Lock' : 'Door to Unlock';
@@ -180,47 +183,20 @@ const LockDeviceSelection: React.FC<LockDeviceSelectionProps> = ({
                 control={form.control}
                 name={`config.actions.${actionIndex}.params.targetDeviceInternalId`}
                 render={({ field, fieldState }) => (
-                    <FormItem>
-                        <FormLabel>{fieldLabel}</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
-                            <FormControl>
-                                <SelectTrigger className={cn("w-[300px]", fieldState.error && 'border-destructive')}>
-                                    <SelectValue placeholder="Select door..." />
-                                </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                                {lockCapableDevices.map(device => (
-                                    <SelectItem key={device.id} value={device.id} className="py-2">
-                                        <div className="flex items-center w-full">
-                                            <IconComponent className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
-                                            <div className="flex flex-col flex-1 min-w-0">
-                                                <span className="font-medium truncate">{device.name}</span>
-                                                {(device.locationId || device.spaceId) && (
-                                                    <span className="text-xs text-muted-foreground truncate">
-                                                        {(() => {
-                                                            const location = allLocations?.find(loc => loc.id === device.locationId);
-                                                            const space = allSpaces?.find(sp => sp.id === device.spaceId);
-                                                            if (location?.name) {
-                                                                return space?.name ? `${location.name} › ${space.name}` : location.name;
-                                                            }
-                                                            return space?.name || '';
-                                                        })()}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </SelectItem>
-                                ))}
-                                {lockCapableDevices.length === 0 && (
-                                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                                        No lockable devices found.
-                                    </div>
-                                )}
-                            </SelectContent>
-                        </Select>
-                        <FormDescription className={descriptionStyles}>
-                            {description}
-                        </FormDescription>
+                    <FormItem className="flex flex-col items-start space-y-1">
+                        <DeviceSelectorCombo
+                            value={field.value}
+                            onChange={field.onChange}
+                            disabled={isLoading}
+                            devices={lockCapableDevices}
+                            allLocations={allLocations}
+                            allSpaces={allSpaces}
+                            placeholder="Select door..."
+                            widthClass="w-[300px]"
+                            error={!!fieldState.error}
+                            showIcon
+                        />
+                        <FormDescription className={descriptionStyles}>{description}</FormDescription>
                     </FormItem>
                 )}
             />
@@ -283,34 +259,18 @@ export function ActionItem({
   const actionParams = form.watch(`config.actions.${index}.params`);
   const currentScoping = form.watch(`config.actions.${index}.params.scoping`);
 
-  const [groupUsers, setGroupUsers] = React.useState<Array<{ user: string; memo: string; device?: string | null }>>([]);
-  const [isFetchingUsers, setIsFetchingUsers] = React.useState(false);
-  const [fetchUsersError, setFetchUsersError] = React.useState<string | null>(null);
-  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
+  // Pushover kept simple — no dynamic user fetching
+  // Centralized, memoized device eligibility lists
+  const onOffCapableDevices = React.useMemo(() => {
+    return (sortedAvailableTargetDevices || []).filter(d => isOnOffCapableOption(d));
+  }, [sortedAvailableTargetDevices]);
 
-  React.useEffect(() => {
-    if (actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && isDropdownOpen && groupUsers.length === 0 && !isFetchingUsers) {
-      const fetchUsers = async () => {
-        setIsFetchingUsers(true);
-        setFetchUsersError(null);
-        try {
-          const response = await fetch('/api/services/pushover/group-users/list');
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Failed to fetch users: ${response.statusText}`);
-          }
-          const users = await response.json();
-          setGroupUsers(users);
-        } catch (error) {
-          console.error("Error fetching Pushover group users:", error);
-          setFetchUsersError(error instanceof Error ? error.message : "An unknown error occurred");
-        } finally {
-          setIsFetchingUsers(false);
-        }
-      };
-      fetchUsers();
-    }
-  }, [actionType, isDropdownOpen, groupUsers.length, isFetchingUsers]);
+  const accessControlCapableDevices = React.useMemo(() => {
+    return (sortedAvailableTargetDevices || []).filter(d => isAccessControlCapableOption(d));
+  }, [sortedAvailableTargetDevices]);
+
+
+  // (intentionally no effect)
 
   const ActionIcon = () => {
     const { icon: IconComponent, className } = getActionIconProps(actionType);
@@ -329,8 +289,9 @@ export function ActionItem({
     } else if (newType === AutomationActionType.SEND_HTTP_REQUEST) { 
         newActionParams = { urlTemplate: '', method: 'GET', headers: [], contentType: 'application/json', bodyTemplate: '' };
     } else if (newType === AutomationActionType.SET_DEVICE_STATE) {
+        // Only include devices that support both SET_ON and SET_OFF
         newActionParams = {
-            targetDeviceInternalId: sortedAvailableTargetDevices.length > 0 ? sortedAvailableTargetDevices[0].id : '',
+            targetDeviceInternalId: onOffCapableDevices.length > 0 ? onOffCapableDevices[0].id : '',
             targetState: ActionableState.SET_ON
         };
     } else if (newType === AutomationActionType.SEND_PUSH_NOTIFICATION) {
@@ -365,6 +326,10 @@ export function ActionItem({
             targetDeviceInternalId: ''
         } as z.infer<typeof LockDeviceActionParamsSchema>;
     } else if (newType === AutomationActionType.UNLOCK_DEVICE) {
+        newActionParams = {
+            targetDeviceInternalId: ''
+        } as z.infer<typeof UnlockDeviceActionParamsSchema>;
+    } else if (newType === AutomationActionType.QUICK_GRANT_DEVICE) {
         newActionParams = {
             targetDeviceInternalId: ''
         } as z.infer<typeof UnlockDeviceActionParamsSchema>;
@@ -687,35 +652,25 @@ export function ActionItem({
                                       <FormField
                                           control={form.control}
                                           name={`config.actions.${index}.params.targetDeviceInternalId`}
-                                          render={({ field, fieldState }) => (
-                                              <FormItem className="flex-grow-0 m-0">
-                                                  <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
-                                                      <FormControl>
-                                                          <SelectTrigger className={cn("w-[250px]", fieldState.error && 'border-destructive')}>
-                                                              <SelectValue placeholder="Select Device..." />
-                                                          </SelectTrigger>
-                                                      </FormControl>
-                                                      <SelectContent>
-                                                          {sortedAvailableTargetDevices.map(device => {
-                                                              const IconComponent = getIconComponentByName(device.iconName) || HelpCircle;
-                                                              return (
-                                                                  <SelectItem key={device.id} value={device.id}>
-                                                                      <div className="flex items-center">
-                                                                          <IconComponent className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
-                                                                          <span>{device.name}</span>
-                                                                      </div>
-                                                                  </SelectItem>
-                                                              );
-                                                          })}
-                                                          {sortedAvailableTargetDevices.length === 0 && (
-                                                              <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                                                                  No controllable devices found.
-                                                              </div>
-                                                          )}
-                                                      </SelectContent>
-                                                  </Select>
-                                              </FormItem>
-                                          )}
+                                          render={({ field, fieldState }) => {
+                                              const stateCapableDevices = onOffCapableDevices;
+                                              return (
+                                                <FormItem className="flex-grow-0 m-0">
+                                                  <DeviceSelectorCombo
+                                                    value={field.value}
+                                                    onChange={field.onChange}
+                                                    disabled={isLoading}
+                                                    devices={stateCapableDevices}
+                                                    allLocations={allLocations}
+                                                    allSpaces={allSpaces}
+                                                    placeholder="Select device..."
+                                                    widthClass="w-[300px]"
+                                                    error={!!fieldState.error}
+                                                    showIcon
+                                                  />
+                                                </FormItem>
+                                              );
+                                          }}
                                       />
                                       
                                       <div className="flex items-center text-muted-foreground">
@@ -734,9 +689,17 @@ export function ActionItem({
                                                           </SelectTrigger>
                                                       </FormControl>
                                                       <SelectContent>
-                                                          {Object.entries(ACTIONABLE_STATE_DISPLAY_MAP).map(([value, label]) => (
-                                                              <SelectItem key={value} value={value}>{label}</SelectItem>
-                                                          ))}
+                                                          {(() => {
+                                                              const targetDeviceId = form.getValues(`config.actions.${index}.params.targetDeviceInternalId`) as string | undefined;
+                                                              const device = sortedAvailableTargetDevices.find(d => d.id === targetDeviceId);
+                                                               const options = device ? getOnOffActionsForOption(device) : [];
+                                                              return options.map((a) => {
+                                                                  const { label } = presentAction(a as ActionableState);
+                                                                  return (
+                                                                      <SelectItem key={a} value={a}>{label}</SelectItem>
+                                                                  );
+                                                              });
+                                                          })()}
                                                       </SelectContent>
                                                   </Select>
                                               </FormItem>
@@ -913,144 +876,14 @@ export function ActionItem({
                       )}
                       
                       {actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && (
-                        <>
-                              <FormField 
-                                  control={form.control}
-                                  name={`config.actions.${index}.params.titleTemplate`}
-                                  render={({ field, fieldState }) => (
-                                      <FormItem>
-                                          <div className="flex items-center justify-between">
-                                              <FormLabel>Title</FormLabel>
-                                              <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('titleTemplate', index, token, 'action')} />
-                                          </div>
-                                          <FormControl><Input placeholder="Notification title" {...field} value={field.value ?? ''} disabled={isLoading} className={cn("w-full", fieldState.error && 'border-destructive')} /></FormControl>
-                                          <FormDescription className={descriptionStyles}>Optional title for the notification.</FormDescription>
-                                      </FormItem>
-                                  )}
-                              />
-
-                              <FormField 
-                                  control={form.control}
-                                  name={`config.actions.${index}.params.messageTemplate`}
-                                  render={({ field, fieldState }) => (
-                                      <FormItem>
-                                          <div className="flex items-center justify-between">
-                                              <FormLabel>Message</FormLabel>
-                                              <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('messageTemplate', index, token, 'action')} />
-                                          </div>
-                                          <FormControl><Textarea placeholder="Notification message content" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                          <FormDescription className={descriptionStyles}>The main content of the notification.</FormDescription>
-                                      </FormItem>
-                                  )}
-                              />
-                              
-                              <FormField 
-                                  control={form.control}
-                                  name={`config.actions.${index}.params.targetUserKeyTemplate`}
-                                  render={({ field, fieldState }) => {
-                                      const currentSelectedUser = (field.value && field.value !== ALL_USERS_PUSHOVER_VALUE) ? groupUsers.find(u => u.user === field.value) : null;
-                                      return (
-                                          <FormItem>
-                                              <FormLabel className="flex items-center">
-                                                  <Users className="h-4 w-4 mr-1.5 text-muted-foreground" /> Target User
-                                              </FormLabel>
-                                              <Select
-                                                  onValueChange={field.onChange}
-                                                  value={field.value || ALL_USERS_PUSHOVER_VALUE} 
-                                                  disabled={isLoading || isFetchingUsers}
-                                                  open={isDropdownOpen}
-                                                  onOpenChange={setIsDropdownOpen}
-                                              >
-                                                  <FormControl>
-                                                      <SelectTrigger className={cn("text-left w-[220px]", fieldState.error && 'border-destructive')}>
-                                                          <SelectValue placeholder={isFetchingUsers ? "Loading users..." : fetchUsersError ? "Error loading users" : "Select target user..."}>
-                                                              {!field.value || field.value === ALL_USERS_PUSHOVER_VALUE
-                                                                  ? <span className="text-sm">All Users</span>
-                                                                  : <span className="text-sm">
-                                                                        {currentSelectedUser 
-                                                                            ? (currentSelectedUser.memo || `User Key: ${currentSelectedUser.user.substring(0, 7)}...`) 
-                                                                            : `Key: ${(field.value || '').substring(0, 7)}...`
-                                                                        }
-                                                                    </span>
-                                                              }
-                                                          </SelectValue>
-                                                      </SelectTrigger>
-                                                  </FormControl>
-                                                  <SelectContent>
-                                                      <SelectItem value={ALL_USERS_PUSHOVER_VALUE}>
-                                                          <div className="flex flex-col items-start text-left">
-                                                              <span className="font-medium">All Users</span>
-                                                              <span className="text-xs text-muted-foreground">Send to all users in the configured group.</span>
-                                                          </div>
-                                                      </SelectItem>
-                                                      {groupUsers.length > 0 && groupUsers.map(user => (
-                                                          <SelectItem key={user.user} value={user.user}>
-                                                              <div className="flex flex-col items-start text-left">
-                                                                  <span className="font-medium">{user.memo || `User Key: ${user.user.substring(0, 7)}...`}</span>
-                                                                  {user.memo && <span className="text-xs text-muted-foreground">Key: {user.user.substring(0, 7)}...</span>}
-                                                                  {user.device && <span className="text-xs text-muted-foreground">Device: {user.device}</span>}
-                                                              </div>
-                                                          </SelectItem>
-                                                      ))}
-                                                      {isFetchingUsers && (
-                                                          <div className="flex items-center justify-center p-2">
-                                                              <span className="text-sm text-muted-foreground">Loading users...</span>
-                                                          </div>
-                                                      )}
-                                                      {fetchUsersError && (
-                                                          <div className="p-2 text-sm text-destructive">
-                                                              Error: {fetchUsersError}
-                                                          </div>
-                                                      )}
-                                                  </SelectContent>
-                                              </Select>
-                                              <FormDescription className={descriptionStyles}>
-                                                  Select a specific user to send to, or leave empty to send to all users in the group.
-                                              </FormDescription>
-                                          </FormItem>
-                                      );
-                                  }}
-                              />
-
-                              <FormField 
-                                  control={form.control}
-                                  name={`config.actions.${index}.params.priority`}
-                                  render={({ field, fieldState }) => {
-                                      const selectedOption = priorityOptions.find(option => option.value === field.value);
-                                      return (
-                                          <FormItem>
-                                              <FormLabel>Priority</FormLabel>
-                                              <Select 
-                                                  onValueChange={(value) => field.onChange(parseInt(value, 10))} 
-                                                  value={field.value?.toString() ?? '0'} 
-                                                  disabled={isLoading}
-                                              >
-                                                  <FormControl>
-                                                      <SelectTrigger className={cn("w-[220px]", fieldState.error && 'border-destructive')}>
-                                                          <SelectValue asChild>
-                                                              <span>{selectedOption ? selectedOption.label : "Select Priority"}</span>
-                                                          </SelectValue>
-                                                      </SelectTrigger>
-                                                  </FormControl>
-                                                  <SelectContent>
-                                                      {priorityOptions.map((option) => (
-                                                          <SelectItem key={option.value} value={option.value.toString()}>
-                                                              <div className="flex flex-col">
-                                                                  <span className="font-medium">{option.label}</span>
-                                                                  <span className="text-xs text-muted-foreground">{option.description}</span>
-                                                              </div>
-                                                          </SelectItem>
-                                                      ))}
-                                                  </SelectContent>
-                                              </Select>
-                                              <FormDescription className={descriptionStyles}>
-                                                  Affects notification delivery and sound.
-                                              </FormDescription>
-                                          </FormItem>
-                                      );
-                                  }}
-                              />
-                          </>
+                        <SendPushNotificationActionFields
+                          form={form}
+                          actionIndex={index}
+                          isLoading={isLoading}
+                          onInsertToken={(fieldName, actIndex, token) =>
+                            handleInsertToken(fieldName as any, actIndex, token, 'action')
+                          }
+                        />
                       )}
                       
                       {/* === ARM ALARM ZONE FIELDS === */} 
@@ -1181,7 +1014,7 @@ export function ActionItem({
                               form={form}
                               actionIndex={index}
                               actionType="lock"
-                              lockCapableDevices={sortedAvailableTargetDevices.filter(device => device.supportsLocking)}
+                              lockCapableDevices={accessControlCapableDevices}
                               allLocations={allLocations}
                               allSpaces={allSpaces}
                               isLoading={isLoading}
@@ -1194,7 +1027,19 @@ export function ActionItem({
                               form={form}
                               actionIndex={index}
                               actionType="unlock"
-                              lockCapableDevices={sortedAvailableTargetDevices.filter(device => device.supportsLocking)}
+                              lockCapableDevices={accessControlCapableDevices}
+                              allLocations={allLocations}
+                              allSpaces={allSpaces}
+                              isLoading={isLoading}
+                          />
+                      )}
+
+                      {actionType === AutomationActionType.QUICK_GRANT_DEVICE && (
+                          <LockDeviceSelection
+                              form={form}
+                              actionIndex={index}
+                              actionType="unlock"
+                              lockCapableDevices={accessControlCapableDevices}
                               allLocations={allLocations}
                               allSpaces={allSpaces}
                               isLoading={isLoading}

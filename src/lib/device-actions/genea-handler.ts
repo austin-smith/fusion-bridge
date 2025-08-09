@@ -4,7 +4,11 @@ import * as geneaDriver from '@/services/drivers/genea';
 import type { GeneaConfig } from '@/services/drivers/genea';
 
 const SUPPORTED_TYPES = ['Door'];
-const SUPPORTED_ACTIONS = [ActionableState.SET_LOCKED, ActionableState.SET_UNLOCKED];
+const SUPPORTED_ACTIONS = [
+  ActionableState.SET_LOCKED,
+  ActionableState.SET_UNLOCKED,
+  ActionableState.QUICK_GRANT,
+];
 
 export class GeneaHandler implements IDeviceActionHandler {
     readonly category = 'genea';
@@ -45,6 +49,10 @@ export class GeneaHandler implements IDeviceActionHandler {
                 case ActionableState.SET_UNLOCKED:
                     console.log(`[GeneaHandler] Calling geneaDriver.unlockGeneaDoor for ${doorUuid}`);
                     success = await geneaDriver.unlockGeneaDoor(connectorConfig, doorUuid);
+                    break;
+                case ActionableState.QUICK_GRANT:
+                    console.log(`[GeneaHandler] Calling geneaDriver.quickGrantGeneaDoor for ${doorUuid}`);
+                    success = await geneaDriver.quickGrantGeneaDoor(connectorConfig, doorUuid);
                     break;
                     
                 default:

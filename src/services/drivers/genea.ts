@@ -400,6 +400,73 @@ export async function unlockGeneaDoor(config: GeneaConfig, doorUuid: string): Pr
 }
 
 /**
+ * Performs a temporary unlock (Quick Grant) on a Genea door.
+ * @param config - The Genea connector configuration containing the API key.
+ * @param doorUuid - The UUID of the door to quick grant.
+ * @returns A promise that resolves to true if the quick grant call succeeded.
+ */
+export async function quickGrantGeneaDoor(config: GeneaConfig, doorUuid: string): Promise<boolean> {
+  const validation = z.object({ apiKey: z.string().min(1) }).safeParse(config);
+  if (!validation.success) {
+    console.error("Invalid Genea config provided for quick grant:", validation.error);
+    throw new Error('Invalid configuration: API Key is required.');
+  }
+  if (!doorUuid || typeof doorUuid !== 'string') {
+    console.error("Invalid door UUID provided for quick grant:", doorUuid);
+    throw new Error('Invalid door UUID provided.');
+  }
+
+  const { apiKey } = validation.data;
+
+  try {
+    console.log(`[Genea Driver] Quick Grant (temporary unlock) for door ${doorUuid}...`);
+    const response = await fetch(`${GENEA_API_BASE_URL}/v2/door/${doorUuid}/quick_unlock`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = `Genea API returned status: ${response.status} when quick granting door ${doorUuid}`;
+      let detailedError: any = null;
+      try {
+        const errorBody = await response.json();
+        detailedError = errorBody;
+        if (response.status === 422) {
+          if (errorBody?.meta?.message) errorMessage = errorBody.meta.message;
+          else if (errorBody?.error?.message) errorMessage = errorBody.error.message;
+          else errorMessage = `Quick grant failed - request cannot be processed (device may be offline, in maintenance mode, or access restricted)`;
+        } else {
+          errorMessage = errorBody?.meta?.message || errorBody?.error?.message || errorBody?.error || errorMessage;
+        }
+      } catch (e) {
+        console.warn("Could not parse error response body from Genea quick grant API.");
+        if (response.status === 422) {
+          errorMessage = `Quick grant failed - request cannot be processed (device may be offline, in maintenance mode, or access restricted)`;
+        }
+      }
+      console.error(`[Genea Driver] Quick grant error for ${doorUuid}:`, { status: response.status, errorMessage, detailedError });
+      throw new Error(errorMessage);
+    }
+
+    // Some responses may not include a definitive body beyond meta message
+    let responseBody: any = null;
+    try {
+      responseBody = await response.json();
+    } catch {
+      // No body; treat as success
+    }
+    console.log(`[Genea Driver] Quick grant command sent for door ${doorUuid}.`, responseBody?.meta?.message || 'Success');
+    return true;
+  } catch (error: unknown) {
+    console.error(`[Genea Driver] Error performing quick grant for door ${doorUuid}:`, error);
+    throw error instanceof Error ? error : new Error(`Unknown error quick granting door ${doorUuid}`);
+  }
+}
+
+/**
  * Fetches all doors for a given Genea customer.
  * @param config - The Genea connector configuration containing the API key and customer UUID.
  * @returns A promise that resolves with an array of GeneaDoor objects.

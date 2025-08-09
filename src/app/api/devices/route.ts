@@ -596,7 +596,7 @@ async function syncPikoDevices(
       pikoDriver.getSystemServers(connectorId)
     ]);
     
-    console.log(`Found ${cameras.length} cameras and ${servers.length} servers from Piko API`);
+    console.log(`Found ${cameras.length} devices and ${servers.length} servers from Piko API`);
 
     // Handle device deletions - delete devices not in current API response
     const apiDeviceIds = cameras.map(c => c.id).filter(Boolean);
@@ -646,18 +646,19 @@ async function syncPikoDevices(
         });
     }
 
-    // Sync cameras
+    // Sync devices (cameras, horn speakers, encoders, etc.)
     for (const camera of cameras) {
       if (!camera.id || !camera.name) continue;
 
-      const stdTypeInfo = getDeviceTypeInfo('piko', 'Camera');
+      const deviceTypeString = camera.deviceType ?? 'Unmapped';
+      const stdTypeInfo = getDeviceTypeInfo('piko', deviceTypeString);
       
       await db.insert(devices)
         .values({
           deviceId: camera.id,
           connectorId: connectorId,
           name: camera.name,
-          type: 'Camera',
+          type: deviceTypeString,
           status: camera.status || null,
           vendor: camera.vendor || 'Piko',
           model: camera.model || null,
@@ -673,10 +674,13 @@ async function syncPikoDevices(
           target: [devices.connectorId, devices.deviceId],
           set: {
             name: camera.name,
+            type: deviceTypeString,
             status: camera.status || sql`status`,
             model: camera.model || null,
             url: camera.url || null,
             serverId: camera.serverId || null,
+            standardizedDeviceType: stdTypeInfo.type,
+            standardizedDeviceSubtype: stdTypeInfo.subtype || null,
             rawDeviceData: camera,
             updatedAt: new Date(),
           }

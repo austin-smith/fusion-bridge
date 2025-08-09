@@ -133,6 +133,7 @@ export enum ActionableState {
   SET_OFF = 'SET_OFF',
   SET_LOCKED = 'SET_LOCKED',
   SET_UNLOCKED = 'SET_UNLOCKED',
+  QUICK_GRANT = 'QUICK_GRANT',
 }
 // --- END Add ActionableState Enum ---
 

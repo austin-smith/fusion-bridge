@@ -20,6 +20,10 @@ export const PIKO_INPUT_PORT_MAP = {
   'objectremovedetector': () => createEventClassification(EventType.OBJECT_REMOVED),
   'cvedia.rt.object_removed': () => createEventClassification(EventType.OBJECT_REMOVED),
   'udp.videoa.anpr': () => createEventClassification(EventType.LICENSE_PLATE_DETECTED),
+  'csg.analytics.object.person': () =>
+    createEventClassification(EventType.OBJECT_DETECTED, EventSubtype.PERSON),
+  'csg.analytics.event.person': () =>
+    createEventClassification(EventType.OBJECT_DETECTED, EventSubtype.PERSON),
 } as const;
 
 /**

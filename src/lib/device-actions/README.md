@@ -72,8 +72,9 @@ The API endpoint `POST /api/devices/[internalDeviceId]/state` uses the `requestD
 
 ### Genea  
 - **Device Types:** Door
-- **Actions:** SET_LOCKED, SET_UNLOCKED
+- **Actions:** SET_LOCKED, SET_UNLOCKED, QUICK_GRANT
 - **Notes:** Uses door UUID as deviceId. Handles 422 validation errors when door is already in target state.
+  - QUICK_GRANT maps to `PUT /v2/door/{door_uuid}/quick_unlock` and is a temporary unlock.
 
 Note: The UI capability map in `capabilities.ts` defines which actions are exposed in the frontend for each connector/device type. To surface a new actionable device in the UI, update both:
 

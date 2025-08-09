@@ -7,7 +7,7 @@ import { eq, inArray, asc } from "drizzle-orm";
 import { redirect, notFound } from 'next/navigation';
 import { AutomationConfigSchema, type AutomationConfig, type AutomationAction, type TemporalCondition } from "@/lib/automation-schemas";
 import { AutomationTriggerType } from "@/lib/automation-types";
-import { DeviceType, DeviceCommand, ActionableState } from "@/lib/mappings/definitions";
+import { DeviceType, DeviceCommand } from "@/lib/mappings/definitions";
 import { actionHandlers, commandHandlers, type IDeviceActionHandler, type IDeviceCommandHandler } from "@/lib/device-actions";
 import { getDeviceTypeIconName } from "@/lib/mappings/presentation";
 import type { Location, Space, AlarmZone } from '@/types';
@@ -200,7 +200,11 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
   const rawTypesArray = Array.from(allSupportedRawTypesByAnyHandler);
 
   // 1. Determine Targetable Devices (for Actions)
-  let formAvailableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; spaceId?: string | null; locationId?: string | null; rawType?: string; supportsAudio?: boolean; supportsLocking?: boolean; }> = [];
+  // Build connectorId -> category map for attaching connectorCategory to device options
+  const connectorIdToCategory = new Map<string, string>();
+  for (const c of availableConnectorsResult as any[]) connectorIdToCategory.set(c.id, c.category);
+
+  let formAvailableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; spaceId?: string | null; locationId?: string | null; rawType?: string; supportsAudio?: boolean; connectorCategory?: string; standardDeviceType?: DeviceType; }> = [];
   if (rawTypesArray.length > 0) {
       formAvailableTargetDevices = allDevicesResult
           .filter((d: any) => rawTypesArray.includes(d.type)) // Filter by controllable raw types
@@ -219,19 +223,6 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
                   return handler.canExecuteCommand(mockDeviceContext, DeviceCommand.PLAY_AUDIO);
               });
               
-              // Check if this device supports locking actions
-              const supportsLocking = actionHandlers.some(handler => {
-                  const mockDeviceContext = {
-                      id: d.id,
-                      deviceId: d.id,
-                      type: d.type, // Use raw device type
-                      connectorId: d.connectorId,
-                      rawDeviceData: null
-                  };
-                  return handler.canHandle(mockDeviceContext, ActionableState.SET_LOCKED) || 
-                         handler.canHandle(mockDeviceContext, ActionableState.SET_UNLOCKED);
-              });
-              
               // This list is for Action targets, display fields are important.
               return {
                   id: d.id,
@@ -242,7 +233,8 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
                   locationId: d.locationId, // Include locationId for scoping
                   rawType: d.type, // Include raw device type for command filtering
                   supportsAudio, // Server-side computed audio capability
-                  supportsLocking, // Server-side computed locking capability
+                  connectorCategory: connectorIdToCategory.get(d.connectorId) || undefined,
+                  standardDeviceType: d.standardizedDeviceType || undefined,
               };
           });
   }
