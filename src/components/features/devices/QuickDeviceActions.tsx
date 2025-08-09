@@ -2,10 +2,11 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, Power as PowerIcon, PowerOff as PowerOffIcon, Lock as LockIcon, Unlock as UnlockIcon } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useFusionStore } from '@/stores/store';
-import { ActionableState, DeviceType, type DisplayState, ON, LOCKED } from '@/lib/mappings/definitions';
+import { ActionableState, DeviceType, type DisplayState } from '@/lib/mappings/definitions';
 import { cn } from '@/lib/utils';
+import { deriveQuickActions } from '@/lib/device-actions/selection';
 
 export interface QuickDeviceActionsProps {
   internalDeviceId: string;
@@ -37,54 +38,12 @@ export function QuickDeviceActions({
   const isLoading = deviceActionLoading.get(internalDeviceId) ?? false;
   const buttonSize = size === 'sm' ? 'sm' : undefined;
 
-  const isYoLinkSwitchOrOutlet =
-    connectorCategory === 'yolink' &&
-    (deviceType === DeviceType.Switch || deviceType === DeviceType.Outlet);
-
-  const isGeneaDoor = connectorCategory === 'genea' && deviceType === DeviceType.Door;
-
-  if (!isYoLinkSwitchOrOutlet && !isGeneaDoor) {
-    return null;
-  }
-
-  // Derive label, icon, and target action from current status
-  const isOn = displayState === ON;
-  const isLocked = displayState === LOCKED;
-
-  let label: string | undefined;
-  let ariaLabel: string | undefined;
-  let IconComp: React.ComponentType<any> | undefined;
-  let nextAction: ActionableState | undefined;
-
-  if (isYoLinkSwitchOrOutlet) {
-    if (isOn) {
-      label = 'Turn Off';
-      ariaLabel = 'Turn Off';
-      IconComp = PowerOffIcon;
-      nextAction = ActionableState.SET_OFF;
-    } else {
-      label = 'Turn On';
-      ariaLabel = 'Turn On';
-      IconComp = PowerIcon;
-      nextAction = ActionableState.SET_ON;
-    }
-  } else if (isGeneaDoor) {
-    if (isLocked) {
-      label = 'Unlock';
-      ariaLabel = 'Unlock';
-      IconComp = UnlockIcon;
-      nextAction = ActionableState.SET_UNLOCKED;
-    } else {
-      label = 'Lock';
-      ariaLabel = 'Lock';
-      IconComp = LockIcon;
-      nextAction = ActionableState.SET_LOCKED;
-    }
-  }
-
-  if (!label || !nextAction || !IconComp) {
-    return null;
-  }
+  const { primary } = deriveQuickActions({
+    connectorCategory,
+    deviceType,
+    displayState,
+  });
+  if (!primary) return null;
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
@@ -92,16 +51,16 @@ export function QuickDeviceActions({
         variant="outline"
         size={buttonSize}
         className="h-7 px-2 text-xs"
-        aria-label={ariaLabel}
-        onClick={() => executeDeviceAction(internalDeviceId, nextAction as ActionableState)}
+        aria-label={primary.label}
+        onClick={() => executeDeviceAction(internalDeviceId, primary.action)}
         disabled={isLoading}
       >
         {isLoading ? (
           <Loader2 className="h-3 w-3 animate-spin" />
         ) : (
           <>
-            <IconComp className="h-3 w-3" />
-            {label}
+            <primary.icon className="h-3 w-3" />
+            {primary.label}
           </>
         )}
       </Button>

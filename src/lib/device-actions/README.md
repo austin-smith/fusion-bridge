@@ -35,7 +35,7 @@ We use a combination of the Strategy and Registry patterns:
         *   Mapping the abstract `ActionableState` (e.g., `SET_ON`) to the vendor-specific command (e.g., `'open'`).
         *   Calling the appropriate function in the connector's driver service (e.g., `yolinkDriver.setDeviceState`).
 
-3.  **`src/lib/device-actions.ts`** (Main File)
+3.  **`src/lib/device-actions/index.ts`** (Main File)
     *   `actionHandlers`: An array acting as the registry, holding instances of all implemented handlers (e.g., `new YoLinkActionHandler()`).
     *   `requestDeviceStateChange(internalDeviceId, newState)`: The primary entry point. It:
         *   Fetches device and connector data from the database.
@@ -44,6 +44,20 @@ We use a combination of the Strategy and Registry patterns:
         *   Finds the first handler where `handler.category` matches the connector's category *and* `handler.canHandle(...)` returns true.
         *   Calls the found handler's `executeStateChange(...)` method.
         *   Throws an error if no suitable handler is found.
+
+4.  **UI Capability & Selection (client-safe)**
+
+   The frontend should not hardcode per-connector logic in components. Use these helpers instead:
+
+   - `src/lib/device-actions/capabilities.ts`
+     - Central map of supported state actions per `connectorCategory` and standardized `DeviceType`.
+     - Exports: `SUPPORTED_DEVICE_ACTIONS`, `getSupportedStateActions(...)`, `isActionSupported(...)`.
+   - `src/lib/device-actions/presentation.ts`
+     - Maps an `ActionableState` to a user-facing `{ label, icon }`.
+   - `src/lib/device-actions/selection.ts`
+     - Status-aware selection of which action to show as primary, and any secondary actions.
+     - Exports: `deriveQuickActions({ connectorCategory, deviceType, displayState })` → `{ primary, secondary[] }`.
+   - These are client-only, pure utilities. Execution is still validated server-side via handlers.
 
 ## API Usage
 
@@ -60,6 +74,11 @@ The API endpoint `POST /api/devices/[internalDeviceId]/state` uses the `requestD
 - **Device Types:** Door
 - **Actions:** SET_LOCKED, SET_UNLOCKED
 - **Notes:** Uses door UUID as deviceId. Handles 422 validation errors when door is already in target state.
+
+Note: The UI capability map in `capabilities.ts` defines which actions are exposed in the frontend for each connector/device type. To surface a new actionable device in the UI, update both:
+
+- Backend: add/extend the appropriate handler implementing `IDeviceActionHandler`.
+- Frontend: extend `SUPPORTED_DEVICE_ACTIONS` (and `presentation.ts` if a new action needs a label/icon).
 
 ## Error Handling
 
@@ -79,7 +98,7 @@ To add state change capabilities for a new connector type (e.g., 'newConnector')
 1.  **Implement Driver Function:** Ensure the driver service (`src/services/drivers/newConnector.ts`) has the necessary function(s) to perform the state change via the vendor's API.
 2.  **Create Handler:** Create `src/lib/device-actions/newConnector-handler.ts`. Implement the `IDeviceActionHandler` interface, filling in the logic for `canHandle` and `executeStateChange` specific to 'newConnector'.
 3.  **Register Handler:**
-    *   Import the new handler class in `src/lib/device-actions.ts`.
-    *   Add an instance of the new handler to the `actionHandlers` array (e.g., `actionHandlers.push(new NewConnectorActionHandler())`).
+    *   Import the new handler class in `src/lib/device-actions/index.ts`.
+    *   Add an instance of the new handler to the `handlers` array (it is split into `actionHandlers` and `commandHandlers`).
 
 That's it! The `requestDeviceStateChange` function will now automatically be able to use the new handler. 

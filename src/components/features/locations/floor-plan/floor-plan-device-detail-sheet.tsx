@@ -342,6 +342,7 @@ export function FloorPlanDeviceDetailSheet({
                     internalDeviceId={device.id}
                     connectorCategory={device.connectorCategory}
                     deviceType={resolvedDeviceType}
+                    displayState={displayState}
                   />
                 </Section>
               );

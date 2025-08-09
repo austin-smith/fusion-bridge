@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from "@/components/ui/input";
 import { toast } from 'sonner';
-import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network, PowerIcon, PowerOffIcon, HelpCircle, MoreHorizontal, InfoIcon, ChevronDown, Plug, Lock, Unlock } from 'lucide-react';
+import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network, HelpCircle, MoreHorizontal, InfoIcon, ChevronDown, Plug } from 'lucide-react';
 import { DeviceWithConnector, ConnectorWithConfig, PikoServer } from '@/types';
 import { getDeviceTypeIcon, getDisplayStateIcon } from "@/lib/mappings/presentation";
 import { 
@@ -80,6 +80,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from "@/components/ui/skeleton";
 import { LocationSpaceSelector } from '@/components/common/LocationSpaceSelector';
 import { ExportButton } from '@/components/common/ExportButton';
+import { QuickDeviceActions } from '@/components/features/devices/QuickDeviceActions';
 
 // Define the shape of data expected by the table, combining store data
 interface DisplayedDevice extends Omit<DeviceWithConnector, 'status' | 'type' | 'pikoServerDetails' | 'id'> { // Also omit original id
@@ -541,94 +542,19 @@ export default function DevicesPage() {
         id: 'actions',
         header: "Actions",
         cell: ({ row }) => {
-          const device = row.original; 
-          // --- BEGIN Action Button Logic ---
-          const isYoLinkActionable = 
-            device.connectorCategory === 'yolink' && 
-            (device.deviceTypeInfo.type === DeviceType.Switch || device.deviceTypeInfo.type === DeviceType.Outlet);
-          
-          const isGeneaDoor = 
-            device.connectorCategory === 'genea' && 
-            device.deviceTypeInfo.type === DeviceType.Door;
-          
-          const isActionable = isYoLinkActionable || isGeneaDoor;
-          
-          // Read loading state from the store
-          const isLoading = deviceActionLoading.get(device.internalId) ?? false;
-          
-          // State checks for different device types
-          const isOn = device.displayState === ON; 
-          const isOff = device.displayState === OFF;
-          const isLocked = device.displayState === LOCKED;
-          const isUnlocked = device.displayState === UNLOCKED;
-
+          const device = row.original;
           return (
-            <div className="flex items-center gap-1">
-              {/* Primary action buttons */}
-              {isYoLinkActionable && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    executeDeviceAction(
-                      device.internalId, 
-                      isOn ? ActionableState.SET_OFF : ActionableState.SET_ON
-                    );
-                  }}
-                  disabled={isLoading}
-                  className="h-7 px-2 text-xs"
-                >
-                  {isLoading ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : isOn ? (
-                    <>
-                      <PowerOffIcon className="h-3 w-3" />
-                      Turn Off
-                    </>
-                  ) : (
-                    <>
-                      <PowerIcon className="h-3 w-3" />
-                      Turn On
-                    </>
-                  )}
-                </Button>
-              )}
-              
-              {isGeneaDoor && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    executeDeviceAction(
-                      device.internalId, 
-                      isLocked ? ActionableState.SET_UNLOCKED : ActionableState.SET_LOCKED
-                    );
-                  }}
-                  disabled={isLoading}
-                  className="h-7 px-2 text-xs"
-                >
-                  {isLoading ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : isLocked ? (
-                    <>
-                      <Unlock className="h-3 w-3" />
-                      Unlock
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="h-3 w-3" />
-                      Lock
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
+            <QuickDeviceActions
+              internalDeviceId={device.internalId}
+              connectorCategory={device.connectorCategory}
+              deviceType={device.deviceTypeInfo.type}
+              displayState={device.displayState}
+            />
           );
         },
       },
     ],
-    // Update dependencies for columns useMemo
-    [deviceActionLoading, executeDeviceAction]
+    []
   );
 
   // Initialize the table with TanStack
