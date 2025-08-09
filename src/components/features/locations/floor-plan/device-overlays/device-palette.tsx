@@ -205,6 +205,12 @@ export function DevicePalette({
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [connectorFilter, setConnectorFilter] = useState<string>('all');
 
+  // Whether groups should auto-expand due to active search/filters
+  const shouldAutoExpand =
+    searchTerm.trim().length > 0 ||
+    typeFilter !== 'all' ||
+    connectorFilter !== 'all';
+
   // Devices available for placement within this location (not already placed)
   const availableDevices = useMemo(() => {
     const locationSpaceIds = new Set(
@@ -402,8 +408,7 @@ export function DevicePalette({
         ) : (
           groupedDevices.map((group) => {
             const groupKey = group.spaceId || 'unassigned';
-            const autoExpandActive = (searchTerm?.trim()?.length ?? 0) > 0 || typeFilter !== 'all' || connectorFilter !== 'all';
-            const isExpanded = autoExpandActive || expandedGroupKeys.has(groupKey);
+            const isExpanded = shouldAutoExpand || expandedGroupKeys.has(groupKey);
 
             return (
                 <Collapsible
@@ -411,8 +416,7 @@ export function DevicePalette({
                   open={isExpanded}
                   onOpenChange={() => {
                     // When auto-expand is active (search or filters), keep open state forced
-                    const autoExpand = (searchTerm?.trim()?.length ?? 0) > 0 || typeFilter !== 'all' || connectorFilter !== 'all';
-                    if (autoExpand) return;
+                    if (shouldAutoExpand) return;
                     toggleGroupExpansion(groupKey);
                   }}
               >

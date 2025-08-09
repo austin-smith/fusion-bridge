@@ -53,12 +53,29 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
   const [isDeviceSheetOpen, setIsDeviceSheetOpen] = useState(false);
   const [filteredDeviceCount, setFilteredDeviceCount] = useState<number | null>(null);
 
+  // Ref to the left sheet element for occlusion measurements
+  const leftSheetElRef = useRef<HTMLDivElement | null>(null);
+  const [leftSheetEl, setLeftSheetEl] = useState<HTMLDivElement | null>(null);
+  const sheetResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const pendingEnsureRafRef = useRef<number | null>(null);
+  const scaleEnsureTimeoutRef = useRef<number | null>(null);
+
+  // Debounce to allow Konva scale to apply before ensuring visibility
+  const ENSURE_VISIBLE_AFTER_SCALE_MS = 80;
+
   
   // Zoom state to pass to canvas
   const [zoomActions, setZoomActions] = useState<{
     zoomIn: () => void;
     zoomOut: () => void;
     resetZoom: () => void;
+    panBy: (delta: { dx: number; dy: number }, options?: { animate?: boolean; durationMs?: number }) => void;
+    ensureOverlayVisibleById: (
+      overlayId: string,
+      safeArea: { left: number; top: number; right: number; bottom: number },
+      options?: { padding?: number; animate?: boolean; durationMs?: number; axis?: 'x' | 'y' | 'both' }
+    ) => void;
+    getContainerRect: () => DOMRect | null;
   } | null>(null);
 
   // Get device overlays and management functions
@@ -114,6 +131,173 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
     }
   }), [zoomActions]);
 
+  // Compute safe area within the canvas container accounting for left sheet occlusion
+  const computeSafeArea = React.useCallback((): { left: number; top: number; right: number; bottom: number } | null => {
+    if (!zoomActions) return null;
+    const containerRect = zoomActions.getContainerRect();
+
+    const padding = 16; // px
+    // Extra buffer on the left to account for the selection tooltip (centered above the device)
+    // and any minor animation/layout variance. Tuned conservatively for readability.
+    const tooltipHalfWidthBuffer = 120; // px
+    const prefersSm = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(min-width: 640px)').matches;
+    const fallbackPanelWidth = prefersSm ? 500 : 420; // mirrors sheet width classes
+
+    // Defaults when container size is unknown; only X-axis enforcement will be meaningful
+    let leftSafe = padding;
+    let topSafe = padding;
+    let rightSafe = Number.MAX_SAFE_INTEGER; // effectively disables right bound checks
+    let bottomSafe = Number.MAX_SAFE_INTEGER;
+
+    if (containerRect) {
+      topSafe = padding;
+      rightSafe = containerRect.width - padding;
+      bottomSafe = containerRect.height - padding;
+    }
+
+    // Use actual sheet measurement if available; otherwise fall back to CSS width
+    if (leftSheetEl) {
+      const sheetRect = leftSheetEl.getBoundingClientRect();
+      if (containerRect) {
+        const overlapLeft = Math.max(0, Math.min(containerRect.right, sheetRect.right) - containerRect.left);
+        leftSafe = Math.min(
+          Math.max(overlapLeft + padding + tooltipHalfWidthBuffer, padding),
+          containerRect.width - padding
+        );
+      } else {
+        leftSafe = fallbackPanelWidth + padding + tooltipHalfWidthBuffer;
+      }
+    } else {
+      // If the sheet ref isn't available but the sheet is visually open, still try a reasonable fallback
+      leftSafe = fallbackPanelWidth + padding + tooltipHalfWidthBuffer;
+    }
+
+    return { left: leftSafe, top: topSafe, right: rightSafe, bottom: bottomSafe };
+  }, [zoomActions, leftSheetEl]);
+
+  // Schedule ensure-visible on next animation frame (twice) after layout settles
+  const scheduleEnsureVisible = React.useCallback(() => {
+    if (!selectedOverlayId || !zoomActions) return;
+    if (pendingEnsureRafRef.current !== null) {
+      cancelAnimationFrame(pendingEnsureRafRef.current);
+      pendingEnsureRafRef.current = null;
+    }
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => {
+        const safe = computeSafeArea();
+        if (safe) {
+          zoomActions.ensureOverlayVisibleById(selectedOverlayId, safe, {
+            axis: 'x',
+            animate: true,
+            durationMs: 260,
+          });
+        } else {
+          // Retry shortly if layout or canvas not ready yet
+          const t = window.setTimeout(() => {
+            const s2 = computeSafeArea();
+            if (s2) {
+              zoomActions.ensureOverlayVisibleById(selectedOverlayId, s2, {
+                axis: 'x',
+                animate: true,
+                durationMs: 260,
+              });
+            }
+            window.clearTimeout(t);
+          }, 30);
+        }
+      });
+      pendingEnsureRafRef.current = raf2;
+    });
+    pendingEnsureRafRef.current = raf1;
+  }, [selectedOverlayId, zoomActions, computeSafeArea]);
+
+  // Immediate ensure to start animating pan in sync with sheet open
+  const ensureImmediately = React.useCallback(() => {
+    if (!selectedOverlayId || !zoomActions) return;
+    const safe = computeSafeArea();
+    if (safe) {
+      zoomActions.ensureOverlayVisibleById(selectedOverlayId, safe, {
+        axis: 'x',
+        animate: true,
+        durationMs: 220,
+      });
+    }
+  }, [selectedOverlayId, zoomActions, computeSafeArea]);
+
+  // React to selection open -> ensure visible after sheet lays out
+  useEffect(() => {
+    if (selectedOverlayId) {
+      // kick off immediately, then refine on next frames
+      ensureImmediately();
+      scheduleEnsureVisible();
+    }
+    return () => {
+      if (pendingEnsureRafRef.current !== null) {
+        cancelAnimationFrame(pendingEnsureRafRef.current);
+        pendingEnsureRafRef.current = null;
+      }
+    };
+  }, [selectedOverlayId, ensureImmediately, scheduleEnsureVisible]);
+
+  // When sheet element mounts and is open, run an additional ensure after its slide-in animation (~500ms)
+  useEffect(() => {
+    if (!selectedOverlayId || !leftSheetEl) return;
+    const handleTransitionEnd = (e: TransitionEvent) => {
+      // Only respond to transitions on the sheet element itself
+      if (e.target === leftSheetEl) {
+        scheduleEnsureVisible();
+      }
+    };
+    leftSheetEl.addEventListener('transitionend', handleTransitionEnd);
+    // In case the element is already settled with no transition, schedule a micro follow-up
+    const rafId = requestAnimationFrame(() => scheduleEnsureVisible());
+    return () => {
+      leftSheetEl.removeEventListener('transitionend', handleTransitionEnd);
+      cancelAnimationFrame(rafId);
+    };
+  }, [selectedOverlayId, leftSheetEl, scheduleEnsureVisible]);
+
+  // When canvas actions become available while a selection exists, ensure visibility
+  useEffect(() => {
+    if (zoomActions && selectedOverlayId) {
+      scheduleEnsureVisible();
+    }
+  }, [zoomActions, selectedOverlayId, scheduleEnsureVisible]);
+
+  // Observe left sheet size changes to re-ensure
+  useEffect(() => {
+    if (!leftSheetEl) return;
+    if (sheetResizeObserverRef.current) {
+      sheetResizeObserverRef.current.disconnect();
+      sheetResizeObserverRef.current = null;
+    }
+    try {
+      const ro = new ResizeObserver(() => {
+        if (selectedOverlayId) {
+          ensureImmediately();
+          scheduleEnsureVisible();
+        }
+      });
+      ro.observe(leftSheetEl);
+      sheetResizeObserverRef.current = ro;
+      return () => {
+        ro.disconnect();
+        sheetResizeObserverRef.current = null;
+      };
+    } catch {
+      return;
+    }
+  }, [leftSheetEl, selectedOverlayId, ensureImmediately, scheduleEnsureVisible]);
+
+  // Re-ensure on window resize
+  useEffect(() => {
+    const handler = () => {
+      if (selectedOverlayId) scheduleEnsureVisible();
+    };
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, [selectedOverlayId, scheduleEnsureVisible]);
+
   // Replace submit handler using PUT
   const handleReplaceSubmit = async (name: string, file: File) => {
     if (!floorPlan) return;
@@ -163,7 +347,7 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
 
   // Handle viewing mode with interactive canvas
   const handleCanvasLoad = (dimensions: { width: number; height: number }) => {
-
+    if (selectedOverlayId) scheduleEnsureVisible();
   };
 
   const handleCanvasError = (error: string) => {
@@ -223,7 +407,17 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
               overlay={selectedOverlayId ? overlays.find(o => o.id === selectedOverlayId) || null : null}
               open={!!selectedOverlayId}
               onOpenChange={(open) => {
-                if (!open) selectOverlay(null);
+                if (!open) {
+                  selectOverlay(null);
+                } else {
+                  // start pan immediately alongside sheet open
+                  ensureImmediately();
+                }
+              }}
+              onSheetElementRef={(el) => {
+                leftSheetElRef.current = el;
+                setLeftSheetEl(el);
+                if (el && selectedOverlayId) scheduleEnsureVisible();
               }}
               onUpdateOverlay={async (overlayId, updates) => {
                 try {
@@ -251,7 +445,21 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
               locationId={locationId}
               onLoad={handleCanvasLoad}
               onError={handleCanvasError}
-              onScaleChange={onScaleChange}
+              onScaleChange={(scale) => {
+                // Bubble up
+                onScaleChange?.(scale);
+                // Debounce ensure while user is zooming
+                if (scaleEnsureTimeoutRef.current) {
+                  window.clearTimeout(scaleEnsureTimeoutRef.current);
+                  scaleEnsureTimeoutRef.current = null;
+                }
+                if (selectedOverlayId) {
+                  // small delay to let Konva apply scale and layout reflow
+                  scaleEnsureTimeoutRef.current = window.setTimeout(() => {
+                    scheduleEnsureVisible();
+                  }, ENSURE_VISIBLE_AFTER_SCALE_MS);
+                }
+              }}
               overlays={overlays}
               selectedOverlayId={selectedOverlayId}
               createOverlay={createOverlay}

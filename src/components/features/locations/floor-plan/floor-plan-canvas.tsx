@@ -40,7 +40,18 @@ export interface FloorPlanCanvasProps {
   onResetZoom?: () => void;
   canZoomIn?: boolean;
   canZoomOut?: boolean;
-  onZoomActionsReady?: (actions: { zoomIn: () => void; zoomOut: () => void; resetZoom: () => void }) => void;
+  onZoomActionsReady?: (actions: {
+    zoomIn: () => void;
+    zoomOut: () => void;
+    resetZoom: () => void;
+    panBy: (delta: { dx: number; dy: number }, options?: { animate?: boolean; durationMs?: number }) => void;
+    ensureOverlayVisibleById: (
+      overlayId: string,
+      safeArea: { left: number; top: number; right: number; bottom: number },
+      options?: { padding?: number; animate?: boolean; durationMs?: number; axis?: 'x' | 'y' | 'both' }
+    ) => void;
+    getContainerRect: () => DOMRect | null;
+  }) => void;
 }
 
 interface ViewportState {
@@ -62,6 +73,16 @@ const MAX_SCALE = 5;
 // The factor by which the zoom changes on each zoom-in or zoom-out action.
 // A value of 1.1 provides a smooth and gradual zoom experience.
 const ZOOM_FACTOR = 1.1;
+
+// Cache of valid device types for fast runtime validation
+const DEVICE_TYPES_SET = new Set<string>(Object.values(DeviceType));
+
+function getValidDeviceType(value: unknown): DeviceType {
+  if (typeof value === 'string' && DEVICE_TYPES_SET.has(value)) {
+    return value as DeviceType;
+  }
+  return DeviceType.Unmapped;
+}
 
 export function FloorPlanCanvas({
   floorPlan,
@@ -238,13 +259,103 @@ export function FloorPlanCanvas({
   // Expose zoom functions to parent
   useEffect(() => {
     if (onZoomActionsReady) {
+      // Helper for animated pan
+      const animatePan = (
+        start: { x: number; y: number },
+        target: { x: number; y: number },
+        durationMs: number
+      ) => {
+        const startTime = performance.now();
+        const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+        const frame = (now: number) => {
+          const elapsed = now - startTime;
+          const t = Math.min(1, elapsed / durationMs);
+          const e = easeOutCubic(t);
+          const nx = start.x + (target.x - start.x) * e;
+          const ny = start.y + (target.y - start.y) * e;
+          setViewport((prev) => ({ ...prev, x: nx, y: ny }));
+          if (t < 1) requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      };
+
+      const panBy = (
+        delta: { dx: number; dy: number },
+        options?: { animate?: boolean; durationMs?: number }
+      ) => {
+        const duration = options?.durationMs ?? 220;
+        if (options?.animate) {
+          const start = { x: viewport.x, y: viewport.y };
+          const target = { x: viewport.x + delta.dx, y: viewport.y + delta.dy };
+          animatePan(start, target, duration);
+        } else {
+          setViewport((prev) => ({ ...prev, x: prev.x + delta.dx, y: prev.y + delta.dy }));
+        }
+      };
+
+      const ensureOverlayVisibleById = (
+        overlayId: string,
+        safeArea: { left: number; top: number; right: number; bottom: number },
+        options?: { padding?: number; animate?: boolean; durationMs?: number; axis?: 'x' | 'y' | 'both' }
+      ) => {
+        try {
+          const overlay = overlays.find((o) => o.id === overlayId);
+          if (!overlay || !currentResult.dimensions) return;
+          const canvasPt = normalizedToCanvas(
+            { x: overlay.x, y: overlay.y },
+            { width: currentResult.dimensions.width, height: currentResult.dimensions.height }
+          );
+          const projected = {
+            x: viewport.x + canvasPt.x * viewport.scale,
+            y: viewport.y + canvasPt.y * viewport.scale,
+          };
+          const axis = options?.axis ?? 'x';
+          const padLeft = safeArea.left;
+          const padTop = safeArea.top;
+          const padRight = safeArea.right;
+          const padBottom = safeArea.bottom;
+
+          let dx = 0;
+          let dy = 0;
+          if (axis === 'x' || axis === 'both') {
+            if (projected.x < padLeft) dx = padLeft - projected.x;
+            else if (projected.x > padRight) dx = padRight - projected.x;
+          }
+          if (axis === 'y' || axis === 'both') {
+            if (projected.y < padTop) dy = padTop - projected.y;
+            else if (projected.y > padBottom) dy = padBottom - projected.y;
+          }
+
+          const epsilon = 0.5; // avoid micro-jitter
+          if (Math.abs(dx) < epsilon && Math.abs(dy) < epsilon) return;
+
+          const duration = options?.durationMs ?? 220;
+          if (options?.animate) {
+            const start = { x: viewport.x, y: viewport.y };
+            const target = { x: viewport.x + dx, y: viewport.y + dy };
+            animatePan(start, target, duration);
+          } else {
+            setViewport((prev) => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
+          }
+        } catch (e) {
+          // Swallow errors; ensure-visible is best-effort
+        }
+      };
+
+      const getContainerRect = () => {
+        return containerRef.current?.getBoundingClientRect() ?? null;
+      };
+
       onZoomActionsReady({
         zoomIn,
         zoomOut,
-        resetZoom
+        resetZoom,
+        panBy,
+        ensureOverlayVisibleById,
+        getContainerRect,
       });
     }
-  }, [onZoomActionsReady, zoomIn, zoomOut, resetZoom]);
+  }, [onZoomActionsReady, zoomIn, zoomOut, resetZoom, viewport.x, viewport.y, viewport.scale, overlays, currentResult.dimensions]);
 
 
 
@@ -581,7 +692,7 @@ export function FloorPlanCanvas({
         const displayState = hasSelected
           ? ((selectedOverlay!.device as any).status || '')
           : (hoverLabel!.displayState || '');
-        const TypeIcon = getDeviceTypeIcon((Object.values(DeviceType).includes(typeText as DeviceType) ? (typeText as DeviceType) : DeviceType.Unmapped));
+        const TypeIcon = getDeviceTypeIcon(getValidDeviceType(typeText));
         const StateIcon = displayState ? getDisplayStateIcon(displayState as any) : null;
         return (
           <div

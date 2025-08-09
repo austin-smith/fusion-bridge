@@ -11,6 +11,9 @@ import type {
   UpdateDeviceOverlayPayload 
 } from '@/types/device-overlay';
 
+// Fraction of the shorter canvas side used to render the camera view cone radius
+const CAMERA_VIEW_CONE_RADIUS_RATIO = 0.08;
+
 export interface DeviceOverlayLayerProps {
   /** Array of device overlays to render */
   overlays: DeviceOverlayWithDevice[];
@@ -106,6 +109,11 @@ export function DeviceOverlayLayer({
     }
   }, [onSelectOverlay]);
 
+  // Compute once per render; used by all camera overlays
+  const radius =
+    Math.min(canvasDimensions.width, canvasDimensions.height) *
+    CAMERA_VIEW_CONE_RADIUS_RATIO;
+
   return (
     <Layer onClick={handleLayerClick}>
       {overlays.map((overlay) => {
@@ -128,9 +136,6 @@ export function DeviceOverlayLayer({
         const fovDeg: number = typeof cameraProps.fovDeg === 'number' ? cameraProps.fovDeg : 90;
         const rotationDegRaw: number = typeof cameraProps.rotationDeg === 'number' ? cameraProps.rotationDeg : 0;
         const rotationDeg = ((rotationDegRaw % 360) + 360) % 360;
-
-        // Visual constants
-        const radius = Math.min(canvasDimensions.width, canvasDimensions.height) * 0.08;
 
         return (
           <React.Fragment key={overlay.id}>

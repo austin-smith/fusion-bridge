@@ -87,6 +87,8 @@ export interface FloorPlanDeviceDetailSheetProps {
   className?: string;
   // Allow parent to pass updater to persist overlay changes
   onUpdateOverlay?: (overlayId: string, updates: UpdateDeviceOverlayPayload) => Promise<void> | void;
+  // Expose the rendered SheetContent element to parent for layout measurements
+  onSheetElementRef?: (el: HTMLDivElement | null) => void;
 }
 
 export function FloorPlanDeviceDetailSheet({
@@ -96,6 +98,7 @@ export function FloorPlanDeviceDetailSheet({
   onDelete,
   className,
   onUpdateOverlay,
+  onSheetElementRef,
 }: FloorPlanDeviceDetailSheetProps) {
   const device = overlay?.device;
   const resolvedDeviceType: DeviceType = device?.standardizedDeviceType && (Object.values(DeviceType) as string[]).includes(device.standardizedDeviceType)
@@ -211,6 +214,13 @@ export function FloorPlanDeviceDetailSheet({
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent
         side="left"
+        ref={React.useCallback((el: HTMLDivElement | null) => {
+          // Provide the element to the parent for occlusion/safe-area computations
+          onSheetElementRef?.(el);
+        }, [onSheetElementRef])}
+        onInteractOutside={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
         className={cn(
           // Override default sm:max-w-sm and w-3/4 from the Sheet component
           'sm:max-w-none md:max-w-none !w-[420px] sm:!w-[500px] !shadow-2xl ring-2 ring-border ring-offset-1 ring-offset-background',
