@@ -11,6 +11,7 @@ import { useFusionStore } from '@/stores/store';
 import { toast } from 'sonner';
 import type { FloorPlan, DeviceWithConnector, Space } from '@/types';
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { FloorPlanDeviceDetailSheet } from './floor-plan-device-detail-sheet';
 
 export interface FloorPlanDetailRef {
   zoomIn: () => void;
@@ -240,6 +241,26 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
                 </div>
               </SheetContent>
             </Sheet>
+            {/* Left device details sheet controlled by selection */}
+            <FloorPlanDeviceDetailSheet
+              overlay={selectedOverlayId ? overlays.find(o => o.id === selectedOverlayId) || null : null}
+              open={!!selectedOverlayId}
+              onOpenChange={(open) => {
+                if (!open) selectOverlay(null);
+              }}
+              onDelete={async (overlayId) => {
+                const overlay = overlays.find(o => o.id === overlayId);
+                try {
+                  await deleteOverlay(overlayId);
+                  if (overlay) {
+                    toast.success(`${overlay.device.name} removed from floor plan`);
+                  }
+                } catch (error) {
+                  console.error('Failed to delete device overlay:', error);
+                  toast.error('Failed to remove device from floor plan');
+                }
+              }}
+            />
             <FloorPlanCanvasDynamic
               floorPlan={floorPlan}
               locationId={locationId}

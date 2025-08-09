@@ -473,18 +473,7 @@ export function FloorPlanCanvas({
         </div>
       )}
 
-      {/* Selected device indicator */}
-      {selectedOverlayId && (
-        <div className="absolute bottom-4 left-4 z-10">
-          <div className="bg-background/80 backdrop-blur-sm rounded px-2 py-1 text-xs flex items-center gap-2">
-            <div className="w-2 h-2 bg-primary rounded-full"></div>
-            <span className="text-foreground font-medium">
-              {overlays.find(o => o.id === selectedOverlayId)?.device.name}
-            </span>
-            <span className="text-muted-foreground">selected</span>
-          </div>
-        </div>
-      )}
+      {/* Selected device indicator removed; details shown in left sheet */}
 
       {/* Scale indicator removed; shown in external toolbar */}
 
@@ -531,6 +520,11 @@ export function FloorPlanCanvas({
             canvasScale={viewport.scale}
             selectedOverlayId={selectedOverlayId}
             onSelectOverlay={selectOverlay}
+            onOverlayClicked={(overlay) => {
+              // Only open details if not currently dragging
+              // Selection is already handled; FloorPlanDetail listens to selection to open sheet
+              // No-op here; selection is sufficient for sheet open
+            }}
             onUpdateOverlay={updateOverlay}
             onHoverChange={handleOverlayHoverChange}
             onEditOverlay={(overlay) => {

@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, MapPlus, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Plus, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFloorPlans } from '@/hooks/floor-plan/use-floor-plans';
 import { FloorPlanTabs } from './floor-plan-tabs';
 import { FloorPlanDetail, type FloorPlanDetailRef } from './floor-plan-detail';
 import { FloorPlanNameDialog } from './floor-plan-name-dialog';
+import { FloorPlanUploadDialog } from './floor-plan-upload-dialog';
 import { FloorPlanLoadingSkeleton } from './floor-plan-loading-skeleton';
 import { useFusionStore } from '@/stores/store';
 import { toast } from 'sonner';
@@ -21,6 +22,7 @@ interface FloorPlanManagerProps {
 export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false, className }: FloorPlanManagerProps) {
   const [activeFloorPlanId, setActiveFloorPlanId] = useState<string | null>(null);
   const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [floorPlanToRename, setFloorPlanToRename] = useState<{ id: string; currentName: string } | null>(null);
   
   // Zoom control state
@@ -72,6 +74,18 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
     }
   };
 
+  const handleCreateFloorPlan = async (name: string, file: File) => {
+    try {
+      const newFloorPlan = await createFloorPlan(name, file);
+      setActiveFloorPlanId(newFloorPlan.id);
+      setIsUploadDialogOpen(false);
+      toast.success('Floor plan created successfully');
+    } catch (error) {
+      console.error('Error creating floor plan:', error);
+      toast.error('Failed to create floor plan');
+    }
+  };
+
   const handleRenameFloorPlan = (id: string, currentName: string) => {
     setFloorPlanToRename({ id, currentName });
     setIsNameDialogOpen(true);
@@ -79,7 +93,6 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
 
   const handleRenameSubmit = async (newName: string) => {
     if (!floorPlanToRename) return;
-    
     try {
       await handleUpdateFloorPlan(floorPlanToRename.id, newName);
       setIsNameDialogOpen(false);
@@ -153,7 +166,7 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
                 setTimeout(() => handleReplaceClick(), 0);
               }
             }}
-            onCreateRequest={() => setIsNameDialogOpen(true)}
+            onCreateRequest={() => setIsUploadDialogOpen(true)}
           />
 
           {/* Local toolbar above canvas (not in page header) */}
@@ -233,7 +246,7 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
                   Get started by uploading your first floor plan for this location.
                 </p>
               </div>
-              <Button onClick={() => setIsNameDialogOpen(true)}>
+              <Button onClick={() => setIsUploadDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Add your first floor plan
               </Button>
@@ -242,7 +255,13 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
         )}
       </div>
 
-      {/* Name Dialog for creating/updating floor plan names */}
+      {/* Upload Dialog */}
+      <FloorPlanUploadDialog
+        open={isUploadDialogOpen}
+        onOpenChange={setIsUploadDialogOpen}
+        onSubmit={handleCreateFloorPlan}
+        isLoading={isLoading}
+      />
 
       {/* Rename Dialog */}
       <FloorPlanNameDialog

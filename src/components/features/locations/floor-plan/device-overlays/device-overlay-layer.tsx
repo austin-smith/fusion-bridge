@@ -26,6 +26,8 @@ export interface DeviceOverlayLayerProps {
   editingEnabled?: boolean;
   /** Callback when an overlay is selected */
   onSelectOverlay?: (overlay: DeviceOverlayWithDevice | null) => void;
+  /** Callback when an overlay is clicked (intent to open details) */
+  onOverlayClicked?: (overlay: DeviceOverlayWithDevice) => void;
   /** Callback when an overlay position is updated */
   onUpdateOverlay?: (overlayId: string, updates: UpdateDeviceOverlayPayload) => void;
   /** Callback when an overlay is double-clicked (for editing) */
@@ -43,6 +45,7 @@ export function DeviceOverlayLayer({
   selectedOverlayId,
   editingEnabled = true,
   onSelectOverlay,
+  onOverlayClicked,
   onUpdateOverlay,
   onEditOverlay,
   onHoverChange
@@ -55,7 +58,10 @@ export function DeviceOverlayLayer({
     // Toggle selection
     const isCurrentlySelected = selectedOverlayId === overlay.id;
     onSelectOverlay?.(isCurrentlySelected ? null : overlay);
-  }, [selectedOverlayId, editingEnabled, onSelectOverlay]);
+    if (!isCurrentlySelected) {
+      onOverlayClicked?.(overlay);
+    }
+  }, [selectedOverlayId, editingEnabled, onSelectOverlay, onOverlayClicked]);
 
   const handleOverlayDoubleClick = useCallback((overlay: DeviceOverlayWithDevice) => {
     if (!editingEnabled) return;
@@ -67,9 +73,8 @@ export function DeviceOverlayLayer({
     if (!editingEnabled) return;
     
     setDraggingOverlayId(overlay.id);
-    // Auto-select the overlay being dragged
-    onSelectOverlay?.(overlay);
-  }, [editingEnabled, onSelectOverlay]);
+    // Do not auto-select on drag start to avoid opening details sheet while dragging
+  }, [editingEnabled]);
 
   const handleDragMove = useCallback((overlay: DeviceOverlayWithDevice, newPosition: CanvasCoordinates) => {
     // Optional: Real-time position updates during drag

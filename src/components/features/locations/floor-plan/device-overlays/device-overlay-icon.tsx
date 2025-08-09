@@ -108,7 +108,10 @@ export function DeviceOverlayIcon({
   }, [overlay.device.standardizedDeviceType]);
 
   const handleClick = () => {
-    onClick?.(overlay);
+    // Ignore clicks immediately following a drag to avoid accidental openings
+    if (!isDragging) {
+      onClick?.(overlay);
+    }
   };
 
   const handleDoubleClick = () => {
@@ -201,6 +204,7 @@ export function DeviceOverlayIcon({
       x={position.x}
       y={position.y}
       draggable
+      dragBoundFunc={(pos) => pos} // no bounding change, but ensures Konva sets dragging state
       onClick={handleClick}
       onDblClick={handleDoubleClick}
       onDragStart={handleDragStart}
@@ -209,15 +213,19 @@ export function DeviceOverlayIcon({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Selection indicator */}
+      {/* Selection indicator (prominent ring + soft glow) */}
       {isSelected && (
-        <Circle
-          radius={badgeRadius + 4}
-          stroke="#ffffff"
-          strokeWidth={strokeWidth * 2}
-          dash={[3, 3]}
-          opacity={0.8}
-        />
+        <>
+          <Circle
+            radius={badgeRadius + 6}
+            stroke="#3b82f6" /* Tailwind blue-500 approximation */
+            strokeWidth={Math.max(2, strokeWidth * 2)}
+            shadowColor="rgba(59,130,246,0.6)"
+            shadowBlur={12}
+            shadowOpacity={0.9}
+            opacity={0.95}
+          />
+        </>
       )}
 
       {/* Main device icon */}

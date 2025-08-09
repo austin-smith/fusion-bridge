@@ -320,12 +320,7 @@ export function DevicePalette({
             <p className="text-sm text-muted-foreground mb-3">
               {searchTerm ? 'No devices match your search.' : 'No devices available for this location.'}
             </p>
-            {!searchTerm && onAssignDevices && (
-              <Button variant="outline" size="sm" onClick={onAssignDevices}>
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                Assign Devices
-              </Button>
-            )}
+            {/* Removed Assign Devices button */}
           </div>
         ) : (
           groupedDevices.map((group) => {
