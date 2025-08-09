@@ -213,11 +213,12 @@
     --border: 0 0% 89.8039%;
     --input: 0 0% 89.8039%;
     --ring: 0 0% 63.1373%;
-    --chart-1: 0 0% 45.0980%;
-    --chart-2: 0 0% 45.0980%;
-    --chart-3: 0 0% 45.0980%;
-    --chart-4: 0 0% 45.0980%;
-    --chart-5: 0 0% 45.0980%;
+    /* Distinct monochrome palette (light) */
+    --chart-1: hsl(0 0% 15%);
+    --chart-2: hsl(0 0% 28%);
+    --chart-3: hsl(0 0% 41%);
+    --chart-4: hsl(0 0% 54%);
+    --chart-5: hsl(0 0% 67%);
     --sidebar: 0 0% 98.0392%;
     --sidebar-foreground: 0 0% 3.9216%;
     --sidebar-primary: 0 0% 9.0196%;
@@ -264,11 +265,12 @@
     --border: 0 0% 21.9608%;
     --input: 0 0% 32.1569%;
     --ring: 0 0% 45.0980%;
-    --chart-1: 0 0% 45.0980%;
-    --chart-2: 0 0% 45.0980%;
-    --chart-3: 0 0% 45.0980%;
-    --chart-4: 0 0% 45.0980%;
-    --chart-5: 0 0% 45.0980%;
+    /* Distinct monochrome palette (dark) */
+    --chart-1: hsl(0 0% 85%);
+    --chart-2: hsl(0 0% 75%);
+    --chart-3: hsl(0 0% 65%);
+    --chart-4: hsl(0 0% 55%);
+    --chart-5: hsl(0 0% 45%);
     --sidebar: 0 0% 9.0196%;
     --sidebar-foreground: 0 0% 98.0392%;
     --sidebar-primary: 0 0% 98.0392%;
