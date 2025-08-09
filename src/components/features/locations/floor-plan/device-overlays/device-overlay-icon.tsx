@@ -12,6 +12,8 @@ export interface DeviceOverlayIconProps {
   overlay: DeviceOverlayWithDevice;
   /** Position on canvas in pixels */
   position: CanvasCoordinates;
+  /** Optional rotation for the icon (degrees). Only applied to the icon graphic, not selection rings. */
+  rotationDeg?: number;
   /** Canvas dimensions for bounding label placement */
   canvasDimensions?: CanvasDimensions;
   /** Visible bounds (after transform); helps prevent labels drawing off-screen */
@@ -51,6 +53,7 @@ const BASE_STROKE_WIDTH = 2;
 export function DeviceOverlayIcon({
   overlay,
   position,
+  rotationDeg = 0,
   canvasDimensions,
   visibleBounds,
   canvasScale = 1,
@@ -185,13 +188,14 @@ export function DeviceOverlayIcon({
           shadowOffset={{ x: 1, y: 1 }}
           opacity={opacity}
         />
-        {/* Icon image */}
+        {/* Icon image (rotate to show camera direction if provided) */}
         <KonvaImage
           image={iconImage}
           width={iconDisplaySize}
           height={iconDisplaySize}
           offsetX={iconDisplaySize / 2}
           offsetY={iconDisplaySize / 2}
+          rotation={rotationDeg}
           opacity={opacity}
         />
       </>

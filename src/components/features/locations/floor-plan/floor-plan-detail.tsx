@@ -213,6 +213,14 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
               onOpenChange={(open) => {
                 if (!open) selectOverlay(null);
               }}
+              onUpdateOverlay={async (overlayId, updates) => {
+                try {
+                  await updateOverlay(overlayId, updates);
+                } catch (e) {
+                  console.error('Failed to update overlay props:', e);
+                  toast.error('Failed to save camera settings');
+                }
+              }}
               onDelete={async (overlayId) => {
                 const overlay = overlays.find(o => o.id === overlayId);
                 try {

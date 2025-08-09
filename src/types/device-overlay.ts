@@ -29,6 +29,20 @@ export interface DeviceOverlayData extends DeviceOverlayPosition {
   id: string;
   /** Organization ID for multi-tenancy */
   organizationId: string;
+  /** Arbitrary overlay configuration properties (per device type) */
+  props?: DeviceOverlayProps | null;
+}
+
+/**
+ * Per-overlay configuration properties
+ */
+export interface DeviceOverlayProps {
+  camera?: {
+    /** Field of view in degrees (10-180). Default 90. */
+    fovDeg?: number;
+    /** Rotation in degrees (0-360). Default 0. */
+    rotationDeg?: number;
+  };
 }
 
 /**
@@ -39,6 +53,8 @@ export interface CreateDeviceOverlayPayload {
   floorPlanId: string;
   x: number;
   y: number;
+  /** Optional overlay properties */
+  props?: DeviceOverlayProps;
 }
 
 /**
@@ -47,6 +63,8 @@ export interface CreateDeviceOverlayPayload {
 export interface UpdateDeviceOverlayPayload {
   x?: number;
   y?: number;
+  /** Optional overlay properties to merge/replace */
+  props?: DeviceOverlayProps;
 }
 
 /**

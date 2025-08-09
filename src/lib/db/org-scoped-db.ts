@@ -1,6 +1,6 @@
 import { db } from '@/data/db';
 import { locations, devices, connectors, events, pikoServers, automations, keypadPins, user, spaces, spaceDevices, alarmZones, alarmZoneDevices, deviceOverlays, floorPlans } from '@/data/db/schema';
-import { eq, and, exists, getTableColumns, desc, count, inArray, ne, like, or, gte, lte, type SQL } from 'drizzle-orm';
+import { eq, and, exists, getTableColumns, desc, count, inArray, ne, like, or, gte, lte, sql, type SQL } from 'drizzle-orm';
 
 /**
  * Organization-scoped database client using proper JOIN-based filtering
@@ -950,6 +950,7 @@ export class OrgScopedDb {
       x: number;
       y: number;
       createdByUserId: string;
+      props?: Record<string, any> | null;
     }) =>
       db.insert(deviceOverlays)
         .values({
@@ -963,6 +964,7 @@ export class OrgScopedDb {
     update: (overlayId: string, data: {
       x?: number;
       y?: number;
+      props?: Record<string, any> | null;
       updatedByUserId: string;
     }) =>
       db.update(deviceOverlays)
@@ -983,6 +985,7 @@ export class OrgScopedDb {
       x: number;
       y: number;
       userId: string;
+      props?: Record<string, any> | null;
     }) => {
       // Check if overlay exists
       const existing = await db.select()
@@ -1000,6 +1003,7 @@ export class OrgScopedDb {
           .set({
             x: data.x,
             y: data.y,
+            props: data.props ?? sql`COALESCE(props, '{}')`,
             updatedByUserId: data.userId,
             updatedAt: new Date()
           })
@@ -1018,6 +1022,7 @@ export class OrgScopedDb {
             organizationId: this.orgId,
             x: data.x,
             y: data.y,
+            props: data.props ?? {},
             createdByUserId: data.userId,
             updatedByUserId: data.userId
           })

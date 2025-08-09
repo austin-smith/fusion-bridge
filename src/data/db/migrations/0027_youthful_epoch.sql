@@ -1,0 +1,1 @@
+ALTER TABLE `device_overlays` ADD `props` text DEFAULT '{}';

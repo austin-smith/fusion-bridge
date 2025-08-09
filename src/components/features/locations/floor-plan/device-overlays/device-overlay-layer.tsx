@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { Layer } from 'react-konva';
+import { Layer, Wedge } from 'react-konva';
 import { DeviceOverlayIcon } from './device-overlay-icon';
 import { normalizedToCanvas, canvasToNormalized } from '@/types/device-overlay';
 import type { 
@@ -120,23 +120,48 @@ export function DeviceOverlayLayer({
         const isSelected = selectedOverlayId === overlay.id;
         const isDragging = draggingOverlayId === overlay.id;
 
+        const deviceType = (overlay.device as any).standardizedDeviceType || (overlay.device as any).deviceTypeInfo?.type;
+        const isCamera = deviceType === 'Camera';
+
+        // Camera viewing cone configuration from overlay props
+        const cameraProps = (overlay as any).props?.camera || {};
+        const fovDeg: number = typeof cameraProps.fovDeg === 'number' ? cameraProps.fovDeg : 90;
+        const rotationDegRaw: number = typeof cameraProps.rotationDeg === 'number' ? cameraProps.rotationDeg : 0;
+        const rotationDeg = ((rotationDegRaw % 360) + 360) % 360;
+
+        // Visual constants
+        const radius = Math.min(canvasDimensions.width, canvasDimensions.height) * 0.08;
+
         return (
-          <DeviceOverlayIcon
-            key={overlay.id}
-            overlay={overlay}
-            position={canvasPosition}
-            canvasScale={canvasScale}
-            canvasDimensions={canvasDimensions}
-            visibleBounds={visibleBounds}
-            onHoverChange={onHoverChange}
-            isSelected={isSelected}
-            isDragging={isDragging}
-            onClick={handleOverlayClick}
-            onDoubleClick={handleOverlayDoubleClick}
-            onDragStart={handleDragStart}
-            onDragMove={handleDragMove}
-            onDragEnd={handleDragEnd}
-          />
+          <React.Fragment key={overlay.id}>
+            {isCamera && (
+              <Wedge
+                x={canvasPosition.x}
+                y={canvasPosition.y}
+                radius={radius}
+                angle={fovDeg}
+                rotation={rotationDeg - fovDeg / 2}
+                fill={'rgba(59,130,246,0.22)'}
+                listening={false}
+              />
+            )}
+            <DeviceOverlayIcon
+              overlay={overlay}
+              position={canvasPosition}
+              rotationDeg={isCamera ? rotationDeg : 0}
+              canvasScale={canvasScale}
+              canvasDimensions={canvasDimensions}
+              visibleBounds={visibleBounds}
+              onHoverChange={onHoverChange}
+              isSelected={isSelected}
+              isDragging={isDragging}
+              onClick={handleOverlayClick}
+              onDoubleClick={handleOverlayDoubleClick}
+              onDragStart={handleDragStart}
+              onDragMove={handleDragMove}
+              onDragEnd={handleDragEnd}
+            />
+          </React.Fragment>
         );
       })}
     </Layer>

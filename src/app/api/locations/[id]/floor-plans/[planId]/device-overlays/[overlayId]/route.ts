@@ -96,6 +96,22 @@ export const PATCH = withOrganizationAuth(async (
       );
     }
     
+    // Validate optional props.camera if present
+    const fov = payload?.props?.camera?.fovDeg;
+    const rot = payload?.props?.camera?.rotationDeg;
+    if (typeof fov !== 'undefined' && (fov < 0 || fov > 360)) {
+      return NextResponse.json(
+        { success: false, error: 'camera.fovDeg must be between 0 and 360' },
+        { status: 400 }
+      );
+    }
+    if (typeof rot !== 'undefined' && (rot < 0 || rot > 360)) {
+      return NextResponse.json(
+        { success: false, error: 'camera.rotationDeg must be between 0 and 360' },
+        { status: 400 }
+      );
+    }
+
     const orgDb = createOrgScopedDb(authContext.organizationId);
     
     // Verify floor plan exists and belongs to organization
@@ -124,6 +140,7 @@ export const PATCH = withOrganizationAuth(async (
       {
         x: payload.x,
         y: payload.y,
+        props: payload.props ?? undefined,
         updatedByUserId: authContext.userId
       }
     );

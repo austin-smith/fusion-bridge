@@ -129,6 +129,22 @@ export const POST = withOrganizationAuth(async (
       );
     }
     
+    // Validate optional props.camera if present
+    const fov = payload?.props?.camera?.fovDeg;
+    const rot = payload?.props?.camera?.rotationDeg;
+    if (typeof fov !== 'undefined' && (fov < 0 || fov > 360)) {
+      return NextResponse.json(
+        { success: false, error: 'camera.fovDeg must be between 0 and 360' },
+        { status: 400 }
+      );
+    }
+    if (typeof rot !== 'undefined' && (rot < 0 || rot > 360)) {
+      return NextResponse.json(
+        { success: false, error: 'camera.rotationDeg must be between 0 and 360' },
+        { status: 400 }
+      );
+    }
+
     // Check if device is already placed on this floor plan
     const existingOverlay = await orgDb.deviceOverlays.findByDeviceAndFloorPlan(
       payload.deviceId,
@@ -148,7 +164,8 @@ export const POST = withOrganizationAuth(async (
       floorPlanId: payload.floorPlanId,
       x: payload.x,
       y: payload.y,
-      createdByUserId: authContext.userId
+      createdByUserId: authContext.userId,
+      props: payload.props ?? {}
     });
     
     return NextResponse.json({

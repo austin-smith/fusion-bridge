@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { getDeviceTypeIcon, getDisplayStateIcon, getDisplayStateColorClass } from '@/lib/mappings/presentation';
-import { Cpu, Trash2, FileJson, Copy, Check, Building, Box, Shield } from 'lucide-react';
+import { Cpu, Trash2, FileJson, Copy, Check, Building, Box, Shield, Cog, Zap } from 'lucide-react';
 import type { DeviceOverlayWithDevice } from '@/types/device-overlay';
 import { cn } from '@/lib/utils';
 import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
@@ -31,6 +31,53 @@ import { useDeviceCameraConfig } from '@/hooks/use-device-camera-config';
 import { CameraMediaSection } from '@/components/features/common/CameraMediaSection';
 import { QuickDeviceActions } from '@/components/features/devices/QuickDeviceActions';
 import { FloorPlanOtherSpacesList } from './floor-plan-other-spaces-list';
+import { Slider } from '@/components/ui/slider';
+// no debounce needed; we commit on pointer-up
+import type { UpdateDeviceOverlayPayload } from '@/types/device-overlay';
+
+function Section({
+  title,
+  icon: Icon,
+  className,
+  headerRight,
+  children,
+}: {
+  title: string;
+  icon?: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  className?: string;
+  headerRight?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className={cn('rounded-md border bg-card/50 shadow-sm', className)}>
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-muted/40 px-3 py-2">
+        <div className="flex items-center gap-2">
+          {Icon ? <Icon className="h-3.5 w-3.5 text-muted-foreground" /> : null}
+          <h3 className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
+        </div>
+        {headerRight}
+      </div>
+      <div className="p-3">{children}</div>
+    </section>
+  );
+}
+
+function InfoGrid({ children, className }: React.PropsWithChildren<{ className?: string }>) {
+  return (
+    <dl className={cn('grid grid-cols-3 text-sm', className)}>
+      {children}
+    </dl>
+  );
+}
+
+function InfoRow({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="contents">
+      <dt className="col-span-1 py-2 text-muted-foreground">{label}</dt>
+      <dd className="col-span-2 py-2">{children}</dd>
+    </div>
+  );
+}
 
 export interface FloorPlanDeviceDetailSheetProps {
   overlay: DeviceOverlayWithDevice | null;
@@ -38,6 +85,8 @@ export interface FloorPlanDeviceDetailSheetProps {
   onOpenChange: (open: boolean) => void;
   onDelete?: (overlayId: string) => Promise<void> | void;
   className?: string;
+  // Allow parent to pass updater to persist overlay changes
+  onUpdateOverlay?: (overlayId: string, updates: UpdateDeviceOverlayPayload) => Promise<void> | void;
 }
 
 export function FloorPlanDeviceDetailSheet({
@@ -46,6 +95,7 @@ export function FloorPlanDeviceDetailSheet({
   onOpenChange,
   onDelete,
   className,
+  onUpdateOverlay,
 }: FloorPlanDeviceDetailSheetProps) {
   const device = overlay?.device;
   const resolvedDeviceType: DeviceType = device?.standardizedDeviceType && (Object.values(DeviceType) as string[]).includes(device.standardizedDeviceType)
@@ -127,6 +177,36 @@ export function FloorPlanDeviceDetailSheet({
     return devices;
   }, [deviceSpace?.deviceIds, allDevices, internalDeviceId]);
 
+  // Camera configuration (FOV & rotation) controls when device is a camera
+  const isCamera = resolvedDeviceType === DeviceType.Camera;
+  const initialFov = (overlay as any)?.props?.camera?.fovDeg ?? 90;
+  const initialRotation = (overlay as any)?.props?.camera?.rotationDeg ?? 0;
+  const [fov, setFov] = React.useState<number>(initialFov);
+  const [rotation, setRotation] = React.useState<number>(initialRotation);
+
+  // Keep local state in sync when selection changes
+  React.useEffect(() => {
+    setFov((overlay as any)?.props?.camera?.fovDeg ?? 90);
+    setRotation((overlay as any)?.props?.camera?.rotationDeg ?? 0);
+  }, [overlay]);
+
+  const commitUpdate = React.useCallback((next: { fov?: number; rotation?: number }) => {
+    if (!overlay?.id || !onUpdateOverlay) return;
+    const nextFov = typeof next.fov === 'number' ? next.fov : fov;
+    const nextRotation = typeof next.rotation === 'number' ? next.rotation : rotation;
+    const mergedProps = {
+      ...(overlay as any).props,
+      camera: {
+        ...((overlay as any).props?.camera || {}),
+        fovDeg: nextFov,
+        rotationDeg: ((nextRotation % 360) + 360) % 360,
+      },
+    };
+    onUpdateOverlay(overlay.id, { props: mergedProps });
+  }, [overlay, onUpdateOverlay, fov, rotation]);
+
+  // no debounce
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent
@@ -146,83 +226,108 @@ export function FloorPlanDeviceDetailSheet({
 
         {overlay && device && (
           <div className="mt-4 space-y-4">
-            <div className="grid grid-cols-3 gap-x-3 gap-y-2 text-sm">
-              {/* Connector first */}
-              <div className="col-span-1 text-muted-foreground">Connector</div>
-              <div className="col-span-2">
-                <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                  <ConnectorIcon connectorCategory={device.connectorCategory} size={12} />
-                  <span className="text-xs max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap">
-                    {device.connectorName || 'Unknown'}
-                  </span>
-                </Badge>
-              </div>
+            <Section title="Device" icon={Cpu}>
+              <InfoGrid className="gap-x-3">
+                <InfoRow label="Connector">
+                  <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                    <ConnectorIcon connectorCategory={device.connectorCategory} size={12} />
+                    <span className="text-xs max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap">
+                      {device.connectorName || 'Unknown'}
+                    </span>
+                  </Badge>
+                </InfoRow>
 
-              {/* Device Type second */}
-              <div className="col-span-1 text-muted-foreground">Type</div>
-              <div className="col-span-2">
-                <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                  <DeviceIcon className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-xs max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap">
-                    {device.standardizedDeviceType || device.type}
-                    {device.standardizedDeviceSubtype && (
-                      <span className="text-muted-foreground ml-1">/ {device.standardizedDeviceSubtype}</span>
-                    )}
-                  </span>
-                </Badge>
-              </div>
+                <InfoRow label="Type">
+                  <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                    <DeviceIcon className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-xs max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap">
+                      {device.standardizedDeviceType || device.type}
+                      {device.standardizedDeviceSubtype && (
+                        <span className="text-muted-foreground ml-1">/ {device.standardizedDeviceSubtype}</span>
+                      )}
+                    </span>
+                  </Badge>
+                </InfoRow>
 
-              <div className="col-span-1 text-muted-foreground">Status</div>
-              <div className="col-span-2">
-                <Badge variant="outline" className="inline-flex items-center gap-1 px-2 py-0.5 font-normal">
-                  <StateIcon className={cn('h-3 w-3', stateColorClass)} />
-                  <span className="text-xs">{displayState || 'Unknown'}</span>
-                </Badge>
-              </div>
+                <InfoRow label="Status">
+                  <Badge variant="outline" className="inline-flex items-center gap-1 px-2 py-0.5 font-normal">
+                    <StateIcon className={cn('h-3 w-3', stateColorClass)} />
+                    <span className="text-xs">{displayState || 'Unknown'}</span>
+                  </Badge>
+                </InfoRow>
 
-              {/* Divider between device info and assignment context */}
-              <div className="col-span-3"><Separator className="my-1" /></div>
+                {/* Divider before location/space/alarm zone */}
+                <div className="col-span-3">
+                  <Separator className="my-1" />
+                </div>
 
-              {deviceLocation && (
-                <>
-                  <div className="col-span-1 text-muted-foreground">Location</div>
-                  <div className="col-span-2">
+                {deviceLocation && (
+                  <InfoRow label="Location">
                     <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
                       <Building className="h-3 w-3 text-muted-foreground" />
                       <span className="text-xs">{deviceLocation.name}</span>
                     </Badge>
-                  </div>
-                </>
-              )}
+                  </InfoRow>
+                )}
 
-              {deviceSpace && (
-                <>
-                  <div className="col-span-1 text-muted-foreground">Space</div>
-                  <div className="col-span-2">
+                {deviceSpace && (
+                  <InfoRow label="Space">
                     <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
                       <Box className="h-3 w-3 text-muted-foreground" />
                       <span className="text-xs">{deviceSpace.name}</span>
                     </Badge>
-                  </div>
-                </>
-              )}
+                  </InfoRow>
+                )}
 
-              {deviceAlarmZone && (
-                <>
-                  <div className="col-span-1 text-muted-foreground">Alarm Zone</div>
-                  <div className="col-span-2">
+                {deviceAlarmZone && (
+                  <InfoRow label="Alarm Zone">
                     <Badge variant="outline" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
                       <Shield className="h-3 w-3 text-muted-foreground" />
                       <span className="text-xs">{deviceAlarmZone.name}</span>
                     </Badge>
+                  </InfoRow>
+                )}
+              </InfoGrid>
+            </Section>
+
+            {isCamera && (
+              <Section title="Camera Configuration" icon={Cog}>
+                <div className="grid grid-cols-3 gap-x-3 gap-y-4 text-sm items-center">
+                  <div className="col-span-1 text-muted-foreground">FOV</div>
+                  <div className="col-span-2">
+                    <div className="flex items-center gap-3">
+                      <Slider
+                        min={0}
+                        max={360}
+                        step={1}
+                        value={[fov]}
+                        onValueChange={(v) => setFov(v[0] ?? 90)}
+                        onValueCommit={(v) => commitUpdate({ fov: v[0] ?? 90 })}
+                        className="w-full"
+                      />
+                      <span className="w-10 text-right tabular-nums text-xs">{Math.round(fov)}°</span>
+                    </div>
                   </div>
-                </>
-              )}
-            </div>
 
-            <Separator className="my-2" />
+                  <div className="col-span-1 text-muted-foreground">Rotation</div>
+                  <div className="col-span-2">
+                    <div className="flex items-center gap-3">
+                      <Slider
+                        min={0}
+                        max={360}
+                        step={1}
+                        value={[rotation]}
+                        onValueChange={(v) => setRotation(v[0] ?? 0)}
+                        onValueCommit={(v) => commitUpdate({ rotation: v[0] ?? 0 })}
+                        className="w-full"
+                      />
+                      <span className="w-10 text-right tabular-nums text-xs">{Math.round(rotation)}°</span>
+                    </div>
+                  </div>
+                </div>
+              </Section>
+            )}
 
-            {/* Quick actions (explicit actions; not conditional on current status) */}
             {(() => {
               if (!device?.id) return null;
               const isYoLinkSwitchOrOutlet =
@@ -232,23 +337,18 @@ export function FloorPlanDeviceDetailSheet({
               const hasQuickActions = isYoLinkSwitchOrOutlet || isGeneaDoor;
               if (!hasQuickActions) return null;
               return (
-                <div className="mt-2">
-                  <div className="text-xs font-medium text-muted-foreground mb-2">Quick actions</div>
+                <Section title="Quick Actions" icon={Zap}>
                   <QuickDeviceActions
                     internalDeviceId={device.id}
                     connectorCategory={device.connectorCategory}
                     deviceType={resolvedDeviceType}
                   />
-                </div>
+                </Section>
               );
             })()}
 
-            <Separator className="my-2" />
-
-            {/* Space Cameras section (auto-refresh thumbnails with inline live playback) */}
             {shouldShowMedia && mediaConfig && (
-              <div className="mt-2">
-                <div className="text-xs font-medium text-muted-foreground mb-2">Space Cameras</div>
+              <Section title="Space Cameras" icon={getDeviceTypeIcon(DeviceType.Camera)}>
                 <CameraMediaSection
                   thumbnailMode={mediaConfig.thumbnailMode}
                   thumbnailUrl={mediaConfig.thumbnailUrl}
@@ -274,15 +374,14 @@ export function FloorPlanDeviceDetailSheet({
                   showCameraCarousel
                   carouselLayout="dots"
                 />
-              </div>
+              </Section>
             )}
 
-            {/* Other devices in the same space */}
             {deviceSpace && otherDevicesInSpace.length > 0 && (
-              <FloorPlanOtherSpacesList devices={otherDevicesInSpace} />
+              <Section title="Other Devices in Space" icon={Box}>
+                <FloorPlanOtherSpacesList devices={otherDevicesInSpace} title={null} />
+              </Section>
             )}
-
-            <Separator />
 
             <div className="flex justify-end gap-2">
               <TooltipProvider delayDuration={150}>
