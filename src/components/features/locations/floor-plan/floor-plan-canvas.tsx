@@ -5,11 +5,15 @@ import { Stage, Layer, Image as KonvaImage } from 'react-konva';
 import Konva from 'konva';
 import { useFloorPlanImage, usePdfRenderer, isImageSource, isPdfSource } from '@/hooks/floor-plan';
 import { DeviceOverlayLayer } from './device-overlays/device-overlay-layer';
-import { canvasToNormalized, type DeviceOverlayWithDevice, type CreateDeviceOverlayPayload, type UpdateDeviceOverlayPayload } from '@/types/device-overlay';
+import { canvasToNormalized, normalizedToCanvas, type DeviceOverlayWithDevice, type CreateDeviceOverlayPayload, type UpdateDeviceOverlayPayload } from '@/types/device-overlay';
 import { toast } from 'sonner';
-import { Loader2, ZoomIn, ZoomOut, RotateCcw, AlertCircle, Trash2 } from 'lucide-react';
+import { Loader2, ZoomIn, ZoomOut, RotateCcw, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { getDeviceTypeIcon, getDisplayStateIcon } from '@/lib/mappings/presentation';
+import { DeviceType } from '@/lib/mappings/definitions';
+import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import type { FloorPlan } from '@/types';
@@ -22,6 +26,7 @@ export interface FloorPlanCanvasProps {
   height?: number;
   onLoad?: (dimensions: { width: number; height: number }) => void;
   onError?: (error: string) => void;
+  onScaleChange?: (scale: number) => void;
   // Device overlay props
   overlays: DeviceOverlayWithDevice[];
   selectedOverlayId: string | null;
@@ -35,7 +40,18 @@ export interface FloorPlanCanvasProps {
   onResetZoom?: () => void;
   canZoomIn?: boolean;
   canZoomOut?: boolean;
-  onZoomActionsReady?: (actions: { zoomIn: () => void; zoomOut: () => void; resetZoom: () => void }) => void;
+  onZoomActionsReady?: (actions: {
+    zoomIn: () => void;
+    zoomOut: () => void;
+    resetZoom: () => void;
+    panBy: (delta: { dx: number; dy: number }, options?: { animate?: boolean; durationMs?: number }) => void;
+    ensureOverlayVisibleById: (
+      overlayId: string,
+      safeArea: { left: number; top: number; right: number; bottom: number },
+      options?: { padding?: number; animate?: boolean; durationMs?: number; axis?: 'x' | 'y' | 'both' }
+    ) => void;
+    getContainerRect: () => DOMRect | null;
+  }) => void;
 }
 
 interface ViewportState {
@@ -58,6 +74,16 @@ const MAX_SCALE = 5;
 // A value of 1.1 provides a smooth and gradual zoom experience.
 const ZOOM_FACTOR = 1.1;
 
+// Cache of valid device types for fast runtime validation
+const DEVICE_TYPES_SET = new Set<string>(Object.values(DeviceType));
+
+function getValidDeviceType(value: unknown): DeviceType {
+  if (typeof value === 'string' && DEVICE_TYPES_SET.has(value)) {
+    return value as DeviceType;
+  }
+  return DeviceType.Unmapped;
+}
+
 export function FloorPlanCanvas({
   floorPlan,
   locationId,
@@ -66,6 +92,7 @@ export function FloorPlanCanvas({
   height,
   onLoad,
   onError,
+  onScaleChange,
   overlays,
   selectedOverlayId,
   createOverlay,
@@ -84,6 +111,15 @@ export function FloorPlanCanvas({
   const [viewport, setViewport] = useState<ViewportState>({ x: 0, y: 0, scale: 1 });
   const [isDragging, setIsDragging] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: width || 1200, height: height || 800 });
+  const [hoverLabel, setHoverLabel] = useState<{ 
+    text: string; 
+    canvasX: number; 
+    canvasY: number; 
+    connectorCategory?: string;
+    deviceType?: string;
+    deviceSubtype?: string;
+    displayState?: string;
+  } | null>(null);
 
   // Update canvas size when container resizes
   useEffect(() => {
@@ -184,6 +220,11 @@ export function FloorPlanCanvas({
     }
   }, [sourceAsset, currentResult.dimensions, resetViewport]);
 
+  // Notify parent when scale changes
+  useEffect(() => {
+    onScaleChange?.(viewport.scale);
+  }, [viewport.scale, onScaleChange]);
+
   // Zoom functions
   const zoomIn = useCallback(() => {
     if (onZoomIn) {
@@ -218,13 +259,103 @@ export function FloorPlanCanvas({
   // Expose zoom functions to parent
   useEffect(() => {
     if (onZoomActionsReady) {
+      // Helper for animated pan
+      const animatePan = (
+        start: { x: number; y: number },
+        target: { x: number; y: number },
+        durationMs: number
+      ) => {
+        const startTime = performance.now();
+        const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+        const frame = (now: number) => {
+          const elapsed = now - startTime;
+          const t = Math.min(1, elapsed / durationMs);
+          const e = easeOutCubic(t);
+          const nx = start.x + (target.x - start.x) * e;
+          const ny = start.y + (target.y - start.y) * e;
+          setViewport((prev) => ({ ...prev, x: nx, y: ny }));
+          if (t < 1) requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      };
+
+      const panBy = (
+        delta: { dx: number; dy: number },
+        options?: { animate?: boolean; durationMs?: number }
+      ) => {
+        const duration = options?.durationMs ?? 220;
+        if (options?.animate) {
+          const start = { x: viewport.x, y: viewport.y };
+          const target = { x: viewport.x + delta.dx, y: viewport.y + delta.dy };
+          animatePan(start, target, duration);
+        } else {
+          setViewport((prev) => ({ ...prev, x: prev.x + delta.dx, y: prev.y + delta.dy }));
+        }
+      };
+
+      const ensureOverlayVisibleById = (
+        overlayId: string,
+        safeArea: { left: number; top: number; right: number; bottom: number },
+        options?: { padding?: number; animate?: boolean; durationMs?: number; axis?: 'x' | 'y' | 'both' }
+      ) => {
+        try {
+          const overlay = overlays.find((o) => o.id === overlayId);
+          if (!overlay || !currentResult.dimensions) return;
+          const canvasPt = normalizedToCanvas(
+            { x: overlay.x, y: overlay.y },
+            { width: currentResult.dimensions.width, height: currentResult.dimensions.height }
+          );
+          const projected = {
+            x: viewport.x + canvasPt.x * viewport.scale,
+            y: viewport.y + canvasPt.y * viewport.scale,
+          };
+          const axis = options?.axis ?? 'x';
+          const padLeft = safeArea.left;
+          const padTop = safeArea.top;
+          const padRight = safeArea.right;
+          const padBottom = safeArea.bottom;
+
+          let dx = 0;
+          let dy = 0;
+          if (axis === 'x' || axis === 'both') {
+            if (projected.x < padLeft) dx = padLeft - projected.x;
+            else if (projected.x > padRight) dx = padRight - projected.x;
+          }
+          if (axis === 'y' || axis === 'both') {
+            if (projected.y < padTop) dy = padTop - projected.y;
+            else if (projected.y > padBottom) dy = padBottom - projected.y;
+          }
+
+          const epsilon = 0.5; // avoid micro-jitter
+          if (Math.abs(dx) < epsilon && Math.abs(dy) < epsilon) return;
+
+          const duration = options?.durationMs ?? 220;
+          if (options?.animate) {
+            const start = { x: viewport.x, y: viewport.y };
+            const target = { x: viewport.x + dx, y: viewport.y + dy };
+            animatePan(start, target, duration);
+          } else {
+            setViewport((prev) => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
+          }
+        } catch (e) {
+          // Swallow errors; ensure-visible is best-effort
+        }
+      };
+
+      const getContainerRect = () => {
+        return containerRef.current?.getBoundingClientRect() ?? null;
+      };
+
       onZoomActionsReady({
         zoomIn,
         zoomOut,
-        resetZoom
+        resetZoom,
+        panBy,
+        ensureOverlayVisibleById,
+        getContainerRect,
       });
     }
-  }, [onZoomActionsReady, zoomIn, zoomOut, resetZoom]);
+  }, [onZoomActionsReady, zoomIn, zoomOut, resetZoom, viewport.x, viewport.y, viewport.scale, overlays, currentResult.dimensions]);
 
 
 
@@ -273,6 +404,25 @@ export function FloorPlanCanvas({
       x: e.target.x(),
       y: e.target.y()
     }));
+  }, []);
+
+  // Overlay hover label via DOM for perfect text rendering and no canvas clipping
+  const handleOverlayHoverChange = useCallback((payload: { overlay: DeviceOverlayWithDevice; position: { x: number; y: number } } | null) => {
+    if (!payload) {
+      setHoverLabel(null);
+      return;
+    }
+    const { overlay, position } = payload;
+    // Store canvas-space position; we will project to container space in render
+    setHoverLabel({
+      text: overlay.device.name,
+      canvasX: position.x,
+      canvasY: position.y,
+      connectorCategory: overlay.device.connectorCategory,
+      deviceType: (overlay.device as any).standardizedDeviceType || (overlay.device as any).deviceTypeInfo?.type,
+      deviceSubtype: (overlay.device as any).standardizedDeviceSubtype || (overlay.device as any).deviceTypeInfo?.subtype,
+      displayState: (overlay.device as any).status
+    });
   }, []);
 
   // Device drop zone handlers
@@ -378,7 +528,7 @@ export function FloorPlanCanvas({
   // Error state
   if (currentResult.error) {
     return (
-      <Card className={cn("flex items-center justify-center", className)}>
+      <Card className={cn("flex items-center justify-center min-h-[400px]", className)}>
         <CardContent className="flex flex-col items-center gap-4 p-8">
           <AlertCircle className="h-12 w-12 text-destructive" />
           <Alert variant="destructive">
@@ -409,27 +559,23 @@ export function FloorPlanCanvas({
     );
   }
 
+  // Compute selected overlay position in canvas and then in container space for contextual actions
+  const selectedOverlay = selectedOverlayId ? overlays.find((o) => o.id === selectedOverlayId) : null;
+  const selectedCanvasPosition = selectedOverlay && currentResult.dimensions
+    ? normalizedToCanvas(
+        { x: selectedOverlay.x, y: selectedOverlay.y },
+        { width: currentResult.dimensions.width, height: currentResult.dimensions.height }
+      )
+    : null;
+
   return (
     <div 
       ref={containerRef}
-      className={cn("relative w-full h-full min-h-[400px]", className)}
+      className={cn("relative w-full", className)}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      {/* Delete Button - only show when device is selected */}
-      {selectedOverlayId && (
-        <div className="absolute top-4 right-4 z-10">
-          <Button
-            variant="destructive"
-            size="icon"
-            onClick={handleDeleteSelected}
-            className="h-8 w-8 bg-destructive/80 backdrop-blur-sm hover:bg-destructive"
-            title="Delete selected device (Del key)"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
+      {/* Removed global top-right delete button; contextual bubble handles delete */}
 
       {/* PDF Page Controls */}
       {isPdf && pdfResult.numPages > 1 && (
@@ -458,25 +604,9 @@ export function FloorPlanCanvas({
         </div>
       )}
 
-      {/* Selected device indicator */}
-      {selectedOverlayId && (
-        <div className="absolute bottom-4 left-4 z-10">
-          <div className="bg-background/80 backdrop-blur-sm rounded px-2 py-1 text-xs flex items-center gap-2">
-            <div className="w-2 h-2 bg-primary rounded-full"></div>
-            <span className="text-foreground font-medium">
-              {overlays.find(o => o.id === selectedOverlayId)?.device.name}
-            </span>
-            <span className="text-muted-foreground">selected</span>
-          </div>
-        </div>
-      )}
+      {/* Selected device indicator removed; details shown in left sheet */}
 
-      {/* Scale indicator */}
-      <div className="absolute bottom-4 right-4 z-10">
-        <div className="bg-background/80 backdrop-blur-sm rounded px-2 py-1 text-xs text-muted-foreground">
-          {Math.round(viewport.scale * 100)}%
-        </div>
-      </div>
+      {/* Scale indicator removed; shown in external toolbar */}
 
       {/* Konva Stage */}
       <Stage
@@ -512,10 +642,22 @@ export function FloorPlanCanvas({
               width: currentResult.dimensions.width,
               height: currentResult.dimensions.height
             }}
+            visibleBounds={{
+              left: -viewport.x / viewport.scale,
+              top: -viewport.y / viewport.scale,
+              right: (-viewport.x + finalWidth) / viewport.scale,
+              bottom: (-viewport.y + finalHeight) / viewport.scale
+            }}
             canvasScale={viewport.scale}
             selectedOverlayId={selectedOverlayId}
             onSelectOverlay={selectOverlay}
+            onOverlayClicked={(overlay) => {
+              // Only open details if not currently dragging
+              // Selection is already handled; FloorPlanDetail listens to selection to open sheet
+              // No-op here; selection is sufficient for sheet open
+            }}
             onUpdateOverlay={updateOverlay}
+            onHoverChange={handleOverlayHoverChange}
             onEditOverlay={(overlay) => {
               // TODO: Implement edit overlay dialog
           
@@ -524,6 +666,73 @@ export function FloorPlanCanvas({
           />
         )}
       </Stage>
+      {/* Unified DOM label for hover/selection to avoid positional flicker */}
+      {(() => {
+        const hasSelected = Boolean(selectedOverlay && selectedCanvasPosition);
+        const hasHover = Boolean(hoverLabel) && !hasSelected;
+        if (!hasSelected && !hasHover) return null;
+        const labelX = hasSelected
+          ? (selectedCanvasPosition!.x * viewport.scale + viewport.x)
+          : (hoverLabel!.canvasX * viewport.scale + viewport.x);
+        const labelY = hasSelected
+          ? (selectedCanvasPosition!.y * viewport.scale + viewport.y - 32)
+          : (hoverLabel!.canvasY * viewport.scale + viewport.y - 32);
+        const labelText = hasSelected
+          ? (selectedOverlay!.device.name)
+          : (hoverLabel!.text);
+        const connectorCategory = hasSelected
+          ? selectedOverlay!.device.connectorCategory
+          : (hoverLabel!.connectorCategory || '');
+        const typeText = hasSelected
+          ? ((selectedOverlay!.device as any).standardizedDeviceType || (selectedOverlay!.device as any).deviceTypeInfo?.type || 'Unmapped')
+          : (hoverLabel!.deviceType || 'Unmapped');
+        const subtypeText = hasSelected
+          ? ((selectedOverlay!.device as any).standardizedDeviceSubtype || (selectedOverlay!.device as any).deviceTypeInfo?.subtype || '')
+          : (hoverLabel!.deviceSubtype || '');
+        const displayState = hasSelected
+          ? ((selectedOverlay!.device as any).status || '')
+          : (hoverLabel!.displayState || '');
+        const TypeIcon = getDeviceTypeIcon(getValidDeviceType(typeText));
+        const StateIcon = displayState ? getDisplayStateIcon(displayState as any) : null;
+        return (
+          <div
+            style={{
+              position: 'absolute',
+              left: labelX,
+              top: labelY,
+              transform: 'translate(-50%, -100%)',
+              zIndex: 50,
+              pointerEvents: 'none'
+            }}
+          >
+            <div className="rounded-md bg-background/95 backdrop-blur border shadow-sm px-2 py-1 text-xs font-medium">
+              <div className="flex items-center gap-1.5">
+                {connectorCategory && (
+                  <ConnectorIcon connectorCategory={connectorCategory} size={12} />
+                )}
+                <span>{labelText}</span>
+              </div>
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                  {TypeIcon && <TypeIcon className="h-3 w-3 text-muted-foreground" />}
+                  <span className="text-[10px]">
+                    {typeText}
+                    {subtypeText && (
+                      <span className="text-muted-foreground ml-1">/ {subtypeText}</span>
+                    )}
+                  </span>
+                </Badge>
+                {displayState && (
+                  <Badge variant="outline" className="inline-flex items-center gap-1 px-2 py-0.5 font-normal">
+                    {StateIcon && <StateIcon className="h-3 w-3" />}
+                    <span className="text-[10px]">{displayState}</span>
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

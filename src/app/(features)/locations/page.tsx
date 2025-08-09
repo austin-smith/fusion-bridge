@@ -3,11 +3,10 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box, PencilRuler } from 'lucide-react';
+import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box, Map } from 'lucide-react';
 import { LocationEditDialog } from '@/components/features/locations/location-edit-dialog';
 import { LocationWeatherIcon } from '@/components/features/locations/location-weather-icon';
 import { FloorPlanIndicator } from '@/components/features/locations/floor-plan/floor-plan-indicator';
-import { FloorPlanManager } from '@/components/features/locations/floor-plan';
 import { SpaceEditDialog } from '@/components/features/locations/spaces/space-edit-dialog';
 import { SpaceDeviceAssignmentDialog } from '@/components/features/locations/spaces/space-device-assignment-dialog';
 import { CameraWallDialog } from '@/components/features/common/camera-wall-dialog';
@@ -33,12 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { cn } from '@/lib/utils';
@@ -66,6 +60,7 @@ export default function LocationsPage() {
     document.title = 'Locations & Spaces // Fusion';
   }, []);
 
+  const router = useRouter();
   const { 
     locations, 
     isLoadingLocations, 
@@ -125,8 +120,7 @@ export default function LocationsPage() {
   const [spaceToAssignDevice, setSpaceToAssignDevice] = useState<Space | null>(null);
   const [isCameraWallDialogOpen, setIsCameraWallDialogOpen] = useState(false);
   const [selectedSpaceForCameraWall, setSelectedSpaceForCameraWall] = useState<Space | null>(null);
-  const [isFloorPlanViewerOpen, setIsFloorPlanViewerOpen] = useState(false);
-  const [selectedLocationForFloorPlan, setSelectedLocationForFloorPlan] = useState<Location | null>(null);
+  // Navigate to the dedicated floor plans page
   const [expandedSpaceDevices, setExpandedSpaceDevices] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -307,14 +301,11 @@ export default function LocationsPage() {
 
   // Floor plan handlers
   const handleViewFloorPlan = (location: Location) => {
-    setSelectedLocationForFloorPlan(location);
-    setIsFloorPlanViewerOpen(true);
+    router.push(`/locations/${location.id}/floor-plans`);
   };
 
   const handleUploadFloorPlan = (location: Location) => {
-    // For upload, open the floor plan detail dialog too
-    setSelectedLocationForFloorPlan(location);
-    setIsFloorPlanViewerOpen(true);
+    router.push(`/locations/${location.id}/floor-plans`);
   };
 
   // Floor plan handlers are now managed by FloorPlanManager component
@@ -819,31 +810,7 @@ export default function LocationsPage() {
           />
         )}
 
-        {/* Floor Plan Detail Dialog */}
-        {selectedLocationForFloorPlan && (
-          <Dialog open={isFloorPlanViewerOpen} onOpenChange={setIsFloorPlanViewerOpen}>
-            <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-hidden">
-              <DialogHeader>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted">
-                    <PencilRuler className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <DialogTitle className="text-xl">
-                      {selectedLocationForFloorPlan.name}
-                    </DialogTitle>
-                    <p className="text-sm text-muted-foreground">
-                      Floor Plans
-                    </p>
-                  </div>
-                </div>
-              </DialogHeader>
-              <FloorPlanManager
-                locationId={selectedLocationForFloorPlan.id}
-              />
-            </DialogContent>
-          </Dialog>
-        )}
+        {/* Floor plan modal removed; navigates to dedicated page */}
       </div>
     </DndContext>
   );

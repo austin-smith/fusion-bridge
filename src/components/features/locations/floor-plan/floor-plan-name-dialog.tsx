@@ -82,7 +82,7 @@ export function FloorPlanNameDialog({
               <Input
                 id="floor-plan-name"
                 type="text"
-                placeholder="e.g., First Floor, Basement, etc."
+                placeholder="e.g., First Floor, Second Floor, etc."
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 disabled={isSubmitting || isLoading}

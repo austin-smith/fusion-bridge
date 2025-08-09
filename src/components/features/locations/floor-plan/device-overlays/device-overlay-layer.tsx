@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { Layer } from 'react-konva';
+import { Layer, Wedge } from 'react-konva';
 import { DeviceOverlayIcon } from './device-overlay-icon';
 import { normalizedToCanvas, canvasToNormalized } from '@/types/device-overlay';
 import type { 
@@ -11,11 +11,16 @@ import type {
   UpdateDeviceOverlayPayload 
 } from '@/types/device-overlay';
 
+// Fraction of the shorter canvas side used to render the camera view cone radius
+const CAMERA_VIEW_CONE_RADIUS_RATIO = 0.08;
+
 export interface DeviceOverlayLayerProps {
   /** Array of device overlays to render */
   overlays: DeviceOverlayWithDevice[];
   /** Canvas dimensions for coordinate conversion */
   canvasDimensions: CanvasDimensions;
+  /** Visible bounds of the floor plan in canvas coordinates (post-transform) */
+  visibleBounds?: { left: number; top: number; right: number; bottom: number };
   /** Current canvas scale for responsive sizing */
   canvasScale?: number;
   /** Selected overlay ID */
@@ -24,22 +29,29 @@ export interface DeviceOverlayLayerProps {
   editingEnabled?: boolean;
   /** Callback when an overlay is selected */
   onSelectOverlay?: (overlay: DeviceOverlayWithDevice | null) => void;
+  /** Callback when an overlay is clicked (intent to open details) */
+  onOverlayClicked?: (overlay: DeviceOverlayWithDevice) => void;
   /** Callback when an overlay position is updated */
   onUpdateOverlay?: (overlayId: string, updates: UpdateDeviceOverlayPayload) => void;
   /** Callback when an overlay is double-clicked (for editing) */
   onEditOverlay?: (overlay: DeviceOverlayWithDevice) => void;
+  /** External hover label handler */
+  onHoverChange?: (payload: { overlay: DeviceOverlayWithDevice; position: CanvasCoordinates } | null) => void;
 
 }
 
 export function DeviceOverlayLayer({
   overlays,
   canvasDimensions,
+  visibleBounds,
   canvasScale = 1,
   selectedOverlayId,
   editingEnabled = true,
   onSelectOverlay,
+  onOverlayClicked,
   onUpdateOverlay,
-  onEditOverlay
+  onEditOverlay,
+  onHoverChange
 }: DeviceOverlayLayerProps) {
   const [draggingOverlayId, setDraggingOverlayId] = useState<string | null>(null);
 
@@ -49,7 +61,12 @@ export function DeviceOverlayLayer({
     // Toggle selection
     const isCurrentlySelected = selectedOverlayId === overlay.id;
     onSelectOverlay?.(isCurrentlySelected ? null : overlay);
-  }, [selectedOverlayId, editingEnabled, onSelectOverlay]);
+    if (!isCurrentlySelected) {
+      // Clear hover label immediately to avoid flicker moving label below icon
+      onHoverChange?.(null);
+      onOverlayClicked?.(overlay);
+    }
+  }, [selectedOverlayId, editingEnabled, onSelectOverlay, onOverlayClicked, onHoverChange]);
 
   const handleOverlayDoubleClick = useCallback((overlay: DeviceOverlayWithDevice) => {
     if (!editingEnabled) return;
@@ -61,9 +78,8 @@ export function DeviceOverlayLayer({
     if (!editingEnabled) return;
     
     setDraggingOverlayId(overlay.id);
-    // Auto-select the overlay being dragged
-    onSelectOverlay?.(overlay);
-  }, [editingEnabled, onSelectOverlay]);
+    // Do not auto-select on drag start to avoid opening details sheet while dragging
+  }, [editingEnabled]);
 
   const handleDragMove = useCallback((overlay: DeviceOverlayWithDevice, newPosition: CanvasCoordinates) => {
     // Optional: Real-time position updates during drag
@@ -93,6 +109,11 @@ export function DeviceOverlayLayer({
     }
   }, [onSelectOverlay]);
 
+  // Compute once per render; used by all camera overlays
+  const radius =
+    Math.min(canvasDimensions.width, canvasDimensions.height) *
+    CAMERA_VIEW_CONE_RADIUS_RATIO;
+
   return (
     <Layer onClick={handleLayerClick}>
       {overlays.map((overlay) => {
@@ -107,20 +128,45 @@ export function DeviceOverlayLayer({
         const isSelected = selectedOverlayId === overlay.id;
         const isDragging = draggingOverlayId === overlay.id;
 
+        const deviceType = (overlay.device as any).standardizedDeviceType || (overlay.device as any).deviceTypeInfo?.type;
+        const isCamera = deviceType === 'Camera';
+
+        // Camera viewing cone configuration from overlay props
+        const cameraProps = (overlay as any).props?.camera || {};
+        const fovDeg: number = typeof cameraProps.fovDeg === 'number' ? cameraProps.fovDeg : 90;
+        const rotationDegRaw: number = typeof cameraProps.rotationDeg === 'number' ? cameraProps.rotationDeg : 0;
+        const rotationDeg = ((rotationDegRaw % 360) + 360) % 360;
+
         return (
-          <DeviceOverlayIcon
-            key={overlay.id}
-            overlay={overlay}
-            position={canvasPosition}
-            canvasScale={canvasScale}
-            isSelected={isSelected}
-            isDragging={isDragging}
-            onClick={handleOverlayClick}
-            onDoubleClick={handleOverlayDoubleClick}
-            onDragStart={handleDragStart}
-            onDragMove={handleDragMove}
-            onDragEnd={handleDragEnd}
-          />
+          <React.Fragment key={overlay.id}>
+            {isCamera && (
+              <Wedge
+                x={canvasPosition.x}
+                y={canvasPosition.y}
+                radius={radius}
+                angle={fovDeg}
+                rotation={rotationDeg - fovDeg / 2}
+                fill={'rgba(59,130,246,0.22)'}
+                listening={false}
+              />
+            )}
+            <DeviceOverlayIcon
+              overlay={overlay}
+              position={canvasPosition}
+              rotationDeg={isCamera ? rotationDeg : 0}
+              canvasScale={canvasScale}
+              canvasDimensions={canvasDimensions}
+              visibleBounds={visibleBounds}
+              onHoverChange={onHoverChange}
+              isSelected={isSelected}
+              isDragging={isDragging}
+              onClick={handleOverlayClick}
+              onDoubleClick={handleOverlayDoubleClick}
+              onDragStart={handleDragStart}
+              onDragMove={handleDragMove}
+              onDragEnd={handleDragEnd}
+            />
+          </React.Fragment>
         );
       })}
     </Layer>

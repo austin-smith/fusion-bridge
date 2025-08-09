@@ -805,6 +805,8 @@ export const deviceOverlays = sqliteTable("device_overlays", {
   // Normalized coordinates (0-1 scale) for responsive positioning
   x: real("x").notNull(), // Normalized X coordinate (0-1)
   y: real("y").notNull(), // Normalized Y coordinate (0-1)
+  // Arbitrary overlay properties (per-device-type configuration; e.g., camera FOV/rotation)
+  props: text("props", { mode: "json" }).$type<Record<string, any> | null>().default(sql`'{}'`),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   createdByUserId: text("created_by_user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),

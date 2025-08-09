@@ -1,16 +1,25 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Group, Circle, Rect, Text, Line } from 'react-konva';
-import { getDeviceTypeIconName, getDisplayStateColorClass } from '@/lib/mappings/presentation';
+import { Group, Circle, Rect, Text, Image as KonvaImage } from 'react-konva';
+import { getDeviceTypeIconName } from '@/lib/mappings/presentation';
 import { DeviceType } from '@/lib/mappings/definitions';
-import type { DeviceOverlayWithDevice, CanvasCoordinates } from '@/types/device-overlay';
+import type { DeviceOverlayWithDevice, CanvasCoordinates, CanvasDimensions } from '@/types/device-overlay';
+import { getLucideIconImage } from './icon-cache';
 
 export interface DeviceOverlayIconProps {
   /** Device overlay data with device information */
   overlay: DeviceOverlayWithDevice;
   /** Position on canvas in pixels */
   position: CanvasCoordinates;
+  /** Optional rotation for the icon (degrees). Only applied to the icon graphic, not selection rings. */
+  rotationDeg?: number;
+  /** Canvas dimensions for bounding label placement */
+  canvasDimensions?: CanvasDimensions;
+  /** Visible bounds (after transform); helps prevent labels drawing off-screen */
+  visibleBounds?: { left: number; top: number; right: number; bottom: number };
+  /** Notify parent when hover state changes to position external DOM tooltip */
+  onHoverChange?: (payload: { overlay: DeviceOverlayWithDevice; position: CanvasCoordinates } | null) => void;
   /** Scale factor from canvas zoom */
   canvasScale?: number;
   /** Whether the overlay is selected */
@@ -29,71 +38,14 @@ export interface DeviceOverlayIconProps {
   onDragEnd?: (overlay: DeviceOverlayWithDevice, newPosition: CanvasCoordinates) => void;
 }
 
-// Device type to color mapping
-const deviceTypeColors: Record<string, string> = {
-  [DeviceType.Camera]: '#3b82f6', // Blue
-  [DeviceType.Door]: '#8b5cf6', // Purple
-  [DeviceType.Lock]: '#f59e0b', // Yellow
-  [DeviceType.Sensor]: '#10b981', // Green
-  [DeviceType.Alarm]: '#ef4444', // Red
-  [DeviceType.Switch]: '#6366f1', // Indigo
-  [DeviceType.Outlet]: '#f97316', // Orange
-  [DeviceType.Thermostat]: '#06b6d4', // Cyan
-  [DeviceType.Hub]: '#8b5cf6', // Purple
-  [DeviceType.SmartFob]: '#ec4899', // Pink
-  [DeviceType.Sprinkler]: '#0ea5e9', // Sky
-  [DeviceType.GarageDoor]: '#84cc16', // Lime
-  [DeviceType.WaterValveController]: '#14b8a6', // Teal
-  [DeviceType.Encoder]: '#a855f7', // Violet
-  [DeviceType.IOModule]: '#64748b', // Slate
-  [DeviceType.Unmapped]: '#6b7280', // Gray
-};
-
-// Device type to shape mapping
-const deviceTypeShapes: Record<string, 'circle' | 'square' | 'diamond'> = {
-  [DeviceType.Camera]: 'circle',
-  [DeviceType.Door]: 'square',
-  [DeviceType.Lock]: 'diamond',
-  [DeviceType.Sensor]: 'circle',
-  [DeviceType.Alarm]: 'diamond',
-  [DeviceType.Switch]: 'square',
-  [DeviceType.Outlet]: 'square',
-  [DeviceType.Thermostat]: 'circle',
-  [DeviceType.Hub]: 'square',
-  [DeviceType.SmartFob]: 'circle',
-  [DeviceType.Sprinkler]: 'circle',
-  [DeviceType.GarageDoor]: 'square',
-  [DeviceType.WaterValveController]: 'circle',
-  [DeviceType.Encoder]: 'square',
-  [DeviceType.IOModule]: 'square',
-  [DeviceType.Unmapped]: 'circle',
-};
-
-// Device type short labels for display
-const deviceTypeLabels: Record<string, string> = {
-  [DeviceType.Camera]: 'CAM',
-  [DeviceType.Door]: 'DOOR',
-  [DeviceType.Lock]: 'LOCK',
-  [DeviceType.Sensor]: 'SENS',
-  [DeviceType.Alarm]: 'ALRM',
-  [DeviceType.Switch]: 'SWCH',
-  [DeviceType.Outlet]: 'PLUG',
-  [DeviceType.Thermostat]: 'TEMP',
-  [DeviceType.Hub]: 'HUB',
-  [DeviceType.SmartFob]: 'FOB',
-  [DeviceType.Sprinkler]: 'SPRL',
-  [DeviceType.GarageDoor]: 'GRGE',
-  [DeviceType.WaterValveController]: 'VALV',
-  [DeviceType.Encoder]: 'ENC',
-  [DeviceType.IOModule]: 'IO',
-  [DeviceType.Unmapped]: '?',
-};
+// Rendering fallback color for icons (neutral)
+const DEFAULT_ICON_COLOR = '#6b7280'; // Tailwind gray-500
 
 // Scaling and sizing constants
-const BASE_SIZE = 24;
-const SCALE_FACTOR = 0.5;
+// Target ~20px at 1x zoom, maintaining constant screen size across zoom levels
+const BASE_SIZE = 20;
+const SCALE_FACTOR = 1;
 const MIN_SCALE = 0.3;
-const FONT_SIZE_RATIO = 0.3;
 const MIN_FONT_SIZE = 8;
 const MIN_STROKE_WIDTH = 1;
 const BASE_STROKE_WIDTH = 2;
@@ -101,6 +53,9 @@ const BASE_STROKE_WIDTH = 2;
 export function DeviceOverlayIcon({
   overlay,
   position,
+  rotationDeg = 0,
+  canvasDimensions,
+  visibleBounds,
   canvasScale = 1,
   isSelected = false,
   isDragging = false,
@@ -108,29 +63,58 @@ export function DeviceOverlayIcon({
   onDoubleClick,
   onDragStart,
   onDragMove,
-  onDragEnd
+  onDragEnd,
+  onHoverChange
 }: DeviceOverlayIconProps) {
   const [isHovered, setIsHovered] = useState(false);
   const groupRef = useRef<any>(null);
 
   const deviceType = overlay.device.standardizedDeviceType || DeviceType.Unmapped;
-  const color = deviceTypeColors[deviceType] || deviceTypeColors[DeviceType.Unmapped];
-  const shape = deviceTypeShapes[deviceType] || 'circle';
-  const label = deviceTypeLabels[deviceType] || '?';
 
   // Calculate responsive sizing based on canvas scale
   const size = BASE_SIZE / Math.max(canvasScale * SCALE_FACTOR, MIN_SCALE); // Keep readable at all zoom levels
   const radius = size / 2;
-  const fontSize = Math.max(MIN_FONT_SIZE, size * FONT_SIZE_RATIO);
   const strokeWidth = Math.max(MIN_STROKE_WIDTH, BASE_STROKE_WIDTH / canvasScale);
+  const iconDisplaySize = size; // Konva display size
+  const iconRenderSize = 96; // High-res render for crisp scaling
+  const badgeRadius = iconDisplaySize / 2 + 4; // background circle behind icon
+  // External DOM tooltip will handle label sizing; remove canvas text.
 
   // State-based styling
   const isOffline = overlay.device.status === 'offline';
   const opacity = isDragging ? 0.7 : isOffline ? 0.6 : 1;
-  const strokeColor = isSelected ? '#ffffff' : isHovered ? color : 'transparent';
+  // Selection ring uses white; icon remains neutral. No per-device coloring.
+
+  // Load Lucide icon image via cache
+  const [iconImage, setIconImage] = useState<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    const maybeDeviceType = (overlay.device.standardizedDeviceType || DeviceType.Unmapped) as string;
+    // Ensure we map to a known icon name; fall back inside mapping function
+    const iconName = getDeviceTypeIconName(
+      (Object.values(DeviceType).includes(maybeDeviceType as DeviceType)
+        ? (maybeDeviceType as DeviceType)
+        : DeviceType.Unmapped)
+    );
+
+    let mounted = true;
+    getLucideIconImage(iconName, { size: iconRenderSize, color: DEFAULT_ICON_COLOR, strokeWidth: 2 })
+      .then((img) => {
+        if (mounted) setIconImage(img);
+      })
+      .catch(() => {
+        if (mounted) setIconImage(null);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [overlay.device.standardizedDeviceType]);
 
   const handleClick = () => {
-    onClick?.(overlay);
+    // Ignore clicks immediately following a drag to avoid accidental openings
+    if (!isDragging) {
+      onClick?.(overlay);
+    }
   };
 
   const handleDoubleClick = () => {
@@ -164,52 +148,58 @@ export function DeviceOverlayIcon({
 
   const handleMouseEnter = () => {
     setIsHovered(true);
+    onHoverChange?.({ overlay, position });
   };
 
   const handleMouseLeave = () => {
     setIsHovered(false);
+    onHoverChange?.(null);
   };
 
-  const renderShape = () => {
-    const shapeProps = {
-      fill: color,
-      stroke: strokeColor,
-      strokeWidth: strokeWidth * 2,
-      shadowColor: 'rgba(0, 0, 0, 0.3)',
-      shadowBlur: isHovered || isSelected ? 6 : 3,
-      shadowOffset: { x: 1, y: 1 },
-      opacity
-    };
-
-    switch (shape) {
-      case 'square':
-        return (
-          <Rect
-            x={-radius}
-            y={-radius}
-            width={size}
-            height={size}
-            cornerRadius={2}
-            {...shapeProps}
+  const renderIcon = () => {
+    if (!iconImage) {
+      // Minimal fallback skeleton while icon loads
+      return (
+        <>
+          <Circle
+            radius={badgeRadius}
+            fill="rgba(255,255,255,0.92)"
+            stroke="#cbd5e1"
+            strokeWidth={strokeWidth}
           />
-        );
-      case 'diamond':
-        return (
-          <Line
-            points={[0, -radius, radius, 0, 0, radius, -radius, 0]}
-            closed
-            {...shapeProps}
-          />
-        );
-      case 'circle':
-      default:
-        return (
           <Circle
             radius={radius}
-            {...shapeProps}
+            fill={DEFAULT_ICON_COLOR}
+            opacity={0.35}
           />
-        );
+        </>
+      );
     }
+    return (
+      <>
+        {/* Background badge for visibility */}
+        <Circle
+          radius={badgeRadius}
+          fill="rgba(255,255,255,0.92)"
+          stroke="#cbd5e1"
+          strokeWidth={strokeWidth}
+          shadowColor="rgba(0,0,0,0.25)"
+          shadowBlur={4}
+          shadowOffset={{ x: 1, y: 1 }}
+          opacity={opacity}
+        />
+        {/* Icon image (rotate to show camera direction if provided) */}
+        <KonvaImage
+          image={iconImage}
+          width={iconDisplaySize}
+          height={iconDisplaySize}
+          offsetX={iconDisplaySize / 2}
+          offsetY={iconDisplaySize / 2}
+          rotation={rotationDeg}
+          opacity={opacity}
+        />
+      </>
+    );
   };
 
   return (
@@ -218,6 +208,7 @@ export function DeviceOverlayIcon({
       x={position.x}
       y={position.y}
       draggable
+      dragBoundFunc={(pos) => pos} // no bounding change, but ensures Konva sets dragging state
       onClick={handleClick}
       onDblClick={handleDoubleClick}
       onDragStart={handleDragStart}
@@ -226,62 +217,41 @@ export function DeviceOverlayIcon({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Selection indicator */}
-      {isSelected && (
+      {/* Hover indicator (subtle ring) shown when hovered and not selected */}
+      {isHovered && !isSelected && (
         <Circle
-          radius={radius + 4}
-          stroke="#ffffff"
-          strokeWidth={strokeWidth * 2}
-          dash={[3, 3]}
-          opacity={0.8}
+          radius={badgeRadius + 3}
+          stroke="#cbd5e1" /* slate-300 */
+          strokeWidth={Math.max(1, strokeWidth * 0.75)}
+          fill="rgba(148,163,184,0.08)"
+          opacity={0.55}
         />
       )}
-
-      {/* Main device shape */}
-      {renderShape()}
-
-      {/* Device type label */}
-      <Text
-        text={label}
-        fontSize={fontSize}
-        fill="white"
-        fontFamily="Arial, sans-serif"
-        fontWeight="bold"
-        align="center"
-        verticalAlign="middle"
-        offsetX={label.length * fontSize * 0.25}
-        offsetY={fontSize * 0.4}
-        opacity={opacity}
-      />
-
-      {/* Device name label (shown when hovered or selected) */}
-      {(isHovered || isSelected) && (
-        <Group y={radius + 8}>
-          {/* Background for text readability */}
-          <Rect
-            x={-overlay.device.name.length * 3}
-            y={-6}
-            width={overlay.device.name.length * 6}
-            height={12}
-            fill="rgba(0, 0, 0, 0.8)"
-            cornerRadius={2}
+      {/* Selection indicator (prominent ring + soft glow) */}
+      {isSelected && (
+        <>
+          <Circle
+            radius={badgeRadius + 6}
+            stroke="#3b82f6" /* Tailwind blue-500 approximation */
+            strokeWidth={Math.max(2, strokeWidth * 2)}
+            shadowColor="rgba(59,130,246,0.6)"
+            shadowBlur={12}
+            shadowOpacity={0.9}
+            opacity={0.95}
           />
-          <Text
-            text={overlay.device.name}
-            fontSize={10}
-            fill="white"
-            fontFamily="Arial, sans-serif"
-            align="center"
-            offsetX={overlay.device.name.length * 3}
-          />
-        </Group>
+        </>
       )}
+
+      {/* Main device icon */}
+      {renderIcon()}
+
+      {/* No canvas label. External DOM label will be positioned by parent. */}
 
       {/* Status indicator */}
       {isOffline && (
         <Circle
-          x={radius - 4}
-          y={-radius + 4}
+          x={badgeRadius - 4}
+          y={-badgeRadius + 4}
           radius={3}
           fill="#ef4444"
           stroke="white"

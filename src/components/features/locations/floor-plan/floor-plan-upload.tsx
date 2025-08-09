@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { validateFloorPlanFile } from '@/lib/storage/file-validation';
+import { ALLOWED_EXTENSIONS } from '@/lib/storage/file-types';
 
 interface FloorPlanUploadProps {
   onFileSelect: (file: File) => void;
@@ -28,13 +29,12 @@ export function FloorPlanUpload({
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   const handleFileValidation = useCallback((file: File) => {
-    const validation = validateFloorPlanFile(file);
-    
-    if (validation.isValid) {
+    const { isValid, errors } = validateFloorPlanFile(file);
+    if (isValid) {
       setValidationErrors([]);
       onFileSelect(file);
     } else {
-      setValidationErrors(validation.errors);
+      setValidationErrors(errors);
     }
   }, [onFileSelect]);
 
@@ -70,7 +70,6 @@ export function FloorPlanUpload({
     if (files && files.length > 0) {
       handleFileValidation(files[0]);
     }
-    // Reset input value so same file can be selected again
     e.target.value = '';
   }, [handleFileValidation]);
 
@@ -122,7 +121,7 @@ export function FloorPlanUpload({
                   <input
                     type="file"
                     className="sr-only"
-                    accept=".png,.jpg,.jpeg,.pdf,.svg"
+                    accept={ALLOWED_EXTENSIONS.join(',')}
                     onChange={handleFileInput}
                     disabled={disabled || isUploading}
                   />
@@ -164,7 +163,6 @@ export function FloorPlanUpload({
         </Card>
       )}
 
-      {/* Validation Errors */}
       {validationErrors.length > 0 && (
         <div className="space-y-1">
           {validationErrors.map((error, index) => (
@@ -175,7 +173,6 @@ export function FloorPlanUpload({
         </div>
       )}
 
-      {/* Upload Progress */}
       {isUploading && selectedFile && (
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
@@ -189,3 +186,5 @@ export function FloorPlanUpload({
     </div>
   );
 }
+
+

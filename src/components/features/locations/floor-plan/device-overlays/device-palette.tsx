@@ -1,16 +1,26 @@
 'use client';
 
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Search, Plus, Cpu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { getDeviceTypeIcon, getDisplayStateIcon, getDisplayStateColorClass } from '@/lib/mappings/presentation';
-import { cn } from '@/lib/utils';
+import { cn, formatConnectorCategory } from '@/lib/utils';
 import type { DeviceWithConnector, Space } from '@/types/index';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/select';
+import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
+import type { DeviceType } from '@/lib/mappings/definitions';
 
 /**
  * Calculate drag image offset to center the preview under the cursor
@@ -33,6 +43,8 @@ export interface DevicePaletteProps {
   onAssignDevices?: () => void;
   className?: string;
   placedDeviceIds?: Set<string>; // IDs of devices already placed on floor plan
+  onClose?: () => void; // Request to hide/collapse the palette
+  onFilteredCountChange?: (count: number) => void; // Report current filtered count to parent
 }
 
 interface GroupedDevices {
@@ -44,9 +56,10 @@ interface GroupedDevices {
 interface DraggableDeviceItemProps {
   device: DeviceWithConnector;
   isCompact?: boolean;
+  inList?: boolean; // When true, remove per-item borders and rely on parent divider styles
 }
 
-function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemProps) {
+function DraggableDeviceItem({ device, isCompact = false, inList = false }: DraggableDeviceItemProps) {
   const [isDragging, setIsDragging] = useState(false);
   const dragPreviewRef = useRef<HTMLDivElement>(null);
 
@@ -57,6 +70,7 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
   const displayState = device.displayState;
   const StateIconComponent = displayState ? getDisplayStateIcon(displayState) : undefined;
   const stateColorClass = getDisplayStateColorClass(displayState);
+  const connectorDisplayName = device.connectorName ?? formatConnectorCategory(device.connectorCategory);
 
   const handleDragStart = (e: React.DragEvent) => {
     setIsDragging(true);
@@ -108,9 +122,17 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               className={cn(
-                "relative p-2 border rounded-md bg-background flex items-center gap-2 transition-all duration-200 cursor-grab active:cursor-grabbing group",
-                isDragging ? 'opacity-50 scale-95' : 'hover:bg-muted/50 hover:border-primary/20',
-                isCompact ? 'p-1.5' : 'p-2'
+                "relative flex items-center gap-2 transition-all duration-200 cursor-grab active:cursor-grabbing group",
+                inList
+                  ? cn(
+                      isCompact ? 'px-1.5 py-1.5' : 'px-2 py-2',
+                      isDragging ? 'opacity-50' : 'hover:bg-muted/50'
+                    )
+                  : cn(
+                      "p-2 border rounded-md bg-background",
+                      isDragging ? 'opacity-50 scale-95' : 'hover:bg-muted/50 hover:border-primary/20',
+                      isCompact ? 'p-1.5' : 'p-2'
+                    )
               )}
             >
             {/* Device Icon */}
@@ -125,8 +147,12 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
               </div>
               {!isCompact && (
                 <div className="text-xs text-muted-foreground truncate">
-                  {typeText}
-                  {subtypeText && <span>/{subtypeText}</span>}
+                  <span>
+                    {typeText}
+                    {subtypeText && <span>/{subtypeText}</span>}
+                  </span>
+                  <span className="mx-1">•</span>
+                  <span title={connectorDisplayName}>{connectorDisplayName}</span>
                 </div>
               )}
             </div>
@@ -138,7 +164,7 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
               )}
             </div>
             
-            {/* Drag Handle Indicator */}
+             {/* Drag Handle Indicator */}
             <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
               <div className="flex flex-col gap-0.5">
                 <div className="w-1 h-1 bg-muted-foreground/50 rounded-full"></div>
@@ -149,7 +175,7 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
           </div>
         </TooltipTrigger>
         <TooltipContent side="right">
-          <div className="space-y-1">
+            <div className="space-y-1">
             <p className="font-medium">{device.name}</p>
             <p className="text-xs">Type: {typeText}{subtypeText ? ` / ${subtypeText}` : ''}</p>
             <p className="text-xs">State: {displayState || 'Unknown'}</p>
@@ -171,36 +197,74 @@ export function DevicePalette({
   onSearchChange,
   onAssignDevices,
   className,
-  placedDeviceIds = new Set()
+  placedDeviceIds = new Set(),
+  onClose,
+  onFilteredCountChange
 }: DevicePaletteProps) {
-  const [collapsedSpaces, setCollapsedSpaces] = useState<Set<string>>(new Set());
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(new Set());
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [connectorFilter, setConnectorFilter] = useState<string>('all');
 
-  // Group devices by space assignment
-  const groupedDevices = useMemo(() => {
-    // Filter devices by location (through spaces)
+  // Whether groups should auto-expand due to active search/filters
+  const shouldAutoExpand =
+    searchTerm.trim().length > 0 ||
+    typeFilter !== 'all' ||
+    connectorFilter !== 'all';
+
+  // Devices available for placement within this location (not already placed)
+  const availableDevices = useMemo(() => {
     const locationSpaceIds = new Set(
       spaces.filter(space => space.locationId === locationId).map(space => space.id)
     );
 
     const locationDevices = devices.filter(device => {
-      // Include devices assigned to spaces in this location, or unassigned devices
       const deviceSpaceIds = device.spaceId ? [device.spaceId] : [];
-      return deviceSpaceIds.length === 0 || deviceSpaceIds.some(id => locationSpaceIds.has(id));
+      return deviceSpaceIds.some(id => locationSpaceIds.has(id));
     });
 
-    // Filter out devices already placed on floor plan
-    const availableDevices = locationDevices.filter(device => 
-      !placedDeviceIds.has(device.id)
-    );
+    return locationDevices.filter(device => !placedDeviceIds.has(device.id));
+  }, [devices, spaces, locationId, placedDeviceIds]);
 
-    // Apply search filter
+  // Unique filter options from available devices
+  const uniqueDeviceTypes = useMemo(() => {
+    const types = new Set<string>();
+    availableDevices.forEach(d => {
+      const t = d.deviceTypeInfo?.type;
+      if (t) types.add(t);
+    });
+    return ['all', ...Array.from(types).sort()];
+  }, [availableDevices]);
+
+  const uniqueConnectors = useMemo(() => {
+    const connectorMap = new Map<string, { name: string; category: string }>();
+    availableDevices.forEach(d => {
+      const name = d.connectorName ?? formatConnectorCategory(d.connectorCategory);
+      if (name && !connectorMap.has(name)) {
+        connectorMap.set(name, { name, category: d.connectorCategory });
+      }
+    });
+    return Array.from(connectorMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [availableDevices]);
+
+  // Group devices by space assignment
+  const groupedDevices = useMemo(() => {
+    // Apply type and connector filters and then search
+    const filteredByTypeAndConnector = availableDevices.filter(device => {
+      const typeMatch =
+        typeFilter === 'all' || device.deviceTypeInfo?.type === typeFilter;
+      const connectorDisplayName = device.connectorName ?? formatConnectorCategory(device.connectorCategory);
+      const connectorMatch =
+        connectorFilter === 'all' || connectorDisplayName === connectorFilter;
+      return typeMatch && connectorMatch;
+    });
+
     const filteredDevices = searchTerm
-      ? availableDevices.filter(device =>
+      ? filteredByTypeAndConnector.filter(device =>
           device.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
           device.deviceTypeInfo?.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
           device.deviceTypeInfo?.subtype?.toLowerCase().includes(searchTerm.toLowerCase())
         )
-      : availableDevices;
+      : filteredByTypeAndConnector;
 
     // Group by space
     const groups: Record<string, GroupedDevices> = {};
@@ -246,34 +310,35 @@ export function DevicePalette({
     });
 
     return sortedGroups;
-  }, [devices, spaces, locationId, searchTerm, placedDeviceIds]);
+  }, [availableDevices, searchTerm, typeFilter, connectorFilter, spaces]);
 
-  const toggleSpaceCollapse = (groupKey: string) => {
-    setCollapsedSpaces(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(groupKey)) {
-        newSet.delete(groupKey);
+  // Compute total count of devices after all filters
+  const filteredDeviceCount = useMemo(() => {
+    return groupedDevices.reduce((sum, group) => sum + group.devices.length, 0);
+  }, [groupedDevices]);
+
+  // Notify parent of filtered count changes
+  useEffect(() => {
+    if (onFilteredCountChange) {
+      onFilteredCountChange(filteredDeviceCount);
+    }
+  }, [filteredDeviceCount, onFilteredCountChange]);
+
+  const toggleGroupExpansion = (groupKey: string) => {
+    setExpandedGroupKeys(previousExpandedKeys => {
+      const nextExpandedKeys = new Set(previousExpandedKeys);
+      if (nextExpandedKeys.has(groupKey)) {
+        nextExpandedKeys.delete(groupKey);
       } else {
-        newSet.add(groupKey);
+        nextExpandedKeys.add(groupKey);
       }
-      return newSet;
+      return nextExpandedKeys;
     });
   };
 
-  const totalDeviceCount = groupedDevices.reduce((sum, group) => sum + group.devices.length, 0);
-
   return (
     <Card className={cn("h-full flex flex-col", className)}>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Cpu className="h-5 w-5" />
-          Device Palette
-          <Badge variant="secondary" className="ml-auto">
-            {totalDeviceCount}
-          </Badge>
-        </CardTitle>
-        
-        {/* Search */}
+      <CardHeader className="pb-3 sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -284,9 +349,52 @@ export function DevicePalette({
             className="pl-8"
           />
         </div>
+        <div className="mt-2 flex flex-col gap-2 text-sm">
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-full h-8">
+              <SelectValue placeholder="Filter by Type" />
+            </SelectTrigger>
+            <SelectContent>
+              {uniqueDeviceTypes
+                .filter((type): type is string => typeof type === 'string')
+                .map((type) => {
+                  const Icon = type === 'all' ? null : getDeviceTypeIcon(type as DeviceType);
+                  return (
+                    <SelectItem key={type} value={type}>
+                      <div className="flex items-center gap-2">
+                        {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
+                        <span>{type === 'all' ? 'All Types' : type}</span>
+                      </div>
+                    </SelectItem>
+                  );
+                })}
+            </SelectContent>
+          </Select>
+          <Select value={connectorFilter} onValueChange={setConnectorFilter}>
+            <SelectTrigger className="w-full h-8">
+              <SelectValue placeholder="Filter by Connector" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                <div className="flex items-center gap-2">
+                  <span>All Connectors</span>
+                </div>
+              </SelectItem>
+              {uniqueConnectors.map((connector) => (
+                <SelectItem key={connector.name} value={connector.name}>
+                  <div className="flex items-center gap-2">
+                    <ConnectorIcon connectorCategory={connector.category} size={16} />
+                    <span>{connector.name}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </CardHeader>
 
-      <CardContent className="flex-1 overflow-auto p-3 space-y-3">
+      <CardContent className="flex-1 p-0">
+        <ScrollArea className="h-full p-3">
         {groupedDevices.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-6 text-center h-full">
             <div className="rounded-full bg-muted p-3 mb-3">
@@ -295,57 +403,62 @@ export function DevicePalette({
             <p className="text-sm text-muted-foreground mb-3">
               {searchTerm ? 'No devices match your search.' : 'No devices available for this location.'}
             </p>
-            {!searchTerm && onAssignDevices && (
-              <Button variant="outline" size="sm" onClick={onAssignDevices}>
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                Assign Devices
-              </Button>
-            )}
+            {/* Removed Assign Devices button */}
           </div>
         ) : (
           groupedDevices.map((group) => {
             const groupKey = group.spaceId || 'unassigned';
-            const isCollapsed = collapsedSpaces.has(groupKey);
+            const isExpanded = shouldAutoExpand || expandedGroupKeys.has(groupKey);
 
             return (
-              <Collapsible
+                <Collapsible
                 key={groupKey}
-                open={!isCollapsed}
-                onOpenChange={() => toggleSpaceCollapse(groupKey)}
+                  open={isExpanded}
+                  onOpenChange={() => {
+                    // When auto-expand is active (search or filters), keep open state forced
+                    if (shouldAutoExpand) return;
+                    toggleGroupExpansion(groupKey);
+                  }}
               >
                 <CollapsibleTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-between h-auto p-2 font-medium"
-                  >
-                    <span className="flex items-center gap-2">
-                      {group.spaceName}
-                      <Badge variant="outline" className="text-xs">
-                        {group.devices.length}
-                      </Badge>
-                    </span>
-                    <div className={cn(
-                      "transition-transform duration-200",
-                      isCollapsed ? "rotate-0" : "rotate-90"
-                    )}>
-                      <Plus className="h-3 w-3" />
-                    </div>
-                  </Button>
+                  <div className="w-full sticky top-0 z-[1]">
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-between h-auto px-2 py-1.5 font-medium border border-transparent hover:border-border rounded-md"
+                    >
+                      <span className="flex items-center gap-2">
+                        {group.spaceName}
+                        <Badge variant="outline" className="text-xs">
+                          {group.devices.length}
+                        </Badge>
+                      </span>
+                      <div className={cn(
+                        "transition-transform duration-200",
+                        isExpanded ? "rotate-90" : "rotate-0"
+                      )}>
+                        <Plus className="h-3 w-3" />
+                      </div>
+                    </Button>
+                  </div>
                 </CollapsibleTrigger>
                 
-                <CollapsibleContent className="space-y-1 pt-1">
-                  {group.devices.map((device) => (
-                    <DraggableDeviceItem
-                      key={device.id}
-                      device={device}
-                      isCompact={false}
-                    />
-                  ))}
+                <CollapsibleContent className="pt-1">
+                  <div className="divide-y rounded-md border bg-background">
+                    {group.devices.map((device) => (
+                      <DraggableDeviceItem
+                        key={device.id}
+                        device={device}
+                        isCompact={false}
+                        inList
+                      />
+                    ))}
+                  </div>
                 </CollapsibleContent>
               </Collapsible>
             );
           })
         )}
+        </ScrollArea>
       </CardContent>
     </Card>
   );
