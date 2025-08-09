@@ -1,32 +1,23 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
-import { Upload, Trash2, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { X, PanelLeftOpen, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter } from '@/components/ui/card';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { FloorPlanUpload } from './floor-plan-upload';
 import { FloorPlanCanvasDynamic, DevicePalette } from '.';
 import { useDeviceOverlays } from '@/hooks/floor-plan/device-overlays';
 import { useFusionStore } from '@/stores/store';
 import { toast } from 'sonner';
 import type { FloorPlan, DeviceWithConnector, Space } from '@/types';
+import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 export interface FloorPlanDetailRef {
   zoomIn: () => void;
   zoomOut: () => void;
   resetZoom: () => void;
+  startReplace: () => void;
+  openDevices: () => void;
 }
 
 interface FloorPlanDetailProps {
@@ -55,7 +46,10 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
   const [isUploading, setIsUploading] = useState(false);
   const [deviceSearchTerm, setDeviceSearchTerm] = useState('');
   const [isPaletteCollapsed, setIsPaletteCollapsed] = useState(true);
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  
+  // Device sheet visibility
+  const [isDeviceSheetOpen, setIsDeviceSheetOpen] = useState(false);
+
   
   // Zoom state to pass to canvas
   const [zoomActions, setZoomActions] = useState<{
@@ -100,6 +94,13 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
     },
     resetZoom: () => {
       zoomActions?.resetZoom();
+    },
+    startReplace: () => {
+      setIsReplacing(true);
+      setSelectedFile(null);
+    },
+    openDevices: () => {
+      setIsDeviceSheetOpen(true);
     }
   }), [zoomActions]);
 
@@ -140,10 +141,7 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
     }
   };
 
-  const handleStartReplace = () => {
-    setIsReplacing(true);
-    setSelectedFile(null);
-  };
+  
 
   const handleCancelReplace = () => {
     setIsReplacing(false);
@@ -186,12 +184,7 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <FloorPlanUpload
-          onFileSelect={handleFileSelect}
-          onFileRemove={handleFileRemove}
-          selectedFile={selectedFile}
-          isUploading={isUploading}
-        />
+        {/* FloorPlanUpload removed; implement inline uploader or reuse dedicated page as needed */}
         {selectedFile && (
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={handleCancelReplace}>
@@ -227,122 +220,45 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
       <Card className="overflow-hidden flex flex-col">
         <CardContent className="p-0">
           {/* Two-panel layout: Device Palette + Canvas */}
-          <div className="flex gap-4 min-h-[600px] min-w-0 relative p-4">
-            {/* Device Palette */}
-            {!isPaletteCollapsed && (
-              <div className="w-72 flex-shrink-0 relative">
-                <div className="absolute -right-3 top-2 z-10">
-                  <TooltipProvider delayDuration={150}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="secondary"
-                          size="icon"
-                          aria-label="Hide device palette"
-                          title="Hide device palette"
-                          onClick={() => setIsPaletteCollapsed(true)}
-                          className="h-7 w-7 shadow-sm"
-                        >
-                          <PanelLeftClose className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">Hide device palette</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+          <div className="min-h-[600px] min-w-0 relative p-4">
+            <Sheet open={isDeviceSheetOpen} onOpenChange={setIsDeviceSheetOpen} modal={false}>
+              <SheetContent side="right" className="w-[360px] sm:max-w-[420px]">
+                <SheetHeader>
+                  <SheetTitle>Devices</SheetTitle>
+                </SheetHeader>
+                <div className="pt-4 h-full">
+                  <DevicePalette
+                    devices={allDevices}
+                    spaces={spaces}
+                    locationId={locationId}
+                    searchTerm={deviceSearchTerm}
+                    onSearchChange={setDeviceSearchTerm}
+                    onAssignDevices={handleAssignDevices}
+                    placedDeviceIds={placedDeviceIds}
+                    className="h-full"
+                  />
                 </div>
-                <DevicePalette
-                  devices={allDevices}
-                  spaces={spaces}
-                  locationId={locationId}
-                  searchTerm={deviceSearchTerm}
-                  onSearchChange={setDeviceSearchTerm}
-                  onAssignDevices={handleAssignDevices}
-                  placedDeviceIds={placedDeviceIds}
-                  className="h-full"
-                />
-              </div>
-            )}
-
-            {/* Interactive Floor Plan Canvas */}
-            <div className="flex-1 min-w-0 overflow-hidden relative">
-              {isPaletteCollapsed && (
-                <div className="absolute left-2 top-2 z-10">
-                  <TooltipProvider delayDuration={150}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          aria-label="Show device palette"
-                          title="Show device palette"
-                          onClick={() => setIsPaletteCollapsed(false)}
-                          className="h-7 shadow-sm"
-                        >
-                          <PanelLeftOpen className="h-4 w-4 mr-1.5" />
-                          Devices
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">Show device palette</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              )}
-              <FloorPlanCanvasDynamic
-                floorPlan={floorPlan}
-                locationId={locationId}
-                onLoad={handleCanvasLoad}
-                onError={handleCanvasError}
-                onScaleChange={onScaleChange}
-                overlays={overlays}
-                selectedOverlayId={selectedOverlayId}
-                createOverlay={createOverlay}
-                updateOverlay={updateOverlay}
-                deleteOverlay={deleteOverlay}
-                selectOverlay={selectOverlay}
-                onZoomActionsReady={setZoomActions}
-                className="w-full min-h-[600px]"
-              />
-            </div>
+              </SheetContent>
+            </Sheet>
+            <FloorPlanCanvasDynamic
+              floorPlan={floorPlan}
+              locationId={locationId}
+              onLoad={handleCanvasLoad}
+              onError={handleCanvasError}
+              onScaleChange={onScaleChange}
+              overlays={overlays}
+              selectedOverlayId={selectedOverlayId}
+              createOverlay={createOverlay}
+              updateOverlay={updateOverlay}
+              deleteOverlay={deleteOverlay}
+              selectOverlay={selectOverlay}
+              onZoomActionsReady={setZoomActions}
+              className="w-full min-h-[600px]"
+            />
           </div>
         </CardContent>
 
-        {/* Action Buttons */}
-        {showActions && (
-          <CardFooter className="flex justify-end gap-2">
-            <Button variant="outline" onClick={handleStartReplace}>
-              <Upload className="h-4 w-4 mr-2" />
-              Replace
-            </Button>
-            <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" className="text-destructive hover:text-destructive">
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete Floor Plan</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will permanently delete this floor plan and all device positions placed on it. This action cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => {
-                      setIsDeleteOpen(false);
-                      onDelete?.();
-                    }}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </CardFooter>
-        )}
+        {/* Action buttons removed; actions live in the tabs menu */}
       </Card>
     </div>
   );

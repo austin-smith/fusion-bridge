@@ -9,6 +9,7 @@ import { SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
 import { ThemeToggle } from '@/components/common/theme-toggle';
 import { getPageConfig } from '@/lib/page-config';
 import dynamic from 'next/dynamic';
+import { useFusionStore } from '@/stores/store';
 
 const ClientBreadcrumb = dynamic(() => import('../page-breadcrumb').then(mod => ({ default: mod.PageBreadcrumb })), { 
   ssr: false 
@@ -24,6 +25,27 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
   
   // Get page configuration from comprehensive page config
   const pageInfo = getPageConfig(pathname);
+  const { locations } = useFusionStore();
+
+  // Enhance breadcrumbs with dynamic location name for location-scoped routes (no ID fallback to avoid flicker)
+  let enhancedBreadcrumbs = pageInfo?.breadcrumbs;
+  if (pageInfo?.breadcrumbs && /^\/locations\/([^\/]+)\/floor-plans/.test(pathname)) {
+    const match = pathname.match(/^\/locations\/([^\/]+)\//);
+    const locationId = match?.[1];
+    const location = locations.find((l) => l.id === locationId);
+    if (location) {
+      const crumbs = [...pageInfo.breadcrumbs];
+      const last = crumbs.pop();
+      if (last) {
+        crumbs.push({ label: location.name });
+        crumbs.push(last);
+      }
+      enhancedBreadcrumbs = crumbs;
+    } else {
+      // Until location is available, keep default breadcrumbs without inserting ID
+      enhancedBreadcrumbs = pageInfo.breadcrumbs;
+    }
+  }
 
   // Automatically set document title
   useEffect(() => {
@@ -45,8 +67,8 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
               </SidebarTrigger>
               
               <div className="flex-1">
-                {pageInfo?.breadcrumbs && (
-                  <ClientBreadcrumb breadcrumbs={pageInfo.breadcrumbs} />
+                {enhancedBreadcrumbs && (
+                  <ClientBreadcrumb breadcrumbs={enhancedBreadcrumbs} />
                 )}
               </div>
 

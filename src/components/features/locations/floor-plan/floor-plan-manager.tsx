@@ -1,12 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Plus, MapPlus, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFloorPlans } from '@/hooks/floor-plan/use-floor-plans';
 import { FloorPlanTabs } from './floor-plan-tabs';
 import { FloorPlanDetail, type FloorPlanDetailRef } from './floor-plan-detail';
-import { FloorPlanUploadDialog } from './floor-plan-upload-dialog';
 import { FloorPlanNameDialog } from './floor-plan-name-dialog';
 import { FloorPlanLoadingSkeleton } from './floor-plan-loading-skeleton';
 import { useFusionStore } from '@/stores/store';
@@ -21,13 +20,13 @@ interface FloorPlanManagerProps {
 
 export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false, className }: FloorPlanManagerProps) {
   const [activeFloorPlanId, setActiveFloorPlanId] = useState<string | null>(null);
-  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
   const [floorPlanToRename, setFloorPlanToRename] = useState<{ id: string; currentName: string } | null>(null);
   
   // Zoom control state
   const [zoomLevel, setZoomLevel] = useState(1);
   const floorPlanDetailRef = useRef<FloorPlanDetailRef>(null);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 
   const { allDevices, spaces } = useFusionStore();
 
@@ -47,18 +46,6 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
       setActiveFloorPlanId(floorPlans[0].id);
     }
   }, [floorPlans, activeFloorPlanId]);
-
-  const handleCreateFloorPlan = async (name: string, file: File) => {
-    try {
-      const newFloorPlan = await createFloorPlan(name, file);
-      setActiveFloorPlanId(newFloorPlan.id);
-      setIsUploadDialogOpen(false);
-      toast.success('Floor plan created successfully');
-    } catch (error) {
-      console.error('Error creating floor plan:', error);
-      toast.error('Failed to create floor plan');
-    }
-  };
 
   const handleUpdateFloorPlan = async (id: string, name?: string, file?: File) => {
     try {
@@ -115,6 +102,14 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
     floorPlanDetailRef.current?.resetZoom();
   };
 
+  const handleReplaceClick = () => {
+    floorPlanDetailRef.current?.startReplace();
+  };
+
+  const handleOpenDevices = () => {
+    floorPlanDetailRef.current?.openDevices();
+  };
+
   const activeFloorPlan = floorPlans.find(fp => fp.id === activeFloorPlanId) || null;
 
   if (error) {
@@ -149,6 +144,16 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
             onFloorPlanUpdate={handleUpdateFloorPlan}
             onFloorPlanDelete={handleDeleteFloorPlan}
             isLoading={isLoading}
+            onReplaceRequest={(id) => {
+              if (id === activeFloorPlanId) {
+                handleReplaceClick();
+              } else {
+                setActiveFloorPlanId(id);
+                // Delay to allow detail to mount before replace
+                setTimeout(() => handleReplaceClick(), 0);
+              }
+            }}
+            onCreateRequest={() => setIsNameDialogOpen(true)}
           />
 
           {/* Local toolbar above canvas (not in page header) */}
@@ -187,12 +192,21 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
                 </TooltipProvider>
                 <span className="text-xs text-muted-foreground ml-1 select-none">{Math.round(zoomLevel * 100)}%</span>
                 <div className="h-4 w-px bg-border mx-1" />
+                {/* Add device (opens sheet) */}
+                <TooltipProvider delayDuration={150}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="outline" size="sm" onClick={handleOpenDevices} aria-label="Add device">
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add device
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Add device</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </>
             )}
-            <Button onClick={() => setIsUploadDialogOpen(true)} size="sm">
-              <Plus className="h-4 w-4" />
-              Add Floor Plan
-            </Button>
+            {/* Add floor plan moved into tabs as icon-only button */}
           </div>
         </div>
       )}
@@ -219,7 +233,7 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
                   Get started by uploading your first floor plan for this location.
                 </p>
               </div>
-              <Button onClick={() => setIsUploadDialogOpen(true)}>
+              <Button onClick={() => setIsNameDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Add your first floor plan
               </Button>
@@ -228,13 +242,7 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
         )}
       </div>
 
-      {/* Upload Dialog */}
-      <FloorPlanUploadDialog
-        open={isUploadDialogOpen}
-        onOpenChange={setIsUploadDialogOpen}
-        onSubmit={handleCreateFloorPlan}
-        isLoading={isLoading}
-      />
+      {/* Name Dialog for creating/updating floor plan names */}
 
       {/* Rename Dialog */}
       <FloorPlanNameDialog
@@ -244,6 +252,29 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
         currentName={floorPlanToRename?.currentName || ''}
         isLoading={isLoading}
       />
+      {/* Delete confirm dialog for actions menu */}
+      {activeFloorPlan && isDeleteOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          {/* Reuse AlertDialog from shadcn by toggling state in place of dedicated component to keep scope small */}
+          <div className="bg-background border rounded-lg shadow-lg p-6 max-w-sm w-full mx-4">
+            <h3 className="font-semibold mb-2">Delete Floor Plan</h3>
+            <p className="text-sm text-muted-foreground mb-4">This will permanently delete this floor plan and all device positions. This action cannot be undone.</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setIsDeleteOpen(false)}>Cancel</Button>
+              <Button
+                size="sm"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  setIsDeleteOpen(false);
+                  handleDeleteFloorPlan(activeFloorPlan.id);
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

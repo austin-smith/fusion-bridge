@@ -659,13 +659,13 @@ export default function EventsPage() {
         // (since the name is composite and doesn't map to a single device record for the dialog)
         if (event.deviceInternalId && event.connectorCategory !== 'netbox') {
           return (
-            <Button
-              variant="link"
-              className="p-0 h-auto text-left whitespace-normal text-foreground"
+            <button
+              type="button"
+              className="underline underline-offset-2 p-0 h-auto text-left whitespace-normal"
               onClick={() => fetchDeviceDetails(event.deviceInternalId!)}
             >
               {displayValue}
-            </Button>
+            </button>
           );
         }
         // Otherwise, just render the text (covers NetBox events and events without deviceInternalId)

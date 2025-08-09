@@ -4,8 +4,6 @@ import React from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { FloorPlanManager } from '@/components/features/locations/floor-plan';
 import { useFusionStore } from '@/stores/store';
-import { PageHeader } from '@/components/layout/page-header';
-import { Map } from 'lucide-react';
 
 export default function LocationFloorPlansPage() {
   const params = useParams();
@@ -28,17 +26,6 @@ export default function LocationFloorPlansPage() {
 
       {/* Editor area */}
       <div className="flex-1 p-4 min-h-0">
-        {/* Large header mimicking old look */}
-        <PageHeader
-          title={locationName}
-          description="Floor Plans"
-          icon={(
-            <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center">
-              <Map className="h-6 w-6" />
-            </div>
-          )}
-        />
-
         <FloorPlanManager locationId={locationId} expectedToHaveFloorPlans className="h-full flex flex-col" />
       </div>
     </div>

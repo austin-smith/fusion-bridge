@@ -440,8 +440,9 @@ export default function DevicesPage() {
             <TooltipProvider delayDuration={100}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button 
-                    className="font-medium max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap text-left hover:underline cursor-pointer"
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap text-left"
                     onClick={() => {
                       setSelectedDevice(dialogProps);
                       setIsDetailDialogOpen(true);

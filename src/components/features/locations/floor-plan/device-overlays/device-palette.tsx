@@ -11,6 +11,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { getDeviceTypeIcon, getDisplayStateIcon, getDisplayStateColorClass } from '@/lib/mappings/presentation';
 import { cn } from '@/lib/utils';
 import type { DeviceWithConnector, Space } from '@/types/index';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 /**
  * Calculate drag image offset to center the preview under the cursor
@@ -33,6 +34,7 @@ export interface DevicePaletteProps {
   onAssignDevices?: () => void;
   className?: string;
   placedDeviceIds?: Set<string>; // IDs of devices already placed on floor plan
+  onClose?: () => void; // Request to hide/collapse the palette
 }
 
 interface GroupedDevices {
@@ -171,7 +173,8 @@ export function DevicePalette({
   onSearchChange,
   onAssignDevices,
   className,
-  placedDeviceIds = new Set()
+  placedDeviceIds = new Set(),
+  onClose
 }: DevicePaletteProps) {
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(new Set());
 
@@ -183,9 +186,9 @@ export function DevicePalette({
     );
 
     const locationDevices = devices.filter(device => {
-      // Include devices assigned to spaces in this location, or unassigned devices
+      // Only include devices assigned to spaces in this location
       const deviceSpaceIds = device.spaceId ? [device.spaceId] : [];
-      return deviceSpaceIds.length === 0 || deviceSpaceIds.some(id => locationSpaceIds.has(id));
+      return deviceSpaceIds.some(id => locationSpaceIds.has(id));
     });
 
     // Filter out devices already placed on floor plan
@@ -263,18 +266,39 @@ export function DevicePalette({
   const totalDeviceCount = groupedDevices.reduce((sum, group) => sum + group.devices.length, 0);
 
   return (
-    <Card className={cn("h-full flex flex-col", className)}>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Cpu className="h-5 w-5" />
-          Device Palette
-          <Badge variant="secondary" className="ml-auto">
-            {totalDeviceCount}
-          </Badge>
-        </CardTitle>
-        
+    <Card className={cn("h-full flex flex-col bg-muted/30", className)}>
+      <CardHeader className="pb-3 sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-lg flex items-center gap-2 flex-1">
+            <Cpu className="h-5 w-5" />
+            Device Palette
+            <Badge variant="secondary" className="ml-auto">
+              {totalDeviceCount}
+            </Badge>
+          </CardTitle>
+          {onClose && (
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    aria-label="Hide device palette"
+                    title="Hide device palette"
+                    onClick={onClose}
+                    className="h-7 w-7"
+                  >
+                    <Plus className="rotate-45 h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="left">Hide</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
+
         {/* Search */}
-        <div className="relative">
+        <div className="relative mt-2">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             type="search"
@@ -286,7 +310,8 @@ export function DevicePalette({
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1 overflow-auto p-3 space-y-3">
+      <CardContent className="flex-1 p-0">
+        <ScrollArea className="h-full p-3">
         {groupedDevices.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-6 text-center h-full">
             <div className="rounded-full bg-muted p-3 mb-3">
@@ -346,6 +371,7 @@ export function DevicePalette({
             );
           })
         )}
+        </ScrollArea>
       </CardContent>
     </Card>
   );

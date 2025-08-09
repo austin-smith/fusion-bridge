@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Pencil, Trash2, Upload, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +42,8 @@ interface FloorPlanTabsProps {
   onFloorPlanUpdate: (id: string, name?: string, file?: File) => Promise<void>;
   onFloorPlanDelete: (id: string) => Promise<void>;
   isLoading?: boolean;
+  onReplaceRequest?: (id: string) => void;
+  onCreateRequest?: () => void;
 }
 
 export function FloorPlanTabs({
@@ -48,7 +52,9 @@ export function FloorPlanTabs({
   onFloorPlanSelect,
   onFloorPlanUpdate,
   onFloorPlanDelete,
-  isLoading = false
+  isLoading = false,
+  onReplaceRequest,
+  onCreateRequest
 }: FloorPlanTabsProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [floorPlanToDelete, setFloorPlanToDelete] = useState<FloorPlan | null>(null);
@@ -115,6 +121,23 @@ export function FloorPlanTabs({
             </TabsList>
           </div>
         </Tabs>
+        {/* Add Floor Plan (icon-only) */}
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-9 w-9"
+                aria-label="Add floor plan"
+                onClick={onCreateRequest}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Add floor plan</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
         {/* Active tab context menu */}
         {activeFloorPlanId && (
@@ -126,10 +149,15 @@ export function FloorPlanTabs({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => handleRenameClick(floorPlans.find(fp => fp.id === activeFloorPlanId)!)}>
+            <DropdownMenuItem onClick={() => handleRenameClick(floorPlans.find(fp => fp.id === activeFloorPlanId)!)}>
                 <Pencil className="h-4 w-4 mr-2" />
                 Rename
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onReplaceRequest?.(activeFloorPlanId!)}>
+                <Upload className="h-4 w-4 mr-2" />
+                Replace
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem 
                 onClick={() => handleDeleteClick(floorPlans.find(fp => fp.id === activeFloorPlanId)!)}
                 className="text-destructive"

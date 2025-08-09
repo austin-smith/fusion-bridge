@@ -13,5 +13,4 @@ export { FloorPlanDetail } from './floor-plan-detail';
 // Multiple floor plans components
 export { FloorPlanManager } from './floor-plan-manager';
 export { FloorPlanTabs } from './floor-plan-tabs';
-export { FloorPlanUploadDialog } from './floor-plan-upload-dialog';
 export { FloorPlanNameDialog } from './floor-plan-name-dialog';

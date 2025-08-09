@@ -5,7 +5,7 @@ import { Stage, Layer, Image as KonvaImage } from 'react-konva';
 import Konva from 'konva';
 import { useFloorPlanImage, usePdfRenderer, isImageSource, isPdfSource } from '@/hooks/floor-plan';
 import { DeviceOverlayLayer } from './device-overlays/device-overlay-layer';
-import { canvasToNormalized, type DeviceOverlayWithDevice, type CreateDeviceOverlayPayload, type UpdateDeviceOverlayPayload } from '@/types/device-overlay';
+import { canvasToNormalized, normalizedToCanvas, type DeviceOverlayWithDevice, type CreateDeviceOverlayPayload, type UpdateDeviceOverlayPayload } from '@/types/device-overlay';
 import { toast } from 'sonner';
 import { Loader2, ZoomIn, ZoomOut, RotateCcw, AlertCircle, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -428,6 +428,15 @@ export function FloorPlanCanvas({
     );
   }
 
+  // Compute selected overlay position in canvas and then in container space for contextual actions
+  const selectedOverlay = selectedOverlayId ? overlays.find((o) => o.id === selectedOverlayId) : null;
+  const selectedCanvasPosition = selectedOverlay && currentResult.dimensions
+    ? normalizedToCanvas(
+        { x: selectedOverlay.x, y: selectedOverlay.y },
+        { width: currentResult.dimensions.width, height: currentResult.dimensions.height }
+      )
+    : null;
+
   return (
     <div 
       ref={containerRef}
@@ -435,20 +444,7 @@ export function FloorPlanCanvas({
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      {/* Delete Button - only show when device is selected */}
-      {selectedOverlayId && (
-        <div className="absolute top-4 right-4 z-10">
-          <Button
-            variant="destructive"
-            size="icon"
-            onClick={handleDeleteSelected}
-            className="h-8 w-8 bg-destructive/80 backdrop-blur-sm hover:bg-destructive"
-            title="Delete selected device (Del key)"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
+      {/* Removed global top-right delete button; contextual bubble handles delete */}
 
       {/* PDF Page Controls */}
       {isPdf && pdfResult.numPages > 1 && (
@@ -545,6 +541,31 @@ export function FloorPlanCanvas({
           />
         )}
       </Stage>
+      {/* Selected device contextual bubble with Delete */}
+      {selectedCanvasPosition && (
+        <div
+          style={{
+            position: 'absolute',
+            left: selectedCanvasPosition.x * viewport.scale + viewport.x,
+            top: selectedCanvasPosition.y * viewport.scale + viewport.y - 38,
+            transform: 'translate(-50%, -100%)',
+            zIndex: 50,
+          }}
+        >
+          <div className="bg-background/90 backdrop-blur-md border shadow-sm rounded-md px-2 py-1 flex items-center gap-2">
+            <span className="text-xs font-medium">{selectedOverlay?.device.name}</span>
+            <Button
+              variant="destructive"
+              size="icon"
+              onClick={handleDeleteSelected}
+              className="h-6 w-6"
+              title="Delete device"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
       {/* Absolute DOM hover label */}
       {hoverLabel && (
         <div
