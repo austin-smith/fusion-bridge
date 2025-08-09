@@ -95,11 +95,14 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
   });
 
   // Close the right-side device palette when a device overlay is selected (left detail sheet opens)
+  // Defer to next frame to avoid interfering with the click event that set the selection
   useEffect(() => {
-    if (selectedOverlayId) {
-      setIsDeviceSheetOpen(false);
-    }
+    if (!selectedOverlayId) return;
+    const raf = requestAnimationFrame(() => setIsDeviceSheetOpen(false));
+    return () => cancelAnimationFrame(raf);
   }, [selectedOverlayId]);
+
+  // Clearing selection is handled explicitly when opening the device palette via onOpenChange
 
   // Create set of device IDs that are already placed on floor plan
   const placedDeviceIds = new Set(overlays.map(overlay => overlay.deviceId));
@@ -127,9 +130,13 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
       setIsReplaceOpen(true);
     },
     openDevices: () => {
+      // Ensure mutual exclusivity: clear any active selection so the left sheet closes
+      selectOverlay(null);
+      // When closing the detail sheet programmatically, also reset zoom to match manual close behavior
+      zoomActions?.resetZoom();
       setIsDeviceSheetOpen(true);
     }
-  }), [zoomActions]);
+  }), [zoomActions, selectOverlay]);
 
   // Compute safe area within the canvas container accounting for left sheet occlusion
   const computeSafeArea = React.useCallback((): { left: number; top: number; right: number; bottom: number } | null => {
@@ -367,13 +374,24 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
         <CardContent className="p-0">
           {/* Two-panel layout: Device Palette + Canvas */}
           <div className="min-h-[600px] min-w-0 relative p-4">
-            <Sheet open={isDeviceSheetOpen} onOpenChange={setIsDeviceSheetOpen} modal={false}>
+            <Sheet
+              open={isDeviceSheetOpen}
+              onOpenChange={(open) => {
+                setIsDeviceSheetOpen(open);
+                if (open && selectedOverlayId) {
+                  // Ensure mutual exclusivity: opening palette clears selection (closes left sheet)
+                  selectOverlay(null);
+                  // Also reset zoom when clearing the selection via palette open
+                  zoomActions?.resetZoom();
+                }
+              }}
+              modal={false}
+            >
               <SheetContent
                 side="right"
                 className="w-[360px] sm:max-w-[420px]"
                 onInteractOutside={(e) => e.preventDefault()}
                 onPointerDownOutside={(e) => e.preventDefault()}
-                onEscapeKeyDown={(e) => e.preventDefault()}
               >
                 <SheetHeader>
                   <div className="flex items-center gap-2 pr-10 min-w-0">
@@ -409,6 +427,8 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
               onOpenChange={(open) => {
                 if (!open) {
                   selectOverlay(null);
+                  // Reset canvas to fit-to-screen when the detail sheet is closed
+                  zoomActions?.resetZoom();
                 } else {
                   // start pan immediately alongside sheet open
                   ensureImmediately();

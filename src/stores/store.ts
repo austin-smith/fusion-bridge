@@ -1630,6 +1630,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     else if (newState === ActionableState.SET_OFF) stateDesc = 'off';
     else if (newState === ActionableState.SET_LOCKED) stateDesc = 'locked';
     else if (newState === ActionableState.SET_UNLOCKED) stateDesc = 'unlocked';
+    else if (newState === ActionableState.QUICK_GRANT) stateDesc = 'quick grant';
     else stateDesc = 'unknown state';
 
     // 1. Set Loading State
@@ -1638,7 +1639,11 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     }));
     
     let loadingMessage: string;
-    if (newState === ActionableState.SET_LOCKED || newState === ActionableState.SET_UNLOCKED) {
+    if (
+      newState === ActionableState.SET_LOCKED ||
+      newState === ActionableState.SET_UNLOCKED ||
+      newState === ActionableState.QUICK_GRANT
+    ) {
       loadingMessage = newState === ActionableState.SET_LOCKED ? 'Locking device...' : 'Unlocking device...';
     } else {
       loadingMessage = `Turning device ${stateDesc}...`;
@@ -1665,6 +1670,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       else if (newState === ActionableState.SET_OFF) newDisplayState = OFF;
       else if (newState === ActionableState.SET_LOCKED) newDisplayState = LOCKED;
       else if (newState === ActionableState.SET_UNLOCKED) newDisplayState = UNLOCKED;
+      else if (newState === ActionableState.QUICK_GRANT) newDisplayState = UNLOCKED;
       else {
         console.warn(`[Store] executeDeviceAction: Unhandled ActionableState: ${newState}`);
         newDisplayState = ON; // Fallback
@@ -1679,6 +1685,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         successMessage = 'Device locked successfully.';
       } else if (newState === ActionableState.SET_UNLOCKED) {
         successMessage = 'Device unlocked successfully.';
+      } else if (newState === ActionableState.QUICK_GRANT) {
+        successMessage = 'Quick grant sent successfully.';
       } else {
         successMessage = 'Device command sent successfully. State updated.';
       }
@@ -1694,6 +1702,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         errorMessage = 'Failed to lock device.';
       } else if (newState === ActionableState.SET_UNLOCKED) {
         errorMessage = 'Failed to unlock device.';
+      } else if (newState === ActionableState.QUICK_GRANT) {
+        errorMessage = 'Failed to quick grant.';
       } else {
         errorMessage = `Failed to turn device ${stateDesc}.`;
       }

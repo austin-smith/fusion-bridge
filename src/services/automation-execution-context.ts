@@ -371,6 +371,18 @@ async function executeAutomationAction(action: AutomationAction, context: Record
       break;
     }
 
+    case AutomationActionType.QUICK_GRANT_DEVICE: {
+      const params = action.params as z.infer<typeof UnlockDeviceActionParamsSchema>;
+      if (!params.targetDeviceInternalId || typeof params.targetDeviceInternalId !== 'string') {
+        throw new Error(`Invalid or missing targetDeviceInternalId for quickGrantDevice action.`);
+      }
+      
+      console.log(`[Automation Action Executor] Executing quickGrantDevice. Target: ${params.targetDeviceInternalId}`);
+      await requestDeviceStateChange(params.targetDeviceInternalId, ActionableState.QUICK_GRANT);
+      console.log(`[Automation Action Executor] Successfully requested quick grant for ${params.targetDeviceInternalId}`);
+      break;
+    }
+
     case AutomationActionType.PLAY_AUDIO: {
       const params = action.params as z.infer<typeof PlayAudioActionParamsSchema>;
       if (!params.targetDeviceInternalId || typeof params.targetDeviceInternalId !== 'string') {

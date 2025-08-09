@@ -4,7 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { Sun, Moon, Monitor } from 'lucide-react';
+import { Sun, Moon, Monitor, Check } from 'lucide-react';
+import { PREFERRED_THEME_FAMILY_KEY } from '@/components/common/theme-provider';
 
 interface ThemeSwitcherModalProps {
   isOpen: boolean;
@@ -35,29 +36,125 @@ const themeOptions: ThemeOption[] = [
   }
 ];
 
+interface ThemeFamilyOption {
+  value: string;
+  label: string;
+}
+
+const themeFamilyOptions: ThemeFamilyOption[] = [
+  { value: 'default', label: 'Default' },
+  { value: 'cosmic-night', label: 'Cosmic Night' },
+  { value: 'mono', label: 'Mono' },
+  { value: 'remoteview', label: 'Remoteview' },
+  { value: 't3-chat', label: 'T3 Chat' },
+];
+
 export function ThemeSwitcherModal({ isOpen, onClose }: ThemeSwitcherModalProps) {
   const { theme, setTheme } = useTheme();
   const [isMac, setIsMac] = useState(false);
+  const [themeFamily, setThemeFamily] = useState<string>('default');
+  const [familyDotColor, setFamilyDotColor] = useState<Record<string, string>>({});
+  const [suspendAutoClose, setSuspendAutoClose] = useState(false);
+
+  // Detect if user is holding Cmd/Ctrl to suspend auto-close
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey) setSuspendAutoClose(true);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Meta' || e.key === 'Control') setSuspendAutoClose(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
 
   // Detect platform
   useEffect(() => {
     setIsMac(/Mac|iPod|iPhone|iPad/.test(navigator.platform));
   }, []);
 
-  // Auto-close after a delay when theme changes
+  // Auto-close after a delay when theme changes (disabled while holding modifier)
   useEffect(() => {
-    if (!isOpen) return;
-    
+    if (!isOpen || suspendAutoClose) return;
     const timer = setTimeout(() => {
       onClose();
-    }, 1500); // Auto-close after 1.5 seconds
-
+    }, 1500);
     return () => clearTimeout(timer);
-  }, [theme, isOpen, onClose]);
+  }, [theme, isOpen, onClose, suspendAutoClose]);
 
-  const handleThemeSelect = (themeValue: string) => {
+  // Load current theme family from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(PREFERRED_THEME_FAMILY_KEY) ?? 'default';
+      setThemeFamily(stored);
+    } catch {
+      setThemeFamily('default');
+    }
+  }, []);
+
+  // Compute color dots for theme families when the modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      const root = document.documentElement;
+      const originalClasses = Array.from(root.classList);
+      const allFamilies = themeFamilyOptions.map((opt) => opt.value);
+
+      const nextDots: Record<string, string> = {};
+
+      // Helper: apply a family, read --primary, then clean up
+      const readPrimaryForFamily = (family: string) => {
+        // Restore original classes first to avoid compounding
+        root.className = '';
+        originalClasses.forEach((cls) => root.classList.add(cls));
+        // Remove all theme families
+        allFamilies.forEach((fam) => root.classList.remove(fam));
+        // Apply this family if not default
+        if (family !== 'default') root.classList.add(family);
+        const cssValue = getComputedStyle(root).getPropertyValue('--primary').trim();
+        return `hsl(${cssValue})`;
+      };
+
+      for (const fam of allFamilies) {
+        nextDots[fam] = readPrimaryForFamily(fam);
+      }
+
+      // Restore original classes
+      root.className = '';
+      originalClasses.forEach((cls) => root.classList.add(cls));
+
+      setFamilyDotColor(nextDots);
+    } catch {
+      // no-op if computed style fails
+    }
+  }, [isOpen]);
+
+  const handleThemeSelect = (themeValue: string, e?: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLButtonElement>) => {
     setTheme(themeValue);
-    onClose();
+    // If user is holding a modifier (Cmd/Ctrl), keep the modal open
+    const isHoldingModifier = !!e && ((e as any).metaKey || (e as any).ctrlKey);
+    if (!isHoldingModifier) {
+      onClose();
+    }
+  };
+
+  const handleThemeFamilySelect = (familyValue: string) => {
+    try {
+      localStorage.setItem(PREFERRED_THEME_FAMILY_KEY, familyValue);
+      setThemeFamily(familyValue);
+
+      const classList = document.documentElement.classList;
+      classList.remove('cosmic-night', 't3-chat', 'remoteview', 'macos7', 'mono');
+      if (familyValue !== 'default') {
+        classList.add(familyValue);
+      }
+    } catch {
+      // no-op
+    }
   };
 
   return (
@@ -77,25 +174,62 @@ export function ThemeSwitcherModal({ isOpen, onClose }: ThemeSwitcherModalProps)
               return (
                 <button
                   key={option.value}
-                  onClick={() => handleThemeSelect(option.value)}
+                  onClick={(e) => handleThemeSelect(option.value, e)}
                   className={cn(
-                    "w-full flex items-center space-x-4 p-4 rounded-lg border transition-all duration-200",
+                    "w-full flex items-center justify-between rounded-lg border transition-all duration-200",
+                    "py-3 px-4",
                     "hover:bg-muted/50 focus:outline-none",
                     isCurrent 
                       ? "bg-primary/10 border-primary" 
                       : "border-border hover:border-muted-foreground"
                   )}
                 >
-                  <div className={cn(
-                    "p-2 rounded-md transition-colors",
-                    isCurrent ? "bg-primary text-primary-foreground" : "bg-muted"
-                  )}>
-                    <Icon className="h-4 w-4" />
+                  <div className="flex items-center space-x-3">
+                    <div className={cn(
+                      "p-1.5 rounded-md transition-colors",
+                      isCurrent ? "bg-primary text-primary-foreground" : "bg-muted"
+                    )}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <span className="font-medium">{option.label}</span>
                   </div>
-                  <span className="font-medium">{option.label}</span>
+                  {isCurrent && (
+                    <Check className="h-4 w-4 text-primary" aria-hidden="true" />
+                  )}
                 </button>
               );
             })}
+          </div>
+
+          <div className="pt-4">
+            <h3 className="text-sm font-medium mb-2">Theme Family</h3>
+            <div className="space-y-1.5">
+              {themeFamilyOptions.map((option) => {
+                const isCurrent = option.value === themeFamily;
+                return (
+                  <button
+                    key={option.value}
+                    onClick={() => handleThemeFamilySelect(option.value)}
+                    className={cn(
+                      'w-full relative overflow-hidden flex items-center justify-between rounded-lg border transition-all duration-200',
+                      'py-2 px-3',
+                      'hover:bg-muted/50 focus:outline-none',
+                      isCurrent ? 'bg-primary/10 border-primary' : 'border-border hover:border-muted-foreground'
+                    )}
+                  >
+                    <span
+                      className="absolute inset-y-0 left-0 w-1"
+                      style={{ backgroundColor: familyDotColor[option.value] || 'currentColor' }}
+                      aria-hidden="true"
+                    />
+                    <span className="font-medium text-sm flex items-center">{option.label}</span>
+                    {isCurrent && (
+                      <Check className="h-3 w-3 text-primary" aria-hidden="true" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           
           <div className="pt-2 border-t text-center">

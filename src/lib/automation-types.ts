@@ -1,4 +1,4 @@
-import { Power, Bookmark, Globe, TriangleAlert, HelpCircle, Bell, ShieldCheck, ShieldOff, Volume2, Lock, Unlock } from 'lucide-react';
+import { Power, Bookmark, Globe, TriangleAlert, HelpCircle, Bell, ShieldCheck, ShieldOff, Volume2, Lock, Unlock, Timer } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { StandardizedEvent } from '@/types/events';
 
@@ -53,6 +53,7 @@ export enum AutomationActionType {
   PLAY_AUDIO = 'playAudio',
   LOCK_DEVICE = 'lockDevice',
   UNLOCK_DEVICE = 'unlockDevice',
+  QUICK_GRANT_DEVICE = 'quickGrantDevice',
   // Add other action types here
 }
 
@@ -309,6 +310,24 @@ export const ACTION_TYPE_INFO: Record<AutomationActionType, ActionTypeInfo> = {
       const deviceName = device?.name || 'Unknown device';
       
       return `→ Unlock ${deviceName}`;
+    }
+  },
+
+  [AutomationActionType.QUICK_GRANT_DEVICE]: {
+    displayName: 'Quick Grant Device',
+    icon: Timer,
+    iconColorClass: 'text-emerald-600 dark:text-emerald-400',
+    bgColorClass: 'bg-emerald-50/40 dark:bg-emerald-950/20',
+    borderColorClass: 'border-emerald-200 dark:border-emerald-800',
+    formatter: (params, contextData) => {
+      if (!params) return '→ (No parameters)';
+      
+      const deviceId = params.targetDeviceInternalId;
+      const devices = contextData?.devices || [];
+      const device = devices.find(d => d.id === deviceId);
+      const deviceName = device?.name || 'Unknown device';
+      
+      return `→ Quick Grant ${deviceName}`;
     }
   }
 };

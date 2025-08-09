@@ -13,7 +13,7 @@ import { TokenInserter } from '@/components/features/automations/TokenInserter';
 import { AVAILABLE_AUTOMATION_TOKENS } from '@/lib/automation-tokens';
 import { HttpMethodSchema, HttpContentTypeSchema, SendHttpRequestActionParamsSchema } from '@/lib/automation-schemas';
 import type { AutomationFormValues } from '../AutomationForm';
-import type { InsertableFieldNames } from './ActionItem';
+import type { InsertableFieldNames } from '../form-sections/ActionItem';
 import { get } from 'lodash';
 import { toast } from 'sonner';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -111,9 +111,7 @@ export function SendHttpRequestActionFields({ form, actionIndex, handleInsertTok
         }
     };
 
-    // Get potential error message for body template directly using the field name
-    const bodyError = get(form.formState.errors, paramFieldName('bodyTemplate'));
-    const bodyErrorMessage = bodyError?.message as string | undefined;
+    // Body template error is handled via fieldState in render to respect touch/submit gating
 
     // Function to check if current body content is valid JSON
     const isValidJSON = React.useMemo(() => {
@@ -300,7 +298,7 @@ export function SendHttpRequestActionFields({ form, actionIndex, handleInsertTok
                             )} />
 
                             {/* Body Template Field */}
-                            <FormField control={form.control} name={paramFieldName('bodyTemplate')} render={({ field }) => (
+                    <FormField control={form.control} name={paramFieldName('bodyTemplate')} render={({ field, fieldState }) => (
                                 <FormItem>
                                      <div className="flex items-center justify-between">
                                          <FormLabel>Body Content</FormLabel>
@@ -336,7 +334,7 @@ export function SendHttpRequestActionFields({ form, actionIndex, handleInsertTok
                                          </div>
                                      </div>
                                      {/* --- Move Conditional Logic Outside FormControl --- */}
-                                     {(currentContentType === 'application/json' && showPreview && isValidJSON) ? (
+                                      {(currentContentType === 'application/json' && showPreview && isValidJSON) ? (
                                          // Render Preview Div *instead* of FormControl
                                          <div className="border rounded-md mt-2"> {/* Added mt-2 for spacing */} 
                                              <SyntaxHighlighter
@@ -353,7 +351,7 @@ export function SendHttpRequestActionFields({ form, actionIndex, handleInsertTok
                                                  {bodyTemplate}
                                              </SyntaxHighlighter>
                                          </div>
-                                     ) : (
+                                      ) : (
                                          // Render FormControl wrapping Textarea
                                          <FormControl>
                                              <Textarea
@@ -363,11 +361,13 @@ export function SendHttpRequestActionFields({ form, actionIndex, handleInsertTok
                                                  {...field}
                                                  value={field.value ?? ''}
                                                  rows={6}
-                                                 className={bodyErrorMessage ? "border-destructive" : ""}
+                                                  className={cn((fieldState.error && (fieldState.isTouched || form.formState.isSubmitted)) && 'border-destructive')}
                                              />
                                          </FormControl>
                                      )}
-                                     <FormMessage>{bodyErrorMessage}</FormMessage>
+                                      <FormMessage>
+                                        {fieldState.error && (fieldState.isTouched || form.formState.isSubmitted) ? fieldState.error.message : ''}
+                                      </FormMessage>
                                  </FormItem>
                             )} />
                         </div>

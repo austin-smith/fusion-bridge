@@ -31,6 +31,10 @@ type TargetDeviceOption = {
     iconName: string;
     spaceId?: string | null;
     locationId?: string | null;
+    rawType?: string;
+    supportsAudio?: boolean;
+    connectorCategory?: string;
+    standardDeviceType?: import('@/lib/mappings/definitions').DeviceType;
 };
 
 interface ActionsSectionProps {

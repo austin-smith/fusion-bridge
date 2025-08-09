@@ -85,6 +85,9 @@ export const POST = withOrganizationAuth(async (
             newDisplayState = LOCKED;
         } else if (requestBody.state === ActionableState.SET_UNLOCKED) {
             newDisplayState = UNLOCKED;
+        } else if (requestBody.state === ActionableState.QUICK_GRANT) {
+            // Quick grant is a temporary unlock; reflect immediate unlock in display state
+            newDisplayState = UNLOCKED;
         } else {
             console.warn(`[API StateChange] Unhandled ActionableState for DB update: ${requestBody.state}`);
         }

@@ -293,7 +293,7 @@ export default function RoadmapPage() {
               </p>
               <Button asChild>
                 <a href="/settings" className="inline-flex items-center">
-                  <Settings className="mr-2 h-4 w-4" />
+                  <Settings className="h-4 w-4" />
                   Configure Linear
                 </a>
               </Button>

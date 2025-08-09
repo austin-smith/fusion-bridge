@@ -104,14 +104,15 @@ function DraggableDeviceItem({ device, isCompact = false, inList = false }: Drag
       {/* Hidden drag preview element */}
       <div
         ref={dragPreviewRef}
-        className="fixed -top-[1000px] -left-[1000px] w-30 h-10 bg-background border-2 border-primary rounded-lg flex items-center gap-2 px-3 py-2 shadow-lg text-xs font-medium pointer-events-none z-[9999]"
+        className="fixed -top-[1000px] -left-[1000px] pointer-events-none z-[9999]"
+        aria-hidden
       >
-        <div className="w-4 h-4 bg-primary rounded text-primary-foreground text-[10px] font-bold flex items-center justify-center flex-shrink-0">
-          {typeText.charAt(0).toUpperCase()}
+        <div className="relative w-8 h-8">
+          <div className="absolute inset-0 rounded-full bg-background/95 border-2 border-emerald-500 shadow-sm" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <IconComponent className="h-6 w-6 text-muted-foreground" />
+          </div>
         </div>
-        <span className="truncate flex-1">
-          {device.name}
-        </span>
       </div>
 
       <TooltipProvider delayDuration={300}>
@@ -126,7 +127,7 @@ function DraggableDeviceItem({ device, isCompact = false, inList = false }: Drag
                 inList
                   ? cn(
                       isCompact ? 'px-1.5 py-1.5' : 'px-2 py-2',
-                      isDragging ? 'opacity-50' : 'hover:bg-muted/50'
+                      isDragging ? 'opacity-50 invisible' : 'hover:bg-muted/50'
                     )
                   : cn(
                       "p-2 border rounded-md bg-background",

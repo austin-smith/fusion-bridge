@@ -32,6 +32,7 @@ import { CameraMediaSection } from '@/components/features/common/CameraMediaSect
 import { QuickDeviceActions } from '@/components/features/devices/QuickDeviceActions';
 import { FloorPlanOtherSpacesList } from './floor-plan-other-spaces-list';
 import { Slider } from '@/components/ui/slider';
+import { Input } from '@/components/ui/input';
 // no debounce needed; we commit on pointer-up
 import type { UpdateDeviceOverlayPayload } from '@/types/device-overlay';
 
@@ -50,7 +51,7 @@ function Section({
 }) {
   return (
     <section className={cn('rounded-md border bg-card/50 shadow-sm', className)}>
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-muted/40 px-3 py-2">
+      <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-3 py-2">
         <div className="flex items-center gap-2">
           {Icon ? <Icon className="h-3.5 w-3.5 text-muted-foreground" /> : null}
           <h3 className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
@@ -218,24 +219,51 @@ export function FloorPlanDeviceDetailSheet({
           // Provide the element to the parent for occlusion/safe-area computations
           onSheetElementRef?.(el);
         }, [onSheetElementRef])}
+        data-floorplan-detail-sheet="true"
         onInteractOutside={(e) => e.preventDefault()}
         onPointerDownOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+        onKeyDownCapture={(e) => {
+          if (e.key === 'Delete' || e.key === 'Backspace') {
+            // Allow text editing in inputs/textareas, but prevent bubbling to window
+            const target = e.target as HTMLElement | null;
+            const tag = target?.tagName?.toLowerCase();
+            const isEditable = tag === 'input' || tag === 'textarea' || (target as HTMLElement)?.isContentEditable;
+            if (!isEditable) {
+              e.stopPropagation();
+              // Also stop native propagation so window listeners don't fire
+              const nativeEvt = (e as unknown as { nativeEvent?: Event }).nativeEvent as any;
+              if (nativeEvt?.stopImmediatePropagation) nativeEvt.stopImmediatePropagation();
+              else if (nativeEvt?.stopPropagation) nativeEvt.stopPropagation();
+            }
+          }
+        }}
         className={cn(
           // Override default sm:max-w-sm and w-3/4 from the Sheet component
-          'sm:max-w-none md:max-w-none !w-[420px] sm:!w-[500px] !shadow-2xl ring-2 ring-border ring-offset-1 ring-offset-background',
+          'sm:max-w-none md:max-w-none !w-[420px] sm:!w-[500px] !shadow-2xl ring-2 ring-border ring-offset-1 ring-offset-background p-0 grid grid-rows-[auto,1fr] overflow-hidden',
           className
         )}
       >
-        <SheetHeader>
+        <SheetHeader className="p-3 pb-2">
           <SheetTitle className="flex items-center gap-2">
             <DeviceIcon className="h-5 w-5 text-muted-foreground" />
             {device?.name || 'Device'}
           </SheetTitle>
         </SheetHeader>
 
+        <div className="overflow-y-auto overscroll-contain p-3 pt-0" onKeyDownCapture={(e) => {
+          if (e.key === 'Delete' || e.key === 'Backspace') {
+            const target = e.target as HTMLElement | null;
+            const tag = target?.tagName?.toLowerCase();
+            const isEditable = tag === 'input' || tag === 'textarea' || target?.isContentEditable;
+            if (!isEditable) {
+              e.stopPropagation();
+              const nativeEvt = (e as any)?.nativeEvent;
+              nativeEvt?.stopImmediatePropagation?.();
+            }
+          }
+        }}>
         {overlay && device && (
-          <div className="mt-4 space-y-4">
+          <div className="space-y-4">
             <Section title="Device" icon={Cpu}>
               <InfoGrid className="gap-x-3">
                 <InfoRow label="Connector">
@@ -303,7 +331,7 @@ export function FloorPlanDeviceDetailSheet({
             {isCamera && (
               <Section title="Camera Configuration" icon={Cog}>
                 <div className="grid grid-cols-3 gap-x-3 gap-y-4 text-sm items-center">
-                  <div className="col-span-1 text-muted-foreground">FOV</div>
+                  <div className="col-span-1 text-muted-foreground">FOV °</div>
                   <div className="col-span-2">
                     <div className="flex items-center gap-3">
                       <Slider
@@ -315,11 +343,31 @@ export function FloorPlanDeviceDetailSheet({
                         onValueCommit={(v) => commitUpdate({ fov: v[0] ?? 90 })}
                         className="w-full"
                       />
-                      <span className="w-10 text-right tabular-nums text-xs">{Math.round(fov)}°</span>
+                      <Input
+                        aria-label="Camera field of view (degrees)"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        className="h-7 w-12 text-right tabular-nums text-xs"
+                        value={Number.isFinite(fov) ? Math.round(fov) : 0}
+                        onChange={(e) => {
+                          const raw = e.currentTarget.value;
+                          const parsed = Number.parseFloat(raw);
+                          if (Number.isNaN(parsed)) return;
+                          const clamped = Math.min(360, Math.max(0, parsed));
+                          setFov(clamped);
+                        }}
+                        onBlur={() => commitUpdate({ fov })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            commitUpdate({ fov });
+                          }
+                        }}
+                      />
                     </div>
                   </div>
 
-                  <div className="col-span-1 text-muted-foreground">Rotation</div>
+                  <div className="col-span-1 text-muted-foreground">Rotation °</div>
                   <div className="col-span-2">
                     <div className="flex items-center gap-3">
                       <Slider
@@ -331,7 +379,27 @@ export function FloorPlanDeviceDetailSheet({
                         onValueCommit={(v) => commitUpdate({ rotation: v[0] ?? 0 })}
                         className="w-full"
                       />
-                      <span className="w-10 text-right tabular-nums text-xs">{Math.round(rotation)}°</span>
+                      <Input
+                        aria-label="Camera rotation (degrees)"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        className="h-7 w-12 text-right tabular-nums text-xs"
+                        value={Number.isFinite(rotation) ? Math.round(rotation) : 0}
+                        onChange={(e) => {
+                          const raw = e.currentTarget.value;
+                          const parsed = Number.parseFloat(raw);
+                          if (Number.isNaN(parsed)) return;
+                          const clamped = Math.min(360, Math.max(0, parsed));
+                          setRotation(clamped);
+                        }}
+                        onBlur={() => commitUpdate({ rotation })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            commitUpdate({ rotation });
+                          }
+                        }}
+                      />
                     </div>
                   </div>
                 </div>
@@ -353,6 +421,8 @@ export function FloorPlanDeviceDetailSheet({
                     connectorCategory={device.connectorCategory}
                     deviceType={resolvedDeviceType}
                     displayState={displayState}
+                    showSecondary
+                    secondaryVariant="buttons"
                   />
                 </Section>
               );
@@ -432,6 +502,7 @@ export function FloorPlanDeviceDetailSheet({
             </div>
           </div>
         )}
+        </div>
       </SheetContent>
       {/* Confirm removal dialog */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

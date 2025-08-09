@@ -515,6 +515,12 @@ export function FloorPlanCanvas({
   // Keyboard event handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const active = document.activeElement as HTMLElement | null;
+      const tag = active?.tagName?.toLowerCase();
+      const isEditable = tag === 'input' || tag === 'textarea' || active?.isContentEditable;
+      const sheetFocused = Boolean(document.querySelector('[data-floorplan-detail-sheet="true"]:focus-within'));
+      if (isEditable || sheetFocused) return;
+
       if (selectedOverlayId && (e.key === 'Delete' || e.key === 'Backspace')) {
         e.preventDefault();
         handleDeleteSelected();
