@@ -3,23 +3,14 @@
 import React from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { 
   AccordionItem,
   AccordionTrigger,
   AccordionContent
 } from "@/components/ui/accordion";
-import {
-    FormControl,
-    FormDescription,
-    FormField,
-    FormItem,
-    FormLabel,
-} from "@/components/ui/form";
-import { Trash2, HelpCircle } from 'lucide-react';
+import { FormField, FormItem, FormLabel } from "@/components/ui/form";
+import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
     AutomationAction,
@@ -35,32 +26,25 @@ import type {
     UnlockDeviceActionParamsSchema,
 } from '@/lib/automation-schemas';
 import { AutomationActionType, getActionTitle, getActionIconProps, getActionStyling, formatActionDetail, AutomationTriggerType } from '@/lib/automation-types';
-import { ActionableState, ArmedState, DeviceType } from '@/lib/mappings/definitions';
-import { presentAction } from '@/lib/device-actions/presentation';
-import {
-  isOnOffCapableOption,
-  getOnOffActionsForOption,
-  isAccessControlCapableOption,
-} from '@/lib/device-actions/capabilities';
-import { TokenInserter } from '@/components/features/automations/TokenInserter';
-import { AVAILABLE_AUTOMATION_TOKENS } from '@/lib/automation-tokens';
-import { SendHttpRequestActionFields } from './SendHttpRequestActionFields';
+import { ActionableState } from '@/lib/mappings/definitions';
+import { isOnOffCapableOption, isAccessControlCapableOption } from '@/lib/device-actions/capabilities';
+import { SendHttpRequestActionFields } from '../actions/SendHttpRequestActionFields';
 import { SendPushNotificationActionFields } from '@/components/features/automations/actions/SendPushNotificationActionFields';
-import { DeviceSelectorCombo } from '@/components/features/automations/controls/DeviceSelectorCombo';
-import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
-import { getIconComponentByName } from '@/lib/mappings/presentation';
-import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import type { connectors, alarmZones } from '@/data/db/schema';
 import type { z } from 'zod';
 import type { AutomationFormValues } from '../AutomationForm';
-import { MultiSelectComboBox } from '@/components/ui/multi-select-combobox';
+import { CreateEventActionFields } from '@/components/features/automations/actions/CreateEventActionFields';
+import { CreateBookmarkActionFields } from '@/components/features/automations/actions/CreateBookmarkActionFields';
+import { SetDeviceStateActionFields } from '@/components/features/automations/actions/SetDeviceStateActionFields';
+import { PlayAudioActionFields } from '@/components/features/automations/actions/PlayAudioActionFields';
+import { AlarmZoneActionFields } from '@/components/features/automations/actions/AlarmZoneActionFields';
+import { LockDeviceActionFields } from '@/components/features/automations/actions/LockDeviceActionFields';
+import { UnlockDeviceActionFields } from '@/components/features/automations/actions/UnlockDeviceActionFields';
+import { QuickGrantDeviceActionFields } from '@/components/features/automations/actions/QuickGrantDeviceActionFields';
 
 const ALL_USERS_PUSHOVER_VALUE = '__all__';
 
-const ZONE_SCOPING_OPTIONS = [
-    { value: 'ALL_ZONES_IN_SCOPE', label: "All Zones in Scope" },
-    { value: 'SPECIFIC_ZONES', label: "Specific Zones" },
-];
+// Zone scoping options moved into dedicated component
 
 // Action type groups for better organization
 const ACTION_GROUPS = [
@@ -91,35 +75,7 @@ const ACTION_GROUPS = [
     }
 ] as const;
 
-// Helper function to format device display with location/space hierarchy
-const formatDeviceDisplayName = (device: TargetDeviceOption, allLocations: any[], allSpaces: any[]) => {
-    const location = allLocations?.find(loc => loc.id === device.locationId);
-    const space = allSpaces?.find(sp => sp.id === device.spaceId);
-    
-    let hierarchy = '';
-    if (location?.name) {
-        hierarchy += location.name;
-        if (space?.name) {
-            hierarchy += ` › ${space.name}`;
-        }
-        hierarchy += ' › ';
-    } else if (space?.name) {
-        hierarchy += `${space.name} › `;
-    }
-    
-    return `${hierarchy}${device.name}`;
-};
-
-// Helper function to get selected device display name
-const getSelectedDeviceDisplayName = (
-    deviceId: string, 
-    devices: TargetDeviceOption[], 
-    allLocations: any[], 
-    allSpaces: any[]
-) => {
-    const device = devices.find(d => d.id === deviceId);
-    return device ? formatDeviceDisplayName(device, allLocations, allSpaces) : '';
-};
+// Device display helpers removed (unused)
 
 type ConnectorSelect = typeof connectors.$inferSelect;
 type TargetDeviceOption = {
@@ -139,70 +95,11 @@ type ZoneOption = Pick<typeof alarmZones.$inferSelect, 'id' | 'name' | 'location
 
 const descriptionStyles = "text-xs text-muted-foreground mt-1";
 
-// YoLink SpeakerHub tone options
-const YOLINK_TONE_OPTIONS = [
-    { value: 'Alert', label: 'Alert' },
-    { value: 'Emergency', label: 'Emergency' },
-    { value: 'Tip', label: 'Tip' },
-    { value: 'Warn', label: 'Warn' },
-] as const;
+// Tone options moved into dedicated component
 
 // DeviceSelectorCombo extracted to controls/DeviceSelectorCombo
 
-// Shared component for lock/unlock/quick-grant device selection (searchable)
-interface LockDeviceSelectionProps {
-    form: UseFormReturn<AutomationFormValues>;
-    actionIndex: number;
-    actionType: 'lock' | 'unlock';
-    lockCapableDevices: TargetDeviceOption[];
-    allLocations: any[];
-    allSpaces: any[];
-    isLoading: boolean;
-    fieldError?: any;
-}
-
-const LockDeviceSelection: React.FC<LockDeviceSelectionProps> = ({
-    form,
-    actionIndex,
-    actionType,
-    lockCapableDevices,
-    allLocations,
-    allSpaces,
-    isLoading,
-    fieldError
-}) => {
-    const actionLabel = actionType === 'lock' ? 'Lock' : 'Unlock';
-    const controlLabel = actionType === 'lock' ? 'Device Lock Control' : 'Device Unlock Control';
-    const fieldLabel = actionType === 'lock' ? 'Door to Lock' : 'Door to Unlock';
-    const description = `Select the door or access control device to ${actionType} when this automation runs.`;
-
-    return (
-        <div className="flex flex-col space-y-2 mt-2">
-            <FormLabel className="mb-1 mt-2">{controlLabel}</FormLabel>
-            <FormField
-                control={form.control}
-                name={`config.actions.${actionIndex}.params.targetDeviceInternalId`}
-                render={({ field, fieldState }) => (
-                    <FormItem className="flex flex-col items-start space-y-1">
-                        <DeviceSelectorCombo
-                            value={field.value}
-                            onChange={field.onChange}
-                            disabled={isLoading}
-                            devices={lockCapableDevices}
-                            allLocations={allLocations}
-                            allSpaces={allSpaces}
-                            placeholder="Select door..."
-                            widthClass="w-[300px]"
-                            error={!!fieldState.error}
-                            showIcon
-                        />
-                        <FormDescription className={descriptionStyles}>{description}</FormDescription>
-                    </FormItem>
-                )}
-            />
-        </div>
-    );
-};
+// Lock device selection extracted to controls/LockDeviceSelection
 
 
 
@@ -257,7 +154,7 @@ export function ActionItem({
 }: ActionItemProps) {
   const actionType = form.watch(`config.actions.${index}.type`);
   const actionParams = form.watch(`config.actions.${index}.params`);
-  const currentScoping = form.watch(`config.actions.${index}.params.scoping`);
+  // Scoping handled in AlarmZoneActionFields
 
   // Pushover kept simple — no dynamic user fetching
   // Centralized, memoized device eligibility lists
@@ -338,8 +235,9 @@ export function ActionItem({
         newActionParams = {} as any;
     }
 
-    form.setValue(`config.actions.${index}.type`, newType, { shouldValidate: true, shouldDirty: true });
-    form.setValue(`config.actions.${index}.params`, newActionParams, { shouldValidate: true, shouldDirty: true });
+    // Avoid triggering validation on type change; let the user configure fields first
+    form.setValue(`config.actions.${index}.type`, newType, { shouldDirty: true });
+    form.setValue(`config.actions.${index}.params`, newActionParams, { shouldDirty: true });
   };
 
   const availableActionTypes = React.useMemo(() => {
@@ -455,72 +353,7 @@ export function ActionItem({
           </div>
           <AccordionContent className="px-4 pb-4 pt-2">
               <div className="space-y-4 [&>*>*]:space-y-1">
-                  {(actionType === AutomationActionType.CREATE_EVENT || actionType === AutomationActionType.CREATE_BOOKMARK) && (
-                      <FormField
-                          control={form.control}
-                          name={`config.actions.${index}.params.targetConnectorId`}
-                          render={({ field, fieldState }) => {
-                              const selectedConnector = sortedPikoConnectors.find(c => c.id === field.value);
-                              return (
-                                  <FormItem>
-                                      <FormLabel>Target Connector</FormLabel>
-                                      <FormControl>
-                                          <Select 
-                                              onValueChange={field.onChange} 
-                                              value={field.value ?? ''} 
-                                              disabled={isLoading}
-                                          >
-                                              <SelectTrigger className={cn("flex items-center w-[220px]", fieldState.error && 'border-destructive')}>
-                                                  <SelectValue placeholder="Select Target Connector">
-                                                      {selectedConnector && (
-                                                          <div className="flex items-center gap-2">
-                                                              <ConnectorIcon 
-                                                                  connectorCategory={selectedConnector.category} 
-                                                                  size={18} 
-                                                                  className="mr-1 flex-shrink-0"
-                                                              />
-                                                              <span className="truncate">{selectedConnector.name}</span>
-                                                          </div>
-                                                      )} 
-                                                      {!selectedConnector && "Select Target Connector"}
-                                                  </SelectValue>
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                  {sortedPikoConnectors.map(connector => (
-                                                      <SelectItem 
-                                                          key={connector.id} 
-                                                          value={connector.id}
-                                                          className="flex items-center py-1.5"
-                                                      >
-                                                          <div className="flex items-center gap-2">
-                                                              <ConnectorIcon 
-                                                                  connectorCategory={connector.category} 
-                                                                  size={16} 
-                                                                  className="flex-shrink-0"
-                                                              />
-                                                              <span className="font-medium">{connector.name}</span>
-                                                          </div>
-                                                      </SelectItem>
-                                                  ))}
-                                                  
-                                                  {sortedPikoConnectors.length === 0 && (
-                                                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                                                          No Piko connectors found
-                                                      </div>
-                                                  )}
-                                              </SelectContent>
-                                          </Select>
-                                      </FormControl>
-                                      <FormDescription className={descriptionStyles}>
-                                          {actionType === AutomationActionType.CREATE_EVENT 
-                                              ? 'Select the Piko system to create an event in.'
-                                              : 'Select the Piko system to create a bookmark in.'}
-                                      </FormDescription>
-                                  </FormItem>
-                              );
-                          }}
-                      />
-                  )}
+                  {/* Create Event / Bookmark dedicated components */}
                   
                   <div className={`space-y-2 border-l-2 pl-4 ml-1 rounded-sm p-2 mt-2 bg-white/50 dark:bg-black/10 ${borderColor}`}>
                       <h3 className="text-sm font-medium text-muted-foreground mb-2">Action Parameters</h3>
@@ -539,99 +372,27 @@ export function ActionItem({
                       </p>
                       
                       {actionType === AutomationActionType.CREATE_EVENT && (
-                        <>
-                              <FormField control={form.control} name={`config.actions.${index}.params.sourceTemplate`} render={({ field, fieldState }) => (
-                                  <FormItem className="space-y-1">
-                                      <div className="flex items-center justify-between">
-                                          <FormLabel>Source</FormLabel>
-                                          <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('sourceTemplate', index, token, 'action')} />
-                                      </div>
-                                      <FormControl><Input placeholder="Fusion" {...field} value={field.value ?? ''} disabled={isLoading} className={cn("w-full max-w-xs", fieldState.error && 'border-destructive')} /></FormControl>
-                                  </FormItem>
-                              )} />
-                              <FormField control={form.control} name={`config.actions.${index}.params.captionTemplate`} render={({ field, fieldState }) => (
-                                  <FormItem className="space-y-1">
-                                      <div className="flex items-center justify-between">
-                                          <FormLabel>Caption</FormLabel>
-                                          <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('captionTemplate', index, token, 'action')} />
-                                      </div>
-                                      <FormControl><Textarea placeholder="Device: {{device.name}} // Event: {{event.displayState}} at {{event.timestamp}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                  </FormItem>
-                              )} />
-                              <FormField control={form.control} name={`config.actions.${index}.params.descriptionTemplate`} render={({ field, fieldState }) => (
-                                  <FormItem>
-                                      <div className="flex items-center justify-between">
-                                          <FormLabel>Description</FormLabel>
-                                          <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('descriptionTemplate', index, token, 'action')} />
-                                      </div>
-                                      <FormControl><Textarea placeholder="Device: {{device.externalId}} // Type: {{event.type}} // State: {{event.displayState}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                  </FormItem>
-                              )} />
-                          </>
+                        <CreateEventActionFields
+                          form={form}
+                          actionIndex={index}
+                          connectors={sortedPikoConnectors}
+                          isLoading={isLoading}
+                          onInsertToken={(fieldName, actIndex, token) =>
+                            handleInsertToken(fieldName as any, actIndex, token, 'action')
+                          }
+                        />
                       )}
                       
                       {actionType === AutomationActionType.CREATE_BOOKMARK && (
-                        <>
-                              <FormField control={form.control} name={`config.actions.${index}.params.nameTemplate`} render={({ field, fieldState }) => (
-                                  <FormItem>
-                                      <div className="flex items-center justify-between">
-                                          <FormLabel>Name</FormLabel>
-                                          <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('nameTemplate', index, token, 'action')}/>
-                                      </div>
-                                      <FormControl><Input placeholder="e.g., Alert: {{device.name}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                  </FormItem>
-                              )} />
-                              <FormField control={form.control} name={`config.actions.${index}.params.descriptionTemplate`} render={({ field, fieldState }) => (
-                                  <FormItem>
-                                      <div className="flex items-center justify-between">
-                                          <FormLabel>Description</FormLabel>
-                                          <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => handleInsertToken('descriptionTemplate', index, token, 'action')}/>
-                                      </div>
-                                      <FormControl><Textarea placeholder="e.g., Device: {{device.name}} triggered event {{event.event}}" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} /></FormControl>
-                                  </FormItem>
-                              )} />
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <FormField control={form.control} name={`config.actions.${index}.params.durationMsTemplate`} render={({ field, fieldState }) => (
-                                      <FormItem>
-                                          <FormLabel>Duration (ms)</FormLabel>
-                                          <FormControl>
-                                              <Input 
-                                                  type="number" 
-                                                  min="0" 
-                                                  step="1" 
-                                                  placeholder="e.g., 5000" 
-                                                  {...field}
-                                                  value={field.value ?? ''} 
-                                                  onChange={(e) => {
-                                                      const value = e.target.value;
-                                                      if (value === '' || /^[0-9]+$/.test(value)) {
-                                                          field.onChange(value);
-                                                      }
-                                                  }}
-                                                  disabled={isLoading} 
-                                                  className={cn(fieldState.error && 'border-destructive')} 
-                                              />
-                                          </FormControl>
-                                          <FormDescription className={descriptionStyles}>Duration in milliseconds.</FormDescription>
-                                      </FormItem>
-                                  )} />
-                                  <FormField control={form.control} name={`config.actions.${index}.params.tagsTemplate`} render={({ field, fieldState }) => (
-                                      <FormItem>
-                                          <FormLabel>Tags</FormLabel>
-                                          <FormControl>
-                                              <Input
-                                                  placeholder="e.g., Alert,{{device.type}},Automation"
-                                                  {...field}
-                                                  value={field.value ?? ''}
-                                                  disabled={isLoading}
-                                                  className={cn(fieldState.error && 'border-destructive')}
-                                              />
-                                          </FormControl>
-                                          <FormDescription className={descriptionStyles}>Enter tags separated by commas.</FormDescription>
-                                      </FormItem>
-                                  )} />
-                              </div>
-                          </>
+                        <CreateBookmarkActionFields
+                          form={form}
+                          actionIndex={index}
+                          connectors={sortedPikoConnectors}
+                          isLoading={isLoading}
+                          onInsertToken={(fieldName, actIndex, token) =>
+                            handleInsertToken(fieldName as any, actIndex, token, 'action')
+                          }
+                        />
                       )}
                       
                       {actionType === AutomationActionType.SEND_HTTP_REQUEST && (
@@ -645,234 +406,26 @@ export function ActionItem({
                       )}
                       
                       {actionType === AutomationActionType.SET_DEVICE_STATE && (
-                        <>
-                              <div className="flex flex-col space-y-2 mt-2">
-                                  <FormLabel className="mb-1 mt-2">Device Control Flow</FormLabel>
-                                  <div className="flex items-center space-x-2">
-                                      <FormField
-                                          control={form.control}
-                                          name={`config.actions.${index}.params.targetDeviceInternalId`}
-                                          render={({ field, fieldState }) => {
-                                              const stateCapableDevices = onOffCapableDevices;
-                                              return (
-                                                <FormItem className="flex-grow-0 m-0">
-                                                  <DeviceSelectorCombo
-                                                    value={field.value}
-                                                    onChange={field.onChange}
-                                                    disabled={isLoading}
-                                                    devices={stateCapableDevices}
-                                                    allLocations={allLocations}
-                                                    allSpaces={allSpaces}
-                                                    placeholder="Select device..."
-                                                    widthClass="w-[300px]"
-                                                    error={!!fieldState.error}
-                                                    showIcon
-                                                  />
-                                                </FormItem>
-                                              );
-                                          }}
-                                      />
-                                      
-                                      <div className="flex items-center text-muted-foreground">
-                                          <span className="text-lg">→</span>
-                                      </div>
-                                      
-                                      <FormField
-                                          control={form.control}
-                                          name={`config.actions.${index}.params.targetState`}
-                                          render={({ field, fieldState }) => (
-                                              <FormItem className="flex-grow-0 m-0">
-                                                  <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
-                                                      <FormControl>
-                                                          <SelectTrigger className={cn("w-[120px]", fieldState.error && 'border-destructive')}>
-                                                              <SelectValue placeholder="Select State..." />
-                                                          </SelectTrigger>
-                                                      </FormControl>
-                                                      <SelectContent>
-                                                          {(() => {
-                                                              const targetDeviceId = form.getValues(`config.actions.${index}.params.targetDeviceInternalId`) as string | undefined;
-                                                              const device = sortedAvailableTargetDevices.find(d => d.id === targetDeviceId);
-                                                               const options = device ? getOnOffActionsForOption(device) : [];
-                                                              return options.map((a) => {
-                                                                  const { label } = presentAction(a as ActionableState);
-                                                                  return (
-                                                                      <SelectItem key={a} value={a}>{label}</SelectItem>
-                                                                  );
-                                                              });
-                                                          })()}
-                                                      </SelectContent>
-                                                  </Select>
-                                              </FormItem>
-                                          )}
-                                      />
-                                  </div>
-                                  <FormDescription className={descriptionStyles}>
-                                      Select the device to control and the state to set it to.
-                                  </FormDescription>
-                              </div>
-                          </>
+                        <SetDeviceStateActionFields
+                          form={form}
+                          actionIndex={index}
+                          devices={onOffCapableDevices}
+                          allLocations={allLocations}
+                          allSpaces={allSpaces}
+                          isLoading={isLoading}
+                        />
                       )}
                       
                       {actionType === AutomationActionType.PLAY_AUDIO && (
-                        <>
-                            <div className="flex flex-col space-y-4 mt-2">
-                                <FormLabel className="mb-1 mt-2">Audio Configuration</FormLabel>
-                                
-                                {/* Device Selection */}
-                                <FormField
-                                    control={form.control}
-                                    name={`config.actions.${index}.params.targetDeviceInternalId`}
-                                    render={({ field, fieldState }) => {
-                                        // Filter to only devices that support audio (server-side computed flag)
-                                        const audioCapableDevices = sortedAvailableTargetDevices.filter(device => device.supportsAudio);
-                                        
-                                        return (
-                                            <FormItem>
-                                                <FormLabel>Hub Device</FormLabel>
-                                                <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
-                                                    <FormControl>
-                                                        <SelectTrigger className={cn("w-[300px]", fieldState.error && 'border-destructive')}>
-                                                            <SelectValue placeholder="Select device..." />
-                                                        </SelectTrigger>
-                                                    </FormControl>
-                                                    <SelectContent>
-                                                        {audioCapableDevices.map(device => {
-                                                            const IconComponent = getIconComponentByName(device.iconName) || HelpCircle;
-                                                            return (
-                                                                <SelectItem key={device.id} value={device.id}>
-                                                                    <div className="flex items-center">
-                                                                        <IconComponent className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
-                                                                        <span>{device.name}</span>
-                                                                    </div>
-                                                                </SelectItem>
-                                                            );
-                                                        })}
-                                                        {audioCapableDevices.length === 0 && (
-                                                            <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                                                                No devices found for audio playback.
-                                                            </div>
-                                                        )}
-                                                    </SelectContent>
-                                                </Select>
-                                                <FormDescription className={descriptionStyles}>
-                                                    Select the device to play audio on. Audio actions require compatible speaker hardware.
-                                                </FormDescription>
-                                            </FormItem>
-                                        );
-                                    }}
-                                />
-
-                                {/* Message Field */}
-                                <FormField
-                                    control={form.control}
-                                    name={`config.actions.${index}.params.messageTemplate`}
-                                    render={({ field, fieldState }) => (
-                                        <FormItem>
-                                            <div className="flex items-center justify-between">
-                                                <FormLabel>Message</FormLabel>
-                                                <TokenInserter
-                                                    tokens={AVAILABLE_AUTOMATION_TOKENS}
-                                                    onInsert={(token) => handleInsertToken('messageTemplate', index, token, 'action')}
-                                                />
-                                            </div>
-                                            <FormControl>
-                                                <Textarea
-                                                    {...field}
-                                                    disabled={isLoading}
-                                                    placeholder="Enter the text-to-speech message..."
-                                                    className={cn("min-h-[80px]", fieldState.error && 'border-destructive')}
-                                                />
-                                            </FormControl>
-                                            <FormDescription className={descriptionStyles}>
-                                                The message to be spoken using text-to-speech. Supports automation tokens.
-                                            </FormDescription>
-                                        </FormItem>
-                                    )}
-                                />
-
-                                {/* Tone Field (Optional) */}
-                                <FormField
-                                    control={form.control}
-                                    name={`config.actions.${index}.params.toneTemplate`}
-                                    render={({ field, fieldState }) => (
-                                        <FormItem>
-                                            <FormLabel>Tone (Optional)</FormLabel>
-                                            <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={isLoading}>
-                                                <FormControl>
-                                                    <SelectTrigger className={cn("w-[200px]", fieldState.error && 'border-destructive')}>
-                                                        <SelectValue placeholder="Select tone..." />
-                                                    </SelectTrigger>
-                                                </FormControl>
-                                                <SelectContent>
-                                                    <SelectItem value="none">No tone</SelectItem>
-                                                    {YOLINK_TONE_OPTIONS.map(tone => (
-                                                        <SelectItem key={tone.value} value={tone.value}>
-                                                            {tone.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FormDescription className={descriptionStyles}>
-                                                Optional alert tone to play before the message.
-                                            </FormDescription>
-                                        </FormItem>
-                                    )}
-                                />
-
-                                {/* Volume and Repeat Row */}
-                                <div className="flex items-end space-x-4">
-                                    {/* Volume Field (Optional) */}
-                                    <FormField
-                                        control={form.control}
-                                        name={`config.actions.${index}.params.volumeTemplate`}
-                                        render={({ field, fieldState }) => (
-                                            <FormItem className="flex-grow">
-                                                <FormLabel>Volume (Optional)</FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        {...field}
-                                                        disabled={isLoading}
-                                                        placeholder="1-100"
-                                                        type="number"
-                                                        min="1"
-                                                        max="100"
-                                                        className={cn("w-[120px]", fieldState.error && 'border-destructive')}
-                                                    />
-                                                </FormControl>
-                                                <FormDescription className={descriptionStyles}>
-                                                    Volume level (1-100). Uses device default if not specified.
-                                                </FormDescription>
-                                            </FormItem>
-                                        )}
-                                    />
-
-                                    {/* Repeat Field (Optional) */}
-                                    <FormField
-                                        control={form.control}
-                                        name={`config.actions.${index}.params.repeatTemplate`}
-                                        render={({ field, fieldState }) => (
-                                            <FormItem className="flex-grow">
-                                                <FormLabel>Repeat (Optional)</FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        {...field}
-                                                        disabled={isLoading}
-                                                        placeholder="0-10"
-                                                        type="number"
-                                                        min="0"
-                                                        max="10"
-                                                        className={cn("w-[120px]", fieldState.error && 'border-destructive')}
-                                                    />
-                                                </FormControl>
-                                                <FormDescription className={descriptionStyles}>
-                                                    Number of times to repeat (0-10). 0 = no repeat.
-                                                </FormDescription>
-                                            </FormItem>
-                                        )}
-                                    />
-                                </div>
-                            </div>
-                        </>
+                        <PlayAudioActionFields
+                          form={form}
+                          actionIndex={index}
+                          devices={sortedAvailableTargetDevices}
+                          isLoading={isLoading}
+                          onInsertToken={(fieldName, actIndex, token) =>
+                            handleInsertToken(fieldName as any, actIndex, token, 'action')
+                          }
+                        />
                       )}
                       
                       {actionType === AutomationActionType.SEND_PUSH_NOTIFICATION && (
@@ -886,164 +439,59 @@ export function ActionItem({
                         />
                       )}
                       
-                      {/* === ARM ALARM ZONE FIELDS === */} 
                       {actionType === AutomationActionType.ARM_ALARM_ZONE && (
-                          <>
-                              <FormField
-                                  control={form.control}
-                                  name={`config.actions.${index}.params.scoping`}
-                                  render={({ field }) => (
-                                      <FormItem className="space-y-3">
-                                          <FormLabel>Zone Scoping</FormLabel>
-                                          <FormControl>
-                                              <RadioGroup
-                                                  onValueChange={field.onChange}
-                                                  defaultValue={field.value}
-                                                  className="flex flex-col space-y-1"
-                                                  disabled={isLoading}
-                                              >
-                                                  {ZONE_SCOPING_OPTIONS.map(option => (
-                                                      <FormItem key={option.value} className="flex items-center space-x-3 space-y-0">
-                                                          <FormControl>
-                                                              <RadioGroupItem value={option.value} />
-                                                          </FormControl>
-                                                          <FormLabel className="font-normal">
-                                                              {option.label}
-                                                          </FormLabel>
-                                                      </FormItem>
-                                                  ))}
-                                              </RadioGroup>
-                                          </FormControl>
-                                      </FormItem>
-                                  )}
-                              />
-
-                              {currentScoping === 'SPECIFIC_ZONES' && (
-                                  <FormField
-                                      control={form.control}
-                                      name={`config.actions.${index}.params.targetZoneIds`}
-                                      render={({ field, fieldState }) => (
-                                          <FormItem>
-                                              <FormLabel className="mr-2">Target Zones</FormLabel>
-                                              <FormControl>
-                                                <MultiSelectComboBox
-                                                    options={zoneOptionsForSelect}
-                                                    selected={field.value || []}
-                                                    onChange={field.onChange}
-                                                    placeholder="Select zones..."
-                                                    className={cn("w-full max-w-md", fieldState.error && 'border-destructive')}
-                                                    disabled={isLoading || zoneOptionsForSelect.length === 0}
-                                                />
-                                              </FormControl>
-                                              {zoneOptionsForSelect.length === 0 && (
-                                                <FormDescription className={descriptionStyles}>
-                                                    No zones available to select.
-                                                </FormDescription>
-                                              )}
-                                          </FormItem>
-                                      )}
-                                  />
-                              )}
-                          </>
+                        <AlarmZoneActionFields
+                          form={form}
+                          actionIndex={index}
+                          zones={zoneOptionsForSelect}
+                          isLoading={isLoading}
+                          mode="arm"
+                        />
                       )}
 
-                      {/* === DISARM ALARM ZONE FIELDS === */} 
                       {actionType === AutomationActionType.DISARM_ALARM_ZONE && (
-                          <>
-                              <FormField
-                                  control={form.control}
-                                  name={`config.actions.${index}.params.scoping`}
-                                  render={({ field }) => (
-                                      <FormItem className="space-y-3">
-                                          <FormLabel>Zone Scoping</FormLabel>
-                                          <FormControl>
-                                              <RadioGroup
-                                                  onValueChange={field.onChange}
-                                                  defaultValue={field.value}
-                                                  className="flex flex-col space-y-1"
-                                                  disabled={isLoading}
-                                              >
-                                                  {ZONE_SCOPING_OPTIONS.map(option => (
-                                                      <FormItem key={option.value} className="flex items-center space-x-3 space-y-0">
-                                                          <FormControl>
-                                                              <RadioGroupItem value={option.value} />
-                                                          </FormControl>
-                                                          <FormLabel className="font-normal">
-                                                              {option.label}
-                                                          </FormLabel>
-                                                      </FormItem>
-                                                  ))}
-                                              </RadioGroup>
-                                          </FormControl>
-                                      </FormItem>
-                                  )}
-                              />
-
-                              {currentScoping === 'SPECIFIC_ZONES' && (
-                                  <FormField
-                                      control={form.control}
-                                      name={`config.actions.${index}.params.targetZoneIds`}
-                                      render={({ field, fieldState }) => (
-                                          <FormItem>
-                                              <FormLabel className="mr-2">Target Zones</FormLabel>
-                                              <FormControl>
-                                                  <MultiSelectComboBox
-                                                      options={zoneOptionsForSelect}
-                                                      selected={field.value || []}
-                                                      onChange={field.onChange}
-                                                      placeholder="Select zones..."
-                                                      className={cn("w-full max-w-md", fieldState.error && 'border-destructive')}
-                                                      disabled={isLoading || zoneOptionsForSelect.length === 0}
-                                                  />
-                                              </FormControl>
-                                              {zoneOptionsForSelect.length === 0 && (
-                                                <FormDescription className={descriptionStyles}>
-                                                    No zones available to select.
-                                                </FormDescription>
-                                              )} 
-                                          </FormItem>
-                                      )}
-                                  />
-                              )}
-                          </>
+                        <AlarmZoneActionFields
+                          form={form}
+                          actionIndex={index}
+                          zones={zoneOptionsForSelect}
+                          isLoading={isLoading}
+                          mode="disarm"
+                        />
                       )}
 
                       {/* === LOCK DEVICE FIELDS === */}
                       {actionType === AutomationActionType.LOCK_DEVICE && (
-                          <LockDeviceSelection
-                              form={form}
-                              actionIndex={index}
-                              actionType="lock"
-                              lockCapableDevices={accessControlCapableDevices}
-                              allLocations={allLocations}
-                              allSpaces={allSpaces}
-                              isLoading={isLoading}
-                          />
+                        <LockDeviceActionFields
+                          form={form}
+                          actionIndex={index}
+                          devices={accessControlCapableDevices}
+                          allLocations={allLocations}
+                          allSpaces={allSpaces}
+                          isLoading={isLoading}
+                        />
                       )}
 
                       {/* === UNLOCK DEVICE FIELDS === */}
                       {actionType === AutomationActionType.UNLOCK_DEVICE && (
-                          <LockDeviceSelection
-                              form={form}
-                              actionIndex={index}
-                              actionType="unlock"
-                              lockCapableDevices={accessControlCapableDevices}
-                              allLocations={allLocations}
-                              allSpaces={allSpaces}
-                              isLoading={isLoading}
-                          />
+                        <UnlockDeviceActionFields
+                          form={form}
+                          actionIndex={index}
+                          devices={accessControlCapableDevices}
+                          allLocations={allLocations}
+                          allSpaces={allSpaces}
+                          isLoading={isLoading}
+                        />
                       )}
 
                       {actionType === AutomationActionType.QUICK_GRANT_DEVICE && (
-                          <LockDeviceSelection
-                              form={form}
-                              actionIndex={index}
-                              actionType="unlock"
-                              lockCapableDevices={accessControlCapableDevices}
-                              allLocations={allLocations}
-                              allSpaces={allSpaces}
-                              isLoading={isLoading}
-                          />
+                        <QuickGrantDeviceActionFields
+                          form={form}
+                          actionIndex={index}
+                          devices={accessControlCapableDevices}
+                          allLocations={allLocations}
+                          allSpaces={allSpaces}
+                          isLoading={isLoading}
+                        />
                       )}
                       
                   </div>

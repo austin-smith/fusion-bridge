@@ -346,7 +346,9 @@ export enum EventSubtype {
 
   // --- Used with EventType.ACCESS_OVERRIDE ---
   REMOTE_UNLOCK = 'REMOTE_UNLOCK',
+  REMOTE_LOCK = 'REMOTE_LOCK',
   QUICK_GRANT = 'QUICK_GRANT',
+  QUICK_GRANT_REQUESTED = 'QUICK_GRANT_REQUESTED',
 
   // --- Used with EventType.DOOR_ACCESS_MODE_CHANGED ---
   CARD_ONLY = 'CARD_ONLY',
@@ -398,7 +400,9 @@ export const EVENT_SUBTYPE_DISPLAY_MAP: Record<EventSubtype, string> = {
     [EventSubtype.PASSBACK_RETURN]: 'Anti-Passback Return',
     // Access Override Reasons
     [EventSubtype.REMOTE_UNLOCK]: 'Remote Unlock',
+    [EventSubtype.REMOTE_LOCK]: 'Remote Lock',
     [EventSubtype.QUICK_GRANT]: 'Quick Grant',
+    [EventSubtype.QUICK_GRANT_REQUESTED]: 'Quick Grant Requested',
     // Access Mode Changes
     [EventSubtype.CARD_ONLY]: 'Card Only',
     [EventSubtype.UNLOCKED]: 'Unlocked (Unlimited Access)',

@@ -36,12 +36,12 @@ export const AuthContext = createContext<{ initialUserRole: string | null }>({ i
 
 // Component to handle theme keyboard shortcut inside ThemeProvider context
 function ThemeKeyboardShortcutHandler() {
-  const { isModalOpen, setIsModalOpen } = useThemeKeyboardShortcut();
+  const { isModalOpen, setIsModalOpen, isHoldOpen } = useThemeKeyboardShortcut();
   
   return (
-    <ThemeSwitcherModal 
-      isOpen={isModalOpen} 
-      onClose={() => setIsModalOpen(false)} 
+    <ThemeSwitcherModal
+      isOpen={isModalOpen}
+      onClose={() => setIsModalOpen(false)}
     />
   );
 }

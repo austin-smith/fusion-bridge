@@ -40,7 +40,13 @@ export function SendPushNotificationActionFields({
               <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => onInsertToken('titleTemplate', actionIndex, token)} />
             </div>
             <FormControl>
-              <Input placeholder="Notification title" {...field} value={field.value ?? ''} disabled={isLoading} className={cn('w-full', fieldState.error && 'border-destructive')} />
+              <Input 
+                placeholder="Notification title" 
+                {...field} 
+                value={field.value ?? ''} 
+                disabled={isLoading} 
+                className={cn('w-full', fieldState.error && (fieldState.isTouched || form.formState.isSubmitted) && 'border-destructive')} 
+              />
             </FormControl>
             <FormDescription className={descriptionStyles}>Optional title for the notification.</FormDescription>
           </FormItem>
@@ -57,7 +63,13 @@ export function SendPushNotificationActionFields({
               <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={(token) => onInsertToken('messageTemplate', actionIndex, token)} />
             </div>
             <FormControl>
-              <Textarea placeholder="Notification message content" {...field} value={field.value ?? ''} disabled={isLoading} className={cn(fieldState.error && 'border-destructive')} />
+              <Textarea 
+                placeholder="Notification message content" 
+                {...field} 
+                value={field.value ?? ''} 
+                disabled={isLoading} 
+                className={cn(fieldState.error && (fieldState.isTouched || form.formState.isSubmitted) && 'border-destructive')} 
+              />
             </FormControl>
             <FormDescription className={descriptionStyles}>The main content of the notification.</FormDescription>
           </FormItem>
@@ -74,7 +86,7 @@ export function SendPushNotificationActionFields({
               <FormLabel>Target User</FormLabel>
               <Select onValueChange={field.onChange} value={field.value || ALL_USERS_PUSHOVER_VALUE} disabled={isLoading}>
                 <FormControl>
-                  <SelectTrigger className={cn('w-[220px]', fieldState.error && 'border-destructive')}>
+                  <SelectTrigger className={cn('w-[220px]', fieldState.error && (fieldState.isTouched || form.formState.isSubmitted) && 'border-destructive')}>
                     <SelectValue />
                   </SelectTrigger>
                 </FormControl>
@@ -99,7 +111,7 @@ export function SendPushNotificationActionFields({
                   value={field.value === ALL_USERS_PUSHOVER_VALUE ? '' : field.value || ''}
                   onChange={(e) => field.onChange(e.target.value || ALL_USERS_PUSHOVER_VALUE)}
                   disabled={isLoading}
-                  className={cn('w-full', fieldState.error && 'border-destructive')}
+                  className={cn('w-full', fieldState.error && (fieldState.isTouched || form.formState.isSubmitted) && 'border-destructive')}
                 />
               </FormControl>
               <FormDescription className={descriptionStyles}>Leave empty to send to All Users.</FormDescription>
@@ -118,7 +130,7 @@ export function SendPushNotificationActionFields({
               <FormLabel>Priority</FormLabel>
               <Select onValueChange={(value) => field.onChange(parseInt(value, 10))} value={field.value?.toString() ?? '0'} disabled={isLoading}>
                 <FormControl>
-                  <SelectTrigger className={cn('w-[220px]', fieldState.error && 'border-destructive')}>
+                  <SelectTrigger className={cn('w-[220px]', fieldState.error && (fieldState.isTouched || form.formState.isSubmitted) && 'border-destructive')}>
                     <SelectValue asChild>
                       <span>{selectedOption ? selectedOption.label : 'Select Priority'}</span>
                     </SelectValue>
