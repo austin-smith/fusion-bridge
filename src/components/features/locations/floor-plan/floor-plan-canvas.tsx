@@ -7,9 +7,13 @@ import { useFloorPlanImage, usePdfRenderer, isImageSource, isPdfSource } from '@
 import { DeviceOverlayLayer } from './device-overlays/device-overlay-layer';
 import { canvasToNormalized, normalizedToCanvas, type DeviceOverlayWithDevice, type CreateDeviceOverlayPayload, type UpdateDeviceOverlayPayload } from '@/types/device-overlay';
 import { toast } from 'sonner';
-import { Loader2, ZoomIn, ZoomOut, RotateCcw, AlertCircle, Trash2 } from 'lucide-react';
+import { Loader2, ZoomIn, ZoomOut, RotateCcw, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { getDeviceTypeIcon, getDisplayStateIcon } from '@/lib/mappings/presentation';
+import { DeviceType } from '@/lib/mappings/definitions';
+import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import type { FloorPlan } from '@/types';
@@ -86,7 +90,15 @@ export function FloorPlanCanvas({
   const [viewport, setViewport] = useState<ViewportState>({ x: 0, y: 0, scale: 1 });
   const [isDragging, setIsDragging] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: width || 1200, height: height || 800 });
-  const [hoverLabel, setHoverLabel] = useState<{ text: string; canvasX: number; canvasY: number } | null>(null);
+  const [hoverLabel, setHoverLabel] = useState<{ 
+    text: string; 
+    canvasX: number; 
+    canvasY: number; 
+    connectorCategory?: string;
+    deviceType?: string;
+    deviceSubtype?: string;
+    displayState?: string;
+  } | null>(null);
 
   // Update canvas size when container resizes
   useEffect(() => {
@@ -291,7 +303,15 @@ export function FloorPlanCanvas({
     }
     const { overlay, position } = payload;
     // Store canvas-space position; we will project to container space in render
-    setHoverLabel({ text: overlay.device.name, canvasX: position.x, canvasY: position.y });
+    setHoverLabel({
+      text: overlay.device.name,
+      canvasX: position.x,
+      canvasY: position.y,
+      connectorCategory: overlay.device.connectorCategory,
+      deviceType: (overlay.device as any).standardizedDeviceType || (overlay.device as any).deviceTypeInfo?.type,
+      deviceSubtype: (overlay.device as any).standardizedDeviceSubtype || (overlay.device as any).deviceTypeInfo?.subtype,
+      displayState: (overlay.device as any).status
+    });
   }, []);
 
   // Device drop zone handlers
@@ -535,47 +555,73 @@ export function FloorPlanCanvas({
           />
         )}
       </Stage>
-      {/* Selected device contextual bubble with Delete */}
-      {selectedCanvasPosition && (
-        <div
-          style={{
-            position: 'absolute',
-            left: selectedCanvasPosition.x * viewport.scale + viewport.x,
-            top: selectedCanvasPosition.y * viewport.scale + viewport.y - 38,
-            transform: 'translate(-50%, -100%)',
-            zIndex: 50,
-          }}
-        >
-          <div className="bg-background/90 backdrop-blur-md border shadow-sm rounded-md px-2 py-1 flex items-center gap-2">
-            <span className="text-xs font-medium">{selectedOverlay?.device.name}</span>
-            <Button
-              variant="destructive"
-              size="icon"
-              onClick={handleDeleteSelected}
-              className="h-6 w-6"
-              title="Delete device"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+      {/* Unified DOM label for hover/selection to avoid positional flicker */}
+      {(() => {
+        const hasSelected = Boolean(selectedOverlay && selectedCanvasPosition);
+        const hasHover = Boolean(hoverLabel) && !hasSelected;
+        if (!hasSelected && !hasHover) return null;
+        const labelX = hasSelected
+          ? (selectedCanvasPosition!.x * viewport.scale + viewport.x)
+          : (hoverLabel!.canvasX * viewport.scale + viewport.x);
+        const labelY = hasSelected
+          ? (selectedCanvasPosition!.y * viewport.scale + viewport.y - 32)
+          : (hoverLabel!.canvasY * viewport.scale + viewport.y - 32);
+        const labelText = hasSelected
+          ? (selectedOverlay!.device.name)
+          : (hoverLabel!.text);
+        const connectorCategory = hasSelected
+          ? selectedOverlay!.device.connectorCategory
+          : (hoverLabel!.connectorCategory || '');
+        const typeText = hasSelected
+          ? ((selectedOverlay!.device as any).standardizedDeviceType || (selectedOverlay!.device as any).deviceTypeInfo?.type || 'Unmapped')
+          : (hoverLabel!.deviceType || 'Unmapped');
+        const subtypeText = hasSelected
+          ? ((selectedOverlay!.device as any).standardizedDeviceSubtype || (selectedOverlay!.device as any).deviceTypeInfo?.subtype || '')
+          : (hoverLabel!.deviceSubtype || '');
+        const displayState = hasSelected
+          ? ((selectedOverlay!.device as any).status || '')
+          : (hoverLabel!.displayState || '');
+        const TypeIcon = getDeviceTypeIcon((Object.values(DeviceType).includes(typeText as DeviceType) ? (typeText as DeviceType) : DeviceType.Unmapped));
+        const StateIcon = displayState ? getDisplayStateIcon(displayState as any) : null;
+        return (
+          <div
+            style={{
+              position: 'absolute',
+              left: labelX,
+              top: labelY,
+              transform: 'translate(-50%, -100%)',
+              zIndex: 50,
+              pointerEvents: 'none'
+            }}
+          >
+            <div className="rounded-md bg-background/95 backdrop-blur border shadow-sm px-2 py-1 text-xs font-medium">
+              <div className="flex items-center gap-1.5">
+                {connectorCategory && (
+                  <ConnectorIcon connectorCategory={connectorCategory} size={12} />
+                )}
+                <span>{labelText}</span>
+              </div>
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
+                  {TypeIcon && <TypeIcon className="h-3 w-3 text-muted-foreground" />}
+                  <span className="text-[10px]">
+                    {typeText}
+                    {subtypeText && (
+                      <span className="text-muted-foreground ml-1">/ {subtypeText}</span>
+                    )}
+                  </span>
+                </Badge>
+                {displayState && (
+                  <Badge variant="outline" className="inline-flex items-center gap-1 px-2 py-0.5 font-normal">
+                    {StateIcon && <StateIcon className="h-3 w-3" />}
+                    <span className="text-[10px]">{displayState}</span>
+                  </Badge>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
-      {/* Absolute DOM hover label */}
-      {hoverLabel && (
-        <div
-          style={{
-            position: 'absolute',
-            left: hoverLabel.canvasX * viewport.scale + viewport.x,
-            top: hoverLabel.canvasY * viewport.scale + viewport.y + 28,
-            transform: 'translateX(-50%)',
-            zIndex: 50,
-            pointerEvents: 'none'
-          }}
-          className="rounded-md bg-black/85 text-white px-2.5 py-1 text-xs font-semibold shadow-md"
-        >
-          {hoverLabel.text}
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

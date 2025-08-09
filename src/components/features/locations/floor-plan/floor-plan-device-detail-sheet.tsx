@@ -30,6 +30,7 @@ import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useDeviceCameraConfig } from '@/hooks/use-device-camera-config';
 import { CameraMediaSection } from '@/components/features/common/CameraMediaSection';
 import { QuickDeviceActions } from '@/components/features/devices/QuickDeviceActions';
+import { FloorPlanOtherSpacesList } from './floor-plan-other-spaces-list';
 
 export interface FloorPlanDeviceDetailSheetProps {
   overlay: DeviceOverlayWithDevice | null;
@@ -114,6 +115,17 @@ export function FloorPlanDeviceDetailSheet({
   const { shouldShowMedia, cameras, selectedCameraIndex, mediaConfig, selectCamera } = useDeviceCameraConfig(actualDevice, {
     spaceName: deviceSpace?.name || null,
   });
+
+  const otherDevicesInSpace = React.useMemo(() => {
+    if (!deviceSpace?.deviceIds || deviceSpace.deviceIds.length === 0) return [] as typeof allDevices;
+    const deviceIdsInSpace = new Set(deviceSpace.deviceIds);
+    if (internalDeviceId) {
+      deviceIdsInSpace.delete(internalDeviceId);
+    }
+    const devices = allDevices.filter(d => deviceIdsInSpace.has(d.id));
+    devices.sort((a, b) => a.name.localeCompare(b.name));
+    return devices;
+  }, [deviceSpace?.deviceIds, allDevices, internalDeviceId]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
@@ -233,7 +245,7 @@ export function FloorPlanDeviceDetailSheet({
 
             <Separator className="my-2" />
 
-            {/* Space Cameras section (auto-refresh thumbnails, thumbnails only) */}
+            {/* Space Cameras section (auto-refresh thumbnails with inline live playback) */}
             {shouldShowMedia && mediaConfig && (
               <div className="mt-2">
                 <div className="text-xs font-medium text-muted-foreground mb-2">Space Cameras</div>
@@ -246,7 +258,6 @@ export function FloorPlanDeviceDetailSheet({
                   refreshInterval={mediaConfig.refreshInterval}
                   showManualRefresh={false}
                   showTimeAgo={mediaConfig.thumbnailMode === 'live-auto-refresh'}
-                  isPlayDisabled
                   className="mb-2"
                   titleElement={(() => {
                     const CameraIcon = getDeviceTypeIcon(DeviceType.Camera);
@@ -264,6 +275,11 @@ export function FloorPlanDeviceDetailSheet({
                   carouselLayout="dots"
                 />
               </div>
+            )}
+
+            {/* Other devices in the same space */}
+            {deviceSpace && otherDevicesInSpace.length > 0 && (
+              <FloorPlanOtherSpacesList devices={otherDevicesInSpace} />
             )}
 
             <Separator />

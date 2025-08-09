@@ -213,6 +213,16 @@ export function DeviceOverlayIcon({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
+      {/* Hover indicator (subtle ring) shown when hovered and not selected */}
+      {isHovered && !isSelected && (
+        <Circle
+          radius={badgeRadius + 3}
+          stroke="#cbd5e1" /* slate-300 */
+          strokeWidth={Math.max(1, strokeWidth * 0.75)}
+          fill="rgba(148,163,184,0.08)"
+          opacity={0.55}
+        />
+      )}
       {/* Selection indicator (prominent ring + soft glow) */}
       {isSelected && (
         <>

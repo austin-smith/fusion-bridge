@@ -59,9 +59,11 @@ export function DeviceOverlayLayer({
     const isCurrentlySelected = selectedOverlayId === overlay.id;
     onSelectOverlay?.(isCurrentlySelected ? null : overlay);
     if (!isCurrentlySelected) {
+      // Clear hover label immediately to avoid flicker moving label below icon
+      onHoverChange?.(null);
       onOverlayClicked?.(overlay);
     }
-  }, [selectedOverlayId, editingEnabled, onSelectOverlay, onOverlayClicked]);
+  }, [selectedOverlayId, editingEnabled, onSelectOverlay, onOverlayClicked, onHoverChange]);
 
   const handleOverlayDoubleClick = useCallback((overlay: DeviceOverlayWithDevice) => {
     if (!editingEnabled) return;

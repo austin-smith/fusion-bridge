@@ -20,24 +20,32 @@ interface FloorPlanUploadDialogProps {
   onOpenChange: (open: boolean) => void;
   onSubmit: (name: string, file: File) => Promise<void>;
   isLoading?: boolean;
+  title?: string;
+  defaultName?: string;
+  hideName?: boolean;
 }
 
 export function FloorPlanUploadDialog({
   open,
   onOpenChange,
   onSubmit,
-  isLoading = false
+  isLoading = false,
+  title,
+  defaultName,
+  hideName = false,
 }: FloorPlanUploadDialogProps) {
   const [name, setName] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Name is prefilled when opening via handleOpenChange to avoid useEffect
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !selectedFile || isSubmitting) return;
+    if ((!hideName && !name.trim()) || !selectedFile || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      await onSubmit(name.trim(), selectedFile);
+      await onSubmit(hideName ? (defaultName || '') : name.trim(), selectedFile);
       setName('');
       setSelectedFile(null);
     } catch (error) {
@@ -65,36 +73,40 @@ export function FloorPlanUploadDialog({
       if (!newOpen) {
         setName('');
         setSelectedFile(null);
+      } else if (!name) {
+        setName(defaultName || '');
       }
     }
   };
 
-  const canSubmit = !!name.trim() && !!selectedFile && !isSubmitting && !isLoading;
+  const canSubmit = (hideName ? true : !!name.trim()) && !!selectedFile && !isSubmitting && !isLoading;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Add New Floor Plan</DialogTitle>
+            <DialogTitle>{title || 'Add New Floor Plan'}</DialogTitle>
             <DialogDescription>
               Upload a floor plan image or PDF for this location.
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="floor-plan-name">Floor Plan Name</Label>
-              <Input
-                id="floor-plan-name"
-                type="text"
-                placeholder="e.g., First Floor, Basement, etc."
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={isSubmitting || isLoading}
-                required
-              />
-            </div>
+            {!hideName && (
+              <div className="space-y-2">
+                <Label htmlFor="floor-plan-name">Floor Plan Name</Label>
+                <Input
+                  id="floor-plan-name"
+                  type="text"
+                  placeholder="e.g., First Floor, Second Floor, etc."
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={isSubmitting || isLoading}
+                  required
+                />
+              </div>
+            )}
             
             <div className="space-y-2">
               <Label>Floor Plan File</Label>

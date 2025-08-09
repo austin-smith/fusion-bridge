@@ -5,7 +5,7 @@ import { X, PanelLeftOpen, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { FloorPlanCanvasDynamic, DevicePalette } from '.';
+import { FloorPlanCanvasDynamic, DevicePalette, FloorPlanUploadDialog } from '.';
 import { useDeviceOverlays } from '@/hooks/floor-plan/device-overlays';
 import { useFusionStore } from '@/stores/store';
 import { toast } from 'sonner';
@@ -43,8 +43,8 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
   onScaleChange
 }, ref) => {
   const [isReplacing, setIsReplacing] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  // Replace dialog visibility
+  const [isReplaceOpen, setIsReplaceOpen] = useState(false);
   const [deviceSearchTerm, setDeviceSearchTerm] = useState('');
   const [isPaletteCollapsed, setIsPaletteCollapsed] = useState(true);
   
@@ -75,6 +75,13 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
     enabled: !!floorPlan?.id
   });
 
+  // Close the right-side device palette when a device overlay is selected (left detail sheet opens)
+  useEffect(() => {
+    if (selectedOverlayId) {
+      setIsDeviceSheetOpen(false);
+    }
+  }, [selectedOverlayId]);
+
   // Create set of device IDs that are already placed on floor plan
   const placedDeviceIds = new Set(overlays.map(overlay => overlay.deviceId));
 
@@ -98,55 +105,30 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
     },
     startReplace: () => {
       setIsReplacing(true);
-      setSelectedFile(null);
+      setIsReplaceOpen(true);
     },
     openDevices: () => {
       setIsDeviceSheetOpen(true);
     }
   }), [zoomActions]);
 
-  const handleFileSelect = (file: File) => {
-    setSelectedFile(file);
-  };
-
-  const handleFileRemove = () => {
-    setSelectedFile(null);
-  };
-
-  const handleUpload = async () => {
-    if (!selectedFile || !floorPlan) return;
-    
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('floorPlan', selectedFile);
-      
-      const response = await fetch(`/api/locations/${locationId}/floor-plans/${floorPlan.id}`, {
-        method: 'PUT',
-        body: formData,
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to upload floor plan');
-      }
-      
-      toast.success('Floor plan uploaded successfully');
-      setIsReplacing(false);
-      setSelectedFile(null);
-      onFloorPlanUpdated?.();
-    } catch (error) {
-      console.error('Error uploading floor plan:', error);
-      toast.error('Failed to upload floor plan');
-    } finally {
-      setIsUploading(false);
+  // Replace submit handler using PUT
+  const handleReplaceSubmit = async (name: string, file: File) => {
+    if (!floorPlan) return;
+    const formData = new FormData();
+    if (name) formData.append('name', name);
+    formData.append('floorPlan', file);
+    const response = await fetch(`/api/locations/${locationId}/floor-plans/${floorPlan.id}`, {
+      method: 'PUT',
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error('Failed to update floor plan');
     }
-  };
-
-  
-
-  const handleCancelReplace = () => {
+    toast.success('Floor plan updated successfully');
     setIsReplacing(false);
-    setSelectedFile(null);
+    setIsReplaceOpen(false);
+    onFloorPlanUpdated?.();
   };
 
   // Generate serving URL for floor plan
@@ -175,30 +157,7 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
     );
   }
 
-  // Handle replace mode
-  if (isReplacing) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-medium">Replace Floor Plan</h3>
-          <Button variant="ghost" size="icon" onClick={handleCancelReplace}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        {/* FloorPlanUpload removed; implement inline uploader or reuse dedicated page as needed */}
-        {selectedFile && (
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={handleCancelReplace}>
-              Cancel
-            </Button>
-            <Button onClick={handleUpload} disabled={isUploading}>
-              {isUploading ? 'Uploading...' : 'Replace Floor Plan'}
-            </Button>
-          </div>
-        )}
-      </div>
-    );
-  }
+  // Note: replace now handled via FloorPlanUploadDialog instead of inline UI
 
   // Handle viewing mode with interactive canvas
   const handleCanvasLoad = (dimensions: { width: number; height: number }) => {
@@ -223,7 +182,13 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
           {/* Two-panel layout: Device Palette + Canvas */}
           <div className="min-h-[600px] min-w-0 relative p-4">
             <Sheet open={isDeviceSheetOpen} onOpenChange={setIsDeviceSheetOpen} modal={false}>
-              <SheetContent side="right" className="w-[360px] sm:max-w-[420px]">
+              <SheetContent
+                side="right"
+                className="w-[360px] sm:max-w-[420px]"
+                onInteractOutside={(e) => e.preventDefault()}
+                onPointerDownOutside={(e) => e.preventDefault()}
+                onEscapeKeyDown={(e) => e.preventDefault()}
+              >
                 <SheetHeader>
                   <SheetTitle>Devices</SheetTitle>
                 </SheetHeader>
@@ -281,6 +246,19 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
 
         {/* Action buttons removed; actions live in the tabs menu */}
       </Card>
+
+      {/* Replace Floor Plan Dialog */}
+      <FloorPlanUploadDialog
+        open={isReplaceOpen}
+        onOpenChange={(open) => {
+          setIsReplaceOpen(open);
+          if (!open) setIsReplacing(false);
+        }}
+        onSubmit={handleReplaceSubmit}
+        title="Replace Floor Plan"
+        defaultName={floorPlan.name}
+        hideName
+      />
     </div>
   );
 });
