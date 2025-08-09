@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
-import { X, PanelLeftOpen, Plus } from 'lucide-react';
+import { X, PanelLeftOpen, Plus, Cpu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -11,6 +11,7 @@ import { useFusionStore } from '@/stores/store';
 import { toast } from 'sonner';
 import type { FloorPlan, DeviceWithConnector, Space } from '@/types';
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Badge } from '@/components/ui/badge';
 import { FloorPlanDeviceDetailSheet } from './floor-plan-device-detail-sheet';
 
 export interface FloorPlanDetailRef {
@@ -50,6 +51,7 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
   
   // Device sheet visibility
   const [isDeviceSheetOpen, setIsDeviceSheetOpen] = useState(false);
+  const [filteredDeviceCount, setFilteredDeviceCount] = useState<number | null>(null);
 
   
   // Zoom state to pass to canvas
@@ -190,7 +192,16 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
                 onEscapeKeyDown={(e) => e.preventDefault()}
               >
                 <SheetHeader>
-                  <SheetTitle>Devices</SheetTitle>
+                  <div className="flex items-center gap-2 pr-10 min-w-0">
+                    <Cpu className="h-5 w-5 shrink-0" />
+                    <SheetTitle className="truncate">Devices</SheetTitle>
+                    <Badge variant="secondary" className="shrink-0">{
+                      filteredDeviceCount ?? allDevices.filter(d => {
+                        const inLocation = spaces.some(s => s.locationId === locationId && s.id === d.spaceId);
+                        return inLocation && !overlays.some(o => o.deviceId === d.id);
+                      }).length
+                    }</Badge>
+                  </div>
                 </SheetHeader>
                 <div className="pt-4 h-full">
                   <DevicePalette
@@ -201,6 +212,7 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
                     onSearchChange={setDeviceSearchTerm}
                     onAssignDevices={handleAssignDevices}
                     placedDeviceIds={placedDeviceIds}
+                    onFilteredCountChange={setFilteredDeviceCount}
                     className="h-full"
                   />
                 </div>

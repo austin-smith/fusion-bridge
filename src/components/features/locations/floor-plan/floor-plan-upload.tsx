@@ -5,6 +5,8 @@ import { Upload, X, FileText, Image as ImageIcon, File } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { validateFloorPlanFile } from '@/lib/storage/file-validation';
+import { ALLOWED_EXTENSIONS } from '@/lib/storage/file-types';
 
 interface FloorPlanUploadProps {
   onFileSelect: (file: File) => void;
@@ -27,16 +29,8 @@ export function FloorPlanUpload({
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   const handleFileValidation = useCallback((file: File) => {
-    const errors: string[] = [];
-    const allowedTypes = ['image/png', 'image/jpeg', 'application/pdf', 'image/svg+xml'];
-    const maxBytes = 5 * 1024 * 1024;
-    if (!allowedTypes.includes(file.type)) {
-      errors.push('Unsupported file type. Allowed: PNG, JPG, PDF, SVG');
-    }
-    if (file.size > maxBytes) {
-      errors.push('File is too large. Max size is 5MB');
-    }
-    if (errors.length === 0) {
+    const { isValid, errors } = validateFloorPlanFile(file);
+    if (isValid) {
       setValidationErrors([]);
       onFileSelect(file);
     } else {
@@ -127,7 +121,7 @@ export function FloorPlanUpload({
                   <input
                     type="file"
                     className="sr-only"
-                    accept=".png,.jpg,.jpeg,.pdf,.svg"
+                    accept={ALLOWED_EXTENSIONS.join(',')}
                     onChange={handleFileInput}
                     disabled={disabled || isUploading}
                   />
