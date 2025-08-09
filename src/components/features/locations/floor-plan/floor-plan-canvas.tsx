@@ -22,6 +22,7 @@ export interface FloorPlanCanvasProps {
   height?: number;
   onLoad?: (dimensions: { width: number; height: number }) => void;
   onError?: (error: string) => void;
+  onScaleChange?: (scale: number) => void;
   // Device overlay props
   overlays: DeviceOverlayWithDevice[];
   selectedOverlayId: string | null;
@@ -66,6 +67,7 @@ export function FloorPlanCanvas({
   height,
   onLoad,
   onError,
+  onScaleChange,
   overlays,
   selectedOverlayId,
   createOverlay,
@@ -84,6 +86,7 @@ export function FloorPlanCanvas({
   const [viewport, setViewport] = useState<ViewportState>({ x: 0, y: 0, scale: 1 });
   const [isDragging, setIsDragging] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: width || 1200, height: height || 800 });
+  const [hoverLabel, setHoverLabel] = useState<{ text: string; canvasX: number; canvasY: number } | null>(null);
 
   // Update canvas size when container resizes
   useEffect(() => {
@@ -184,6 +187,11 @@ export function FloorPlanCanvas({
     }
   }, [sourceAsset, currentResult.dimensions, resetViewport]);
 
+  // Notify parent when scale changes
+  useEffect(() => {
+    onScaleChange?.(viewport.scale);
+  }, [viewport.scale, onScaleChange]);
+
   // Zoom functions
   const zoomIn = useCallback(() => {
     if (onZoomIn) {
@@ -273,6 +281,17 @@ export function FloorPlanCanvas({
       x: e.target.x(),
       y: e.target.y()
     }));
+  }, []);
+
+  // Overlay hover label via DOM for perfect text rendering and no canvas clipping
+  const handleOverlayHoverChange = useCallback((payload: { overlay: DeviceOverlayWithDevice; position: { x: number; y: number } } | null) => {
+    if (!payload) {
+      setHoverLabel(null);
+      return;
+    }
+    const { overlay, position } = payload;
+    // Store canvas-space position; we will project to container space in render
+    setHoverLabel({ text: overlay.device.name, canvasX: position.x, canvasY: position.y });
   }, []);
 
   // Device drop zone handlers
@@ -378,7 +397,7 @@ export function FloorPlanCanvas({
   // Error state
   if (currentResult.error) {
     return (
-      <Card className={cn("flex items-center justify-center", className)}>
+      <Card className={cn("flex items-center justify-center min-h-[400px]", className)}>
         <CardContent className="flex flex-col items-center gap-4 p-8">
           <AlertCircle className="h-12 w-12 text-destructive" />
           <Alert variant="destructive">
@@ -412,7 +431,7 @@ export function FloorPlanCanvas({
   return (
     <div 
       ref={containerRef}
-      className={cn("relative w-full h-full min-h-[400px]", className)}
+      className={cn("relative w-full", className)}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
@@ -471,12 +490,7 @@ export function FloorPlanCanvas({
         </div>
       )}
 
-      {/* Scale indicator */}
-      <div className="absolute bottom-4 right-4 z-10">
-        <div className="bg-background/80 backdrop-blur-sm rounded px-2 py-1 text-xs text-muted-foreground">
-          {Math.round(viewport.scale * 100)}%
-        </div>
-      </div>
+      {/* Scale indicator removed; shown in external toolbar */}
 
       {/* Konva Stage */}
       <Stage
@@ -512,10 +526,17 @@ export function FloorPlanCanvas({
               width: currentResult.dimensions.width,
               height: currentResult.dimensions.height
             }}
+            visibleBounds={{
+              left: -viewport.x / viewport.scale,
+              top: -viewport.y / viewport.scale,
+              right: (-viewport.x + finalWidth) / viewport.scale,
+              bottom: (-viewport.y + finalHeight) / viewport.scale
+            }}
             canvasScale={viewport.scale}
             selectedOverlayId={selectedOverlayId}
             onSelectOverlay={selectOverlay}
             onUpdateOverlay={updateOverlay}
+            onHoverChange={handleOverlayHoverChange}
             onEditOverlay={(overlay) => {
               // TODO: Implement edit overlay dialog
           
@@ -524,6 +545,22 @@ export function FloorPlanCanvas({
           />
         )}
       </Stage>
+      {/* Absolute DOM hover label */}
+      {hoverLabel && (
+        <div
+          style={{
+            position: 'absolute',
+            left: hoverLabel.canvasX * viewport.scale + viewport.x,
+            top: hoverLabel.canvasY * viewport.scale + viewport.y + 28,
+            transform: 'translateX(-50%)',
+            zIndex: 50,
+            pointerEvents: 'none'
+          }}
+          className="rounded-md bg-black/85 text-white px-2.5 py-1 text-xs font-semibold shadow-md"
+        >
+          {hoverLabel.text}
+        </div>
+      )}
     </div>
   );
 }

@@ -37,7 +37,7 @@ import { TimezoneSelector } from '@/components/common/timezone-selector';
 import { LocationSunTimesDisplay } from '@/components/features/locations/LocationSunTimesDisplay';
 import { FloorPlanUpload } from '@/components/features/locations/floor-plan/floor-plan-upload';
 import { FloorPlanDisplay } from '@/components/features/locations/floor-plan/floor-plan-display';
-import { Check, ChevronsUpDown, MapPin, RotateCcw, Map, FileImage } from "lucide-react";
+import { Check, ChevronsUpDown, MapPin, RotateCcw, Map } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Popover,
@@ -595,7 +595,7 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
                               onClick={handleViewOnMap}
                               disabled={isSubmitting}
                             >
-                              <Map className="h-3 w-3" />
+                              <MapPin className="h-3 w-3" />
                               <span className="sr-only">Open in Google Maps</span>
                             </Button>
                           </TooltipTrigger>
@@ -747,7 +747,7 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-md flex items-center gap-2">
-                      <FileImage className="h-4 w-4" />
+                      <Map className="h-4 w-4" />
                       Floor Plan
                     </CardTitle>
                   </div>
@@ -755,7 +755,7 @@ export const LocationEditDialog: React.FC<LocationEditDialogProps> = ({
                 <CardContent>
                   {!currentLocation?.floorPlan && !showFloorPlanUpload ? (
                     <div className="text-center py-6">
-                      <FileImage className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                      <Map className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
                       <p className="text-sm text-muted-foreground mb-4">
                         No floor plan uploaded yet.
                       </p>

@@ -151,6 +151,15 @@ export const PAGE_CONFIG: Record<string, PageConfig> = {
   },
 
   // Detail and sub-pages
+  '/locations/[id]/floor-plans': {
+    title: 'Floor Plans',
+    icon: Map,
+    breadcrumbs: [
+      { label: 'Home', href: '/' },
+      { label: 'Locations & Spaces', href: '/locations' },
+      { label: 'Floor Plans', isCurrentPage: true }
+    ]
+  },
   '/account/settings': {
     title: 'Account Settings',
     icon: User,
@@ -186,6 +195,18 @@ export const DYNAMIC_ROUTE_HANDLERS: Array<{
   pattern: RegExp;
   handler: (pathname: string, matches: RegExpMatchArray) => PageConfig | null;
 }> = [
+  {
+    pattern: /^\/locations\/([^\/]+)\/floor-plans(?:\/.*)?$/,
+    handler: (pathname, matches) => ({
+      title: 'Floor Plans',
+      icon: Map,
+      breadcrumbs: [
+        { label: 'Home', href: '/' },
+        { label: 'Locations & Spaces', href: '/locations' },
+        { label: 'Floor Plans', isCurrentPage: true }
+      ]
+    })
+  },
   {
     pattern: /^\/devices\/(.+)$/,
     handler: (pathname, matches) => ({

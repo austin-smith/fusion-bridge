@@ -1,8 +1,21 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
-import { Upload, Trash2, X } from 'lucide-react';
+import { Upload, Trash2, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { FloorPlanUpload } from './floor-plan-upload';
 import { FloorPlanCanvasDynamic, DevicePalette } from '.';
 import { useDeviceOverlays } from '@/hooks/floor-plan/device-overlays';
@@ -24,21 +37,25 @@ interface FloorPlanDetailProps {
   showActions?: boolean;
   allDevices: DeviceWithConnector[];
   spaces: Space[];
+  onScaleChange?: (scale: number) => void;
 }
 
-export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailProps>(({
+export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailProps>(({ 
   floorPlan,
   locationId,
   onFloorPlanUpdated,
   onDelete,
   showActions = true,
   allDevices,
-  spaces
+  spaces,
+  onScaleChange
 }, ref) => {
   const [isReplacing, setIsReplacing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [deviceSearchTerm, setDeviceSearchTerm] = useState('');
+  const [isPaletteCollapsed, setIsPaletteCollapsed] = useState(true);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   
   // Zoom state to pass to canvas
   const [zoomActions, setZoomActions] = useState<{
@@ -207,54 +224,126 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
 
   return (
     <div className="space-y-4 max-w-full overflow-hidden">
-      {/* Two-panel layout: Device Palette + Canvas */}
-      <div className="flex gap-4 h-[80vh] min-h-[600px] min-w-0">
-        {/* Device Palette */}
-        <div className="w-72 flex-shrink-0">
-          <DevicePalette
-            devices={allDevices}
-            spaces={spaces}
-            locationId={locationId}
-            searchTerm={deviceSearchTerm}
-            onSearchChange={setDeviceSearchTerm}
-            onAssignDevices={handleAssignDevices}
-            placedDeviceIds={placedDeviceIds}
-            className="h-full"
-          />
-        </div>
+      <Card className="overflow-hidden flex flex-col">
+        <CardContent className="p-0">
+          {/* Two-panel layout: Device Palette + Canvas */}
+          <div className="flex gap-4 min-h-[600px] min-w-0 relative p-4">
+            {/* Device Palette */}
+            {!isPaletteCollapsed && (
+              <div className="w-72 flex-shrink-0 relative">
+                <div className="absolute -right-3 top-2 z-10">
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          aria-label="Hide device palette"
+                          title="Hide device palette"
+                          onClick={() => setIsPaletteCollapsed(true)}
+                          className="h-7 w-7 shadow-sm"
+                        >
+                          <PanelLeftClose className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">Hide device palette</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <DevicePalette
+                  devices={allDevices}
+                  spaces={spaces}
+                  locationId={locationId}
+                  searchTerm={deviceSearchTerm}
+                  onSearchChange={setDeviceSearchTerm}
+                  onAssignDevices={handleAssignDevices}
+                  placedDeviceIds={placedDeviceIds}
+                  className="h-full"
+                />
+              </div>
+            )}
 
-        {/* Interactive Floor Plan Canvas */}
-        <div className="flex-1 min-w-0 overflow-hidden">
-          <FloorPlanCanvasDynamic
-            floorPlan={floorPlan}
-            locationId={locationId}
-            onLoad={handleCanvasLoad}
-            onError={handleCanvasError}
-            overlays={overlays}
-            selectedOverlayId={selectedOverlayId}
-            createOverlay={createOverlay}
-            updateOverlay={updateOverlay}
-            deleteOverlay={deleteOverlay}
-            selectOverlay={selectOverlay}
-            onZoomActionsReady={setZoomActions}
-            className="w-full h-full"
-          />
-        </div>
-      </div>
+            {/* Interactive Floor Plan Canvas */}
+            <div className="flex-1 min-w-0 overflow-hidden relative">
+              {isPaletteCollapsed && (
+                <div className="absolute left-2 top-2 z-10">
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          aria-label="Show device palette"
+                          title="Show device palette"
+                          onClick={() => setIsPaletteCollapsed(false)}
+                          className="h-7 shadow-sm"
+                        >
+                          <PanelLeftOpen className="h-4 w-4 mr-1.5" />
+                          Devices
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">Show device palette</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              )}
+              <FloorPlanCanvasDynamic
+                floorPlan={floorPlan}
+                locationId={locationId}
+                onLoad={handleCanvasLoad}
+                onError={handleCanvasError}
+                onScaleChange={onScaleChange}
+                overlays={overlays}
+                selectedOverlayId={selectedOverlayId}
+                createOverlay={createOverlay}
+                updateOverlay={updateOverlay}
+                deleteOverlay={deleteOverlay}
+                selectOverlay={selectOverlay}
+                onZoomActionsReady={setZoomActions}
+                className="w-full min-h-[600px]"
+              />
+            </div>
+          </div>
+        </CardContent>
 
-      {/* Action Buttons */}
-      {showActions && (
-        <div className="flex justify-end gap-2 w-full max-w-full overflow-hidden">
-          <Button variant="outline" onClick={handleStartReplace}>
-            <Upload className="h-4 w-4 mr-2" />
-            Replace
-          </Button>
-          <Button variant="outline" onClick={onDelete} className="text-destructive hover:text-destructive">
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete
-          </Button>
-        </div>
-      )}
+        {/* Action Buttons */}
+        {showActions && (
+          <CardFooter className="flex justify-end gap-2">
+            <Button variant="outline" onClick={handleStartReplace}>
+              <Upload className="h-4 w-4 mr-2" />
+              Replace
+            </Button>
+            <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="text-destructive hover:text-destructive">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Floor Plan</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete this floor plan and all device positions placed on it. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      setIsDeleteOpen(false);
+                      onDelete?.();
+                    }}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </CardFooter>
+        )}
+      </Card>
     </div>
   );
 });

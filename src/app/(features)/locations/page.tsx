@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box, PencilRuler } from 'lucide-react';
+import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box, Map } from 'lucide-react';
 import { LocationEditDialog } from '@/components/features/locations/location-edit-dialog';
 import { LocationWeatherIcon } from '@/components/features/locations/location-weather-icon';
 import { FloorPlanIndicator } from '@/components/features/locations/floor-plan/floor-plan-indicator';
@@ -826,7 +826,7 @@ export default function LocationsPage() {
               <DialogHeader>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted">
-                    <PencilRuler className="h-5 w-5" />
+                    <Map className="h-5 w-5" />
                   </div>
                   <div>
                     <DialogTitle className="text-xl">

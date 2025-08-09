@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -95,52 +96,50 @@ export function FloorPlanTabs({
 
   return (
     <>
-      <div className="flex items-center gap-2 flex-wrap">
-        {floorPlans.map((floorPlan) => (
-          <div key={floorPlan.id} className="flex items-center gap-1">
-            <Button
-              variant={activeFloorPlanId === floorPlan.id ? "default" : "outline"}
-              size="sm"
-              onClick={() => onFloorPlanSelect(floorPlan.id)}
-              disabled={isLoading}
-              className="h-9"
-            >
-              {floorPlan.name}
-              {floorPlans.length === 1 && (
-                <Badge variant="secondary" className="ml-2 text-xs">
-                  Only
-                </Badge>
-              )}
-            </Button>
-            
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-9 w-9 p-0"
+      <div className="flex items-center justify-between gap-2">
+        <Tabs value={activeFloorPlanId ?? undefined} className="flex-1 overflow-hidden">
+          <div className="overflow-x-auto no-scrollbar">
+            <TabsList className="min-w-max">
+              {floorPlans.map((floorPlan) => (
+                <TabsTrigger
+                  key={floorPlan.id}
+                  value={floorPlan.id}
+                  onClick={() => onFloorPlanSelect(floorPlan.id)}
                   disabled={isLoading}
+                  title={floorPlan.name}
+                  className="truncate max-w-[240px]"
                 >
-                  <MoreHorizontal className="h-4 w-4" />
-                  <span className="sr-only">Floor plan options</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleRenameClick(floorPlan)}>
-                  <Pencil className="h-4 w-4 mr-2" />
-                  Rename
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => handleDeleteClick(floorPlan)}
-                  className="text-destructive"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {floorPlan.name}
+                </TabsTrigger>
+              ))}
+            </TabsList>
           </div>
-        ))}
+        </Tabs>
+
+        {/* Active tab context menu */}
+        {activeFloorPlanId && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="h-9 w-9">
+                <MoreHorizontal className="h-4 w-4" />
+                <span className="sr-only">Floor plan options</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleRenameClick(floorPlans.find(fp => fp.id === activeFloorPlanId)!)}>
+                <Pencil className="h-4 w-4 mr-2" />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => handleDeleteClick(floorPlans.find(fp => fp.id === activeFloorPlanId)!)}
+                className="text-destructive"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       {/* Rename Dialog */}

@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { PencilRuler } from 'lucide-react';
+import { Map } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Link from 'next/link';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -36,21 +37,25 @@ export function FloorPlanIndicator({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn("h-7 w-7", className)}
-          onClick={hasFloorPlan ? onViewFloorPlan : onUploadFloorPlan}
-        >
-          {hasFloorPlan ? (
-            <PencilRuler className="h-4 w-4" />
-          ) : (
-            <PencilRuler className="h-4 w-4 text-muted-foreground" />
-          )}
-          <span className="sr-only">
-            {hasFloorPlan ? 'View floor plan' : 'Add floor plan'}
-          </span>
-        </Button>
+        {hasFloorPlan ? (
+          <Link
+            href={`/locations/${locationId}/floor-plans`}
+            className={cn("inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-muted", className)}
+            aria-label="View floor plan"
+          >
+            <Map className="h-4 w-4" />
+          </Link>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn("h-7 w-7", className)}
+            onClick={onUploadFloorPlan}
+          >
+            <Map className="h-4 w-4 text-muted-foreground" />
+            <span className="sr-only">Add floor plan</span>
+          </Button>
+        )}
       </TooltipTrigger>
       <TooltipContent>
         <p>{hasFloorPlan ? 'View floor plan' : 'Add floor plan'}</p>

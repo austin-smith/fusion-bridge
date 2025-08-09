@@ -149,7 +149,7 @@ function DraggableDeviceItem({ device, isCompact = false }: DraggableDeviceItemP
           </div>
         </TooltipTrigger>
         <TooltipContent side="right">
-          <div className="space-y-1">
+            <div className="space-y-1">
             <p className="font-medium">{device.name}</p>
             <p className="text-xs">Type: {typeText}{subtypeText ? ` / ${subtypeText}` : ''}</p>
             <p className="text-xs">State: {displayState || 'Unknown'}</p>

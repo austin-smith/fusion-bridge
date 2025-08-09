@@ -16,6 +16,8 @@ export interface DeviceOverlayLayerProps {
   overlays: DeviceOverlayWithDevice[];
   /** Canvas dimensions for coordinate conversion */
   canvasDimensions: CanvasDimensions;
+  /** Visible bounds of the floor plan in canvas coordinates (post-transform) */
+  visibleBounds?: { left: number; top: number; right: number; bottom: number };
   /** Current canvas scale for responsive sizing */
   canvasScale?: number;
   /** Selected overlay ID */
@@ -28,18 +30,22 @@ export interface DeviceOverlayLayerProps {
   onUpdateOverlay?: (overlayId: string, updates: UpdateDeviceOverlayPayload) => void;
   /** Callback when an overlay is double-clicked (for editing) */
   onEditOverlay?: (overlay: DeviceOverlayWithDevice) => void;
+  /** External hover label handler */
+  onHoverChange?: (payload: { overlay: DeviceOverlayWithDevice; position: CanvasCoordinates } | null) => void;
 
 }
 
 export function DeviceOverlayLayer({
   overlays,
   canvasDimensions,
+  visibleBounds,
   canvasScale = 1,
   selectedOverlayId,
   editingEnabled = true,
   onSelectOverlay,
   onUpdateOverlay,
-  onEditOverlay
+  onEditOverlay,
+  onHoverChange
 }: DeviceOverlayLayerProps) {
   const [draggingOverlayId, setDraggingOverlayId] = useState<string | null>(null);
 
@@ -113,6 +119,9 @@ export function DeviceOverlayLayer({
             overlay={overlay}
             position={canvasPosition}
             canvasScale={canvasScale}
+            canvasDimensions={canvasDimensions}
+            visibleBounds={visibleBounds}
+            onHoverChange={onHoverChange}
             isSelected={isSelected}
             isDragging={isDragging}
             onClick={handleOverlayClick}
