@@ -8,14 +8,27 @@ import { useTheme } from 'next-themes';
 export function useThemeKeyboardShortcut() {
   const { theme, setTheme } = useTheme();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isHoldOpen, setIsHoldOpen] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Handle Ctrl/Cmd + J for theme cycling
-      if (event.key === 'j' && (event.ctrlKey || event.metaKey)) {
+      const key = String(event.key || '').toLowerCase();
+
+      // Hold-to-pick: Cmd/Ctrl + Shift + J opens and stays open while held
+      if (key === 'j' && (event.metaKey || event.ctrlKey) && event.shiftKey) {
         event.preventDefault();
-        
-        // If modal is already open, cycle to next theme
+        if (!isModalOpen) {
+          setIsModalOpen(true);
+        }
+        if (!isHoldOpen) {
+          setIsHoldOpen(true);
+        }
+        return;
+      }
+
+      // Quick cycle: Cmd/Ctrl + J cycles Mode when modal is open; otherwise open modal
+      if (key === 'j' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
         if (isModalOpen) {
           const getNextTheme = (currentTheme: string | undefined): string => {
             switch (currentTheme) {
@@ -26,28 +39,39 @@ export function useThemeKeyboardShortcut() {
               case 'system':
                 return 'light';
               default:
-                return 'light'; // fallback to light if theme is undefined
+                return 'light';
             }
           };
-
-          const nextTheme = getNextTheme(theme);
-          setTheme(nextTheme);
+          setTheme(getNextTheme(theme));
         } else {
-          // Open the modal
           setIsModalOpen(true);
+          // Treat as hold-to-pick as well, so releasing Cmd/Ctrl will close
+          setIsHoldOpen(true);
         }
       }
     };
 
+    const handleKeyUp = (event: KeyboardEvent) => {
+      // If user releases Cmd/Ctrl, close the modal if it was opened in hold mode
+      const releasedModifier = event.key === 'Meta' || event.key === 'Control';
+      if (releasedModifier && isHoldOpen) {
+        setIsHoldOpen(false);
+        setIsModalOpen(false);
+      }
+    };
+
     document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keyup', handleKeyUp);
     };
-  }, [theme, setTheme, isModalOpen]);
+  }, [theme, setTheme, isModalOpen, isHoldOpen]);
 
   return {
     isModalOpen,
-    setIsModalOpen
+    setIsModalOpen,
+    isHoldOpen
   };
 }

@@ -549,6 +549,8 @@ export default function DevicesPage() {
               connectorCategory={device.connectorCategory}
               deviceType={device.deviceTypeInfo.type}
               displayState={device.displayState}
+              showSecondary
+              secondaryVariant="menu"
             />
           );
         },

@@ -51,7 +51,23 @@ We use a combination of the Strategy and Registry patterns:
 
    - `src/lib/device-actions/capabilities.ts`
      - Central map of supported state actions per `connectorCategory` and standardized `DeviceType`.
-     - Exports: `SUPPORTED_DEVICE_ACTIONS`, `getSupportedStateActions(...)`, `isActionSupported(...)`.
+     - Source of truth for what actions are exposed in the UI. No UI heuristics.
+     - Exports (core):
+       - `SUPPORTED_DEVICE_ACTIONS`
+       - `getSupportedStateActions(connectorCategory, deviceType)`
+       - `isActionSupported(connectorCategory, deviceType, action)`
+       - `isOnOffCapable(connectorCategory, deviceType)`
+       - `getOnOffActions(connectorCategory, deviceType)`
+       - `isAccessControlCapable(connectorCategory, deviceType)`
+     - Exports (option-aware, for UI lists):
+       - `inferStandardDeviceTypeFromOption(option)`
+       - `isOnOffCapableOption(option)`
+       - `isAccessControlCapableOption(option)`
+       - `getOnOffActionsForOption(option)`
+     - Option shape expected by helpers (`DeviceOptionLike`):
+       - `connectorCategory: string` (canonical key, e.g., 'yolink')
+       - `standardDeviceType: DeviceType` (already standardized; preferred)
+       - `rawType?: string` and/or `displayType?: string` (only used if `standardDeviceType` is absent)
    - `src/lib/device-actions/presentation.ts`
      - Maps an `ActionableState` to a user-facing `{ label, icon }`.
    - `src/lib/device-actions/selection.ts`
@@ -72,13 +88,31 @@ The API endpoint `POST /api/devices/[internalDeviceId]/state` uses the `requestD
 
 ### Genea  
 - **Device Types:** Door
-- **Actions:** SET_LOCKED, SET_UNLOCKED
+- **Actions:** SET_LOCKED, SET_UNLOCKED, QUICK_GRANT
 - **Notes:** Uses door UUID as deviceId. Handles 422 validation errors when door is already in target state.
+  - QUICK_GRANT maps to `PUT /v2/door/{door_uuid}/quick_unlock` and is a temporary unlock.
 
 Note: The UI capability map in `capabilities.ts` defines which actions are exposed in the frontend for each connector/device type. To surface a new actionable device in the UI, update both:
 
 - Backend: add/extend the appropriate handler implementing `IDeviceActionHandler`.
 - Frontend: extend `SUPPORTED_DEVICE_ACTIONS` (and `presentation.ts` if a new action needs a label/icon).
+
+### Frontend data requirements (important)
+- The actions UI must receive, per target device option:
+  - `connectorCategory` (canonical string key used by `SUPPORTED_DEVICE_ACTIONS`)
+  - `standardDeviceType` (from server; do not infer in the UI)
+- With those two fields present, the option-aware helpers will drive eligibility and state lists strictly from `SUPPORTED_DEVICE_ACTIONS`.
+- UI components must not inspect raw labels, guess types, or special-case connectors.
+
+### Example: enabling a new on/off-capable type
+1) Map vendor identifier to a standardized `DeviceType` in `mappings/identification.ts`.
+2) Add actions for that type under the connector in `SUPPORTED_DEVICE_ACTIONS`:
+   ```ts
+   yolink: {
+     [DeviceType.MultiOutlet]: [ActionableState.SET_ON, ActionableState.SET_OFF],
+   }
+   ```
+3) Ensure the server includes `connectorCategory` and `standardDeviceType` on device options.
 
 ## Error Handling
 

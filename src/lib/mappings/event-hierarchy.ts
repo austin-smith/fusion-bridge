@@ -63,7 +63,9 @@ export const EVENT_HIERARCHY = {
     ],
     [EventType.ACCESS_OVERRIDE]: [
       EventSubtype.REMOTE_UNLOCK,
+      EventSubtype.REMOTE_LOCK,
       EventSubtype.QUICK_GRANT,
+      EventSubtype.QUICK_GRANT_REQUESTED,
     ],
     [EventType.DOOR_ACCESS_MODE_CHANGED]: [
       EventSubtype.CARD_ONLY,

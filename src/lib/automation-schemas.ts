@@ -233,6 +233,12 @@ export const UnlockDeviceActionParamsSchema = z.object({
 });
 // --- END Lock/Unlock Device Action Schemas ---
 
+// --- BEGIN Quick Grant Device Action Schema ---
+export const QuickGrantDeviceActionParamsSchema = z.object({
+    targetDeviceInternalId: z.string().uuid("Target device ID must be a valid UUID"),
+});
+// --- END Quick Grant Device Action Schema ---
+
 // --- End Enums & Schemas ---
 
 // Schema for a single action within an automation
@@ -267,6 +273,7 @@ export const AutomationActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal(AutomationActionType.PLAY_AUDIO), params: PlayAudioActionParamsSchema }).strict(),
   z.object({ type: z.literal(AutomationActionType.LOCK_DEVICE), params: LockDeviceActionParamsSchema }).strict(),
   z.object({ type: z.literal(AutomationActionType.UNLOCK_DEVICE), params: UnlockDeviceActionParamsSchema }).strict(),
+  z.object({ type: z.literal(AutomationActionType.QUICK_GRANT_DEVICE), params: QuickGrantDeviceActionParamsSchema }).strict(),
 ]);
 
 // Type helper for a single action

@@ -32,8 +32,9 @@ export function AppearanceSettings() {
 
     // Setup dynamic theme options using computed CSS variables
     const baseThemeOptions: ThemeOption[] = React.useMemo(() => [
-      { value: 'default', label: 'System Default' },
+      { value: 'default', label: 'Default' },
       { value: 'cosmic-night', label: 'Cosmic Night' },
+      { value: 'mono', label: 'Mono' },
       { value: 'remoteview', label: 'RemoteView' },
       { value: 't3-chat', label: 'T3 Chat' },
     ], []);

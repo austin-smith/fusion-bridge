@@ -83,7 +83,7 @@ interface AutomationFormProps {
     initialData: AutomationFormData;
     availableConnectors: Pick<ConnectorSelect, 'id' | 'name' | 'category'>[];
     sourceDeviceTypeOptions: any;
-    availableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; spaceId?: string | null; locationId?: string | null; rawType?: string; supportsAudio?: boolean; supportsLocking?: boolean; }>;
+    availableTargetDevices: Array<{ id: string; name: string; displayType: string; iconName: string; spaceId?: string | null; locationId?: string | null; rawType?: string; supportsAudio?: boolean; connectorCategory?: string; standardDeviceType?: import('@/lib/mappings/definitions').DeviceType }>;
     devicesForConditions: Array<{ id: string; name: string; spaceId?: string | null; locationId?: string | null; }>;
     allLocations: Location[];
     allSpaces: Space[];

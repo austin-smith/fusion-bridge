@@ -12,7 +12,7 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
       const preferredFamily = localStorage.getItem(PREFERRED_THEME_FAMILY_KEY);
       const classList = document.documentElement.classList;
       
-      classList.remove('cosmic-night', 't3-chat', 'remoteview'); // Remove all known theme family classes first
+      classList.remove('cosmic-night', 't3-chat', 'remoteview', 'macos7', 'mono'); // Remove all known theme family classes first
 
       if (preferredFamily === 'cosmic-night') {
         classList.add('cosmic-night');
@@ -20,6 +20,8 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
         classList.add('remoteview');
       } else if (preferredFamily === 't3-chat') {
         classList.add('t3-chat');
+      } else if (preferredFamily === 'mono') {
+        classList.add('mono');
       }
       // If preferredFamily is 'default' or something else, no specific family class is added.
     };

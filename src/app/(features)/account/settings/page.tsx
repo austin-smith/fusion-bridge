@@ -50,17 +50,13 @@ function SettingsPage() {
     }
   }, []);
 
-  if (!session?.user) {
-    return <div>Loading...</div>;
-  }
-
   // Convert session user to UserData format
   const userData = {
-    id: session.user.id,
-    name: session.user.name || 'Unknown User',
-    email: session.user.email || 'Unknown Email',
-    image: session.user.image || null,
-    twoFactorEnabled: session.user.twoFactorEnabled || false,
+    id: session?.user?.id ?? 'unknown',
+    name: session?.user?.name || 'Unknown User',
+    email: session?.user?.email || 'Unknown Email',
+    image: session?.user?.image || null,
+    twoFactorEnabled: session?.user?.twoFactorEnabled || false,
   };
 
   const renderContent = () => {

@@ -113,11 +113,7 @@ export const GENEA_EVENT_MAP = {
     EventSubtype.NORMAL
   ),
 
-  // Access Override Events
-  'SEQUR_HOST_INITIATED_REQUEST_DOOR_USE_NOT_VERIFIED': createEventClassification(
-    EventType.ACCESS_OVERRIDE,
-    EventSubtype.QUICK_GRANT
-  ),
+  // Access Override Events are handled in the complex handler when branching is needed
   
   // Diagnostics Events
   'OSDP_READER_ONLINE_STATUS_UPDATE': createEventClassification(
@@ -141,6 +137,7 @@ export const GENEA_COMPLEX_EVENT_ACTIONS = [
   'SEQUR_DOOR_POSITION_SENSOR_SECURE',
   'SEQUR_DOOR_ACCESS_MODE_UNLOCKED',
   'SEQUR_DOOR_ACCESS_MODE_CARD_ONLY',
+  'SEQUR_HOST_INITIATED_REQUEST_DOOR_USE_NOT_VERIFIED',
 ] as const;
 
 /**
@@ -160,8 +157,38 @@ export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): Even
       return createEventClassification(EventType.ACCESS_OVERRIDE, EventSubtype.REMOTE_UNLOCK);
     }
   } else if (event_action === 'SEQUR_DOOR_ACCESS_MODE_CARD_ONLY') {
-    // Always a persistent access mode change, regardless of who initiated it
+    /**
+     * Policy vs command:
+     * - SYSTEM → persistent policy change (CARD_ONLY)
+     * - API_KEY → operator/API remote lock (REMOTE_LOCK)
+     * - Any other/unknown actor types → default to policy change to avoid guessing
+     * If Genea publishes more authoritative actor semantics, extend this branch accordingly.
+     */
+    if (actor?.type === 'SYSTEM') {
+      return createEventClassification(EventType.DOOR_ACCESS_MODE_CHANGED, EventSubtype.CARD_ONLY);
+    }
+
+    if (actor?.type === 'API_KEY') {
+      return createEventClassification(EventType.ACCESS_OVERRIDE, EventSubtype.REMOTE_LOCK);
+    }
+
+    if (actor?.type && actor.type !== 'SYSTEM' && actor.type !== 'API_KEY') {
+      console.warn(`[Genea Mapping] Unrecognized actor type '${actor.type}' for CARD_ONLY; defaulting to DOOR_ACCESS_MODE_CHANGED`);
+    }
+
+    // Default to policy change when actor is unknown/other
     return createEventClassification(EventType.DOOR_ACCESS_MODE_CHANGED, EventSubtype.CARD_ONLY);
+  } else if (event_action === 'SEQUR_HOST_INITIATED_REQUEST_DOOR_USE_NOT_VERIFIED') {
+    // Quick Grant phases distinguished by event_message
+    const message = (payload.event_message || '').toLowerCase();
+    if (message.includes('remote door quick grant')) {
+      return createEventClassification(EventType.ACCESS_OVERRIDE, EventSubtype.QUICK_GRANT_REQUESTED);
+    }
+    if (message.includes('door unlocked by administrator')) {
+      return createEventClassification(EventType.ACCESS_OVERRIDE, EventSubtype.QUICK_GRANT);
+    }
+    // Fallback: treat as Quick Grant
+    return createEventClassification(EventType.ACCESS_OVERRIDE, EventSubtype.QUICK_GRANT);
   } else if (event_action === 'SEQUR_DOOR_POSITION_SENSOR_ALARM') {
     // Handle alarm events - check current state
     const isForcedOpen = additionalInfo?.['Forced Open State']?.includes('Current : Yes');
