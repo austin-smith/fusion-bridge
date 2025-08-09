@@ -113,6 +113,8 @@ export const GENEA_EVENT_MAP = {
     EventSubtype.NORMAL
   ),
 
+  // Access Override Events are handled in the complex handler when branching is needed
+  
   // Diagnostics Events
   'OSDP_READER_ONLINE_STATUS_UPDATE': createEventClassification(
     EventType.DEVICE_CHECK_IN
@@ -155,14 +157,23 @@ export function handleComplexGeneaEvent(payload: GeneaEventWebhookPayload): Even
       return createEventClassification(EventType.ACCESS_OVERRIDE, EventSubtype.REMOTE_UNLOCK);
     }
   } else if (event_action === 'SEQUR_DOOR_ACCESS_MODE_CARD_ONLY') {
-    // Distinguish between operator/API-initiated remote lock and system mode change
+    /**
+     * Policy vs command:
+     * - SYSTEM → persistent policy change (CARD_ONLY)
+     * - API_KEY → operator/API remote lock (REMOTE_LOCK)
+     * - Any other/unknown actor types → default to policy change to avoid guessing
+     * If Genea publishes more authoritative actor semantics, extend this branch accordingly.
+     */
     if (actor?.type === 'SYSTEM') {
       return createEventClassification(EventType.DOOR_ACCESS_MODE_CHANGED, EventSubtype.CARD_ONLY);
     }
 
-    // If initiated by API key (remote command), classify as Access Override / Remote Lock
     if (actor?.type === 'API_KEY') {
       return createEventClassification(EventType.ACCESS_OVERRIDE, EventSubtype.REMOTE_LOCK);
+    }
+
+    if (actor?.type && actor.type !== 'SYSTEM' && actor.type !== 'API_KEY') {
+      console.warn(`[Genea Mapping] Unrecognized actor type '${actor.type}' for CARD_ONLY; defaulting to DOOR_ACCESS_MODE_CHANGED`);
     }
 
     // Default to policy change when actor is unknown/other

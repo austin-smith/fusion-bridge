@@ -231,9 +231,9 @@ export function FloorPlanDeviceDetailSheet({
             if (!isEditable) {
               e.stopPropagation();
               // Also stop native propagation so window listeners don't fire
-              const nativeEvt = (e as unknown as { nativeEvent?: Event }).nativeEvent as any;
-              if (nativeEvt?.stopImmediatePropagation) nativeEvt.stopImmediatePropagation();
-              else if (nativeEvt?.stopPropagation) nativeEvt.stopPropagation();
+              const nativeEvt = e.nativeEvent as KeyboardEvent;
+              if (nativeEvt.stopImmediatePropagation) nativeEvt.stopImmediatePropagation();
+              else nativeEvt.stopPropagation();
             }
           }
         }}

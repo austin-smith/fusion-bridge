@@ -102,7 +102,7 @@ export function PlayAudioActionFields({ form, actionIndex, devices, isLoading, o
             <FormLabel>Tone (Optional)</FormLabel>
             <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={!!isLoading}>
               <FormControl>
-                <SelectTrigger className={cn('w/[200px]', fieldState.error && (fieldState.isTouched || form.formState.isSubmitted) && 'border-destructive')}>
+                <SelectTrigger className={cn('w-[200px]', fieldState.error && (fieldState.isTouched || form.formState.isSubmitted) && 'border-destructive')}>
                   <SelectValue placeholder="Select tone..." />
                 </SelectTrigger>
               </FormControl>
