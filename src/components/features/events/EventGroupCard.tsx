@@ -137,6 +137,7 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     selectNext,
     selectPrevious
   } = useDeviceCameraConfig(representativeDevice, {
+    spaceId: spaceId,
     spaceName: spaceName || undefined
   });
   

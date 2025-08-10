@@ -133,7 +133,10 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
   // Find which space contains this device
   const deviceSpace = useMemo(() => {
     if (!eventDevice) return null;
-    return spaces.find(space => space.deviceIds?.includes(eventDevice.id));
+    if (eventDevice.spaceId) {
+      return spaces.find(space => space.id === eventDevice.spaceId) || null;
+    }
+    return spaces.find(space => space.deviceIds?.includes(eventDevice.id)) || null;
   }, [spaces, eventDevice]);
   
   // Find which alarm zone contains this device
@@ -244,7 +247,11 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
     selectCamera
   } = useDeviceCameraConfig(
     eventDevice || null,
-    eventCameraOptions
+    {
+      ...eventCameraOptions,
+      spaceId: deviceSpace?.id,
+      spaceName: deviceSpace?.name || null
+    }
   );
 
 
