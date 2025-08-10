@@ -257,7 +257,7 @@ export function FloorPlanDeviceDetailSheet({
         }}
         className={cn(
           // Override default sm:max-w-sm and w-3/4 from the Sheet component
-          'sm:max-w-none md:max-w-none !w-[420px] sm:!w-[500px] !shadow-2xl ring-2 ring-border ring-offset-1 ring-offset-background p-0 grid grid-rows-[auto,1fr] overflow-hidden',
+          'sm:max-w-none md:max-w-none !w-[420px] sm:!w-[500px] !shadow-2xl p-0 grid grid-rows-[auto,1fr] overflow-hidden',
           className
         )}
       >
