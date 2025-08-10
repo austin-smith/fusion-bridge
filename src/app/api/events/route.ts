@@ -367,6 +367,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
     const offset = (page - 1) * limit;
     const countOnly = searchParams.get('count') === 'true';
     const groupBy = searchParams.get('groupBy');
+  const deviceInternalId = searchParams.get('deviceInternalId') || undefined;
     
     // Parse time range parameters
     const timeStart = searchParams.get('timeStart');
@@ -399,6 +400,7 @@ export const GET = withOrganizationAuth(async (request, authContext: Organizatio
       connectorCategory: connectorCategory,
       locationId: locationId,
       spaceId: spaceId,
+    deviceInternalId: deviceInternalId,
       deviceNameFilter: deviceNameFilter,
       eventTypeFilter: eventTypeFilter,
       deviceTypeFilter: deviceTypeFilter,

@@ -210,7 +210,7 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="outline" size="sm" onClick={handleOpenDevices} aria-label="Add device">
-                        <Plus className="h-4 w-4 mr-1" />
+                        <Plus className="h-4 w-4" />
                         Add device
                       </Button>
                     </TooltipTrigger>

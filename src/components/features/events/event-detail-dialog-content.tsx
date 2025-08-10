@@ -70,6 +70,7 @@ interface EventDetailDialogContentProps {
   event: EventData;
   events?: EventData[]; // Array of events for navigation
   buttonStyle?: 'default' | 'overlay'; // Style for the trigger button
+  asContent?: boolean; // Render only the dialog body without wrapper/trigger
 }
 
 // Define DetailRow component locally for now
@@ -87,7 +88,7 @@ const DetailRow = ({label, value, monospace = false, breakAll = false}: {label: 
 
 
 
-export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> = ({ event, events, buttonStyle = 'default' }) => {
+export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> = ({ event, events, buttonStyle = 'default', asContent = false }) => {
   const [isCopied, setIsCopied] = useState(false);
   
   // Navigation state for multiple events
@@ -229,28 +230,9 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
 
 
 
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        {buttonStyle === 'overlay' ? (
-          <Button 
-            variant="outline"
-            size="icon"
-            className="h-10 w-10 rounded-full bg-background/80 hover:bg-background/95 text-foreground/80 hover:text-foreground"
-            title="View event details"
-          >
-            <EyeIcon className="h-5 w-5" />
-            <span className="sr-only">View Event Details</span>
-          </Button>
-        ) : (
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <EyeIcon className="h-4 w-4" />
-            <span className="sr-only">View Event Details</span>
-          </Button>
-        )}
-      </DialogTrigger>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader className="pb-4 border-b">
+  const inner = (
+    <>
+      <DialogHeader className="pb-4 border-b">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <DeviceIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
@@ -317,8 +299,8 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
              )}
             </div>
           </DialogDescription>
-        </DialogHeader>
-        <Tabs defaultValue="details" className="mt-2">
+      </DialogHeader>
+      <Tabs defaultValue="details" className="mt-2">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="details">Key Details</TabsTrigger>
             <TabsTrigger value="raw">Raw JSON</TabsTrigger>
@@ -574,6 +556,30 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
             </Button>
           </DialogClose>
         </DialogFooter>
+    </>
+  );
+
+  if (asContent) {
+    return inner as any;
+  }
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        {buttonStyle === 'overlay' ? (
+          <Button variant="outline" size="icon" className="h-10 w-10 rounded-full bg-background/80 hover:bg-background/95 text-foreground/80 hover:text-foreground" title="View event details">
+            <EyeIcon className="h-5 w-5" />
+            <span className="sr-only">View Event Details</span>
+          </Button>
+        ) : (
+          <Button variant="ghost" size="icon" className="h-8 w-8">
+            <EyeIcon className="h-4 w-4" />
+            <span className="sr-only">View Event Details</span>
+          </Button>
+        )}
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        {inner}
       </DialogContent>
     </Dialog>
   );

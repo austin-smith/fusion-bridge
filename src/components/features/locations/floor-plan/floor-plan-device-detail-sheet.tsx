@@ -35,6 +35,9 @@ import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 // no debounce needed; we commit on pointer-up
 import type { UpdateDeviceOverlayPayload } from '@/types/device-overlay';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { findSpaceCameras } from '@/services/event-thumbnail-resolver';
+import { FloorPlanDeviceEventsTab } from '@/components/features/locations/floor-plan/floor-plan-device-events-tab';
 
 function Section({
   title,
@@ -115,6 +118,14 @@ export function FloorPlanDeviceDetailSheet({
   const [rawDeviceData, setRawDeviceData] = React.useState<any | null>(null);
   const [isCopied, setIsCopied] = React.useState(false);
 
+  // Tabs state
+  const [activeTab, setActiveTab] = React.useState<'details' | 'events'>('details');
+
+  // Events fetching is encapsulated in FloorPlanDeviceEventsTab
+
+  // Guarded auto-refresh when switching devices while Events tab is active
+  // Intentionally no effects for fetching; fetch is driven by user actions (tab select, manual refresh)
+
   const openRawDetails = async () => {
     if (!device?.id) return;
     setIsRawDialogOpen(true);
@@ -180,6 +191,13 @@ export function FloorPlanDeviceDetailSheet({
     devices.sort((a, b) => a.name.localeCompare(b.name));
     return devices;
   }, [deviceSpace?.deviceIds, allDevices, internalDeviceId]);
+
+  // Resolve space cameras once for thumbnail resolver (delegates best-shot/fallback selection)
+  const spaceCameras = React.useMemo(() => {
+    return findSpaceCameras(deviceSpace?.id, allDevices as any, spaces);
+  }, [deviceSpace?.id, allDevices, spaces]);
+
+  // No client-side filtering in parent
 
   // Camera configuration (FOV & rotation) controls when device is a camera
   const isCamera = resolvedDeviceType === DeviceType.Camera;
@@ -263,7 +281,20 @@ export function FloorPlanDeviceDetailSheet({
           }
         }}>
         {overlay && device && (
-          <div className="space-y-4">
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v as 'details' | 'events')}
+            className="space-y-3"
+          >
+            <div className="sticky top-0 z-20 -mx-3 px-3 py-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+              <TabsList>
+                <TabsTrigger value="details">Details</TabsTrigger>
+                <TabsTrigger value="events" disabled={!device?.id}>Events</TabsTrigger>
+              </TabsList>
+            </div>
+
+            <TabsContent value="details" className="m-0">
+              <div className="space-y-4">
             <Section title="Device" icon={Cpu}>
               <InfoGrid className="gap-x-3">
                 <InfoRow label="Connector">
@@ -326,7 +357,7 @@ export function FloorPlanDeviceDetailSheet({
                   </InfoRow>
                 )}
               </InfoGrid>
-            </Section>
+              </Section>
 
             {isCamera && (
               <Section title="Camera Configuration" icon={Cog}>
@@ -428,7 +459,7 @@ export function FloorPlanDeviceDetailSheet({
               );
             })()}
 
-            {shouldShowMedia && mediaConfig && (
+              {shouldShowMedia && mediaConfig && (
               <Section title="Space Cameras" icon={getDeviceTypeIcon(DeviceType.Camera)}>
                 <CameraMediaSection
                   thumbnailMode={mediaConfig.thumbnailMode}
@@ -456,9 +487,9 @@ export function FloorPlanDeviceDetailSheet({
                   carouselLayout="dots"
                 />
               </Section>
-            )}
+              )}
 
-            {deviceSpace && otherDevicesInSpace.length > 0 && (
+              {deviceSpace && otherDevicesInSpace.length > 0 && (
               <Section title="Other Devices in Space" icon={Box}>
                 <FloorPlanOtherSpacesList devices={otherDevicesInSpace} title={null} />
               </Section>
@@ -499,8 +530,16 @@ export function FloorPlanDeviceDetailSheet({
                   <TooltipContent side="bottom">Remove from floor plan</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
+              </div>
             </div>
-          </div>
+            </TabsContent>
+
+            <TabsContent value="events" className="m-0" key={`${device?.id || 'no-device'}`}>
+              {device?.id ? (
+                <FloorPlanDeviceEventsTab deviceId={device.id} spaceCameras={spaceCameras} />
+              ) : null}
+            </TabsContent>
+          </Tabs>
         )}
         </div>
       </SheetContent>
