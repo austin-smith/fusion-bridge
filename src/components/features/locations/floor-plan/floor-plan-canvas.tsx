@@ -326,7 +326,8 @@ export function FloorPlanCanvas({
             else if (projected.y > padBottom) dy = padBottom - projected.y;
           }
 
-          const epsilon = 0.5; // avoid micro-jitter
+          // Avoid micro-jitter: ignore tiny movements that are visually negligible
+          const epsilon = 2; // px in container space
           if (Math.abs(dx) < epsilon && Math.abs(dy) < epsilon) return;
 
           const duration = options?.durationMs ?? 220;

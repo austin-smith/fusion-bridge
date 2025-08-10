@@ -137,14 +137,15 @@ export const CameraCarouselControls: React.FC<CameraCarouselControlsProps> = ({
                 <button
                   onClick={() => onCameraChange(index)}
                   className={cn(
-                    'rounded-full transition-all duration-200',
-                    size === 'xs' ? 'h-1 w-1' : size === 'sm' ? 'h-1.5 w-1.5' : 'h-2 w-2',
-                    selectedIndex === index
-                      ? 'bg-white'
-                      : 'bg-white/40 hover:bg-white/60'
+                    'rounded-full transition-opacity duration-200',
+                    size === 'xs' ? 'h-1 w-1' : size === 'sm' ? 'h-1.5 w-1.5' : 'h-2 w-2'
                   )}
                   aria-label={`Switch to ${camera.name}`}
-                />
+                >
+                  <svg viewBox="0 0 8 8" className={cn('h-full w-full', selectedIndex === index ? 'opacity-100' : 'opacity-40 hover:opacity-60')} aria-hidden="true">
+                    <circle cx="4" cy="4" r="4" className="fill-current" />
+                  </svg>
+                </button>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs">
                 <p>

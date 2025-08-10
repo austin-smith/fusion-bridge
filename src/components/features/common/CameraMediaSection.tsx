@@ -455,7 +455,7 @@ export const CameraMediaSection: React.FC<CameraMediaSectionProps> = ({
       
       {/* Conditionally render Player or Thumbnail */}
       {showLiveVideo ? (
-        <div className="relative">
+        <div className="relative rounded-md overflow-hidden">
           <PikoVideoPlayer
             connectorId={videoConfig.connectorId}
             pikoSystemId={videoConfig.pikoSystemId}
@@ -494,7 +494,7 @@ export const CameraMediaSection: React.FC<CameraMediaSectionProps> = ({
           )}
         </div>
       ) : (
-        <div className="relative">
+        <div className="relative rounded-md overflow-hidden">
           <MediaThumbnail 
             src={currentThumbnailUrl || ''} 
             isLoading={thumbnailMode === 'live-auto-refresh' ? (isThumbnailLoading && !liveThumbnailUrl) : false}

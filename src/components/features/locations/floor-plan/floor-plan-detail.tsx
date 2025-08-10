@@ -56,11 +56,9 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
   // Ref to the left sheet element for occlusion measurements
   const leftSheetElRef = useRef<HTMLDivElement | null>(null);
   const [leftSheetEl, setLeftSheetEl] = useState<HTMLDivElement | null>(null);
-  const sheetResizeObserverRef = useRef<ResizeObserver | null>(null);
-  const pendingEnsureRafRef = useRef<number | null>(null);
-  const scaleEnsureTimeoutRef = useRef<number | null>(null);
+  const lastEnsuredOverlayIdRef = useRef<string | null>(null);
 
-  // Debounce to allow Konva scale to apply before ensuring visibility
+  // No longer re-ensuring on scale; keep constant for potential future tuning
   const ENSURE_VISIBLE_AFTER_SCALE_MS = 80;
 
   
@@ -144,9 +142,11 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
     const containerRect = zoomActions.getContainerRect();
 
     const padding = 16; // px
-    // Extra buffer on the left to account for the selection tooltip (centered above the device)
-    // and any minor animation/layout variance. Tuned conservatively for readability.
-    const tooltipHalfWidthBuffer = 120; // px
+    // Dynamic horizontal buffer: ~2% of container width, clamped to [8, 20] px
+    const containerW = zoomActions.getContainerRect()?.width ?? 0;
+    const dynamicBuffer = containerW
+      ? Math.min(20, Math.max(8, Math.round(containerW * 0.02)))
+      : 12;
     const prefersSm = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(min-width: 640px)').matches;
     const fallbackPanelWidth = prefersSm ? 500 : 420; // mirrors sheet width classes
 
@@ -162,148 +162,79 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
       bottomSafe = containerRect.height - padding;
     }
 
-    // Use actual sheet measurement if available; otherwise fall back to CSS width
-    if (leftSheetEl) {
+    if (containerRect && leftSheetEl) {
       const sheetRect = leftSheetEl.getBoundingClientRect();
+      // Compute actual horizontal occlusion of the canvas container by the sheet
+      const overlapLeftPx = Math.max(
+        0,
+        Math.min(containerRect.right, sheetRect.right) - Math.max(containerRect.left, sheetRect.left)
+      );
+      leftSafe = Math.min(
+        Math.max(overlapLeftPx + padding + dynamicBuffer, padding),
+        containerRect.width - padding
+      );
+    } else {
+      // Fallback: approximate using the sheet's configured width
+      const approxWidth = leftSheetEl ? leftSheetEl.getBoundingClientRect().width : fallbackPanelWidth;
       if (containerRect) {
-        const overlapLeft = Math.max(0, Math.min(containerRect.right, sheetRect.right) - containerRect.left);
         leftSafe = Math.min(
-          Math.max(overlapLeft + padding + tooltipHalfWidthBuffer, padding),
+          Math.max(approxWidth + padding + dynamicBuffer, padding),
           containerRect.width - padding
         );
       } else {
-        leftSafe = fallbackPanelWidth + padding + tooltipHalfWidthBuffer;
+        leftSafe = approxWidth + padding + dynamicBuffer;
       }
-    } else {
-      // If the sheet ref isn't available but the sheet is visually open, still try a reasonable fallback
-      leftSafe = fallbackPanelWidth + padding + tooltipHalfWidthBuffer;
     }
+
+    // Snap to integer pixels to avoid sub-pixel oscillation during comparisons
+    leftSafe = Math.round(leftSafe);
+    topSafe = Math.round(topSafe);
+    rightSafe = Number.isFinite(rightSafe) ? Math.round(rightSafe) : rightSafe;
+    bottomSafe = Number.isFinite(bottomSafe) ? Math.round(bottomSafe) : bottomSafe;
 
     return { left: leftSafe, top: topSafe, right: rightSafe, bottom: bottomSafe };
   }, [zoomActions, leftSheetEl]);
 
-  // Schedule ensure-visible on next animation frame (twice) after layout settles
-  const scheduleEnsureVisible = React.useCallback(() => {
+  // One-time ensure for current selection, with a single follow-up after sheet transition
+  const ensureOnceForSelection = React.useCallback(() => {
     if (!selectedOverlayId || !zoomActions) return;
-    if (pendingEnsureRafRef.current !== null) {
-      cancelAnimationFrame(pendingEnsureRafRef.current);
-      pendingEnsureRafRef.current = null;
-    }
-    const raf1 = requestAnimationFrame(() => {
-      const raf2 = requestAnimationFrame(() => {
-        const safe = computeSafeArea();
-        if (safe) {
-          zoomActions.ensureOverlayVisibleById(selectedOverlayId, safe, {
-            axis: 'x',
-            animate: true,
-            durationMs: 260,
-          });
-        } else {
-          // Retry shortly if layout or canvas not ready yet
-          const t = window.setTimeout(() => {
-            const s2 = computeSafeArea();
-            if (s2) {
-              zoomActions.ensureOverlayVisibleById(selectedOverlayId, s2, {
-                axis: 'x',
-                animate: true,
-                durationMs: 260,
-              });
-            }
-            window.clearTimeout(t);
-          }, 30);
-        }
-      });
-      pendingEnsureRafRef.current = raf2;
-    });
-    pendingEnsureRafRef.current = raf1;
-  }, [selectedOverlayId, zoomActions, computeSafeArea]);
+    if (lastEnsuredOverlayIdRef.current === selectedOverlayId) return;
 
-  // Immediate ensure to start animating pan in sync with sheet open
-  const ensureImmediately = React.useCallback(() => {
-    if (!selectedOverlayId || !zoomActions) return;
-    const safe = computeSafeArea();
-    if (safe) {
-      zoomActions.ensureOverlayVisibleById(selectedOverlayId, safe, {
-        axis: 'x',
-        animate: true,
-        durationMs: 220,
-      });
-    }
-  }, [selectedOverlayId, zoomActions, computeSafeArea]);
+    // Mark ensured right away to avoid duplicate scheduling from multiple callers
+    lastEnsuredOverlayIdRef.current = selectedOverlayId;
 
-  // React to selection open -> ensure visible after sheet lays out
-  useEffect(() => {
-    if (selectedOverlayId) {
-      // kick off immediately, then refine on next frames
-      ensureImmediately();
-      scheduleEnsureVisible();
-    }
-    return () => {
-      if (pendingEnsureRafRef.current !== null) {
-        cancelAnimationFrame(pendingEnsureRafRef.current);
-        pendingEnsureRafRef.current = null;
+    let followUpRan = false;
+    const handleAfterOpen = () => {
+      if (followUpRan) return;
+      followUpRan = true;
+      const s2 = computeSafeArea();
+      if (s2) {
+        zoomActions.ensureOverlayVisibleById(selectedOverlayId, s2, {
+          axis: 'x',
+          animate: true,
+          durationMs: 220,
+        });
       }
     };
-  }, [selectedOverlayId, ensureImmediately, scheduleEnsureVisible]);
 
-  // When sheet element mounts and is open, run an additional ensure after its slide-in animation (~500ms)
-  useEffect(() => {
-    if (!selectedOverlayId || !leftSheetEl) return;
-    const handleTransitionEnd = (e: TransitionEvent) => {
-      // Only respond to transitions on the sheet element itself
-      if (e.target === leftSheetEl) {
-        scheduleEnsureVisible();
-      }
-    };
-    leftSheetEl.addEventListener('transitionend', handleTransitionEnd);
-    // In case the element is already settled with no transition, schedule a micro follow-up
-    const rafId = requestAnimationFrame(() => scheduleEnsureVisible());
-    return () => {
-      leftSheetEl.removeEventListener('transitionend', handleTransitionEnd);
-      cancelAnimationFrame(rafId);
-    };
-  }, [selectedOverlayId, leftSheetEl, scheduleEnsureVisible]);
-
-  // When canvas actions become available while a selection exists, ensure visibility
-  useEffect(() => {
-    if (zoomActions && selectedOverlayId) {
-      scheduleEnsureVisible();
+    if (leftSheetEl) {
+      // Wait for the sheet to finish opening to compute a stable safe area
+      leftSheetEl.addEventListener('transitionend', handleAfterOpen as any, { once: true });
+      // Fallback in case no transition event fires
+      window.setTimeout(() => {
+        handleAfterOpen();
+      }, 500);
+    } else {
+      // If we don't yet have the element, run a single follow-up shortly after to avoid double-pan
+      window.setTimeout(handleAfterOpen, 350);
     }
-  }, [zoomActions, selectedOverlayId, scheduleEnsureVisible]);
+  }, [selectedOverlayId, zoomActions, computeSafeArea, leftSheetEl]);
 
-  // Observe left sheet size changes to re-ensure
+  // Kick off ensure when selection changes and actions are ready (onOpenChange may not fire on controlled open)
   useEffect(() => {
-    if (!leftSheetEl) return;
-    if (sheetResizeObserverRef.current) {
-      sheetResizeObserverRef.current.disconnect();
-      sheetResizeObserverRef.current = null;
-    }
-    try {
-      const ro = new ResizeObserver(() => {
-        if (selectedOverlayId) {
-          ensureImmediately();
-          scheduleEnsureVisible();
-        }
-      });
-      ro.observe(leftSheetEl);
-      sheetResizeObserverRef.current = ro;
-      return () => {
-        ro.disconnect();
-        sheetResizeObserverRef.current = null;
-      };
-    } catch {
-      return;
-    }
-  }, [leftSheetEl, selectedOverlayId, ensureImmediately, scheduleEnsureVisible]);
-
-  // Re-ensure on window resize
-  useEffect(() => {
-    const handler = () => {
-      if (selectedOverlayId) scheduleEnsureVisible();
-    };
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, [selectedOverlayId, scheduleEnsureVisible]);
+    if (!selectedOverlayId || !zoomActions) return;
+    ensureOnceForSelection();
+  }, [selectedOverlayId, zoomActions, ensureOnceForSelection]);
 
   // Replace submit handler using PUT
   const handleReplaceSubmit = async (name: string, file: File) => {
@@ -354,7 +285,7 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
 
   // Handle viewing mode with interactive canvas
   const handleCanvasLoad = (dimensions: { width: number; height: number }) => {
-    if (selectedOverlayId) scheduleEnsureVisible();
+    // Do not auto-ensure on load; handled by one-time selection flow
   };
 
   const handleCanvasError = (error: string) => {
@@ -429,15 +360,16 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
                   selectOverlay(null);
                   // Reset canvas to fit-to-screen when the detail sheet is closed
                   zoomActions?.resetZoom();
+                  // Allow re-ensure if the same selection is reopened later
+                  lastEnsuredOverlayIdRef.current = null;
                 } else {
-                  // start pan immediately alongside sheet open
-                  ensureImmediately();
+                  ensureOnceForSelection();
                 }
               }}
               onSheetElementRef={(el) => {
                 leftSheetElRef.current = el;
                 setLeftSheetEl(el);
-                if (el && selectedOverlayId) scheduleEnsureVisible();
+                // No auto-ensure here; rely on the one-time selection flow
               }}
               onUpdateOverlay={async (overlayId, updates) => {
                 try {
@@ -466,19 +398,7 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
               onLoad={handleCanvasLoad}
               onError={handleCanvasError}
               onScaleChange={(scale) => {
-                // Bubble up
                 onScaleChange?.(scale);
-                // Debounce ensure while user is zooming
-                if (scaleEnsureTimeoutRef.current) {
-                  window.clearTimeout(scaleEnsureTimeoutRef.current);
-                  scaleEnsureTimeoutRef.current = null;
-                }
-                if (selectedOverlayId) {
-                  // small delay to let Konva apply scale and layout reflow
-                  scaleEnsureTimeoutRef.current = window.setTimeout(() => {
-                    scheduleEnsureVisible();
-                  }, ENSURE_VISIBLE_AFTER_SCALE_MS);
-                }
               }}
               overlays={overlays}
               selectedOverlayId={selectedOverlayId}
