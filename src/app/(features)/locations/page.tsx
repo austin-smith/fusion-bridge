@@ -12,8 +12,7 @@ import { SpaceDeviceAssignmentDialog } from '@/components/features/locations/spa
 import { CameraWallDialog } from '@/components/features/common/camera-wall-dialog';
 import { SpaceCard } from '@/components/features/locations/spaces/SpaceCard';
 import { LocationTreeView } from '@/components/features/locations/location-tree-view';
-import type { Location, Space, DeviceWithConnector } from "@/types/index";
-import type { FloorPlanData } from '@/lib/storage/file-storage';
+import type { Location, Space } from "@/types/index";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
