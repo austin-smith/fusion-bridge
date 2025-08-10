@@ -42,6 +42,7 @@ export const ImagePreviewDialog: React.FC<ImagePreviewDialogProps> = ({
             alt={imageAlt} 
             fill 
             className="object-contain" 
+            unoptimized
           />
         </div>
       </DialogContent>
