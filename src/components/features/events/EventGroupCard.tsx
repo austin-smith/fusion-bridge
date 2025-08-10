@@ -8,7 +8,7 @@ import { DeviceType, EventType, EVENT_TYPE_DISPLAY_MAP, DisplayState, EventCateg
 import Image from 'next/image'; // Use Next.js Image for optimization
 import { getDeviceTypeIcon, getDisplayStateIcon, getDisplayStateColorClass, getSeverityCardStyles } from '@/lib/mappings/presentation';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { format, formatRelative, formatDistanceToNowStrict } from 'date-fns';
+import { format, formatRelative, formatDistanceToNowStrict, isSameDay, isToday, isYesterday } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { ConnectorIcon } from '@/components/features/connectors/connector-icon';
 import { formatConnectorCategory } from '@/lib/utils';
@@ -93,10 +93,32 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
   
   // --- UPGRADED: Better timestamp formatting --- 
   const timeRangeText = useMemo(() => {
+    const timeFmt = 'h:mm:ss a';
+    const isSameDayRange = isSameDay(startTime, endTime);
+
+    const labelFor = (d: Date): string => {
+      if (isToday(d)) return '';
+      if (isYesterday(d)) return 'Yesterday ';
+      return `${format(d, 'MMM d, yyyy')} `;
+    };
+
+    // Single moment (under 1 minute duration)
     if (Math.abs(endTime.getTime() - startTime.getTime()) < 60 * 1000) {
-      return format(startTime, 'h:mm:ss a');
+      const prefix = labelFor(endTime);
+      return `${prefix}${format(startTime, timeFmt)}`;
     }
-    return `${format(startTime, 'h:mm:ss a')} - ${format(endTime, 'h:mm:ss a')}`;
+
+    // Same-day range
+    if (isSameDayRange) {
+      const prefix = labelFor(endTime);
+      const range = `${format(startTime, timeFmt)} - ${format(endTime, timeFmt)}`;
+      return prefix ? `${prefix}${range}` : range;
+    }
+
+    // Cross-day range (rare, but handle explicitly)
+    const startPrefix = labelFor(startTime);
+    const endPrefix = labelFor(endTime);
+    return `${startPrefix}${format(startTime, timeFmt)} - ${endPrefix}${format(endTime, timeFmt)}`;
   }, [startTime, endTime]);
 
   // Find a representative device from the events to determine space cameras
