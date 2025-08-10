@@ -689,18 +689,18 @@ export default function LocationsPage() {
                                                     </Button>
                                                  </DropdownMenuTrigger>
                                                  <DropdownMenuContent align="end">
-                                                    <DropdownMenuItem onClick={() => handleOpenSpaceDialog(null, location.id)}>
+                                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenSpaceDialog(null, location.id); }}>
                                                        <Plus className="h-4 w-4 mr-2" /> 
                                                        Add Space
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => handleOpenLocationDialog(location)}>
+                                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenLocationDialog(location); }}>
                                                        <Pencil className="h-4 w-4 mr-2" /> 
                                                        Edit Location
                                                     </DropdownMenuItem>
                                                     <DropdownMenuSeparator />
-                                                    <DropdownMenuItem
+                                                 <DropdownMenuItem
                                                        className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                                                       onClick={() => handleOpenLocationDeleteDialog(location)}
+                                                     onClick={(e) => { e.stopPropagation(); handleOpenLocationDeleteDialog(location); }}
                                                     >
                                                        <Trash2 className="h-4 w-4 mr-2" /> 
                                                        Delete Location

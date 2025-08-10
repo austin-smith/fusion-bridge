@@ -166,18 +166,8 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     allDevices.find(d => d.id === cameras[selectedCameraIndex]?.id) || null : 
     null;
 
-  // --- Sizing Logic - unified to thumbnail heights for all cards --- 
-  const cardSizeClass = useMemo(() => {
-    switch (cardSize) {
-      case 'small':
-        return "min-h-[192px]";
-      case 'medium':
-        return "min-h-[232px]";
-      case 'large':
-      default:
-        return "min-h-[272px]";
-    }
-  }, [cardSize]);
+  // --- Media aspect ratio (static across sizes) ---
+  const mediaAspectClass = 'aspect-video';
 
   // --- Primary event/type computation aligned with badge logic ---
   const primaryInfo = useMemo(() => {
@@ -258,7 +248,6 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         "overflow-hidden transition-all duration-150 ease-in-out flex flex-col",
         "border-l-4",
         severityStyles.borderClass,
-        cardSizeClass, // Standard min-height
         "bg-card",
         "shadow-md hover:shadow-lg"
       )}>
@@ -282,9 +271,9 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
             </div>
           </div>
         </CardHeader>
-        {/* Unified media frame layout */}
-        <div className="relative flex-grow flex flex-col overflow-hidden">
-          <div className="absolute inset-0 bg-muted group/thumbnail">
+        {/* Unified media frame layout with aspect ratio */}
+        <div className={cn("relative w-full overflow-hidden group/thumbnail", mediaAspectClass)}>
+          <div className="absolute inset-0 bg-muted">
             {hasImage ? (
               <Image
                 key={thumbnailUrl}
