@@ -2,8 +2,9 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MessagesSquare, X, Maximize2, Minimize2, Calendar, Cpu, ShieldCheck, BarChart3, Activity, Cctv, PowerOff, BookOpen } from 'lucide-react';
+import { MessagesSquare, X, Maximize2, Minimize2, Calendar, Cpu, ShieldCheck, BarChart3, Activity, Cctv, PowerOff, BookOpen, Eraser } from 'lucide-react';
 import { Chat } from '@/components/ui/chat/chat';
 import { type Message } from '@/components/ui/chat/chat-message';
 import type { ChatResponse } from '@/types/ai/chat-types';
@@ -64,6 +65,7 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   
   const abortControllerRef = useRef<AbortController | null>(null);
   
@@ -268,6 +270,22 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
     setIsGenerating(false);
   }, []);
 
+  const handleClear = useCallback(() => {
+    // Cancel any in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsGenerating(false);
+    // Trigger a subtle clear animation before clearing
+    setIsClearing(true);
+    setTimeout(() => {
+      setMessages([]);
+      setInput('');
+      setIsClearing(false);
+    }, 200);
+  }, []);
+
   const handleClose = useCallback(() => {
     setIsClosing(true);
     setTimeout(() => {
@@ -373,31 +391,61 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
             AI Assistant
           </CardTitle>
           <div className="flex items-center gap-1">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="hidden md:flex h-8 w-8 text-white hover:bg-white/20"
-              onClick={() => setIsExpanded(!isExpanded)}
-            >
-              {isExpanded ? (
-                <Minimize2 className="h-4 w-4" />
-              ) : (
-                <Maximize2 className="h-4 w-4" />
-              )}
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8 text-white hover:bg-white/20"
-              onClick={handleClose}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8 text-white hover:bg-white/20"
+                    onClick={handleClear}
+                  >
+                    <Eraser className="h-4 w-4" />
+                    <span className="sr-only">Clear</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Clear</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="hidden md:flex h-8 w-8 text-white hover:bg-white/20"
+                    onClick={() => setIsExpanded(!isExpanded)}
+                  >
+                    {isExpanded ? (
+                      <Minimize2 className="h-4 w-4" />
+                    ) : (
+                      <Maximize2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{isExpanded ? 'Minimize' : 'Expand'}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8 text-white hover:bg-white/20"
+                    onClick={handleClose}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Close</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </CardHeader>
         
         <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 min-h-0">
+          <div className="relative flex-1 min-h-0">
+            {isClearing && (
+              <div className="pointer-events-none absolute inset-0 bg-background/60 backdrop-blur-[1px] animate-in fade-in-0 duration-200" />
+            )}
+
             <Chat
               messages={messages}
               input={input}
@@ -407,7 +455,10 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
               stop={handleStop}
               append={handleAppend}
               suggestions={DEFAULT_SUGGESTIONS}
-              className="h-full p-2"
+              className={cn(
+                "h-full p-2 transition-all duration-200",
+                isClearing ? "opacity-0 scale-[0.98]" : "opacity-100"
+              )}
               addMessage={addMessage}
             />
           </div>
