@@ -43,6 +43,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ResetPasswordDialog } from './reset-password-dialog';
 import { cn } from '@/lib/utils';
+import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
@@ -155,12 +156,16 @@ export const columns: ColumnDef<User>[] = [
       const user = row.original;
       const isEnabled = user.twoFactorEnabled;
       return (
-        <span className={cn(
-          "px-2.5 py-1 rounded-full text-xs font-medium flex items-center w-fit",
-          isEnabled ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
-        )}>
+        <Badge
+          variant="outline"
+          className={cn(
+            isEnabled
+              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+              : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+          )}
+        >
           {isEnabled ? "Enabled" : "Disabled"}
-        </span>
+        </Badge>
       );
     },
     size: 100, 
@@ -174,12 +179,16 @@ export const columns: ColumnDef<User>[] = [
       const hasPin = user.keypadPin;
       
       return (
-        <span className={cn(
-          "px-2.5 py-1 rounded-full text-xs font-medium flex items-center w-fit",
-          hasPin ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
-        )}>
+        <Badge
+          variant="outline"
+          className={cn(
+            hasPin
+              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+              : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+          )}
+        >
           {hasPin ? "Enabled" : "Disabled"}
-        </span>
+        </Badge>
       );
     },
     size: 100, 
