@@ -162,14 +162,15 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
 
     // If a selected camera exists, always show its thumbnail at the representative time
     if (selectedCameraDevice) {
-      return `/api/piko/device-thumbnail?connectorId=${selectedCameraDevice.connectorId}&cameraId=${selectedCameraDevice.deviceId}&timestamp=${representativeTimestamp}`;
+      // Request a smaller thumbnail for card rendering
+      return `/api/piko/device-thumbnail?connectorId=${selectedCameraDevice.connectorId}&cameraId=${selectedCameraDevice.deviceId}&timestamp=${representativeTimestamp}&size=640x0`;
     }
     
     // Fallback: previous logic (best-shot or space camera)
     const source = getThumbnailSource(bestEvent || events[events.length - 1], spaceCameras);
     if (!source) return undefined;
     
-    return buildThumbnailUrl(source);
+    return buildThumbnailUrl(source, '640x0');
   }, [events, allDevices, cameras, selectedCameraIndex]);
 
   const hasThumbnail = !!thumbnailUrl;

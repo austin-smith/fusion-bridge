@@ -105,10 +105,12 @@ export function findSpaceCameras(
 /**
  * Builds thumbnail URL for frontend use
  */
-export function buildThumbnailUrl(source: ThumbnailSource): string {
+export function buildThumbnailUrl(source: ThumbnailSource, size?: string): string {
   if (source.type === 'best-shot' && source.objectTrackId) {
+    // Size parameter is not supported for best-shot endpoint currently
     return `/api/piko/best-shot?connectorId=${source.connectorId}&cameraId=${source.cameraId}&objectTrackId=${source.objectTrackId}`;
   }
   
-  return `/api/piko/device-thumbnail?connectorId=${source.connectorId}&cameraId=${source.cameraId}&timestamp=${source.timestamp}`;
-} 
+  const sizeParam = size ? `&size=${encodeURIComponent(size)}` : '';
+  return `/api/piko/device-thumbnail?connectorId=${source.connectorId}&cameraId=${source.cameraId}&timestamp=${source.timestamp}${sizeParam}`;
+}

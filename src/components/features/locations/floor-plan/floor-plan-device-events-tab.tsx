@@ -176,7 +176,8 @@ export function FloorPlanDeviceEventsTab({ deviceId, spaceCameras }: FloorPlanDe
               let thumbUrl: string | null = null;
               try {
                 const src = getThumbnailSource(evt, spaceCameras);
-                if (src) thumbUrl = buildThumbnailUrl(src);
+                // Request a smaller thumbnail since list items render at ~64px width
+                if (src) thumbUrl = buildThumbnailUrl(src, '192x0');
               } catch {}
               const hasThumb = !!thumbUrl && !failedThumbEventIds.has(evt.eventUuid);
 
