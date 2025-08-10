@@ -75,12 +75,14 @@ export const SpaceCard: React.FC<SpaceCardProps> = ({
            }
           <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <CardTitle className="text-base font-medium truncate" title={space.name}>{space.name}</CardTitle>
-          <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs ml-2 flex-shrink-0">
-            {hasDevices ? `${deviceCount} Device${deviceCount !== 1 ? 's' : ''}` : 'No Devices'}
-          </Badge>
          </div>
          
-         <div className="relative flex items-center gap-1 flex-shrink-0 -translate-y-0.5">
+          <div className="relative flex items-center gap-1 flex-shrink-0 -translate-y-0.5">
+            <div onClick={(e) => e.stopPropagation()}>
+              <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs flex-shrink-0">
+                {hasDevices ? `${deviceCount} Device${deviceCount !== 1 ? 's' : ''}` : 'No Devices'}
+              </Badge>
+            </div>
            {/* Actions Dropdown */} 
             <DropdownMenu>
               <TooltipProvider delayDuration={100}>
