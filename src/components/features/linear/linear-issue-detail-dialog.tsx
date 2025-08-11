@@ -277,7 +277,7 @@ export function LinearIssueDetailDialog({
         <div className="flex h-full overflow-hidden">
           {/* Main Content Area */}
           <div className="flex-1 flex flex-col min-w-0">
-            <DialogHeader className="px-8 py-6 border-b bg-muted/20 flex-shrink-0">
+            <DialogHeader className="px-8 py-6 border-b bg-muted/20 shrink-0">
               <div className="flex items-center gap-3 mb-4">
                 <span className="font-mono text-sm text-muted-foreground">
                   {localIssue.team.name}
@@ -329,7 +329,7 @@ export function LinearIssueDetailDialog({
           </div>
 
           {/* Properties Sidebar */}
-          <div className="w-80 flex-shrink-0 border-l bg-muted/10 overflow-y-auto">
+          <div className="w-80 shrink-0 border-l bg-muted/10 overflow-y-auto">
             <div className="p-6 space-y-6">
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                 Properties

@@ -242,7 +242,7 @@ export function PushcutTestModal({ isOpen, onOpenChange, pushcutConfig }: Pushcu
         {!pushcutConfig?.apiKey && (
           <div className="px-6 pb-6">
             <div className="p-3 rounded-md bg-yellow-50 border border-yellow-200 text-yellow-700 dark:bg-yellow-900/30 dark:border-yellow-700/50 dark:text-yellow-300 flex items-start">
-              <AlertTriangle className="h-5 w-5 mr-2 flex-shrink-0" />
+              <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
               <p className="text-sm">
                 Pushcut API Key is not configured. Please configure it in the settings before sending a test.
               </p>
@@ -250,7 +250,7 @@ export function PushcutTestModal({ isOpen, onOpenChange, pushcutConfig }: Pushcu
           </div>
         )}
 
-        <div className="flex-grow overflow-y-auto px-6 pb-6">
+        <div className="grow overflow-y-auto px-6 pb-6">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" id="pushcut-test-form">
               <FormField

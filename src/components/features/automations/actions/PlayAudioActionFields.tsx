@@ -56,7 +56,7 @@ export function PlayAudioActionFields({ form, actionIndex, devices, isLoading, o
                   return (
                     <SelectItem key={device.id} value={device.id}>
                       <div className="flex items-center">
-                        <IconComponent className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+                        <IconComponent className="h-4 w-4 mr-2 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <span>{device.name}</span>
                       </div>
                     </SelectItem>
@@ -125,7 +125,7 @@ export function PlayAudioActionFields({ form, actionIndex, devices, isLoading, o
           control={form.control}
           name={`config.actions.${actionIndex}.params.volumeTemplate`}
           render={({ field, fieldState }) => (
-            <FormItem className="flex-grow">
+            <FormItem className="grow">
               <FormLabel>Volume (Optional)</FormLabel>
               <FormControl>
                 <Input {...field} disabled={!!isLoading} placeholder="1-100" type="number" min="1" max="100" className={cn('w-[120px]', fieldState.error && (fieldState.isTouched || form.formState.isSubmitted) && 'border-destructive')} />
@@ -139,7 +139,7 @@ export function PlayAudioActionFields({ form, actionIndex, devices, isLoading, o
           control={form.control}
           name={`config.actions.${actionIndex}.params.repeatTemplate`}
           render={({ field, fieldState }) => (
-            <FormItem className="flex-grow">
+            <FormItem className="grow">
               <FormLabel>Repeat (Optional)</FormLabel>
               <FormControl>
                 <Input {...field} disabled={!!isLoading} placeholder="0-10" type="number" min="0" max="10" className={cn('w-[120px]', fieldState.error && (fieldState.isTouched || form.formState.isSubmitted) && 'border-destructive')} />

@@ -46,7 +46,7 @@ export function EventsByConnectorChart({
 
   return (
     <Card className={`flex flex-col h-full ${className}`}>
-      <CardHeader className="flex flex-col items-stretch border-b flex-shrink-0 sm:flex-row">
+      <CardHeader className="flex flex-col items-stretch border-b shrink-0 sm:flex-row">
         <div className="flex flex-1 flex-col justify-center gap-1 px-6 pb-3 sm:pb-0">
           <CardTitle>Events by Connector Type</CardTitle>
           <CardDescription>{timeFilterDisplay}</CardDescription>
@@ -71,7 +71,7 @@ export function EventsByConnectorChart({
               onClick={() => setActiveChart(category)}
             >
               <div className="flex items-center gap-2 min-w-0">
-                <ConnectorIcon connectorCategory={category} size={12} className="flex-shrink-0" />
+                <ConnectorIcon connectorCategory={category} size={12} className="shrink-0" />
                 <span className="text-muted-foreground text-xs truncate">
                   {chartConfig[category]?.label}
                 </span>

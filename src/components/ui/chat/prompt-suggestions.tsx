@@ -31,7 +31,7 @@ export function PromptSuggestions({
               onClick={() => append({ role: "user", content: text })}
               className="h-max rounded-lg border bg-background p-3 hover:bg-muted text-left flex items-start gap-3"
             >
-              {Icon && <Icon className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />}
+              {Icon && <Icon className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />}
               <p className="line-clamp-2 flex-1">{text}</p>
             </button>
           )

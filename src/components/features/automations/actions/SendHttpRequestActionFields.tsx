@@ -136,7 +136,7 @@ export function SendHttpRequestActionFields({ form, actionIndex, handleInsertTok
     return (
         <div className="space-y-4">
             {/* URL + Method Field Row - Standardized Structure Above Controls */}
-            <div className="grid grid-cols-[120px,1fr] gap-4 items-start">
+            <div className="grid grid-cols-[120px_1fr] gap-4 items-start">
                 {/* Method Field */}
                 <FormField control={form.control} name={paramFieldName('method')} render={({ field }) => (
                     <FormItem>
@@ -163,7 +163,7 @@ export function SendHttpRequestActionFields({ form, actionIndex, handleInsertTok
                                 ))}
                             </SelectContent>
                         </Select>
-                        <FormMessage className="text-xs min-h-[1rem] mt-1"/> {/* Consistent spacing */}
+                        <FormMessage className="text-xs min-h-4 mt-1"/> {/* Consistent spacing */}
                     </FormItem>
                 )} />
                 
@@ -185,7 +185,7 @@ export function SendHttpRequestActionFields({ form, actionIndex, handleInsertTok
                              {/* TokenInserter is now a sibling to FormControl */} 
                             <TokenInserter tokens={AVAILABLE_AUTOMATION_TOKENS} onInsert={insertUrlToken}/>
                         </div>
-                        <FormMessage className="text-xs min-h-[1rem] mt-1"/> 
+                        <FormMessage className="text-xs min-h-4 mt-1"/> 
                     </FormItem>
                 )} />
             </div>

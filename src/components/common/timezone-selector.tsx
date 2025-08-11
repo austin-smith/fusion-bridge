@@ -132,7 +132,7 @@ export const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
         </Button>
       </PopoverTrigger>
       <PopoverContent 
-        className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0"
+        className="w-(--radix-popover-trigger-width) max-h-(--radix-popover-content-available-height) p-0"
         onWheel={(e) => e.stopPropagation()} 
       >
         <Command>

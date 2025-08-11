@@ -32,7 +32,7 @@ export function SetDeviceStateActionFields({ form, actionIndex, devices, allLoca
           control={form.control}
           name={`config.actions.${actionIndex}.params.targetDeviceInternalId`}
           render={({ field, fieldState }) => (
-            <FormItem className="flex-grow-0 m-0">
+            <FormItem className="grow-0 m-0">
               <DeviceSelectorCombo
                 value={field.value}
                 onChange={field.onChange}
@@ -57,7 +57,7 @@ export function SetDeviceStateActionFields({ form, actionIndex, devices, allLoca
           control={form.control}
           name={`config.actions.${actionIndex}.params.targetState`}
           render={({ field, fieldState }) => (
-            <FormItem className="flex-grow-0 m-0">
+            <FormItem className="grow-0 m-0">
               <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={!!isLoading}>
                 <FormControl>
                   <SelectTrigger className={cn('w-[120px]', fieldState.error && (fieldState.isTouched || form.formState.isSubmitted) && 'border-destructive')}>

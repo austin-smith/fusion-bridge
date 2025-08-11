@@ -356,7 +356,7 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
           size="lg"
           className="h-14 w-14 min-w-14 rounded-full shadow-lg hover:shadow-2xl transition-all duration-300 ai-gradient ai-gradient-hover border-0 ring-2 ring-white/10 hover:ring-white/20 hover:scale-105 active:scale-95 p-0 flex items-center justify-center"
         >
-          <MessagesSquare className="!h-6 !w-6 text-white drop-shadow-sm" />
+          <MessagesSquare className="h-6! w-6! text-white drop-shadow-sm" />
           <span className="sr-only">AI Assistant</span>
         </Button>
       </div>
@@ -385,7 +385,7 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
             : "animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-1 duration-200"
         )}
       >
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 ai-gradient rounded-t-lg flex-shrink-0">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 ai-gradient rounded-t-lg shrink-0">
           <CardTitle className="flex items-center gap-2 text-sm font-medium">
             <MessagesSquare className="h-5 w-5" />
             AI Assistant

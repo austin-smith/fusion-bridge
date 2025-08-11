@@ -25,7 +25,7 @@ export function AutomationSuccessRateChart({
 }: AutomationSuccessRateChartProps) {
   return (
     <Card className={`flex flex-col h-full ${className}`}>
-      <CardHeader className="pb-0 flex-shrink-0">
+      <CardHeader className="pb-0 shrink-0">
         <CardTitle>Automation Success Rate</CardTitle>
         <CardDescription>{timeFilterDisplay}</CardDescription>
       </CardHeader>
@@ -105,7 +105,7 @@ export function AutomationSuccessRateChart({
           )}
         </div>
       </CardContent>
-      <CardFooter className="flex-col gap-2 text-sm flex-shrink-0">
+      <CardFooter className="flex-col gap-2 text-sm shrink-0">
         {automationStats && automationStats.total > 0 && (
           <>
             <div className="flex items-center gap-2 leading-none font-medium">

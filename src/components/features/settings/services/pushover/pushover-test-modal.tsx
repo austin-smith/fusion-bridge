@@ -277,7 +277,7 @@ export function PushoverTestModal({ isOpen, onOpenChange, pushoverConfig }: Push
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-grow overflow-y-auto px-6 pb-6">
+        <div className="grow overflow-y-auto px-6 pb-6">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" id="pushover-test-form">
               <div className="space-y-4">

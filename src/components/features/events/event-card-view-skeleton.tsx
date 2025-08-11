@@ -37,7 +37,7 @@ export const EventCardViewSkeleton: React.FC<EventCardViewSkeletonProps> = ({
           {/* Section header skeleton matching the real structure */}
           <div className="flex items-center mb-3 py-2">
             <Skeleton className="h-4 w-20" />
-            <div className="flex-grow border-t border-border ml-4"></div>
+            <div className="grow border-t border-border ml-4"></div>
           </div>
           <div className={gridClasses}>
             {[...Array(cardsPerSegment)].map((_, cardIndex) => (

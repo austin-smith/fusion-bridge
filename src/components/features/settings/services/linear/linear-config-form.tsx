@@ -186,7 +186,7 @@ export function LinearConfigForm({ initialConfig, isEnabled, onSaveSuccess }: Li
           >
             <SelectTrigger>
               {isLoadingTeams && (
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-2 flex-shrink-0" />
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-2 shrink-0" />
               )}
               <SelectValue placeholder={
                 isLoadingTeams 

@@ -125,7 +125,7 @@ export function OrganizationLogoSelector({ value, onChange }: OrganizationLogoSe
                     Emoji: ({ emoji, ...props }) => (
                       <button
                         type="button"
-                        className="flex size-8 items-center justify-center rounded-md text-lg hover:bg-accent data-[active]:bg-accent"
+                        className="flex size-8 items-center justify-center rounded-md text-lg hover:bg-accent data-active:bg-accent"
                         {...props}
                       >
                         {emoji.emoji}

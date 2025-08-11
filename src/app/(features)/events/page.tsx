@@ -779,7 +779,7 @@ export default function EventsPage() {
               <TooltipTrigger asChild>
                 <div className="max-w-32 whitespace-nowrap overflow-hidden text-ellipsis cursor-default">
                   <Badge variant="outline" className="inline-flex items-center gap-1 px-2 py-0.5">
-                    {React.createElement(StateIcon, { className: "h-3 w-3 flex-shrink-0" })}
+                    {React.createElement(StateIcon, { className: "h-3 w-3 shrink-0" })}
                     <span>{displayState}</span>
                   </Badge>
                 </div>
@@ -867,7 +867,7 @@ export default function EventsPage() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <DialogTrigger asChild>
-                      <Button variant="outline" size="icon" className="h-6 w-6 flex-shrink-0">
+                      <Button variant="outline" size="icon" className="h-6 w-6 shrink-0">
                         <Play className="h-4 w-4" />
                       </Button>
                     </DialogTrigger>
@@ -1068,7 +1068,7 @@ export default function EventsPage() {
         {videoPlayerProps && isVideoPlayerOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-background rounded-lg shadow-xl max-w-[80vw] max-h-[90vh] w-full mx-4 flex flex-col">
-              <div className="p-4 pb-2 flex flex-row items-center justify-between space-y-0 flex-shrink-0 border-b">
+              <div className="p-4 pb-2 flex flex-row items-center justify-between space-y-0 shrink-0 border-b">
                 <div className="flex items-center gap-2">
                   <Video className="h-5 w-5 text-muted-foreground"/>
                   <h2 className="text-lg font-medium">{videoPlayerProps.title}</h2>
@@ -1082,7 +1082,7 @@ export default function EventsPage() {
                   Camera: {videoPlayerProps.deviceName}
                 </p>
               )}
-              <div className="relative flex-grow w-full min-h-0 p-4">
+              <div className="relative grow w-full min-h-0 p-4">
                                  <PikoVideoPlayer 
                    connectorId={videoPlayerProps.connectorId || ''}
                    pikoSystemId={videoPlayerProps.pikoSystemId || undefined}
@@ -1369,17 +1369,17 @@ export default function EventsPage() {
 
         {/* Show skeleton when loading AND preferences are initialized */}
         {(isLoadingEvents || !eventsHasInitiallyLoaded) && preferencesInitialized ? (
-          <div className="flex-shrink-0">
+          <div className="shrink-0">
             {viewMode === 'card' 
               ? <EventCardViewSkeleton segmentCount={2} cardsPerSegment={4} cardSize={cardSize} />
               : <EventsTableSkeleton rowCount={15} columnCount={columns.length} />}
           </div>
         ) : (isLoadingEvents || !eventsHasInitiallyLoaded) && !preferencesInitialized ? (
           /* Don't show any skeleton while preferences are loading to avoid race condition */
-          <div className="flex-shrink-0"></div>
+          <div className="shrink-0"></div>
         ) : (
           /* Show content when loaded */
-          <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
+          <div className="border rounded-md grow overflow-hidden flex flex-col">
             {viewMode === 'table' ? (
               <EventsTableView 
                 table={table} 
@@ -1397,7 +1397,7 @@ export default function EventsPage() {
               displayedEvents.length > 0 ? (
                 <EventCardView events={displayedEvents} spaces={spaces} allDevices={allDevices} cardSize={cardSize} onPlayVideo={handlePlayVideo} />
               ) : (
-                <div className="flex-grow flex items-center justify-center p-4">
+                <div className="grow flex items-center justify-center p-4">
                   <div className="text-center">
                     <p className="text-muted-foreground">
                       No events match your current filters.

@@ -119,7 +119,7 @@ const SpaceCameraGrid: React.FC<SpaceCameraGridProps> = ({ cameraDevices }) => {
          return (
            <div key={device.id} className="overflow-hidden grid-item-container">
              <Card className="h-full w-full flex flex-col">
-               <CardHeader className="p-1.5 flex-shrink-0 border-b bg-muted/30 rounded-t-lg">
+               <CardHeader className="p-1.5 shrink-0 border-b bg-muted/30 rounded-t-lg">
                  <CardTitle 
                    className="text-xs font-medium truncate text-center" 
                    title={device.name}
@@ -127,7 +127,7 @@ const SpaceCameraGrid: React.FC<SpaceCameraGridProps> = ({ cameraDevices }) => {
                    {device.name}
                  </CardTitle>
                </CardHeader>
-               <CardContent className="p-0 flex-grow relative overflow-hidden rounded-b-lg"> 
+               <CardContent className="p-0 grow relative overflow-hidden rounded-b-lg"> 
                  <div className="absolute inset-0 p-2">
                    <PikoVideoPlayer
                      connectorId={device.connectorId}
@@ -156,15 +156,15 @@ export const SpaceCameraWallDialog: React.FC<SpaceCameraWallDialogProps> = ({
         className="max-w-none w-[95vw] h-[90vh] flex flex-col p-4 sm:p-6"
         onOpenAutoFocus={(e) => e.preventDefault()} // Prevent focus trap issues on first element
       >
-        <DialogHeader className="flex-shrink-0 pb-2 border-b mb-4">
+        <DialogHeader className="shrink-0 pb-2 border-b mb-4">
           <DialogTitle>Camera Wall: {spaceName}</DialogTitle>
         </DialogHeader>
         
-        <div className="flex-grow overflow-y-auto pr-2 -mr-2"> {/* Allow content to scroll */} 
+        <div className="grow overflow-y-auto pr-2 -mr-2"> {/* Allow content to scroll */} 
           <SpaceCameraGrid cameraDevices={cameraDevices} />
         </div>
 
-        <DialogFooter className="flex-shrink-0 pt-4 border-t mt-4">
+        <DialogFooter className="shrink-0 pt-4 border-t mt-4">
           <DialogClose asChild>
             <Button type="button" variant="secondary">Close</Button>
           </DialogClose>

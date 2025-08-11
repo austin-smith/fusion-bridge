@@ -519,7 +519,7 @@ export default function DevicesPage() {
                       <div className="max-w-32 whitespace-nowrap overflow-hidden text-ellipsis cursor-default">
                           {state ? (
                             <Badge variant="outline" className="inline-flex items-center gap-1 px-2 py-0.5 font-normal">
-                              {React.createElement(StateIcon, { className: "h-3 w-3 flex-shrink-0" })}
+                              {React.createElement(StateIcon, { className: "h-3 w-3 shrink-0" })}
                               <span className="text-xs">{state}</span>
                             </Badge>
                           ) : (
@@ -715,7 +715,7 @@ export default function DevicesPage() {
           actions={pageActions}
         />
 
-        <div className="flex-shrink-0">
+        <div className="shrink-0">
           {error && (
             <div className="mb-4 p-3 bg-destructive/10 text-destructive text-sm rounded-md">
               <p>Error: {error}</p>
@@ -737,8 +737,8 @@ export default function DevicesPage() {
 
             {/* Show table only AFTER load and if there is data */} 
             {tableData.length > 0 && (
-              <div className="border rounded-md flex-grow overflow-hidden flex flex-col">
-                <div className="flex-grow overflow-auto"> 
+              <div className="border rounded-md grow overflow-hidden flex flex-col">
+                <div className="grow overflow-auto"> 
                   <Table>
                     <TableHeader className="sticky top-0 bg-background z-10">
                       {table.getHeaderGroups().map((headerGroup) => (
@@ -804,7 +804,7 @@ export default function DevicesPage() {
                     </TableBody>
                   </Table>
                 </div>
-                <div className="flex items-center justify-between p-2 border-t flex-shrink-0">
+                <div className="flex items-center justify-between p-2 border-t shrink-0">
                   <div className="flex-1 text-sm text-muted-foreground">
                     Total Rows: {table.getFilteredRowModel().rows.length}
                   </div>

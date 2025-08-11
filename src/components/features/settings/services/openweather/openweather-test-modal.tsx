@@ -142,7 +142,7 @@ export function OpenWeatherTestModal({ isOpen, onOpenChange, openWeatherConfig }
 
         {!openWeatherConfig?.apiKey && (
           <div className="p-3 rounded-md bg-yellow-50 border border-yellow-200 text-yellow-700 dark:bg-yellow-900/30 dark:border-yellow-700/50 dark:text-yellow-300 flex items-start">
-            <AlertTriangle className="h-5 w-5 mr-2 flex-shrink-0" />
+            <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
             <p className="text-sm">
               OpenWeather API Key is not configured. Please configure it in the settings before testing.
             </p>
@@ -204,7 +204,7 @@ export function OpenWeatherTestModal({ isOpen, onOpenChange, openWeatherConfig }
                   : 'bg-red-50 border-red-200 text-red-700 dark:bg-red-900/30 dark:border-red-700/50 dark:text-red-300'
               }`}>
                 <div className="flex items-start">
-                  <Sun className="h-5 w-5 mr-2 flex-shrink-0" />
+                  <Sun className="h-5 w-5 mr-2 shrink-0" />
                   <div className="space-y-1">
                     <p className="text-sm font-medium">{testResult.message}</p>
                     {testResult.result && (

@@ -107,7 +107,7 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices
 
   if (!events || events.length === 0) {
     return (
-      <div className="flex-grow flex items-center justify-center p-4">
+      <div className="grow flex items-center justify-center p-4">
         <p className="text-muted-foreground">
             No events have been received yet. This page will update periodically.
         </p>
@@ -118,14 +118,14 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices
   if (timeSegments.length === 0 && events.length > 0) {
      // Handle the case where processing might be happening or resulted in no segments
      return (
-        <div className="flex-grow flex items-center justify-center p-4">
+        <div className="grow flex items-center justify-center p-4">
             <p className="text-muted-foreground">Processing events...</p>
         </div>
      );
   }
 
   return (
-    <ScrollArea className="flex-grow h-full">
+    <ScrollArea className="grow h-full">
       <div className="p-4 space-y-6">
         {timeSegments.map((segment, segIndex) => {
           return (
@@ -134,7 +134,7 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">
                   {segment.label}
                 </h3>
-                <div className="flex-grow border-t border-border ml-4"></div>
+                <div className="grow border-t border-border ml-4"></div>
               </div>
               <div className={gridClasses}>
                 {segment.groups.map((group) => {

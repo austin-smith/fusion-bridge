@@ -160,7 +160,7 @@ export function AppSidebar() {
         </Link>
       </SidebarHeader>
       
-      <SidebarContent className="flex-grow">
+      <SidebarContent className="grow">
         {/* Organization Switcher */}
         <div className="p-2 border-b">
           <OrganizationSwitcher />
@@ -206,7 +206,7 @@ export function AppSidebar() {
                               }}
                               className="flex items-center w-full"
                             >
-                              <Icon className="mr-2 h-5 w-5 flex-shrink-0 group-data-[collapsible=icon]:mr-0" />
+                              <Icon className="mr-2 h-5 w-5 shrink-0 group-data-[collapsible=icon]:mr-0" />
                               <span className="truncate group-data-[collapsible=icon]:hidden">{item.label}</span>
                               {(() => {
                                 const dynamicBadge = getDynamicBadge(item, activeAlarmCount);
@@ -256,7 +256,7 @@ export function AppSidebar() {
               <div className={cn("flex h-full w-full items-center gap-2")}>
                 {/* Avatar: Always render, conditionally populate */}
                 <Avatar className={cn(
-                  "size-7 flex-shrink-0",
+                  "size-7 shrink-0",
                   "group-data-[collapsible=icon]:size-8",
                   // Muted background if loading or no user
                   (isPending || !currentUser) && "bg-muted"
@@ -306,7 +306,7 @@ export function AppSidebar() {
               side={isMobile ? 'bottom' : 'right'}
               align="end"
               sideOffset={4}
-              className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
             >
               <DropdownMenuLabel className="font-normal">
                  <div className="flex items-center gap-3">

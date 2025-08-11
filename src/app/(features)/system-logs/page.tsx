@@ -178,7 +178,7 @@ export default function SystemLogsPage() {
         connectionStatus === 'connecting' ? "secondary" :
         "destructive" // error state
       } className="h-8 px-3 flex items-center gap-1.5 w-28 justify-center pointer-events-none">
-        <span className={`h-2 w-2 rounded-full inline-flex flex-shrink-0 animate-pulse ${
+        <span className={`h-2 w-2 rounded-full inline-flex shrink-0 animate-pulse ${
           connectionStatus === 'paused' ? 'bg-gray-500' :
           connectionStatus === 'connected' ? 'bg-green-400 ring-1 ring-white' :
           connectionStatus === 'connecting' ? 'bg-yellow-400 ring-1 ring-white' :
@@ -203,7 +203,7 @@ export default function SystemLogsPage() {
         <CardHeader className="flex-none pb-4 border-b"> {/* Add border back */} 
           <div className="flex items-start justify-between gap-4">
             {/* Title/Description Section */}
-            <div className="flex items-center gap-4 flex-shrink-0">
+            <div className="flex items-center gap-4 shrink-0">
               <Terminal className="h-6 w-6 text-muted-foreground" />
               <div>
                 <CardTitle className="text-xl">System Logs</CardTitle> {/* Adjusted size */}

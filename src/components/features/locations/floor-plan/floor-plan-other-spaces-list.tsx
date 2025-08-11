@@ -39,7 +39,7 @@ export function FloorPlanOtherSpacesList({ devices, title = 'Other devices in th
                   {subtypeText ? <span> / {subtypeText}</span> : null}
                 </div>
               </div>
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 {displayState ? (
                   <Badge variant="outline" className="inline-flex items-center gap-1 px-1.5 py-0.5">
                     {DisplayIcon && <DisplayIcon className={cn('h-3 w-3', stateColorClass)} />}

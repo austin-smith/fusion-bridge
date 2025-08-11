@@ -123,7 +123,7 @@ function AutomationCardSkeleton() {
         <Card key={index} className="overflow-hidden">
           <div className="pb-2 border-b p-4">
             {/* Grid layout matching the actual card header */}
-            <div className="grid grid-cols-[1fr,auto] gap-2 w-full">
+            <div className="grid grid-cols-[1fr_auto] gap-2 w-full">
               {/* Title area with truncation - MATCHES ACTUAL COMPONENT */}
               <div className="flex items-center space-x-2 overflow-hidden">
                 <div className="overflow-hidden">
@@ -534,7 +534,7 @@ function AutomationCard({ automation, refreshData, connectors, targetDevices, lo
       <Card className="overflow-hidden hover:shadow-md transition-shadow">
         <CardHeader className="p-4 border-b">
           {/* Using grid for reliable layout with truncation */}
-          <div className="grid grid-cols-[1fr,auto] gap-2 w-full">
+          <div className="grid grid-cols-[1fr_auto] gap-2 w-full">
             {/* Title area with truncation */}
             <div className="flex items-center space-x-2 overflow-hidden">
               <div className="overflow-hidden">

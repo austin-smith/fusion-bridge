@@ -11,10 +11,10 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, icon, actions }: PageHeaderProps) {
   return (
-    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 flex-shrink-0">
+    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0">
       {/* Title, Description, and Icon Section */}
-      <div className="flex items-center gap-3 flex-shrink-0 mr-4"> {/* Add margin-right for spacing on larger screens */}
-        {icon && <div className="text-muted-foreground flex-shrink-0">{icon}</div>}
+      <div className="flex items-center gap-3 shrink-0 mr-4"> {/* Add margin-right for spacing on larger screens */}
+        {icon && <div className="text-muted-foreground shrink-0">{icon}</div>}
         <div>
           <h1 className="text-xl font-semibold text-foreground">
             {title}

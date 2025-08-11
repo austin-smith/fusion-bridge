@@ -104,7 +104,7 @@ function DraggableDeviceItem({ device, isCompact = false, inList = false }: Drag
       {/* Hidden drag preview element */}
       <div
         ref={dragPreviewRef}
-        className="fixed -top-[1000px] -left-[1000px] pointer-events-none z-[9999]"
+        className="fixed -top-[1000px] -left-[1000px] pointer-events-none z-9999"
         aria-hidden
       >
         <div className="relative w-8 h-8">
@@ -137,7 +137,7 @@ function DraggableDeviceItem({ device, isCompact = false, inList = false }: Drag
               )}
             >
             {/* Device Icon */}
-            <div className="flex-shrink-0">
+            <div className="shrink-0">
               <IconComponent className="h-4 w-4 text-muted-foreground" />
             </div>
             
@@ -159,14 +159,14 @@ function DraggableDeviceItem({ device, isCompact = false, inList = false }: Drag
             </div>
             
             {/* State Indicator */}
-            <div className="flex-shrink-0 flex items-center gap-1">
+            <div className="shrink-0 flex items-center gap-1">
               {StateIconComponent && (
                 <StateIconComponent className={cn("h-3 w-3", stateColorClass)} />
               )}
             </div>
             
              {/* Drag Handle Indicator */}
-            <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
               <div className="flex flex-col gap-0.5">
                 <div className="w-1 h-1 bg-muted-foreground/50 rounded-full"></div>
                 <div className="w-1 h-1 bg-muted-foreground/50 rounded-full"></div>
@@ -339,7 +339,7 @@ export function DevicePalette({
 
   return (
     <Card className={cn("h-full flex flex-col", className)}>
-      <CardHeader className="pb-3 sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+      <CardHeader className="pb-3 sticky top-0 z-10 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 border-b">
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -422,7 +422,7 @@ export function DevicePalette({
                   }}
               >
                 <CollapsibleTrigger asChild>
-                  <div className="w-full sticky top-0 z-[1]">
+                  <div className="w-full sticky top-0 z-1">
                     <Button
                       variant="ghost"
                       className="w-full justify-between h-auto px-2 py-1.5 font-medium border border-transparent hover:border-border rounded-md"

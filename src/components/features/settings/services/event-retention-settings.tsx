@@ -324,13 +324,13 @@ export function EventRetentionSettings({
                     handlePolicyChange({ strategy: value })
                   }
                 >
-                  <SelectTrigger className="w-full [&>span]:![display:inline] [&>span]:![-webkit-line-clamp:unset] [&>span]:!overflow-visible">
+                  <SelectTrigger className="w-full [&>span]:inline! [&>span]:[-webkit-line-clamp:unset]! [&>span]:overflow-visible!">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={RetentionStrategy.TIME}>
                       <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-2 shrink-0">
                           <Clock className="h-4 w-4" />
                           <span className="whitespace-nowrap">Time-based</span>
                         </div>
@@ -339,7 +339,7 @@ export function EventRetentionSettings({
                     </SelectItem>
                     <SelectItem value={RetentionStrategy.COUNT}>
                       <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-2 shrink-0">
                           <Database className="h-4 w-4" />
                           <span className="whitespace-nowrap">Count-based</span>
                         </div>
@@ -348,7 +348,7 @@ export function EventRetentionSettings({
                     </SelectItem>
                     <SelectItem value={RetentionStrategy.HYBRID}>
                       <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-2 shrink-0">
                           <Blend className="h-4 w-4" />
                           <span className="whitespace-nowrap">Hybrid</span>
                         </div>

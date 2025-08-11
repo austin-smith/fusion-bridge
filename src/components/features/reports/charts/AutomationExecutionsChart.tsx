@@ -33,7 +33,7 @@ export function AutomationExecutionsChart({
 }: AutomationExecutionsChartProps) {
   return (
     <Card className={`flex flex-col h-full ${className}`}>
-      <CardHeader className="flex-shrink-0">
+      <CardHeader className="shrink-0">
         <CardTitle>Automation Executions</CardTitle>
         <CardDescription>{timeFilterDisplay}</CardDescription>
       </CardHeader>

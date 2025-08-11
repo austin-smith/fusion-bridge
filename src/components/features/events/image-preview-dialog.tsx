@@ -162,7 +162,7 @@ export const ImagePreviewDialog: React.FC<ImagePreviewDialogProps> = ({
           </div>
 
           {/* Floating toolbar (top-right) */}
-          <div className="absolute top-2 right-3 z-[61] pointer-events-none">
+          <div className="absolute top-2 right-3 z-61 pointer-events-none">
             <TooltipProvider>
               <div className="pointer-events-auto inline-flex items-center gap-1 rounded-md bg-background/80 backdrop-blur-sm border px-1.5 py-1">
                 

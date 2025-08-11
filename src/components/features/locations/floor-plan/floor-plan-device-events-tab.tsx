@@ -193,7 +193,7 @@ export function FloorPlanDeviceEventsTab({ deviceId, spaceCameras }: FloorPlanDe
                 >
                   <div className="flex items-start gap-3">
                     {hasThumb ? (
-                      <div className="relative h-12 w-16 flex-shrink-0 overflow-hidden rounded-sm border">
+                      <div className="relative h-12 w-16 shrink-0 overflow-hidden rounded-sm border">
                         <Image
                           src={thumbUrl!}
                           alt=""
@@ -212,7 +212,7 @@ export function FloorPlanDeviceEventsTab({ deviceId, spaceCameras }: FloorPlanDe
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
                       </div>
                     ) : thumbUrl ? (
-                      <div className="h-12 w-16 flex-shrink-0 rounded-sm border bg-muted/30 grid place-items-center">
+                      <div className="h-12 w-16 shrink-0 rounded-sm border bg-muted/30 grid place-items-center">
                         <TooltipProvider delayDuration={150}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -226,7 +226,7 @@ export function FloorPlanDeviceEventsTab({ deviceId, spaceCameras }: FloorPlanDe
                         </TooltipProvider>
                       </div>
                     ) : (
-                      <div className="h-12 w-16 flex-shrink-0 rounded-sm border bg-muted/30 grid place-items-center">
+                      <div className="h-12 w-16 shrink-0 rounded-sm border bg-muted/30 grid place-items-center">
                         <CatIcon className="h-5 w-5 text-muted-foreground" />
                       </div>
                     )}

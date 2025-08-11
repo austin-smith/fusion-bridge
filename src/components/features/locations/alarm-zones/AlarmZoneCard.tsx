@@ -86,17 +86,17 @@ export const AlarmZoneCard: React.FC<AlarmZoneCardProps> = ({
       >
          <div className="flex items-center gap-2 min-w-0">
            {isDevicesExpanded ? 
-               <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" /> : 
-               <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+               <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" /> : 
+               <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
            }
-          <Shield className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <Shield className="h-4 w-4 text-muted-foreground shrink-0" />
           <CardTitle className="text-base font-medium truncate" title={zone.name}>{zone.name}</CardTitle>
-          <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs ml-2 flex-shrink-0">
+          <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs ml-2 shrink-0">
             {deviceCount} {deviceCount === 1 ? 'Device' : 'Devices'}
           </Badge>
          </div>
          
-         <div className="relative flex items-center gap-1 flex-shrink-0 -translate-y-0.5">
+         <div className="relative flex items-center gap-1 shrink-0 -translate-y-0.5">
            {/* Armed State Dropdown Button */} 
            {onArmAction && (
              <DropdownMenu>

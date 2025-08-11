@@ -275,7 +275,7 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         "shadow-md hover:shadow-lg"
       )}>
         <CardHeader className={cn(
-          "p-3 flex-shrink-0"
+          "p-3 shrink-0"
         )}>
           <div className="flex justify-between items-start gap-2">
             <div className="min-w-0">
@@ -418,7 +418,7 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                       <PopoverTrigger asChild>
                         <Badge
                           variant="secondary"
-                          className="text-[10px] h-4 px-1 bg-black/60 hover:bg-black/70 backdrop-blur-sm text-white flex-shrink-0 flex items-center gap-1 cursor-pointer"
+                          className="text-[10px] h-4 px-1 bg-black/60 hover:bg-black/70 backdrop-blur-sm text-white shrink-0 flex items-center gap-1 cursor-pointer"
                         >
                           {DeviceIcon && <DeviceIcon className="h-3 w-3" />}
                           {EVENT_TYPE_DISPLAY_MAP[firstEventType] ?? firstEventType}
@@ -426,10 +426,10 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                         </Badge>
                       </PopoverTrigger>
                       <PopoverContent side="top" align="end" className="w-72 p-0 shadow-xl flex flex-col">
-                        <div className="p-3 flex-shrink-0">
+                        <div className="p-3 shrink-0">
                           <p className="font-medium text-sm mb-2">Event Sequence</p>
                         </div>
-                        <ScrollArea className="flex-grow min-h-0 w-full" type="scroll">
+                        <ScrollArea className="grow min-h-0 w-full" type="scroll">
                           <div className="px-3 pb-3">
                             <div className="relative border-l border-muted ml-1.5 pl-4 space-y-2">
                               {events.map((event) => {
@@ -448,7 +448,7 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                                       </div>
                                       <div className="flex items-start gap-1 mb-1">
                                         <DeviceIcon className="h-4 w-4 text-muted-foreground mt-0.5" />
-                                        <div className="flex-grow min-w-0">
+                                        <div className="grow min-w-0">
                                           <div className="font-medium truncate">{event.deviceName || event.deviceId}</div>
                                           <div className="flex items-center flex-wrap gap-1 mt-0.5">
                                             {(event.eventType === EventType.STATE_CHANGED && event.displayState && StateIcon) ? (

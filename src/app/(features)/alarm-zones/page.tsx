@@ -336,7 +336,7 @@ export default function AlarmZonesPage() {
                       <Skeleton className="h-5 w-28 rounded" /> {/* Zone name */}
                       <Skeleton className="h-5 w-16 rounded-full" /> {/* Device count badge */}
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
+                    <div className="flex items-center gap-1 shrink-0">
                       <Skeleton className="h-7 w-20 rounded-md" /> {/* Armed state dropdown */}
                       <Skeleton className="h-7 w-7 rounded-md" /> {/* Actions dropdown */}
                     </div>
@@ -423,7 +423,7 @@ export default function AlarmZonesPage() {
   // Define page actions
   const pageActions = (
     <>
-      <div className="relative flex-shrink-0">
+      <div className="relative shrink-0">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
           type="search"
@@ -479,7 +479,7 @@ export default function AlarmZonesPage() {
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div className="flex flex-col h-full"> 
-      <div className="p-4 border-b flex-shrink-0">
+      <div className="p-4 border-b shrink-0">
         <PageHeader 
           title="Alarm Zones"
           description="Manage security zones for coordinated alarm management"
@@ -526,7 +526,7 @@ export default function AlarmZonesPage() {
                   <Card key={location.id} className="overflow-visible">
                     <CardHeader className="flex flex-row items-center justify-between pb-3 bg-muted/25">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Building className="h-5 w-5 flex-shrink-0" />
+                        <Building className="h-5 w-5 shrink-0" />
                         <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
                       </div>
                       <Button 

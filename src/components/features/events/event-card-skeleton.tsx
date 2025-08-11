@@ -17,7 +17,7 @@ export const EventCardSkeleton: React.FC<EventCardSkeletonProps> = ({ cardSize =
 
   return (
     <Card className={cn("overflow-hidden flex flex-col border-l-4 border-transparent")}>
-      <CardHeader className="p-3 flex-shrink-0">
+      <CardHeader className="p-3 shrink-0">
         <Skeleton className="h-5 w-3/4 mb-1.5" />
         <Skeleton className="h-3 w-1/2" />
       </CardHeader>
