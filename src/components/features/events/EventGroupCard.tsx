@@ -22,6 +22,7 @@ import { toast } from 'react-hot-toast';
 import { getThumbnailSource, buildThumbnailUrl } from '@/services/event-thumbnail-resolver';
 import { useDeviceCameraConfig } from '@/hooks/use-device-camera-config';
 import { CameraCarouselControls } from '@/components/features/common/camera-carousel';
+import { useFusionStore } from '@/stores/store';
 
 // Define the structure for a group of events
 // This might be refined later based on the grouping logic in EventCardView
@@ -169,29 +170,49 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
   // --- Media aspect ratio (static across sizes) ---
   const mediaAspectClass = 'aspect-video';
 
-  // --- Primary event/type computation aligned with badge logic ---
+  // --- Resolve location name for header metadata ---
+  const storeLocations = useFusionStore((s) => s.locations);
+  const storeSpaces = useFusionStore((s) => s.spaces);
+  const locationDisplayName = useMemo(() => {
+    const candidateSpaceId = cameras[selectedCameraIndex]?.spaceId || spaceId || representativeDevice?.spaceId || undefined;
+    if (!candidateSpaceId) return undefined;
+    const spaceFromProps = ((): Space | undefined => {
+      // use props.spaces only if available in this component's closure (it is not; kept for clarity)
+      return undefined;
+    })();
+    const spaceFromStore = storeSpaces.find((s: Space) => s.id === candidateSpaceId);
+    const space = spaceFromProps || spaceFromStore;
+    if (!space) return undefined;
+    if (space.location && 'name' in space.location && space.location?.name) return space.location.name;
+    const locId = space.locationId;
+    if (!locId) return undefined;
+    const loc = storeLocations.find((l) => l.id === locId);
+    return loc?.name || undefined;
+  }, [cameras, selectedCameraIndex, spaceId, representativeDevice, storeSpaces, storeLocations]);
+
+  // --- Primary event/type computation (deterministic: latest event's type) ---
   const primaryInfo = useMemo(() => {
-    const allEventTypes = new Set<EventType>();
-    const significantEventTypes = new Set<EventType>();
     const eventTypeCounts = new Map<EventType, number>();
+    const seenTypes = new Set<EventType>();
+    const eventTypesByRecency: EventType[] = [];
 
-    events.forEach(event => {
-      if (!event.eventType) return;
-      const eventType = event.eventType as EventType;
-      allEventTypes.add(eventType);
-      eventTypeCounts.set(eventType, (eventTypeCounts.get(eventType) || 0) + 1);
-      if (eventType !== EventType.STATE_CHANGED && eventType !== EventType.BATTERY_LEVEL_CHANGED) {
-        significantEventTypes.add(eventType);
-      }
-    });
+    for (const event of events) {
+      const type = event.eventType as EventType | undefined;
+      if (!type) continue;
+      eventTypeCounts.set(type, (eventTypeCounts.get(type) || 0) + 1);
+    }
 
-    const eventTypesArray = significantEventTypes.size > 0
-      ? Array.from(significantEventTypes)
-      : Array.from(allEventTypes);
+    // Build unique types ordered by recency (most recent first)
+    for (let i = events.length - 1; i >= 0; i--) {
+      const type = events[i].eventType as EventType | undefined;
+      if (!type || seenTypes.has(type)) continue;
+      seenTypes.add(type);
+      eventTypesByRecency.push(type);
+    }
 
-    const firstEventType = eventTypesArray[0];
+    const firstEventType = eventTypesByRecency[0];
 
-    // Find most recent event matching the firstEventType
+    // Latest event for that type
     let primaryEvent: EnrichedEvent | undefined;
     if (firstEventType) {
       for (let i = events.length - 1; i >= 0; i--) {
@@ -203,10 +224,10 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     }
 
     return {
-      allEventTypes,
-      significantEventTypes,
+      allEventTypes: new Set<EventType>(eventTypesByRecency),
+      significantEventTypes: new Set<EventType>(),
       eventTypeCounts,
-      eventTypesArray,
+      eventTypesArray: eventTypesByRecency,
       firstEventType,
       primaryEvent,
     };
@@ -503,6 +524,9 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         imageUrl={thumbnailUrl} 
         imageAlt={`${displayName} - Preview`} 
         title={`Preview: ${displayName}`}
+        cameraName={cameras[selectedCameraIndex]?.name}
+        spaceName={cameras[selectedCameraIndex]?.spaceName ?? displayName}
+        locationName={locationDisplayName}
       />
 
 
