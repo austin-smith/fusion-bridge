@@ -97,11 +97,15 @@ export function OrganizationSwitcher() {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton size="lg" disabled>
+          <SidebarMenuButton
+            size="lg"
+            disabled
+            className="group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0"
+          >
             <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted">
               <Building2 className="size-4 text-muted-foreground" />
             </div>
-            <div className="grid flex-1 text-left text-sm leading-tight">
+            <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
               <span className="truncate font-semibold text-muted-foreground">
                 Loading...
               </span>
@@ -120,11 +124,15 @@ export function OrganizationSwitcher() {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton size="lg" disabled>
+          <SidebarMenuButton
+            size="lg"
+            disabled
+            className="group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0"
+          >
             <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted">
               <Building2 className="size-4 text-muted-foreground" />
             </div>
-            <div className="grid flex-1 text-left text-sm leading-tight">
+            <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
               <span className="truncate font-semibold text-muted-foreground">
                 No Organizations
               </span>
@@ -149,7 +157,7 @@ export function OrganizationSwitcher() {
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0"
                 disabled={isSwitching}
               >
                 <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
@@ -159,7 +167,7 @@ export function OrganizationSwitcher() {
                     size="default"
                   />
                 </div>
-                <div className="grid flex-1 text-left text-sm leading-tight">
+                <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
                   <span className="truncate font-semibold">
                     {currentOrg.name}
                   </span>
@@ -167,7 +175,7 @@ export function OrganizationSwitcher() {
                     {organizations?.length || 0} organization{(organizations?.length || 0) !== 1 ? 's' : ''}
                   </span>
                 </div>
-                <ChevronsUpDown className="ml-auto size-4" />
+                <ChevronsUpDown className="ml-auto size-4 group-data-[collapsible=icon]:hidden" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
