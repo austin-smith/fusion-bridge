@@ -99,7 +99,7 @@ export function ActionButton({
             "transition-all duration-200 flex items-center gap-2",
             // Let flexbox handle sizing naturally within flex-wrap container
             // Ensure text can truncate but maintain minimum usable width
-            "flex-shrink min-w-0 max-w-full",
+            "shrink min-w-0 max-w-full",
             isExecuting && "cursor-not-allowed",
             className
           )}
@@ -111,7 +111,7 @@ export function ActionButton({
             </>
           ) : (
             <>
-              <IconComponent className="h-4 w-4 flex-shrink-0" />
+              <IconComponent className="h-4 w-4 shrink-0" />
               <span className="text-xs font-medium truncate min-w-0">{action.label}</span>
             </>
           )}

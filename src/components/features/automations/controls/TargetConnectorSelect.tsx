@@ -27,7 +27,7 @@ export function TargetConnectorSelect({ value, onChange, connectors, isLoading, 
           <SelectValue placeholder="Select Target Connector">
             {selected && (
               <div className="flex items-center gap-2">
-                <ConnectorIcon connectorCategory={selected.category} size={18} className="mr-1 flex-shrink-0" />
+                <ConnectorIcon connectorCategory={selected.category} size={18} className="mr-1 shrink-0" />
                 <span className="truncate">{selected.name}</span>
               </div>
             )}
@@ -39,7 +39,7 @@ export function TargetConnectorSelect({ value, onChange, connectors, isLoading, 
         {connectors.map(connector => (
           <SelectItem key={connector.id} value={connector.id} className="flex items-center py-1.5">
             <div className="flex items-center gap-2">
-              <ConnectorIcon connectorCategory={connector.category} size={16} className="flex-shrink-0" />
+              <ConnectorIcon connectorCategory={connector.category} size={16} className="shrink-0" />
               <span className="font-medium">{connector.name}</span>
             </div>
           </SelectItem>

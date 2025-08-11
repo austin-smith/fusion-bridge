@@ -420,7 +420,7 @@ export default function LocationsPage() {
                       <Skeleton className="h-5 w-28 rounded" />
                       <Skeleton className="h-5 w-16 rounded-full" />
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
+                    <div className="flex items-center gap-1 shrink-0">
                       <Skeleton className="h-7 w-7 rounded-md" />
                     </div>
                   </CardHeader>
@@ -514,7 +514,7 @@ export default function LocationsPage() {
   // Define page actions
   const pageActions = (
     <>
-      <div className="relative flex-shrink-0">
+      <div className="relative shrink-0">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
           type="search"
@@ -570,7 +570,7 @@ export default function LocationsPage() {
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div className="flex flex-col h-full"> 
-        <div className="p-4 border-b flex-shrink-0">
+        <div className="p-4 border-b shrink-0">
           <PageHeader 
             title="Locations & Spaces"
             icon={(
@@ -591,7 +591,7 @@ export default function LocationsPage() {
           />
         </div>
 
-        <div className="flex flex-grow overflow-hidden"> 
+        <div className="flex grow overflow-hidden"> 
           {showTreeView && (
             <LocationTreeView
               locations={locations}
@@ -644,11 +644,11 @@ export default function LocationsPage() {
                                       >
                                           <div className="flex items-center gap-2 min-w-0">
                                             {isCollapsed ? (
-                                              <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                                              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                                             ) : (
-                                              <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                                              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                                             )}
-                                            <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                            <Building className="h-4 w-4 text-muted-foreground shrink-0" />
                                             <div className="flex flex-col min-w-0">
                                               <div className="flex items-center gap-2 min-w-0">
                                                 <CardTitle className="text-base font-medium truncate" title={location.name}>{location.name}</CardTitle>
@@ -668,9 +668,9 @@ export default function LocationsPage() {
                                              )}
                                            </div>
                                          </div>
-                                          <div className="relative flex items-center gap-1 flex-shrink-0 -translate-y-0.5">
+                                          <div className="relative flex items-center gap-1 shrink-0 -translate-y-0.5">
                                             <div onClick={(e) => e.stopPropagation()}>
-                                              <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs flex-shrink-0">
+                                              <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs shrink-0">
                                                 {filteredSpaces.length} {filteredSpaces.length === 1 ? 'Space' : 'Spaces'}
                                               </Badge>
                                             </div>

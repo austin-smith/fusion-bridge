@@ -142,7 +142,7 @@ export function LinearCommentsSection({ comments, isLoading = false }: LinearCom
 
   const renderComment = (comment: LinearComment, isReply = false) => (
     <div key={comment.id} className={`flex gap-3 ${isReply ? 'ml-11' : ''}`}>
-      <Avatar className={`${isReply ? 'h-7 w-7' : 'h-8 w-8'} flex-shrink-0`}>
+      <Avatar className={`${isReply ? 'h-7 w-7' : 'h-8 w-8'} shrink-0`}>
         {comment.user.avatarUrl && (
           <AvatarImage src={comment.user.avatarUrl} alt={comment.user.name} />
         )}

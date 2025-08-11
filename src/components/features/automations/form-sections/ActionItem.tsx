@@ -265,7 +265,7 @@ export function ActionItem({
                     <div className="relative">
               <AccordionTrigger className="w-full p-0 hover:no-underline pr-6">
                   <div className="flex items-center w-full px-4 py-3 pr-14">
-                      <div className="flex items-center flex-shrink-0">
+                      <div className="flex items-center shrink-0">
                           <div className="flex items-center gap-1">
                               <ActionIcon />
                               <span className="text-sm font-semibold">{getActionTitle(actionType)}</span>
@@ -323,7 +323,7 @@ export function ActionItem({
                                                   return (
                                                       <SelectItem key={type} value={type} className="pl-6">
                                                           <div className="flex items-center gap-2">
-                                                              <IconComponent className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                                              <IconComponent className="h-4 w-4 text-muted-foreground shrink-0" />
                                                               <span>{getActionTitle(type)}</span>
                                                           </div>
                                                       </SelectItem>

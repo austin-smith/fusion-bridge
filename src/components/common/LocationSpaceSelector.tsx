@@ -64,8 +64,8 @@ export function LocationSpaceSelector({
       if (selectedSpace && selectedLocation) {
         return (
           <div className="flex items-center gap-1.5 min-w-0">
-            <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            <span className="font-medium flex-shrink-0">
+            <Box className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="font-medium shrink-0">
               {selectedSpace.name}
             </span>
             <span className="text-xs text-muted-foreground truncate">
@@ -79,7 +79,7 @@ export function LocationSpaceSelector({
       if (selectedLocation) {
         return (
           <div className="flex items-center gap-2">
-            <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <Building className="h-4 w-4 text-muted-foreground shrink-0" />
             <span className="truncate">{selectedLocation.name}</span>
           </div>
         );
@@ -87,7 +87,7 @@ export function LocationSpaceSelector({
     }
     return (
       <div className="flex items-center gap-2">
-        <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        <Building className="h-4 w-4 text-muted-foreground shrink-0" />
         <span className="font-semibold">All</span>
       </div>
     );

@@ -1093,7 +1093,7 @@ export function AddConnectorModal() {
                                       control={form.control}
                                       name="host"
                                       render={({ field, fieldState }) => (
-                                        <FormItem className="flex-grow">
+                                        <FormItem className="grow">
                                           <FormLabel>Host/URL</FormLabel>
                                           <FormControl>
                                             <Input 

@@ -154,7 +154,7 @@ export default function Home() {
                           variant="ghost" 
                           size="icon" 
                           onClick={() => handleDelete(connector.id)}
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 flex-shrink-0"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 shrink-0"
                         >
                           <Trash2 className="h-4 w-4" />
                           <span className="sr-only">Delete</span>

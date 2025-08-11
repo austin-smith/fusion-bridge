@@ -93,7 +93,7 @@ export const EventHierarchyViewer: React.FC = () => {
     return (
         <div className="flex flex-col h-[calc(60vh+40px)]"> 
             {/* --- Single Toggle Button --- */}
-            <div className="flex items-center justify-end gap-2 mb-2 px-1 flex-shrink-0">
+            <div className="flex items-center justify-end gap-2 mb-2 px-1 shrink-0">
                 <Button variant="outline" size="sm" onClick={toggleAll} className="text-xs h-7">
                     {allExpanded ? (
                         <MinusSquare className="h-3.5 w-3.5" />
@@ -105,7 +105,7 @@ export const EventHierarchyViewer: React.FC = () => {
             </div>
             {/* --- End Single Toggle Button --- */}
 
-            <ScrollArea className="flex-grow pr-4"> 
+            <ScrollArea className="grow pr-4"> 
                 <div className="space-y-1"> 
                     {sortedHierarchyEntries.map(([categoryKey, categoryData], index) => {
                         const IconComponent = getEventCategoryIcon(categoryKey as EventCategory);

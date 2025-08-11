@@ -378,7 +378,7 @@ export function RuleBuilder({
                         </SelectContent>
                     </Select>
                     <span className="text-xs text-muted-foreground">of the following must be true:</span>
-                    <div className="flex-grow"></div> {/* Spacer */} 
+                    <div className="grow"></div> {/* Spacer */} 
                     {depth > 0 && onRemove && (
                         <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={onRemove}>
                             <Trash2 className="h-4 w-4" />

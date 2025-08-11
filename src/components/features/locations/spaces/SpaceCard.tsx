@@ -70,16 +70,16 @@ export const SpaceCard: React.FC<SpaceCardProps> = ({
       >
          <div className="flex items-center gap-2 min-w-0">
            {isDevicesExpanded ? 
-               <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" /> : 
-               <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+               <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" /> : 
+               <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
            }
-          <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <Box className="h-4 w-4 text-muted-foreground shrink-0" />
           <CardTitle className="text-base font-medium truncate" title={space.name}>{space.name}</CardTitle>
          </div>
          
-          <div className="relative flex items-center gap-1 flex-shrink-0 -translate-y-0.5">
+          <div className="relative flex items-center gap-1 shrink-0 -translate-y-0.5">
             <div onClick={(e) => e.stopPropagation()}>
-              <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs flex-shrink-0">
+              <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs shrink-0">
                 {hasDevices ? `${deviceCount} Device${deviceCount !== 1 ? 's' : ''}` : 'No Devices'}
               </Badge>
             </div>

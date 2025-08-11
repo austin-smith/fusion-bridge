@@ -83,7 +83,7 @@ export function OpenAITestModal({ isOpen, onOpenChange, openAIConfig }: OpenAITe
           {/* Warning when not configured - matches OpenWeather pattern */}
           {(!openAIConfig || !openAIConfig.apiKey) && (
             <div className="p-3 rounded-md bg-yellow-50 border border-yellow-200 text-yellow-700 dark:bg-yellow-900/30 dark:border-yellow-700/50 dark:text-yellow-300 flex items-start">
-              <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
+              <AlertCircle className="h-5 w-5 mr-2 shrink-0" />
               <p className="text-sm">
                 {!openAIConfig 
                   ? 'OpenAI service is not configured. Please configure it in the settings before testing.'
@@ -127,9 +127,9 @@ export function OpenAITestModal({ isOpen, onOpenChange, openAIConfig }: OpenAITe
             }`}>
               <div className="flex items-start">
                 {testResult.success ? (
-                  <CheckCircle2 className="h-5 w-5 mr-2 flex-shrink-0" />
+                  <CheckCircle2 className="h-5 w-5 mr-2 shrink-0" />
                 ) : (
-                  <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
+                  <AlertCircle className="h-5 w-5 mr-2 shrink-0" />
                 )}
                 <div className="space-y-1">
                   <p className="text-sm font-medium">

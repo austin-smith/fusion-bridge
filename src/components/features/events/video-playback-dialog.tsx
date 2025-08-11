@@ -70,7 +70,7 @@ export const VideoPlaybackDialog: React.FC<VideoPlaybackDialogProps> = React.mem
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       {/* Increased width for video, aspect ratio handled by player */}
       <DialogContent className="sm:max-w-[80vw] md:max-w-[70vw] lg:max-w-[60vw] xl:max-w-[50vw] p-0 flex flex-col max-h-[90vh]">
-        <DialogHeader className="p-4 pb-2 space-y-0 flex-shrink-0">
+        <DialogHeader className="p-4 pb-2 space-y-0 shrink-0">
           <div className="flex flex-row items-center justify-between">
             <div className="flex items-center gap-2">
               <Video className="h-5 w-5 text-muted-foreground"/>
@@ -96,7 +96,7 @@ export const VideoPlaybackDialog: React.FC<VideoPlaybackDialogProps> = React.mem
             )}
           </div>
         )}
-        <div className="relative flex-grow w-full min-h-0 px-4"> {/* Ensure player can take space and scroll if needed */}
+        <div className="relative grow w-full min-h-0 px-4"> {/* Ensure player can take space and scroll if needed */}
           <PikoVideoPlayer 
             connectorId={activeConnectorId}
             pikoSystemId={activePikoSystemId || undefined} // Pass undefined if null

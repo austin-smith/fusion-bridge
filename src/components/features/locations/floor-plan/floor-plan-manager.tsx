@@ -273,7 +273,7 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
       />
       {/* Delete confirm dialog for actions menu */}
       {activeFloorPlan && isDeleteOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+        <div className="fixed inset-0 z-100 flex items-center justify-center">
           {/* Reuse AlertDialog from shadcn by toggling state in place of dedicated component to keep scope small */}
           <div className="bg-background border rounded-lg shadow-lg p-6 max-w-sm w-full mx-4">
             <h3 className="font-semibold mb-2">Delete Floor Plan</h3>

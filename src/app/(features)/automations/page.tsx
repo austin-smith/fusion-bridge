@@ -70,10 +70,10 @@ export default function AutomationsPage() {
   return (
     <div className="flex-1 space-y-4 p-4 md:p-6">
       {/* Custom header for automations page */}
-      <div className="flex flex-col mb-6 gap-4 flex-shrink-0">
+      <div className="flex flex-col mb-6 gap-4 shrink-0">
         {/* Title and Icon Section */}
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="text-muted-foreground flex-shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="text-muted-foreground shrink-0">
             <Workflow className="h-6 w-6" />
           </div>
           <div>

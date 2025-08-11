@@ -425,7 +425,7 @@ export function KanbanBoard({
   return (
     <div
       className={cn(
-        'flex h-full flex-grow items-start gap-x-2 overflow-x-auto py-1',
+        'flex h-full grow items-start gap-x-2 overflow-x-auto py-1',
         className,
       )}
       ref={ref}
@@ -445,7 +445,7 @@ export function KanbanBoardExtraMargin({
 }: ComponentProps<'div'>) {
   return (
     <div
-      className={cn('h-1 w-8 flex-shrink-0', className)}
+      className={cn('h-1 w-8 shrink-0', className)}
       ref={ref}
       {...props}
     />
@@ -462,7 +462,7 @@ export type KanbanBoardColumnProps = {
 };
 
 export const kanbanBoardColumnClassNames =
-  'w-64 flex-shrink-0 rounded-lg border flex flex-col border-border bg-sidebar py-2 max-h-full';
+  'w-64 shrink-0 rounded-lg border flex flex-col border-border bg-sidebar py-2 max-h-full';
 
 export function KanbanBoardColumn({
   className,
@@ -595,7 +595,7 @@ export function KanbanBoardColumnList({
 }: ComponentProps<'ul'>) {
   return (
     <ul
-      className={cn('min-h-0.5 flex-grow overflow-y-auto', className)}
+      className={cn('min-h-0.5 grow overflow-y-auto', className)}
       ref={ref}
       {...props}
     />

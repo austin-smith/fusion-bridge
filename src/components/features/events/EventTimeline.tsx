@@ -142,7 +142,7 @@ export function EventTimeline({ events, allDevices }: EventTimelineProps) {
 
   return (
     <TooltipProvider delayDuration={100}>
-      <div className="relative space-y-8 before:absolute before:inset-0 before:ml-5 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-300 before:to-transparent dark:before:via-slate-700">
+      <div className="relative space-y-8 before:absolute before:inset-0 before:ml-5 before:h-full before:w-0.5 before:bg-linear-to-b before:from-transparent before:via-slate-300 before:to-transparent dark:before:via-slate-700">
         {groupedEvents.map((group) => {
 
           // Find Piko Camera for this group's space
@@ -156,7 +156,7 @@ export function EventTimeline({ events, allDevices }: EventTimelineProps) {
             {/* Group Header / Time Marker */}
             <div className="flex items-start mb-4">
                 {/* Icon container */}
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center shadow-md">
+                <div className="shrink-0 w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center shadow-md">
                     {thumbnailUrl ? (
                         <Camera className="w-5 h-5 text-slate-600 dark:text-slate-300" />
                     ) : (
@@ -164,7 +164,7 @@ export function EventTimeline({ events, allDevices }: EventTimelineProps) {
                     )}
                 </div>
                 {/* Text content */}
-                <div className="ml-4 flex-grow">
+                <div className="ml-4 grow">
                    <h3 className="text-lg font-semibold">
                        {group.spaceName ? (
                            <>
@@ -193,7 +193,7 @@ export function EventTimeline({ events, allDevices }: EventTimelineProps) {
                 </div>
                  {/* Thumbnail (if exists) */}
                  {thumbnailUrl && (
-                     <div className="ml-4 flex-shrink-0 w-24 h-16 relative rounded overflow-hidden shadow-md">
+                     <div className="ml-4 shrink-0 w-24 h-16 relative rounded overflow-hidden shadow-md">
                          <Image
                              src={thumbnailUrl}
                              alt={`Camera view for ${group.spaceName || 'space'} around ${format(group.endTime, 'p')}`}

@@ -435,7 +435,7 @@ function RecordingControls({
   if (isRecording) {
     return (
       <div
-        className="absolute inset-[1px] z-50 overflow-hidden rounded-xl"
+        className="absolute inset-px z-50 overflow-hidden rounded-xl"
         style={{ height: textAreaHeight - 2 }}
       >
         <AudioVisualizer
@@ -450,7 +450,7 @@ function RecordingControls({
   if (isTranscribing) {
     return (
       <div
-        className="absolute inset-[1px] z-50 overflow-hidden rounded-xl"
+        className="absolute inset-px z-50 overflow-hidden rounded-xl"
         style={{ height: textAreaHeight - 2 }}
       >
         <TranscribingOverlay />

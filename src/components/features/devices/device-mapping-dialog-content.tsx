@@ -183,7 +183,7 @@ export function DeviceMappingDialogContent() {
         <TabsContent value="identifiers" className="mt-2 data-[state=inactive]:hidden overflow-y-auto max-h-[60vh]">
           <div className="space-y-2 pt-0 pb-2">
             <div className="flex items-center justify-between gap-4">
-              <div className="flex-grow">
+              <div className="grow">
                 <Input
                   placeholder="Filter mappings..."
                   value={filterText}
@@ -198,7 +198,7 @@ export function DeviceMappingDialogContent() {
                 size="sm"
                 onValueChange={(value) => { if (value) setCategoryFilter(value); }}
                 aria-label="Filter by connector type"
-                className="flex-shrink-0"
+                className="shrink-0"
               >
                 <Tooltip>
                   <TooltipTrigger asChild>

@@ -257,7 +257,7 @@ export function FloorPlanDeviceDetailSheet({
         }}
         className={cn(
           // Override default sm:max-w-sm and w-3/4 from the Sheet component
-          'sm:max-w-none md:max-w-none !w-[420px] sm:!w-[500px] !shadow-2xl p-0 grid grid-rows-[auto,1fr] overflow-hidden',
+          'sm:max-w-none md:max-w-none w-[420px]! sm:w-[500px]! shadow-2xl! p-0 grid grid-rows-[auto_1fr] overflow-hidden',
           className
         )}
       >
@@ -286,7 +286,7 @@ export function FloorPlanDeviceDetailSheet({
             onValueChange={(v) => setActiveTab(v as 'details' | 'events')}
             className="space-y-3"
           >
-            <div className="sticky top-0 z-20 -mx-3 px-3 py-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <div className="sticky top-0 z-20 -mx-3 px-3 py-2 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
               <TabsList>
                 <TabsTrigger value="details">Details</TabsTrigger>
                 <TabsTrigger value="events" disabled={!device?.id}>Events</TabsTrigger>

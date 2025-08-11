@@ -67,10 +67,10 @@ export function TokenInserter({ tokens, onInsert, className }: TokenInserterProp
                 </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80 h-[560px] p-0 flex flex-col" align="end">
-                <div className="p-3 text-sm font-semibold border-b flex-shrink-0">Available Tokens</div>
+                <div className="p-3 text-sm font-semibold border-b shrink-0">Available Tokens</div>
                 
                 {/* Search Input */}
-                <div className="p-3 border-b flex-shrink-0">
+                <div className="p-3 border-b shrink-0">
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
@@ -82,7 +82,7 @@ export function TokenInserter({ tokens, onInsert, className }: TokenInserterProp
                     </div>
                 </div>
 
-                <ScrollArea className="flex-grow">
+                <ScrollArea className="grow">
                     <div className="p-2">
                         {Object.keys(groupedTokens).length === 0 ? (
                             <div className="text-center text-muted-foreground text-sm py-4">

@@ -203,7 +203,7 @@ export function PinManagementDialog({ user, isOpen, onOpenChange, isSelfService 
           <div className="py-6">
             <div className="p-4 bg-red-50 rounded-lg border border-red-200">
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-6 h-6 bg-red-100 rounded-full flex items-center justify-center mt-0.5">
+                <div className="shrink-0 w-6 h-6 bg-red-100 rounded-full flex items-center justify-center mt-0.5">
                   <Trash2 className="h-3.5 w-3.5 text-red-600" />
                 </div>
                 <div>

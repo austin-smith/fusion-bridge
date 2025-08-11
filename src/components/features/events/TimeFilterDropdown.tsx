@@ -164,7 +164,7 @@ export function TimeFilterDropdown({
       <DropdownMenuTrigger asChild>
         <Button variant="outline" className={className || "w-full sm:w-[160px] h-9 justify-between"}>
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <Clock className="h-4 w-4 flex-shrink-0" />
+            <Clock className="h-4 w-4 shrink-0" />
             {tooltipText ? (
               <TooltipProvider delayDuration={200}>
                 <Tooltip>

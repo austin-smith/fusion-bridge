@@ -249,7 +249,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     
     return displayState ? (
       <Badge variant="outline" className="inline-flex items-center gap-1 px-2 py-0.5 font-normal">
-        {React.createElement(getDisplayStateIcon(displayState)!, { className: "h-3 w-3 flex-shrink-0" })}
+        {React.createElement(getDisplayStateIcon(displayState)!, { className: "h-3 w-3 shrink-0" })}
         <span className="text-xs">{displayState}</span>
       </Badge>
     ) : (
@@ -297,7 +297,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
             </div>
             {/* Right side: Action Switch (Conditional) */}
             {isActionable && (
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="flex items-center gap-2">
@@ -468,7 +468,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                    monospace breakAll 
                    value={( 
                      <div className="flex items-center justify-between gap-2 w-full"> 
-                       <span className="flex-grow break-all">{device.deviceId}</span> 
+                       <span className="grow break-all">{device.deviceId}</span> 
                        <Button 
                          variant="ghost" 
                          size="icon" 

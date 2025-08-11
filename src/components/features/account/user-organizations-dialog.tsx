@@ -190,7 +190,7 @@ export function UserOrganizationsDialog({
                         key={item.membership.id}
                         className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
                       >
-                        <div className="flex-shrink-0">
+                        <div className="shrink-0">
                           <OrganizationLogoDisplay
                             logo={item.organization.logo}
                             className="h-10 w-10 rounded-md"

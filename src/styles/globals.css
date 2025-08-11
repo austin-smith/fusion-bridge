@@ -1,6 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@config "../../tailwind.config.js";
+
+@utility container {
+  margin-inline: auto;
+  padding-inline: 2rem;
+}
 
 @layer base {
   /* Light theme variables */
@@ -518,6 +523,7 @@
 } 
 
 @layer components {
+
   /* Table container utility class - wrap tables with this for proper scrolling */
   .table-container {
     @apply w-full overflow-auto rounded-md;
@@ -548,7 +554,7 @@
 
   /* AI Assistant Gradient Classes */
   .ai-gradient {
-    @apply bg-gradient-to-br from-blue-600 to-purple-600 text-white;
+    @apply bg-linear-to-br from-blue-600 to-purple-600 text-white;
   }
 
   .ai-gradient-hover {

@@ -63,7 +63,7 @@ const DraggableDeviceItem: React.FC<DraggableDeviceItemProps> = ({ device, sourc
             {...attributes} 
         >
             <div className="flex items-center justify-between gap-1 min-w-0">
-                <span className="font-medium text-sm truncate flex-grow" title={device.name}>
+                <span className="font-medium text-sm truncate grow" title={device.name}>
                     {device.name}
                 </span>
                 <Dialog>
@@ -71,7 +71,7 @@ const DraggableDeviceItem: React.FC<DraggableDeviceItemProps> = ({ device, sourc
                         <Button 
                             variant="ghost" 
                             size="icon" 
-                            className="h-6 w-6 flex-shrink-0 -mr-1 text-muted-foreground hover:text-foreground"
+                            className="h-6 w-6 shrink-0 -mr-1 text-muted-foreground hover:text-foreground"
                             title={`Details for ${device.name}`}
                         >
                             <Info className="h-3.5 w-3.5" />
@@ -100,7 +100,7 @@ const DraggableDeviceItem: React.FC<DraggableDeviceItemProps> = ({ device, sourc
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Badge variant="secondary" className="inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 font-normal min-w-0">
-                                <ConnectorIcon connectorCategory={device.connectorCategory} size={13} className="flex-shrink-0" />
+                                <ConnectorIcon connectorCategory={device.connectorCategory} size={13} className="shrink-0" />
                                 <span className="text-xs truncate">
                                     {typeText}
                                     {subtypeText && (
@@ -117,9 +117,9 @@ const DraggableDeviceItem: React.FC<DraggableDeviceItemProps> = ({ device, sourc
                 </TooltipProvider>
                 <div className="flex items-center gap-1.5 min-w-0">
                     {StateIconComponent ? (
-                        <StateIconComponent className={cn("h-3.5 w-3.5 flex-shrink-0", stateColorClass)} />
+                        <StateIconComponent className={cn("h-3.5 w-3.5 shrink-0", stateColorClass)} />
                     ) : (
-                        <div className="h-3.5 w-3.5 flex-shrink-0" />
+                        <div className="h-3.5 w-3.5 shrink-0" />
                     )}
                     <span className={cn("truncate", stateColorClass)}> 
                         {displayState ?? 'State Unknown'}
@@ -188,7 +188,7 @@ export const AlarmZoneDevicesSubRow: React.FC<AlarmZoneDevicesSubRowProps> = ({
             <React.Fragment key={type}>
               <h5 key={`${type}-header`} className="text-xs font-semibold uppercase text-muted-foreground mb-2 tracking-wide flex items-center gap-2"> 
                  <GroupIcon className="h-3.5 w-3.5" /> 
-                 <span className="flex-grow">{type}</span>
+                 <span className="grow">{type}</span>
                  <Badge variant="secondary" className="px-1.5 py-0.5 text-xs font-medium"> 
                    {devicesInGroup.length}
                  </Badge>

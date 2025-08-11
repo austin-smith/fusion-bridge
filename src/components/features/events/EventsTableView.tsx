@@ -109,7 +109,7 @@ export function EventsTableView<TData extends TableEventData>({
   return (
     <>
       {/* Inner container for scrollable table */}
-      <div className="flex-grow overflow-auto">
+      <div className="grow overflow-auto">
         <Table>
           <TableHeader className="sticky top-0 bg-background z-10">
             {table.getHeaderGroups().map((headerGroup) => (
@@ -208,7 +208,7 @@ export function EventsTableView<TData extends TableEventData>({
         </Table>
       </div>
       {/* Pagination */}
-      <div className="flex items-center justify-between p-2 border-t flex-shrink-0">
+      <div className="flex items-center justify-between p-2 border-t shrink-0">
         <div className="flex-1 text-sm text-muted-foreground">
           Total Rows: {table.getFilteredRowModel().rows.length}
         </div>

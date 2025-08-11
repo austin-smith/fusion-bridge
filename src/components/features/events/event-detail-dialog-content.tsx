@@ -263,7 +263,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
       <DialogHeader className="pb-4 border-b">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <DeviceIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+              <DeviceIcon className="h-5 w-5 text-muted-foreground shrink-0" />
               <DialogTitle>
                 {EVENT_TYPE_DISPLAY_MAP[currentEvent.eventType as EventType] || currentEvent.eventType || currentEvent.eventCategory || 'Event Details'}
               </DialogTitle>
@@ -397,7 +397,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                         key: 'Device Type',
                         value: (
                           <Badge variant="secondary" className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 font-normal">
-                            <DeviceIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                            <DeviceIcon className="h-3 w-3 text-muted-foreground shrink-0" />
                             <span className="text-xs">
                               {typeInfo.type}
                               {typeInfo.subtype && (
@@ -501,7 +501,7 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
                               label="State" 
                               value={
                                 <Badge variant="outline" className="inline-flex items-center gap-1.5 py-0.5 px-2 font-normal">
-                                  {React.createElement(StateIcon, { className: "h-3 w-3 flex-shrink-0" })}
+                                  {React.createElement(StateIcon, { className: "h-3 w-3 shrink-0" })}
                                   {currentEvent.displayState}
                                 </Badge>
                               } 
