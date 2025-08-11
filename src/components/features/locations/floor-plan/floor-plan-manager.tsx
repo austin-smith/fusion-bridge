@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Plus, ZoomIn, ZoomOut, Fullscreen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFloorPlans } from '@/hooks/floor-plan/use-floor-plans';
 import { FloorPlanTabs } from './floor-plan-tabs';
@@ -25,8 +25,6 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [floorPlanToRename, setFloorPlanToRename] = useState<{ id: string; currentName: string } | null>(null);
   
-  // Zoom control state
-  const [zoomLevel, setZoomLevel] = useState(1);
   const floorPlanDetailRef = useRef<FloorPlanDetailRef>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 
@@ -115,6 +113,7 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
     floorPlanDetailRef.current?.resetZoom();
   };
 
+
   const handleReplaceClick = () => {
     floorPlanDetailRef.current?.startReplace();
   };
@@ -173,53 +172,46 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
           <div className="flex items-center gap-2">
             {activeFloorPlan && (
               <>
-                <TooltipProvider delayDuration={150}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={handleZoomIn} aria-label="Zoom in">
-                        <ZoomIn className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Zoom in</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <TooltipProvider delayDuration={150}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={handleZoomOut} aria-label="Zoom out">
-                        <ZoomOut className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Zoom out</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <TooltipProvider delayDuration={150}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={handleResetZoom} aria-label="Fit to screen">
-                        <RotateCcw className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Fit to screen</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <span className="text-xs text-muted-foreground ml-1 select-none">{Math.round(zoomLevel * 100)}%</span>
-                <div className="h-4 w-px bg-border mx-1" />
+                <div className="inline-flex items-center gap-1 rounded-md bg-background/80 backdrop-blur-sm border px-1.5 py-1">
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleZoomIn} aria-label="Zoom in">
+                          <ZoomIn className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Zoom in</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleZoomOut} aria-label="Zoom out">
+                          <ZoomOut className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Zoom out</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <div className="h-5 w-px bg-border mx-0.5" />
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleResetZoom} aria-label="Fit to screen">
+                          <Fullscreen className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Fit to screen</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 {/* Add device (opens sheet) */}
-                <TooltipProvider delayDuration={150}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={handleOpenDevices} aria-label="Add device">
-                        <Plus className="h-4 w-4" />
-                        Add device
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Add device</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Button variant="outline" size="sm" className="h-10" onClick={handleOpenDevices} aria-label="Add device">
+                  <Plus className="h-4 w-4" />
+                  Add Device
+                </Button>
               </>
             )}
-            {/* Add floor plan moved into tabs as icon-only button */}
           </div>
         </div>
       )}
@@ -227,7 +219,7 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
       {/* Floor plan content */}
       <div className="flex-1 min-h-0">
         {activeFloorPlan ? (
-          <FloorPlanDetail
+            <FloorPlanDetail
             ref={floorPlanDetailRef}
             floorPlan={activeFloorPlan}
             locationId={locationId}
@@ -235,7 +227,6 @@ export function FloorPlanManager({ locationId, expectedToHaveFloorPlans = false,
             onDelete={() => handleDeleteFloorPlan(activeFloorPlan.id)}
             allDevices={allDevices}
             spaces={spaces}
-            onScaleChange={(s) => setZoomLevel(s)}
           />
         ) : (
           <div className="text-center py-12 border-2 border-dashed border-muted rounded-lg">

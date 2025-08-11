@@ -1,15 +1,14 @@
 'use client';
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { Stage, Layer, Image as KonvaImage } from 'react-konva';
 import Konva from 'konva';
 import { useFloorPlanImage, usePdfRenderer, isImageSource, isPdfSource } from '@/hooks/floor-plan';
 import { DeviceOverlayLayer } from './device-overlays/device-overlay-layer';
 import { canvasToNormalized, normalizedToCanvas, type DeviceOverlayWithDevice, type CreateDeviceOverlayPayload, type UpdateDeviceOverlayPayload } from '@/types/device-overlay';
 import { toast } from 'sonner';
-import { Loader2, ZoomIn, ZoomOut, RotateCcw, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { getDeviceTypeIcon, getDisplayStateIcon } from '@/lib/mappings/presentation';
 import { DeviceType } from '@/lib/mappings/definitions';
@@ -71,8 +70,19 @@ const MIN_SCALE = 0.1;
 const MAX_SCALE = 5;
 
 // The factor by which the zoom changes on each zoom-in or zoom-out action.
-// A value of 1.1 provides a smooth and gradual zoom experience.
-const ZOOM_FACTOR = 1.1;
+const ZOOM_FACTOR = 1.5;
+
+// Pinch (two-finger) zoom sensitivity. Values close to 1 produce smoother/slower zoom.
+// We use an exponential mapping: newScale = oldScale * base^(-deltaY)
+const PINCH_SCALE_POWER = 1.003;
+
+// PDF rendering scale for canvas quality vs performance tradeoff
+const PDF_RENDER_SCALE = 2;
+
+// Threshold for inferring a trackpad pinch gesture (when ctrlKey is not set).
+// Typical mouse wheel steps produce smaller |deltaY| values; pinch gestures often emit larger deltas.
+// 40 was chosen empirically to separate single-notch wheel scrolls from pinch zoom intents.
+const PINCH_DELTA_Y_THRESHOLD = 40;
 
 // Cache of valid device types for fast runtime validation
 const DEVICE_TYPES_SET = new Set<string>(Object.values(DeviceType));
@@ -110,7 +120,7 @@ export function FloorPlanCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState<ViewportState>({ x: 0, y: 0, scale: 1 });
   const [isDragging, setIsDragging] = useState(false);
-  const [canvasSize, setCanvasSize] = useState({ width: width || 1200, height: height || 800 });
+  const [canvasSize, setCanvasSize] = useState({ width: width || 0, height: height || 0 });
   const [hoverLabel, setHoverLabel] = useState<{ 
     text: string; 
     canvasX: number; 
@@ -121,33 +131,47 @@ export function FloorPlanCanvas({
     displayState?: string;
   } | null>(null);
 
-  // Update canvas size when container resizes
+  // Ensure the first Stage render happens only after we can compute a correct fit viewport
+  const [isStageReady, setIsStageReady] = useState(false);
+
+  // Synchronously measure container before first paint to avoid initial 1x flash
+  useLayoutEffect(() => {
+    if (width || height) return; // external sizing provided
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      setCanvasSize({ width: rect.width, height: rect.height });
+    }
+  }, [width, height]);
+
+  // Update canvas size when container resizes (use ResizeObserver to avoid initial layout jumps)
   useEffect(() => {
-    const updateSize = () => {
-      if (containerRef.current && !width && !height) {
-        const rect = containerRef.current.getBoundingClientRect();
-        
-        // Ensure we have meaningful dimensions
-        const newWidth = Math.max(rect.width, 800);
-        const newHeight = Math.max(rect.height, 600);
-        
-        setCanvasSize({
-          width: newWidth,
-          height: newHeight
-        });
-      }
+    if (width || height) return; // external sizing provided
+    const el = containerRef.current;
+    if (!el) return;
+
+    const applySize = () => {
+      const rect = el.getBoundingClientRect();
+      setCanvasSize((prev) => {
+        const newWidth = rect.width || prev.width;
+        const newHeight = rect.height || prev.height;
+        if (prev.width === newWidth && prev.height === newHeight) return prev;
+        return { width: newWidth, height: newHeight };
+      });
     };
 
-    // Use a small delay to ensure the container is properly sized
-    const timeoutId = setTimeout(updateSize, 100);
-    updateSize(); // Also call immediately
-    
-    window.addEventListener('resize', updateSize);
+    // Initial measure synchronously after mount
+    applySize();
+
+    const ro = new ResizeObserver(() => {
+      applySize();
+    });
+    ro.observe(el);
     return () => {
-      clearTimeout(timeoutId);
-      window.removeEventListener('resize', updateSize);
+      ro.disconnect();
     };
-  }, [width, height]);
+  }, [width, height, canvasSize.width, canvasSize.height]);
 
   // Use provided dimensions or calculated ones
   const finalWidth = width || canvasSize.width;
@@ -168,7 +192,7 @@ export function FloorPlanCanvas({
   const pdfResult = usePdfRenderer(
     isPdf ? floorPlan : null,
     locationId,
-    { scale: 2 } // Higher scale for better quality
+    { scale: PDF_RENDER_SCALE } // Higher scale for better quality
   );
 
   // Get the current result based on file type
@@ -204,8 +228,6 @@ export function FloorPlanCanvas({
     const centeredX = (finalWidth - assetWidth * scale) / 2;
     const centeredY = (finalHeight - assetHeight * scale) / 2;
 
-
-
     setViewport({
       x: centeredX,
       y: centeredY,
@@ -213,9 +235,31 @@ export function FloorPlanCanvas({
     });
   }, [currentResult.dimensions, finalWidth, finalHeight]);
 
-  // Reset viewport when asset changes
+  // Derived fit viewport is no longer needed since initial viewport is set before first paint
+
+  // Block first paint of Stage until we can commit a correct initial viewport
+  useLayoutEffect(() => {
+    if (isStageReady) return;
+    if (!finalWidth || !finalHeight) return;
+    if (!currentResult.dimensions || !sourceAsset) return;
+    const { width: assetWidth, height: assetHeight } = currentResult.dimensions;
+    const scaleX = finalWidth / assetWidth;
+    const scaleY = finalHeight / assetHeight;
+    const scale = Math.min(scaleX, scaleY);
+    const centeredX = (finalWidth - assetWidth * scale) / 2;
+    const centeredY = (finalHeight - assetHeight * scale) / 2;
+    setViewport({ x: centeredX, y: centeredY, scale });
+    setIsStageReady(true);
+  }, [isStageReady, finalWidth, finalHeight, currentResult.dimensions, sourceAsset]);
+
+  // Reset viewport when asset changes (only once per asset to avoid layout oscillation)
+  const lastAssetDimsRef = useRef<{ w: number; h: number } | null>(null);
   useEffect(() => {
-    if (sourceAsset && currentResult.dimensions) {
+    if (!sourceAsset || !currentResult.dimensions) return;
+    const { width: w, height: h } = currentResult.dimensions;
+    const last = lastAssetDimsRef.current;
+    if (!last || last.w !== w || last.h !== h) {
+      lastAssetDimsRef.current = { w, h };
       resetViewport();
     }
   }, [sourceAsset, currentResult.dimensions, resetViewport]);
@@ -230,23 +274,63 @@ export function FloorPlanCanvas({
     if (onZoomIn) {
       onZoomIn();
     } else {
-      setViewport(prev => ({
-        ...prev,
-        scale: Math.min(prev.scale * ZOOM_FACTOR, MAX_SCALE)
-      }));
+      setViewport((prev) => {
+        const anchor = { x: finalWidth / 2, y: finalHeight / 2 };
+        const newScale = Math.min(prev.scale * ZOOM_FACTOR, MAX_SCALE);
+        if (newScale === prev.scale) return prev;
+        const mousePointTo = {
+          x: (anchor.x - prev.x) / prev.scale,
+          y: (anchor.y - prev.y) / prev.scale,
+        };
+        const newPos = {
+          x: anchor.x - mousePointTo.x * newScale,
+          y: anchor.y - mousePointTo.y * newScale,
+        };
+        return { ...prev, x: newPos.x, y: newPos.y, scale: newScale };
+      });
     }
-  }, [onZoomIn]);
+  }, [onZoomIn, finalWidth, finalHeight]);
 
   const zoomOut = useCallback(() => {
     if (onZoomOut) {
       onZoomOut();
     } else {
-      setViewport(prev => ({
-        ...prev,
-        scale: Math.max(prev.scale / ZOOM_FACTOR, MIN_SCALE)
-      }));
+      setViewport((prev) => {
+        const anchor = { x: finalWidth / 2, y: finalHeight / 2 };
+        const newScale = Math.max(prev.scale / ZOOM_FACTOR, MIN_SCALE);
+        if (newScale === prev.scale) return prev;
+        const mousePointTo = {
+          x: (anchor.x - prev.x) / prev.scale,
+          y: (anchor.y - prev.y) / prev.scale,
+        };
+        const newPos = {
+          x: anchor.x - mousePointTo.x * newScale,
+          y: anchor.y - mousePointTo.y * newScale,
+        };
+        return { ...prev, x: newPos.x, y: newPos.y, scale: newScale };
+      });
     }
-  }, [onZoomOut]);
+  }, [onZoomOut, finalWidth, finalHeight]);
+
+  // Double-click to zoom in at cursor position (standard UX)
+  const handleDoubleClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    e.evt.preventDefault();
+    const stage = stageRef.current;
+    if (!stage) return;
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+    const newScale = Math.min(viewport.scale * ZOOM_FACTOR, MAX_SCALE);
+    if (newScale === viewport.scale) return;
+    const mousePointTo = {
+      x: (pointer.x - viewport.x) / viewport.scale,
+      y: (pointer.y - viewport.y) / viewport.scale,
+    };
+    const newPos = {
+      x: pointer.x - mousePointTo.x * newScale,
+      y: pointer.y - mousePointTo.y * newScale,
+    };
+    setViewport({ x: newPos.x, y: newPos.y, scale: newScale });
+  }, [viewport]);
 
   const resetZoom = useCallback(() => {
     if (onResetZoom) {
@@ -370,7 +454,10 @@ export function FloorPlanCanvas({
     const pointer = stage.getPointerPosition();
     if (!pointer) return;
 
-    const scaleBy = e.evt.deltaY > 0 ? 1 / ZOOM_FACTOR : ZOOM_FACTOR;
+    const looksLikePinch = e.evt.ctrlKey || Math.abs(e.evt.deltaY) > PINCH_DELTA_Y_THRESHOLD;
+    const scaleBy = looksLikePinch
+      ? Math.pow(PINCH_SCALE_POWER, -e.evt.deltaY)
+      : (e.evt.deltaY > 0 ? 1 / ZOOM_FACTOR : ZOOM_FACTOR);
     const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, viewport.scale * scaleBy));
 
     if (newScale === viewport.scale) return;
@@ -535,34 +622,36 @@ export function FloorPlanCanvas({
   // Error state
   if (currentResult.error) {
     return (
-      <Card className={cn("flex items-center justify-center min-h-[400px]", className)}>
-        <CardContent className="flex flex-col items-center gap-4 p-8">
-          <AlertCircle className="h-12 w-12 text-destructive" />
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              {currentResult.error}
-            </AlertDescription>
-          </Alert>
-          <Button onClick={currentResult.reload} variant="outline">
-            Try Again
-          </Button>
-        </CardContent>
-      </Card>
+      <div ref={containerRef} className={cn("relative w-full", className)}>
+        <div className="flex min-h-[600px] items-center justify-center p-8">
+          <div className="flex flex-col items-center gap-4">
+            <AlertCircle className="h-12 w-12 text-destructive" />
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                {currentResult.error}
+              </AlertDescription>
+            </Alert>
+            <Button onClick={currentResult.reload} variant="outline">
+              Try Again
+            </Button>
+          </div>
+        </div>
+      </div>
     );
   }
 
-  // Loading state
-  if (currentResult.isLoading || !sourceAsset) {
+  // Loading state (preserve final layout footprint to avoid jumps)
+  if (!isStageReady || currentResult.isLoading || !sourceAsset) {
     return (
-      <Card className={cn("flex items-center justify-center", className)}>
-        <CardContent className="flex flex-col items-center gap-4 p-8">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">
-            Loading floor plan...
-          </p>
-        </CardContent>
-      </Card>
+      <div ref={containerRef} className={cn("relative w-full", className)}>
+        <div className="flex min-h-[600px] items-center justify-center p-8">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Loading floor plan...</p>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -575,8 +664,22 @@ export function FloorPlanCanvas({
       )
     : null;
 
+  // If we don't yet know container size, reserve space and show simple loader
+  if (!finalWidth || !finalHeight) {
+    return (
+      <div ref={containerRef} className={cn("relative w-full", className)}>
+        <div className="flex min-h-[600px] items-center justify-center p-8">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Loading floor plan...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div 
+    <div
       ref={containerRef}
       className={cn("relative w-full", className)}
       onDrop={handleDrop}
@@ -626,6 +729,7 @@ export function FloorPlanCanvas({
         scaleY={viewport.scale}
         draggable
         onWheel={handleWheel}
+        onDblClick={handleDoubleClick}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         style={{ cursor: isDragging ? 'grabbing' : 'grab' }}

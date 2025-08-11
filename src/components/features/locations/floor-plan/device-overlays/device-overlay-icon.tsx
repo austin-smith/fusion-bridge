@@ -38,8 +38,8 @@ export interface DeviceOverlayIconProps {
   onDragEnd?: (overlay: DeviceOverlayWithDevice, newPosition: CanvasCoordinates) => void;
 }
 
-// Rendering fallback color for icons (neutral)
-const DEFAULT_ICON_COLOR = '#6b7280'; // Tailwind gray-500
+// Rendering fallback color for icons (neutral): zinc-600
+const DEFAULT_ICON_COLOR = '#52525b';
 
 // Scaling and sizing constants
 // Target ~20px at 1x zoom, maintaining constant screen size across zoom levels
@@ -72,12 +72,17 @@ export function DeviceOverlayIcon({
   const deviceType = overlay.device.standardizedDeviceType || DeviceType.Unmapped;
 
   // Calculate responsive sizing based on canvas scale
-  const size = BASE_SIZE / Math.max(canvasScale * SCALE_FACTOR, MIN_SCALE); // Keep readable at all zoom levels
+  const effectiveScale = Math.max(canvasScale * SCALE_FACTOR, MIN_SCALE);
+  const inverseScale = 1 / effectiveScale; // maintain constant on-screen padding
+  const size = BASE_SIZE / effectiveScale; // Keep readable at all zoom levels
   const radius = size / 2;
   const strokeWidth = Math.max(MIN_STROKE_WIDTH, BASE_STROKE_WIDTH / canvasScale);
   const iconDisplaySize = size; // Konva display size
   const iconRenderSize = 96; // High-res render for crisp scaling
-  const badgeRadius = iconDisplaySize / 2 + 4; // background circle behind icon
+  const badgePadding = 4 * inverseScale;
+  const selectionPadding = 3 * inverseScale;
+  const hoverPadding = selectionPadding; // keep hover and selection rings aligned
+  const badgeRadius = iconDisplaySize / 2 + badgePadding; // background circle behind icon
   // External DOM tooltip will handle label sizing; remove canvas text.
 
   // State-based styling
@@ -163,9 +168,12 @@ export function DeviceOverlayIcon({
         <>
           <Circle
             radius={badgeRadius}
-            fill="rgba(255,255,255,0.92)"
+            fill="rgba(241,245,249,0.92)" /* slate-100 */
             stroke="#cbd5e1"
             strokeWidth={strokeWidth}
+            shadowColor="rgba(0,0,0,0.25)"
+            shadowBlur={12}
+            shadowOffset={{ x: 0, y: 3 }}
           />
           <Circle
             radius={radius}
@@ -180,12 +188,12 @@ export function DeviceOverlayIcon({
         {/* Background badge for visibility */}
         <Circle
           radius={badgeRadius}
-          fill="rgba(255,255,255,0.92)"
+          fill="rgba(241,245,249,0.92)" /* slate-100 */
           stroke="#cbd5e1"
           strokeWidth={strokeWidth}
-          shadowColor="rgba(0,0,0,0.25)"
-          shadowBlur={4}
-          shadowOffset={{ x: 1, y: 1 }}
+          shadowColor="rgba(0,0,0,0.15)"
+          shadowBlur={12}
+          shadowOffset={{ x: 0, y: 3 }}
           opacity={opacity}
         />
         {/* Icon image (rotate to show camera direction if provided) */}
@@ -220,7 +228,7 @@ export function DeviceOverlayIcon({
       {/* Hover indicator (subtle ring) shown when hovered and not selected */}
       {isHovered && !isSelected && (
         <Circle
-          radius={badgeRadius + 3}
+          radius={badgeRadius + hoverPadding}
           stroke="#cbd5e1" /* slate-300 */
           strokeWidth={Math.max(1, strokeWidth * 0.75)}
           fill="rgba(148,163,184,0.08)"
@@ -231,9 +239,9 @@ export function DeviceOverlayIcon({
       {isSelected && (
         <>
           <Circle
-            radius={badgeRadius + 6}
+            radius={badgeRadius + selectionPadding}
             stroke="#3b82f6" /* Tailwind blue-500 approximation */
-            strokeWidth={Math.max(2, strokeWidth * 2)}
+            strokeWidth={Math.max(1, strokeWidth * 1.5)}
             shadowColor="rgba(59,130,246,0.6)"
             shadowBlur={12}
             shadowOpacity={0.9}
