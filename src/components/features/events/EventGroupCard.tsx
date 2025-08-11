@@ -8,7 +8,7 @@ import { EventType, EVENT_TYPE_DISPLAY_MAP, EventCategory, EVENT_SUBTYPE_DISPLAY
 import Image from 'next/image'; // Use Next.js Image for optimization
 import { getDeviceTypeIcon, getDisplayStateIcon, getDisplayStateColorClass, getSeverityCardStyles, getEventCategoryIcon } from '@/lib/mappings/presentation';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { format, isSameDay, isToday, isYesterday } from 'date-fns';
+import { format, isSameDay, isToday, isYesterday, isThisYear, subDays, isAfter } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Clock, ZoomIn, PlayIcon, VideoOff, Loader2 } from 'lucide-react';
 import type { DeviceWithConnector, Space } from '@/types/index';
@@ -63,7 +63,13 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
     const labelFor = (d: Date): string => {
       if (isToday(d)) return '';
       if (isYesterday(d)) return 'Yesterday ';
-      return `${format(d, 'MMM d, yyyy')} `;
+      const now = new Date();
+      const sevenDaysAgo = subDays(now, 7);
+      if (isAfter(d, sevenDaysAgo)) {
+        return `${format(d, 'EEE')} `;
+      }
+      const dateFormat = isThisYear(d) ? 'MMM d' : 'MMM d, yyyy';
+      return `${format(d, dateFormat)} `;
     };
 
     // Single moment (under 1 minute duration)
@@ -279,7 +285,7 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
         )}>
           <div className="flex justify-between items-start gap-2">
             <div className="min-w-0">
-              <CardTitle className="text-base font-medium mb-0.5">
+              <CardTitle className="text-base font-medium mb-0.5 truncate" title={displayName}>
                 {isUnassigned ? (
                   <span className="text-muted-foreground">{displayName}</span>
                 ) : (

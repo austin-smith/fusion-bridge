@@ -38,7 +38,7 @@ import Image from 'next/image';
 import { CameraMediaSection } from '@/components/features/common/CameraMediaSection';
 import { useDeviceCameraConfig } from '@/hooks/use-device-camera-config';
 import { useFusionStore } from '@/stores/store';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow, isYesterday, isThisYear } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // MODIFIED: Interface matching the updated API structure
@@ -186,13 +186,22 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
     const isToday = eventDate.getDate() === now.getDate() &&
       eventDate.getMonth() === now.getMonth() &&
       eventDate.getFullYear() === now.getFullYear();
-    const isThisWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) < eventDate;
+    const withinLast7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) < eventDate;
 
-    const primary = isToday
-      ? format(eventDate, 'h:mm a')
-      : (isThisWeek ? format(eventDate, 'EEE h:mm a') : format(eventDate, 'MMM d, yyyy'));
+    let primary: string;
+    if (isToday) {
+      primary = format(eventDate, 'h:mm:ss a');
+    } else if (isYesterday(eventDate)) {
+      primary = `Yesterday ${format(eventDate, 'h:mm:ss a')}`;
+    } else if (withinLast7Days) {
+      primary = format(eventDate, 'EEE h:mm:ss a');
+    } else if (isThisYear(eventDate)) {
+      primary = format(eventDate, 'MMM d h:mm:ss a');
+    } else {
+      primary = format(eventDate, 'MMM d, yyyy h:mm:ss a');
+    }
+
     const relative = formatDistanceToNow(eventDate, { addSuffix: true });
-
     return { eventDate, label: `${primary} · ${relative}` };
   }, [currentEvent?.timestamp]);
 
