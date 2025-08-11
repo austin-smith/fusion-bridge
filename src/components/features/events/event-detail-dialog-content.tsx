@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, EyeIcon, Image as ImageIcon, AlertCircle, Loader2, PlayIcon, Gamepad, Box, Building, Shield, ChevronLeft, ChevronRight } from "lucide-react";
+import { Check, Copy, EyeIcon, Image as ImageIcon, AlertCircle, Loader2, PlayIcon, Gamepad, Box, Building, Shield, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +38,8 @@ import Image from 'next/image';
 import { CameraMediaSection } from '@/components/features/common/CameraMediaSection';
 import { useDeviceCameraConfig } from '@/hooks/use-device-camera-config';
 import { useFusionStore } from '@/stores/store';
+import { format, formatDistanceToNow } from 'date-fns';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // MODIFIED: Interface matching the updated API structure
 interface EventData {
@@ -70,6 +72,7 @@ interface EventDetailDialogContentProps {
   event: EventData;
   events?: EventData[]; // Array of events for navigation
   buttonStyle?: 'default' | 'overlay'; // Style for the trigger button
+  asContent?: boolean; // Render only the dialog body without wrapper/trigger
 }
 
 // Define DetailRow component locally for now
@@ -87,7 +90,7 @@ const DetailRow = ({label, value, monospace = false, breakAll = false}: {label: 
 
 
 
-export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> = ({ event, events, buttonStyle = 'default' }) => {
+export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> = ({ event, events, buttonStyle = 'default', asContent = false }) => {
   const [isCopied, setIsCopied] = useState(false);
   
   // Navigation state for multiple events
@@ -130,7 +133,10 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
   // Find which space contains this device
   const deviceSpace = useMemo(() => {
     if (!eventDevice) return null;
-    return spaces.find(space => space.deviceIds?.includes(eventDevice.id));
+    if (eventDevice.spaceId) {
+      return spaces.find(space => space.id === eventDevice.spaceId) || null;
+    }
+    return spaces.find(space => space.deviceIds?.includes(eventDevice.id)) || null;
   }, [spaces, eventDevice]);
   
   // Find which alarm zone contains this device
@@ -170,6 +176,25 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
   const typeInfo = currentEvent.deviceTypeInfo || { type: DeviceType.Unmapped }; // Default if missing
   const DeviceIcon = getDeviceTypeIcon(typeInfo.type);
   const StateIcon = currentEvent.displayState ? getDisplayStateIcon(currentEvent.displayState) : null;
+
+  // Build timestamp display for header (own line, right-aligned)
+  const timestampInfo = useMemo(() => {
+    const ts = currentEvent?.timestamp;
+    if (!ts || isNaN(ts)) return null;
+    const eventDate = new Date(ts);
+    const now = new Date();
+    const isToday = eventDate.getDate() === now.getDate() &&
+      eventDate.getMonth() === now.getMonth() &&
+      eventDate.getFullYear() === now.getFullYear();
+    const isThisWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) < eventDate;
+
+    const primary = isToday
+      ? format(eventDate, 'h:mm a')
+      : (isThisWeek ? format(eventDate, 'EEE h:mm a') : format(eventDate, 'MMM d, yyyy'));
+    const relative = formatDistanceToNow(eventDate, { addSuffix: true });
+
+    return { eventDate, label: `${primary} · ${relative}` };
+  }, [currentEvent?.timestamp]);
 
   // Construct Media Thumbnail URL if best shot is available
   let mediaThumbnailUrl: string | null = null;
@@ -222,35 +247,20 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
     selectCamera
   } = useDeviceCameraConfig(
     eventDevice || null,
-    eventCameraOptions
+    {
+      ...eventCameraOptions,
+      spaceId: deviceSpace?.id,
+      spaceName: deviceSpace?.name || null
+    }
   );
 
 
 
 
 
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        {buttonStyle === 'overlay' ? (
-          <Button 
-            variant="outline"
-            size="icon"
-            className="h-10 w-10 rounded-full bg-background/80 hover:bg-background/95 text-foreground/80 hover:text-foreground"
-            title="View event details"
-          >
-            <EyeIcon className="h-5 w-5" />
-            <span className="sr-only">View Event Details</span>
-          </Button>
-        ) : (
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <EyeIcon className="h-4 w-4" />
-            <span className="sr-only">View Event Details</span>
-          </Button>
-        )}
-      </DialogTrigger>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader className="pb-4 border-b">
+  const inner = (
+    <>
+      <DialogHeader className="pb-4 border-b">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <DeviceIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
@@ -317,8 +327,25 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
              )}
             </div>
           </DialogDescription>
-        </DialogHeader>
-        <Tabs defaultValue="details" className="mt-2">
+          {timestampInfo && (
+            <div className="pt-1 w-full text-xs text-muted-foreground">
+              <TooltipProvider delayDuration={100}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex items-center">
+                      <Clock className="h-3 w-3 mr-1" />
+                      <time dateTime={timestampInfo.eventDate.toISOString()}>{timestampInfo.label}</time>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="center">
+                    <p>{format(timestampInfo.eventDate, 'PPpp')}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          )}
+      </DialogHeader>
+      <Tabs defaultValue="details" className="mt-2">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="details">Key Details</TabsTrigger>
             <TabsTrigger value="raw">Raw JSON</TabsTrigger>
@@ -574,6 +601,30 @@ export const EventDetailDialogContent: React.FC<EventDetailDialogContentProps> =
             </Button>
           </DialogClose>
         </DialogFooter>
+    </>
+  );
+
+  if (asContent) {
+    return inner as any;
+  }
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        {buttonStyle === 'overlay' ? (
+          <Button variant="outline" size="icon" className="h-10 w-10 rounded-full bg-background/80 hover:bg-background/95 text-foreground/80 hover:text-foreground" title="View event details">
+            <EyeIcon className="h-5 w-5" />
+            <span className="sr-only">View Event Details</span>
+          </Button>
+        ) : (
+          <Button variant="ghost" size="icon" className="h-8 w-8">
+            <EyeIcon className="h-4 w-4" />
+            <span className="sr-only">View Event Details</span>
+          </Button>
+        )}
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        {inner}
       </DialogContent>
     </Dialog>
   );

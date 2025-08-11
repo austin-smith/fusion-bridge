@@ -9,6 +9,9 @@ import { actionHandlers } from '@/lib/device-actions';
 import type { ChatAction, DeviceActionMetadata, AlarmZoneActionMetadata } from '@/types/ai/chat-actions';
 import type { FunctionExecutionResult, AiFunctionResult } from '@/types/ai/chat-types';
 import pluralize from 'pluralize';
+import { db } from '@/data/db';
+import { connectors, devices, events } from '@/data/db/schema';
+import { eq, and, inArray, gte, lte, count as drizzleCount } from 'drizzle-orm';
 
 // OpenAI function definitions
 export const openAIFunctions = [
@@ -394,28 +397,44 @@ export async function executeFunction(
 // Count events
 async function countEvents(args: any, organizationId: string): Promise<FunctionExecutionResult> {
   try {
-    const params = new URLSearchParams();
-    params.append('count', 'true');
-    
-    // Add filters to params
-    if (args.timeStart) params.append('timeStart', args.timeStart);
-    if (args.timeEnd) params.append('timeEnd', args.timeEnd);
-    if (args.deviceNames?.length) params.append('deviceNames', args.deviceNames.join(','));
-    if (args.eventTypes?.length) params.append('eventCategories', args.eventTypes.join(','));
-    
-    const response = await fetch(`/api/events?${params.toString()}`);
-    const data = await response.json();
-    
-    if (data.success) {
-      return {
-        aiData: {
-          count: data.count,
-          timeRange: data.timeRange
-        }
-      };
-    } else {
-      throw new Error(data.error || 'Failed to count events');
+    const { timeStart, timeEnd, deviceNames, eventTypes } = args || {};
+
+    const conditions = [eq(connectors.organizationId, organizationId)];
+
+    if (timeStart && timeEnd) {
+      conditions.push(gte(events.timestamp, new Date(timeStart)));
+      conditions.push(lte(events.timestamp, new Date(timeEnd)));
     }
+
+    if (eventTypes?.length) {
+      // Note: parameter name is eventTypes but maps to standardizedEventCategory
+      conditions.push(inArray(events.standardizedEventCategory, eventTypes));
+    }
+
+    // Base query
+    let query = db
+      .select({ count: drizzleCount() })
+      .from(events)
+      .innerJoin(connectors, eq(connectors.id, events.connectorId));
+
+    // Optional device name filtering requires a join to devices
+    if (deviceNames?.length) {
+      query = query.leftJoin(
+        devices,
+        and(eq(devices.connectorId, events.connectorId), eq(devices.deviceId, events.deviceId))
+      );
+      conditions.push(inArray(devices.name, deviceNames));
+    }
+
+    const result = await query.where(and(...conditions));
+    const total = result[0]?.count || 0;
+
+    return {
+      aiData: {
+        count: total,
+        timeRange: timeStart && timeEnd ? { start: timeStart, end: timeEnd } : undefined
+      }
+    };
   } catch (error) {
     console.error('Error counting events:', error);
     return {
@@ -430,27 +449,37 @@ async function countEvents(args: any, organizationId: string): Promise<FunctionE
 // Count devices  
 async function countDevices(args: any, organizationId: string): Promise<FunctionExecutionResult> {
   try {
-    const params = new URLSearchParams();
-    params.append('count', 'true');
-    
-    // Add filters
-    if (args.connectorCategories?.length) params.append('connectorCategories', args.connectorCategories.join(','));
-    if (args.deviceTypes?.length) params.append('deviceTypes', args.deviceTypes.join(','));
-    if (args.statuses?.length) params.append('statuses', args.statuses.join(','));
-    
-    const response = await fetch(`/api/devices?${params.toString()}`);
-    const data = await response.json();
-    
-    if (data.success) {
-      return {
-        aiData: {
-          count: data.count,
-          filters: args
-        }
-      };
-    } else {
-      throw new Error(data.error || 'Failed to count devices');
+    const { connectorCategories, deviceTypes, statuses } = args || {};
+
+    const conditions = [eq(connectors.organizationId, organizationId)];
+
+    if (connectorCategories?.length) {
+      conditions.push(inArray(connectors.category, connectorCategories));
     }
+
+    if (deviceTypes?.length) {
+      conditions.push(inArray(devices.type, deviceTypes));
+    }
+
+    if (statuses?.length) {
+      // devices.status exists in schema and is used elsewhere in the codebase
+      conditions.push(inArray(devices.status, statuses));
+    }
+
+    const result = await db
+      .select({ count: drizzleCount() })
+      .from(devices)
+      .innerJoin(connectors, eq(connectors.id, devices.connectorId))
+      .where(and(...conditions));
+
+    const total = result[0]?.count || 0;
+
+    return {
+      aiData: {
+        count: total,
+        filters: args
+      }
+    };
   } catch (error) {
     console.error('Error counting devices:', error);
     return {

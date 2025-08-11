@@ -18,6 +18,8 @@ interface EventSearchFilters {
   connectorCategory?: string;
   locationId?: string;
   spaceId?: string;
+  // Specific device filter (internal UUID)
+  deviceInternalId?: string;
   // Column filter parameters (server-side versions of existing client-side filters)
   deviceNameFilter?: string;
   eventTypeFilter?: string;
@@ -468,6 +470,11 @@ export class OrgScopedDb {
 
       if (filters?.spaceId && filters.spaceId.toLowerCase() !== 'all' && filters.spaceId !== '') {
         conditions.push(eq(spaces.id, filters.spaceId));
+      }
+
+      // Filter by a specific device (internal UUID)
+      if (filters?.deviceInternalId && filters.deviceInternalId.trim() !== '') {
+        conditions.push(eq(devices.id, filters.deviceInternalId));
       }
 
       // Column filter conditions (server-side filtering for table columns)

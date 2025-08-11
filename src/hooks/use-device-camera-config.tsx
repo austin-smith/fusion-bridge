@@ -61,6 +61,8 @@ interface CameraConfigOptions {
   timestamp?: number;
   // For static thumbnail URL
   staticThumbnailUrl?: string;
+  // Direct space targeting (enumerate cameras by spaceId)
+  spaceId?: string;
   // Space name (already looked up by parent component)
   spaceName?: string | null;
   // Initial camera selection
@@ -131,9 +133,19 @@ export function useDeviceCameraConfig(
   const availableCameras = useMemo(() => {
     const cameras: CameraInfo[] = [];
 
-    // Case 1: Device is a Piko camera itself
-    if (device && device.connectorCategory === 'piko' && device.deviceTypeInfo?.type === 'Camera') {
-      cameras.push(deviceToCameraInfo(device, options.spaceName || undefined, undefined, connectors));
+    // Case 1: Explicit space targeting
+    if (options.spaceId) {
+      const spaceIdValue = options.spaceId;
+      const cameraSpaceName = spaces.find(s => s.id === spaceIdValue)?.name;
+      const spaceCameras = allDevices.filter(d =>
+        d.connectorCategory === 'piko' &&
+        d.deviceTypeInfo?.type === 'Camera' &&
+        d.spaceId === spaceIdValue
+      );
+
+      spaceCameras.forEach(cam => {
+        cameras.push(deviceToCameraInfo(cam, cameraSpaceName, spaceIdValue, connectors));
+      });
       return cameras;
     }
 
@@ -145,20 +157,21 @@ export function useDeviceCameraConfig(
       );
 
       if (cameraDevice) {
-        const cameraSpace = spaces.find(space => space.deviceIds?.includes(cameraDevice.id));
-        cameras.push(deviceToCameraInfo(cameraDevice, cameraSpace?.name, cameraSpace?.id, connectors));
+        const spaceIdValue = cameraDevice.spaceId || undefined;
+        const cameraSpaceName = spaceIdValue ? (spaces.find(s => s.id === spaceIdValue)?.name) : undefined;
+        cameras.push(deviceToCameraInfo(cameraDevice, cameraSpaceName, spaceIdValue, connectors));
         
-        // Also find other cameras in the same space
-        if (cameraSpace) {
+        // Also find other cameras in the same space (no dependency on spaces store)
+        if (spaceIdValue) {
           const otherSpaceCameras = allDevices.filter(d => 
-            cameraSpace.deviceIds?.includes(d.id) &&
             d.connectorCategory === 'piko' && 
             d.deviceTypeInfo?.type === 'Camera' &&
+            d.spaceId === spaceIdValue &&
             d.id !== cameraDevice.id // Exclude the current camera
           );
 
           otherSpaceCameras.forEach(cam => {
-            cameras.push(deviceToCameraInfo(cam, cameraSpace.name, cameraSpace.id, connectors));
+            cameras.push(deviceToCameraInfo(cam, cameraSpaceName, spaceIdValue, connectors));
           });
         }
       }
@@ -170,23 +183,27 @@ export function useDeviceCameraConfig(
       return cameras;
     }
 
-    // Find space containing this device
-    const deviceSpace = spaces.find(space => space.deviceIds?.includes(device.id));
+    // If device has a space, enumerate all Piko cameras in that space
+    if (device.spaceId) {
+      const spaceIdValue = device.spaceId;
+      const deviceSpaceName = spaces.find(s => s.id === spaceIdValue)?.name;
+      const spaceCameras = allDevices.filter(d => 
+        d.connectorCategory === 'piko' && 
+        d.deviceTypeInfo?.type === 'Camera' &&
+        d.spaceId === spaceIdValue
+      );
 
-    if (!deviceSpace) {
+      spaceCameras.forEach(cam => {
+        cameras.push(deviceToCameraInfo(cam, deviceSpaceName, spaceIdValue, connectors));
+      });
       return cameras;
     }
 
-    // Find all Piko cameras in the same space
-    const spaceCameras = allDevices.filter(d => 
-      deviceSpace.deviceIds?.includes(d.id) &&
-      d.connectorCategory === 'piko' && 
-      d.deviceTypeInfo?.type === 'Camera'
-    );
-
-    spaceCameras.forEach(cam => {
-      cameras.push(deviceToCameraInfo(cam, deviceSpace.name, deviceSpace.id, connectors));
-    });
+    // If device is itself a Piko camera but not assigned to a space, include just that camera
+    if (device.connectorCategory === 'piko' && device.deviceTypeInfo?.type === 'Camera') {
+      cameras.push(deviceToCameraInfo(device, options.spaceName || undefined, undefined, connectors));
+      return cameras;
+    }
 
     return cameras;
   }, [device, options, allDevices, spaces, connectors]);
@@ -214,18 +231,28 @@ export function useDeviceCameraConfig(
     // Use historical thumbnail if timestamp is provided
     const shouldUseHistoricalThumbnail = Boolean(options.timestamp && options.timestamp > 0);
     
-    // For best shot events, use the provided static URL
-    const staticThumbnailUrl = options.staticThumbnailUrl || 
-      (shouldUseHistoricalThumbnail 
+    // Best-shot: only use the provided static best-shot URL when the selected camera
+    // matches the best-shot camera. Otherwise, fall back to per-camera historical thumbnail.
+    const isSelectedCameraBestShot = Boolean(
+      options.bestShotUrlComponents &&
+      options.bestShotUrlComponents.connectorId === selectedCamera.connectorId &&
+      options.bestShotUrlComponents.cameraId === selectedCamera.cameraId
+    );
+
+    const staticThumbnailUrl = (
+      isSelectedCameraBestShot ? options.staticThumbnailUrl : undefined
+    ) || (
+      shouldUseHistoricalThumbnail
         ? `/api/piko/device-thumbnail?connectorId=${selectedCamera.connectorId}&cameraId=${selectedCamera.cameraId}&timestamp=${options.timestamp}`
-        : undefined);
+        : undefined
+    );
 
     return {
-      thumbnailMode: (options.staticThumbnailUrl || shouldUseHistoricalThumbnail) ? 'static-url' as const : 'live-auto-refresh' as const,
+      thumbnailMode: (staticThumbnailUrl || shouldUseHistoricalThumbnail) ? 'static-url' as const : 'live-auto-refresh' as const,
       thumbnailUrl: staticThumbnailUrl,
       connectorId: selectedCamera.connectorId,
       cameraId: selectedCamera.cameraId,
-      refreshInterval: (options.staticThumbnailUrl || shouldUseHistoricalThumbnail) ? undefined : 10000,
+      refreshInterval: (staticThumbnailUrl || shouldUseHistoricalThumbnail) ? undefined : 10000,
       videoConfig: {
         connectorId: selectedCamera.connectorId,
         cameraId: selectedCamera.cameraId,

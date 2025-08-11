@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box, Map } from 'lucide-react';
+import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box, Map, ChevronDown, ChevronRight } from 'lucide-react';
 import { LocationEditDialog } from '@/components/features/locations/location-edit-dialog';
 import { LocationWeatherIcon } from '@/components/features/locations/location-weather-icon';
 import { FloorPlanIndicator } from '@/components/features/locations/floor-plan/floor-plan-indicator';
@@ -12,9 +12,9 @@ import { SpaceDeviceAssignmentDialog } from '@/components/features/locations/spa
 import { CameraWallDialog } from '@/components/features/common/camera-wall-dialog';
 import { SpaceCard } from '@/components/features/locations/spaces/SpaceCard';
 import { LocationTreeView } from '@/components/features/locations/location-tree-view';
-import type { Location, Space, DeviceWithConnector } from "@/types/index";
-import type { FloorPlanData } from '@/lib/storage/file-storage';
+import type { Location, Space } from "@/types/index";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,7 +38,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/com
 import { cn } from '@/lib/utils';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/page-header';
 import { DeviceType } from "@/lib/mappings/definitions";
@@ -123,6 +123,15 @@ export default function LocationsPage() {
   // Navigate to the dedicated floor plans page
   const [expandedSpaceDevices, setExpandedSpaceDevices] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState('');
+  const [collapsedLocations, setCollapsedLocations] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const stored = localStorage.getItem('locationsCollapsedState');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
 
   // Tree view state with localStorage persistence
   const [showTreeView, setShowTreeView] = useState<boolean | null>(null);
@@ -316,6 +325,16 @@ export default function LocationsPage() {
     setSelectedSpace(item.space);
   }, []);
 
+  const toggleLocationCollapsed = (locationId: string) => {
+    setCollapsedLocations((previous) => {
+      const updated = { ...previous, [locationId]: !previous[locationId] };
+      try {
+        localStorage.setItem('locationsCollapsedState', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
   // Drag and Drop handlers
   const SpaceCardWrapper = ({ space, children }: { space: Space; children: React.ReactNode }) => {
     const { setNodeRef, isOver } = useDroppable({
@@ -462,6 +481,31 @@ export default function LocationsPage() {
     return filtered.sort((a, b) => a.name.localeCompare(b.name));
   }, [locations, searchTerm, spacesByLocation]);
 
+  const allVisibleExpanded = useMemo(() => {
+    if (filteredSortedLocations.length === 0) return false;
+    return filteredSortedLocations.every((loc) => !collapsedLocations[loc.id]);
+  }, [filteredSortedLocations, collapsedLocations]);
+
+  const allVisibleCollapsed = useMemo(() => {
+    if (filteredSortedLocations.length === 0) return false;
+    return filteredSortedLocations.every((loc) => collapsedLocations[loc.id]);
+  }, [filteredSortedLocations, collapsedLocations]);
+
+  const toggleAllVisibleLocations = () => {
+    if (filteredSortedLocations.length === 0) return;
+    setCollapsedLocations((previous) => {
+      const next = { ...previous } as Record<string, boolean>;
+      const shouldCollapseAll = !allVisibleCollapsed;
+      for (const loc of filteredSortedLocations) {
+        next[loc.id] = shouldCollapseAll;
+      }
+      try {
+        localStorage.setItem('locationsCollapsedState', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
   const isFilteredEmptyState = !isLoadingLocations && !isLoadingSpaces && 
                                filteredSortedLocations.length === 0 && 
                                (searchTerm !== '' || (!spacesByLocation['unassigned'] || spacesByLocation['unassigned'].length === 0));
@@ -480,6 +524,32 @@ export default function LocationsPage() {
           className="w-full rounded-lg bg-background pl-8 md:w-50 lg:w-60 h-9"
         />
       </div>
+      {filteredSortedLocations.length > 0 && (
+        <TooltipProvider delayDuration={100}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={toggleAllVisibleLocations}
+                aria-label={!allVisibleCollapsed ? 'Collapse all locations' : 'Expand all locations'}
+              >
+                {allVisibleExpanded ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : allVisibleCollapsed ? (
+                  <ChevronRight className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{!allVisibleCollapsed ? 'Collapse all' : 'Expand all'}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
       {!isFilteredEmptyState && (
         <Button variant="outline" onClick={() => handleOpenLocationDialog(null)} size="sm">
           <Plus className="h-4 w-4" /> Add Location
@@ -559,6 +629,7 @@ export default function LocationsPage() {
                              return null; // Hide locations with no matching spaces when searching (unless location name matches)
                            }
 
+                           const isCollapsed = collapsedLocations[location.id] ?? false;
                            return (
                                <Card 
                                  key={location.id} 
@@ -566,11 +637,22 @@ export default function LocationsPage() {
                                  className="overflow-visible"
                                >
                                    <TooltipProvider delayDuration={100}> 
-                                     <CardHeader className="flex flex-row items-center justify-between pb-3 bg-muted/25">
-                                         <div className="flex items-center gap-2 min-w-0">
-                                           <Building className="h-5 w-5 flex-shrink-0" />
-                                           <div className="flex flex-col min-w-0">
-                                             <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
+                                      <CardHeader
+                                        className="flex flex-row items-center justify-between py-3 px-4 bg-muted/25 cursor-pointer hover:bg-muted/50 transition-colors rounded-t-lg"
+                                        onClick={() => toggleLocationCollapsed(location.id)}
+                                        title={isCollapsed ? 'Expand' : 'Collapse'}
+                                      >
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            {isCollapsed ? (
+                                              <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                                            ) : (
+                                              <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                                            )}
+                                            <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                            <div className="flex flex-col min-w-0">
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                <CardTitle className="text-base font-medium truncate" title={location.name}>{location.name}</CardTitle>
+                                              </div>
                                              {(location.addressCity || location.addressState || (location.latitude && location.longitude)) && (
                                                <CardDescription className="text-sm text-muted-foreground truncate flex items-center gap-2">
                                                  {(location.addressCity || location.addressState) && (
@@ -586,32 +668,39 @@ export default function LocationsPage() {
                                              )}
                                            </div>
                                          </div>
-                                         <div className="flex items-center gap-1 flex-shrink-0">
-                                                                                         <FloorPlanIndicator
+                                          <div className="relative flex items-center gap-1 flex-shrink-0 -translate-y-0.5">
+                                            <div onClick={(e) => e.stopPropagation()}>
+                                              <Badge variant="outline" className="font-normal px-1.5 py-0.5 text-xs flex-shrink-0">
+                                                {filteredSpaces.length} {filteredSpaces.length === 1 ? 'Space' : 'Spaces'}
+                                              </Badge>
+                                            </div>
+                                            <div onClick={(e) => e.stopPropagation()}>
+                                              <FloorPlanIndicator
                                               locationId={location.id}
                                               onViewFloorPlan={() => handleViewFloorPlan(location)}
                                               onUploadFloorPlan={() => handleUploadFloorPlan(location)}
                                             />
+                                            </div>
                                              <DropdownMenu>
                                                  <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7">
+                                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => e.stopPropagation()}>
                                                        <span className="sr-only">Location Actions</span>
                                                        <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                  </DropdownMenuTrigger>
                                                  <DropdownMenuContent align="end">
-                                                    <DropdownMenuItem onClick={() => handleOpenSpaceDialog(null, location.id)}>
+                                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenSpaceDialog(null, location.id); }}>
                                                        <Plus className="h-4 w-4 mr-2" /> 
                                                        Add Space
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => handleOpenLocationDialog(location)}>
+                                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenLocationDialog(location); }}>
                                                        <Pencil className="h-4 w-4 mr-2" /> 
                                                        Edit Location
                                                     </DropdownMenuItem>
                                                     <DropdownMenuSeparator />
-                                                    <DropdownMenuItem
+                                                 <DropdownMenuItem
                                                        className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                                                       onClick={() => handleOpenLocationDeleteDialog(location)}
+                                                     onClick={(e) => { e.stopPropagation(); handleOpenLocationDeleteDialog(location); }}
                                                     >
                                                        <Trash2 className="h-4 w-4 mr-2" /> 
                                                        Delete Location
@@ -620,38 +709,40 @@ export default function LocationsPage() {
                                              </DropdownMenu>
                                          </div>
                                      </CardHeader>
-                                     <CardContent className="pt-3">
-                                         {filteredSpaces.length > 0 ? (
-                                             filteredSpaces.map(space => (
-                                               <div key={`space-display-wrapper-${space.id}`} className="mb-3">
-                                                 <SpaceCardWrapper key={space.id} space={space}>
-                                                   <SpaceCard 
-                                                     space={space}
-                                                     allDevices={allDevices}
-                                                     isDevicesExpanded={expandedSpaceDevices[space.id] ?? false}
-                                                     onToggleDetails={toggleSpaceDevices}
-                                                     onAssignDevices={handleOpenAssignDeviceDialog}
-                                                     onEditSpace={handleOpenSpaceDialog}
-                                                     onDeleteSpace={handleOpenSpaceDeleteDialog}
-                                                     onViewCameras={handleViewCameras}
-                                                   />
-                                                 </SpaceCardWrapper>
-                                               </div>
-                                             ))
-                                         ) : (
-                                             <div className="px-4 py-6 text-center">
-                                                 <div className="rounded-full bg-muted p-3 mb-2 inline-flex">
-                                                   <Box className="h-5 w-5 text-muted-foreground" />
+                                      {!isCollapsed && (
+                                        <CardContent className="pt-3">
+                                           {filteredSpaces.length > 0 ? (
+                                               filteredSpaces.map(space => (
+                                                 <div key={`space-display-wrapper-${space.id}`} className="mb-3">
+                                                   <SpaceCardWrapper key={space.id} space={space}>
+                                                     <SpaceCard 
+                                                       space={space}
+                                                       allDevices={allDevices}
+                                                       isDevicesExpanded={expandedSpaceDevices[space.id] ?? false}
+                                                       onToggleDetails={toggleSpaceDevices}
+                                                       onAssignDevices={handleOpenAssignDeviceDialog}
+                                                       onEditSpace={handleOpenSpaceDialog}
+                                                       onDeleteSpace={handleOpenSpaceDeleteDialog}
+                                                       onViewCameras={handleViewCameras}
+                                                     />
+                                                   </SpaceCardWrapper>
                                                  </div>
-                                                 <p className="text-sm text-muted-foreground mb-2">
-                                                     No spaces in this location. 
-                                                 </p>
-                                                 <Button variant="outline" size="sm" onClick={() => handleOpenSpaceDialog(null, location.id)}>
-                                                   <Plus className="h-3.5 w-3.5" /> Add Space
-                                                 </Button>
-                                             </div>
-                                         )}
-                                     </CardContent>
+                                               ))
+                                           ) : (
+                                               <div className="px-4 py-6 text-center">
+                                                   <div className="rounded-full bg-muted p-3 mb-2 inline-flex">
+                                                     <Box className="h-5 w-5 text-muted-foreground" />
+                                                   </div>
+                                                   <p className="text-sm text-muted-foreground mb-2">
+                                                       No spaces in this location. 
+                                                   </p>
+                                                   <Button variant="outline" size="sm" onClick={() => handleOpenSpaceDialog(null, location.id)}>
+                                                     <Plus className="h-3.5 w-3.5" /> Add Space
+                                                   </Button>
+                                               </div>
+                                           )}
+                                        </CardContent>
+                                      )}
                                  </TooltipProvider>
                                </Card>
                            );

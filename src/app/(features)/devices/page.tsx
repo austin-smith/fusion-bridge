@@ -551,6 +551,7 @@ export default function DevicesPage() {
               displayState={device.displayState}
               showSecondary
               secondaryVariant="menu"
+              useSplitButton
             />
           );
         },

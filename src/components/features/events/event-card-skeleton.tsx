@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Card, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -12,28 +12,18 @@ interface EventCardSkeletonProps {
 }
 
 export const EventCardSkeleton: React.FC<EventCardSkeletonProps> = ({ cardSize = 'large' }) => {
-  // Card size classes for full-width thumbnail layout
-  const cardSizeClass = (() => {
-    switch (cardSize) {
-      case 'small':
-        return "min-h-[160px]"; // Reduced for better image aspect ratio
-      case 'medium':
-        return "min-h-[200px]"; // Reduced for better image aspect ratio
-      case 'large':
-      default:
-        return "min-h-[200px]"; // Reduced for better image aspect ratio
-    }
-  })();
+  // Static aspect ratio matching real card behavior
+  const mediaAspectClass = 'aspect-video';
 
   return (
-    <Card className={cn("overflow-hidden flex flex-col border-l-4 border-transparent", cardSizeClass)}>
+    <Card className={cn("overflow-hidden flex flex-col border-l-4 border-transparent")}>
       <CardHeader className="p-3 flex-shrink-0">
         <Skeleton className="h-5 w-3/4 mb-1.5" />
         <Skeleton className="h-3 w-1/2" />
       </CardHeader>
-      <div className="relative flex-grow flex flex-col overflow-hidden">
+      <div className={cn("relative w-full overflow-hidden", mediaAspectClass)}>
         <div className="absolute inset-0 bg-muted flex items-center justify-center">
-            <Skeleton className="h-10 w-10 rounded-full" />
+          <Skeleton className="h-10 w-10 rounded-full" />
         </div>
       </div>
     </Card>

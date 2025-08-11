@@ -13,6 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import SplitButton from '@/components/ui/split-button';
 
 export interface QuickDeviceActionsProps {
   internalDeviceId: string;
@@ -23,6 +24,7 @@ export interface QuickDeviceActionsProps {
   size?: 'sm' | 'md';
   showSecondary?: boolean;
   secondaryVariant?: 'buttons' | 'menu';
+  useSplitButton?: boolean;
 }
 
 /**
@@ -39,6 +41,7 @@ export function QuickDeviceActions({
   size = 'sm',
   showSecondary = false,
   secondaryVariant = 'buttons',
+  useSplitButton = false,
 }: QuickDeviceActionsProps) {
   const { executeDeviceAction, deviceActionLoading } = useFusionStore((state) => ({
     executeDeviceAction: state.executeDeviceAction,
@@ -54,6 +57,26 @@ export function QuickDeviceActions({
     displayState,
   });
   if (!primary) return null;
+
+  if (useSplitButton) {
+    return (
+      <SplitButton
+        primaryLabel={primary.label}
+        primaryIcon={primary.icon}
+        onPrimaryClick={() => executeDeviceAction(internalDeviceId, primary.action)}
+        items={secondary.map((s) => ({
+          label: s.label,
+          icon: s.icon,
+          onSelect: () => executeDeviceAction(internalDeviceId, s.action),
+        }))}
+        size={size}
+        disabled={isLoading}
+        isLoading={isLoading}
+        className={className}
+        ariaPrimaryLabel={primary.label}
+      />
+    );
+  }
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
