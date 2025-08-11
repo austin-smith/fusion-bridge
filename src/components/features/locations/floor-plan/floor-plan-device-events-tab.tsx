@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Activity, ImageOff } from 'lucide-react';
+import { Activity, ImageOff, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getDisplayStateColorClass, getDisplayStateIcon, getEventCategoryIcon } from '@/lib/mappings/presentation';
 import { EVENT_CATEGORY_DISPLAY_MAP, EVENT_SUBTYPE_DISPLAY_MAP, EVENT_TYPE_DISPLAY_MAP, type EventSubtype, type EventType } from '@/lib/mappings/definitions';
@@ -52,6 +52,7 @@ export function FloorPlanDeviceEventsTab({ deviceId, spaceCameras }: FloorPlanDe
   const [eventsError, setEventsError] = React.useState<string | null>(null);
   const [deviceEvents, setDeviceEvents] = React.useState<any[]>([]);
   const [failedThumbEventIds, setFailedThumbEventIds] = React.useState<Set<string>>(new Set());
+  const [loadedThumbEventIds, setLoadedThumbEventIds] = React.useState<Set<string>>(new Set());
   const [isEventDialogOpen, setIsEventDialogOpen] = React.useState(false);
   const [selectedEvent, setSelectedEvent] = React.useState<any | null>(null);
 
@@ -82,6 +83,9 @@ export function FloorPlanDeviceEventsTab({ deviceId, spaceCameras }: FloorPlanDe
     eventsAbortRef.current = controller;
     setIsLoadingEvents(true);
     setEventsError(null);
+    // Clear thumbnail load/error tracking for fresh results
+    setFailedThumbEventIds(new Set());
+    setLoadedThumbEventIds(new Set());
     try {
       const params = new URLSearchParams({ page: '1', limit: '20', deviceInternalId: deviceId });
       if (categories && categories.length > 0) params.append('eventCategories', categories.join(','));
@@ -107,6 +111,8 @@ export function FloorPlanDeviceEventsTab({ deviceId, spaceCameras }: FloorPlanDe
     if (!deviceId) return;
     setDeviceEvents([]);
     setEventsError(null);
+    setFailedThumbEventIds(new Set());
+    setLoadedThumbEventIds(new Set());
     fetchRecentEventsForDevice(categoryFilter);
   }, [deviceId, categoryFilter, fetchRecentEventsForDevice]);
 
@@ -138,6 +144,8 @@ export function FloorPlanDeviceEventsTab({ deviceId, spaceCameras }: FloorPlanDe
                       if (deviceId) {
                         setDeviceEvents([]);
                         setEventsError(null);
+                         setFailedThumbEventIds(new Set());
+                         setLoadedThumbEventIds(new Set());
                         fetchRecentEventsForDevice(next);
                       }
                       return next;
@@ -201,14 +209,31 @@ export function FloorPlanDeviceEventsTab({ deviceId, spaceCameras }: FloorPlanDe
                           className="object-cover"
                           sizes="64px"
                           loading="lazy"
+                          onLoadingComplete={() => {
+                            setLoadedThumbEventIds((prev) => {
+                              const next = new Set(prev);
+                              next.add(evt.eventUuid);
+                              return next;
+                            });
+                          }}
                           onError={() => {
                             setFailedThumbEventIds((prev) => {
                               const next = new Set(prev);
                               next.add(evt.eventUuid);
                               return next;
                             });
+                            setLoadedThumbEventIds((prev) => {
+                              const next = new Set(prev);
+                              next.add(evt.eventUuid);
+                              return next;
+                            });
                           }}
                         />
+                        {(!loadedThumbEventIds.has(evt.eventUuid)) && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          </div>
+                        )}
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
                       </div>
                     ) : thumbUrl ? (

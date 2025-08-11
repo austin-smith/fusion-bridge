@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Terminal, Loader2, Plus, Shield, Search, Building } from 'lucide-react';
+import { Terminal, Loader2, Plus, Shield, Search, Building, ChevronDown, ChevronRight } from 'lucide-react';
 import { AlarmZoneEditDialog } from '@/components/features/locations/alarm-zones/alarm-zone-edit-dialog';
 import { AlarmZoneCard } from '@/components/features/locations/alarm-zones/AlarmZoneCard';
 import { AlarmZoneDeviceAssignmentDialog } from '@/components/features/locations/alarm-zones/alarm-zone-device-assignment-dialog';
@@ -31,6 +31,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/page-header';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -119,6 +120,19 @@ export default function AlarmZonesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [locationFilter, setLocationFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  // Collapsed state for locations with localStorage persistence (mirrors Locations page)
+  const [collapsedLocations, setCollapsedLocations] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const stored = localStorage.getItem('alarmZonesCollapsedState');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  
 
   // dnd-kit sensors
   const sensors = useSensors(
@@ -415,6 +429,42 @@ export default function AlarmZonesPage() {
     return filtered.sort((a, b) => a.name.localeCompare(b.name));
   }, [locations, searchTerm, locationFilter, zonesByLocation]);
 
+  // Derived collapse state and toggles (must come after filteredSortedLocations)
+  const allVisibleExpanded = useMemo(() => {
+    if (filteredSortedLocations.length === 0) return false;
+    return filteredSortedLocations.every((loc) => !collapsedLocations[loc.id]);
+  }, [filteredSortedLocations, collapsedLocations]);
+
+  const allVisibleCollapsed = useMemo(() => {
+    if (filteredSortedLocations.length === 0) return false;
+    return filteredSortedLocations.every((loc) => collapsedLocations[loc.id]);
+  }, [filteredSortedLocations, collapsedLocations]);
+
+  const toggleAllVisibleLocations = () => {
+    if (filteredSortedLocations.length === 0) return;
+    setCollapsedLocations((previous) => {
+      const next = { ...previous } as Record<string, boolean>;
+      const shouldCollapseAll = !allVisibleCollapsed;
+      for (const loc of filteredSortedLocations) {
+        next[loc.id] = shouldCollapseAll;
+      }
+      try {
+        localStorage.setItem('alarmZonesCollapsedState', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const toggleLocationCollapsed = (locationId: string) => {
+    setCollapsedLocations((previous) => {
+      const updated = { ...previous, [locationId]: !previous[locationId] };
+      try {
+        localStorage.setItem('alarmZonesCollapsedState', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
   const isFilteredEmptyState = !isLoadingLocations && !isLoadingAlarmZones && 
                                filteredSortedLocations.length === 0 && 
                                (searchTerm !== '' || locationFilter !== 'all' || statusFilter !== 'all' || (!zonesByLocation['unassigned'] || zonesByLocation['unassigned'].length === 0));
@@ -473,6 +523,33 @@ export default function AlarmZonesPage() {
         </SelectContent>
       </Select>
 
+      {filteredSortedLocations.length > 0 && (
+        <TooltipProvider delayDuration={100}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={toggleAllVisibleLocations}
+                aria-label={!allVisibleCollapsed ? 'Collapse all locations' : 'Expand all locations'}
+              >
+                {allVisibleExpanded ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : allVisibleCollapsed ? (
+                  <ChevronRight className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{!allVisibleCollapsed ? 'Collapse all' : 'Expand all'}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+
     </>
   );
 
@@ -522,24 +599,35 @@ export default function AlarmZonesPage() {
                   return null;
                 }
 
+                const isCollapsed = collapsedLocations[location.id] ?? false;
                 return (
                   <Card key={location.id} className="overflow-visible">
-                    <CardHeader className="flex flex-row items-center justify-between pb-3 bg-muted/25">
+                    <CardHeader
+                      className="flex flex-row items-center justify-between py-3 px-4 bg-muted/25 cursor-pointer hover:bg-muted/50 transition-colors rounded-t-lg"
+                      onClick={() => toggleLocationCollapsed(location.id)}
+                      title={isCollapsed ? 'Expand' : 'Collapse'}
+                    >
                       <div className="flex items-center gap-2 min-w-0">
-                        <Building className="h-5 w-5 shrink-0" />
+                        {isCollapsed ? (
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
+                        <Building className="h-4 w-4 text-muted-foreground shrink-0" />
                         <CardTitle className="truncate" title={location.name}>{location.name}</CardTitle>
                       </div>
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        onClick={() => handleOpenZoneDialog(null, location.id)}
+                        onClick={(e) => { e.stopPropagation(); handleOpenZoneDialog(null, location.id); }}
                         className="h-7 text-xs"
                       >
                         <Plus className="h-3 w-3" /> 
                         Add Zone
                       </Button>
                     </CardHeader>
-                    <CardContent className="pt-3">
+                    {!isCollapsed && (
+                      <CardContent className="pt-3">
                       {filteredZones.length > 0 ? (
                         filteredZones.map(zone => (
                           <AlarmZoneCardWrapper key={zone.id} zone={zone}>
@@ -571,7 +659,8 @@ export default function AlarmZonesPage() {
                           </Button>
                         </div>
                       )}
-                    </CardContent>
+                      </CardContent>
+                    )}
                   </Card>
                 );
               })}
