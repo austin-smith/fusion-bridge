@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Download, ExternalLink, Image as ImageIcon, Cctv, Box, Building, Maximize, Minimize } from 'lucide-react';
+import { Download, ExternalLink, Image as ImageIcon, Cctv, Box, Building, Maximize, Minimize, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -37,6 +37,7 @@ export const ImagePreviewDialog: React.FC<ImagePreviewDialogProps> = ({
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const mediaContainerRef = useRef<HTMLDivElement | null>(null);
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const handleFsChange = () => {
@@ -72,6 +73,7 @@ export const ImagePreviewDialog: React.FC<ImagePreviewDialogProps> = ({
           document.exitFullscreen().catch(() => {});
         }
         setIsFullscreen(false);
+        setLoadedUrl(null);
       }
       onOpenChange(open);
     }}>
@@ -141,11 +143,22 @@ export const ImagePreviewDialog: React.FC<ImagePreviewDialogProps> = ({
                 fill
                 className="object-contain rounded-md shadow-md"
                 unoptimized
+                key={highResUrl}
                 onLoadingComplete={(img) => {
                   setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+                  setLoadedUrl(highResUrl);
+                }}
+                onError={() => {
+                  setLoadedUrl(highResUrl);
+                  toast.error('Failed to load image');
                 }}
               />
             </div>
+            {(!loadedUrl || loadedUrl !== highResUrl) && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
           </div>
 
           {/* Floating toolbar (top-right) */}

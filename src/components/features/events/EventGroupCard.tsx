@@ -10,7 +10,7 @@ import { getDeviceTypeIcon, getDisplayStateIcon, getDisplayStateColorClass, getS
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, isSameDay, isToday, isYesterday } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-import { Clock, ZoomIn, PlayIcon, VideoOff } from 'lucide-react';
+import { Clock, ZoomIn, PlayIcon, VideoOff, Loader2 } from 'lucide-react';
 import type { DeviceWithConnector, Space } from '@/types/index';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"; // <-- Added Popover imports
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -242,6 +242,8 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
   const [failedThumbnailUrl, setFailedThumbnailUrl] = useState<string | null>(null);
   const imageFailed = failedThumbnailUrl === thumbnailUrl;
   const hasImage = !!thumbnailUrl && !imageFailed;
+  const [loadedThumbUrl, setLoadedThumbUrl] = useState<string | null>(null);
+  const isThumbLoading = !!thumbnailUrl && loadedThumbUrl !== thumbnailUrl;
 
   // Calculate bestShotEvent once, as it's used in multiple places
   const bestShotEvent = useMemo(() => {
@@ -304,7 +306,11 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                 className="object-cover transition-transform duration-200 group-hover/thumbnail:scale-105"
                 priority={isRecentGroup}
-                onError={() => setFailedThumbnailUrl(thumbnailUrl!)}
+                onLoadingComplete={() => setLoadedThumbUrl(thumbnailUrl!)}
+                onError={() => {
+                  setFailedThumbnailUrl(thumbnailUrl!);
+                  setLoadedThumbUrl(thumbnailUrl!);
+                }}
               />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
@@ -321,34 +327,43 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
               </div>
             )}
 
+            {/* Loader overlay while thumbnail is loading */}
+            {isThumbLoading && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+
             {/* Hover overlay actions */}
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/thumbnail:opacity-100 transition-opacity duration-200 bg-black/30 space-x-2">
-              {hasImage && (
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10 rounded-full bg-background/80 hover:bg-background/95 text-foreground/80 hover:text-foreground"
-                  onClick={() => setIsPreviewOpen(true)}
-                  title="View larger image"
-                >
-                  <ZoomIn className="h-5 w-5" />
-                </Button>
-              )}
-              {(bestShotEvent || spacePikoCamera) && (
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10 rounded-full bg-background/80 hover:bg-background/95 text-foreground/80 hover:text-foreground"
-                  onClick={handlePlayVideo}
-                  title="Play video"
-                >
-                  <PlayIcon className="h-5 w-5" />
-                </Button>
-              )}
-              {events.length > 0 && (
-                <EventDetailDialogContent event={events[events.length - 1]} events={events} buttonStyle="overlay" />
-              )}
-            </div>
+            {!isThumbLoading && (
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/thumbnail:opacity-100 transition-opacity duration-200 bg-black/30 space-x-2">
+                {hasImage && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 rounded-full bg-background/80 hover:bg-background/95 text-foreground/80 hover:text-foreground"
+                    onClick={() => setIsPreviewOpen(true)}
+                    title="View larger image"
+                  >
+                    <ZoomIn className="h-5 w-5" />
+                  </Button>
+                )}
+                {(bestShotEvent || spacePikoCamera) && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 rounded-full bg-background/80 hover:bg-background/95 text-foreground/80 hover:text-foreground"
+                    onClick={handlePlayVideo}
+                    title="Play video"
+                  >
+                    <PlayIcon className="h-5 w-5" />
+                  </Button>
+                )}
+                {events.length > 0 && (
+                  <EventDetailDialogContent event={events[events.length - 1]} events={events} buttonStyle="overlay" />
+                )}
+              </div>
+            )}
 
             {/* Top-left controls/indicators */}
             {hasImage && hasMultipleCameras && (
