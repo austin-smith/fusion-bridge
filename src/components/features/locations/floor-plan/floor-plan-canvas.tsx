@@ -74,7 +74,6 @@ const ZOOM_FACTOR = 1.5;
 
 // Pinch (two-finger) zoom sensitivity. Values close to 1 produce smoother/slower zoom.
 // We use an exponential mapping: newScale = oldScale * base^(-deltaY)
-// Increased from 1.0015 to 1.003 to speed up pinch zoom slightly
 const PINCH_SCALE_POWER = 1.003;
 
 // Cache of valid device types for fast runtime validation
@@ -146,9 +145,9 @@ export function FloorPlanCanvas({
 
     const applySize = () => {
       const rect = el.getBoundingClientRect();
-      const newWidth = rect.width || canvasSize.width || 800;
-      const newHeight = rect.height || canvasSize.height || 600;
       setCanvasSize((prev) => {
+        const newWidth = rect.width || prev.width;
+        const newHeight = rect.height || prev.height;
         if (prev.width === newWidth && prev.height === newHeight) return prev;
         return { width: newWidth, height: newHeight };
       });
