@@ -76,6 +76,14 @@ const ZOOM_FACTOR = 1.5;
 // We use an exponential mapping: newScale = oldScale * base^(-deltaY)
 const PINCH_SCALE_POWER = 1.003;
 
+// PDF rendering scale for canvas quality vs performance tradeoff
+const PDF_RENDER_SCALE = 2;
+
+// Threshold for inferring a trackpad pinch gesture (when ctrlKey is not set).
+// Typical mouse wheel steps produce smaller |deltaY| values; pinch gestures often emit larger deltas.
+// 40 was chosen empirically to separate single-notch wheel scrolls from pinch zoom intents.
+const PINCH_DELTA_Y_THRESHOLD = 40;
+
 // Cache of valid device types for fast runtime validation
 const DEVICE_TYPES_SET = new Set<string>(Object.values(DeviceType));
 
@@ -184,7 +192,7 @@ export function FloorPlanCanvas({
   const pdfResult = usePdfRenderer(
     isPdf ? floorPlan : null,
     locationId,
-    { scale: 2 } // Higher scale for better quality
+    { scale: PDF_RENDER_SCALE } // Higher scale for better quality
   );
 
   // Get the current result based on file type
@@ -446,7 +454,7 @@ export function FloorPlanCanvas({
     const pointer = stage.getPointerPosition();
     if (!pointer) return;
 
-    const looksLikePinch = e.evt.ctrlKey || Math.abs(e.evt.deltaY) > 40;
+    const looksLikePinch = e.evt.ctrlKey || Math.abs(e.evt.deltaY) > PINCH_DELTA_Y_THRESHOLD;
     const scaleBy = looksLikePinch
       ? Math.pow(PINCH_SCALE_POWER, -e.evt.deltaY)
       : (e.evt.deltaY > 0 ? 1 / ZOOM_FACTOR : ZOOM_FACTOR);
