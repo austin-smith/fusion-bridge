@@ -4,12 +4,16 @@ import { z } from 'zod';
 export enum OpenAIModel {
   GPT_4O = 'gpt-4o',
   GPT_4O_MINI = 'gpt-4o-mini',
+  GPT_5 = 'gpt-5',
+  GPT_5_MINI = 'gpt-5-mini',
 }
 
 // OpenAI Model Display Names
 export const OPENAI_MODEL_DISPLAY_NAMES: Record<OpenAIModel, string> = {
   [OpenAIModel.GPT_4O]: 'GPT-4o',
   [OpenAIModel.GPT_4O_MINI]: 'GPT-4o mini',
+  [OpenAIModel.GPT_5]: 'GPT-5',
+  [OpenAIModel.GPT_5_MINI]: 'GPT-5 mini',
 };
 
 // OpenAI Configuration Schema for validation

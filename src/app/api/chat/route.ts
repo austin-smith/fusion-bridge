@@ -143,13 +143,16 @@ Be concise and helpful. You provide information - users execute actions.`
     );
 
     if (!result.success) {
-      console.error('[Chat API] OpenAI driver error:', result.errorMessage);
+      const status = result.errorStatusCode && result.errorStatusCode >= 400 && result.errorStatusCode < 600
+        ? result.errorStatusCode
+        : 500;
+      console.error('[Chat API] OpenAI driver error:', result.errorMessage, `(status ${status})`);
       return NextResponse.json<ChatResponse>(
         { 
           success: false, 
           error: result.errorMessage
         },
-        { status: 500 }
+        { status }
       );
     }
 

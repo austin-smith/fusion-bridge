@@ -4,10 +4,9 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MessagesSquare, X, Maximize2, Minimize2, Calendar, Cpu, ShieldCheck, BarChart3, Activity, Cctv, PowerOff, BookOpen, Eraser } from 'lucide-react';
+import { MessagesSquare, X, Maximize2, Minimize2, Calendar, Cpu, ShieldCheck, BarChart3, Activity, Cctv, PowerOff, BookOpen, Eraser, Loader2 } from 'lucide-react';
 import { Chat } from '@/components/ui/chat/chat';
 import { type Message } from '@/components/ui/chat/chat-message';
-import type { ChatResponse } from '@/types/ai/chat-types';
 
 import { cn } from '@/lib/utils';
 import { useFusionStore } from '@/stores/store';
@@ -66,6 +65,7 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  // Removed explicit status phases; rely on typing dots pre-token and live stream
   
   const abortControllerRef = useRef<AbortController | null>(null);
   
@@ -106,7 +106,7 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -122,35 +122,65 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
         signal: abortControllerRef.current.signal,
       });
 
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result: ChatResponse = await response.json();
+      // Insert a placeholder assistant message we will append to
+      const partialAssistantId = generateId();
+      setMessages(prev => [
+        ...prev,
+        {
+          id: partialAssistantId,
+          role: 'assistant',
+          content: '',
+          createdAt: new Date(),
+        },
+      ]);
 
-      let assistantContent = '';
-      
-      if (result.success && result.response) {
-        // Use the natural language response from OpenAI
-        assistantContent = result.response;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalData: any = null;
+      let sawFirstToken = false;
 
-        // Call the onResults callback if we have data to display
-        if (result.data && onResults) {
-          onResults(result.data);
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE events
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary !== -1) {
+          const rawEvent = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf('\n\n');
+
+          const lines = rawEvent.split('\n');
+          const eventLine = lines.find(l => l.startsWith('event: '));
+          const dataLine = lines.find(l => l.startsWith('data: '));
+          const event = eventLine ? eventLine.replace('event: ', '').trim() : '';
+          const data = dataLine ? JSON.parse(dataLine.replace('data: ', '') || '{}') : {};
+
+          if (event === 'token' && typeof data.delta === 'string') {
+            if (!sawFirstToken) {
+              sawFirstToken = true;
+            }
+            setMessages(prev => prev.map(m => m.id === partialAssistantId ? { ...m, content: (m.content || '') + data.delta } : m));
+          } else if (event === 'done') {
+            finalData = data?.data || null;
+            // nothing else; message content already streamed
+          } else if (event === 'error') {
+            throw new Error(data?.message || 'Stream error');
+          } else if (event === 'status') {
+            // Ignore; no inline status anymore
+          }
         }
-      } else {
-        assistantContent = result.error || 'I had trouble processing your request.';
       }
 
-      const assistantMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: assistantContent,
-        createdAt: new Date(),
-        chatActions: result.data?.actions || undefined,
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
+      if (finalData && onResults) {
+        onResults(finalData);
+      }
     } catch (error: any) {
       if (error.name === 'AbortError') {
         // Request was cancelled, don't add error message
@@ -159,14 +189,16 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
 
       console.error('Error processing query:', error);
       
-      const errorMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: 'Sorry, I encountered an error processing your request. Please try again.',
-        createdAt: new Date(),
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
+      // Replace the placeholder assistant message with an error message
+      setMessages(prev => [
+        ...prev,
+        {
+          id: generateId(),
+          role: 'assistant',
+          content: 'Sorry, I encountered an error processing your request. Please try again.',
+          createdAt: new Date(),
+        },
+      ]);
     } finally {
       setIsGenerating(false);
       abortControllerRef.current = null;
@@ -196,7 +228,7 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -212,35 +244,63 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
         signal: abortControllerRef.current.signal,
       });
 
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result: ChatResponse = await response.json();
+      const partialAssistantId = generateId();
+      setMessages(prev => [
+        ...prev,
+        {
+          id: partialAssistantId,
+          role: 'assistant',
+          content: '',
+          createdAt: new Date(),
+        },
+      ]);
 
-      let assistantContent = '';
-      
-      if (result.success && result.response) {
-        // Use the natural language response from OpenAI
-        assistantContent = result.response;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalData: any = null;
+      let sawFirstToken = false;
 
-        // Call the onResults callback if we have data to display
-        if (result.data && onResults) {
-          onResults(result.data);
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary !== -1) {
+          const rawEvent = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf('\n\n');
+
+          const lines = rawEvent.split('\n');
+          const eventLine = lines.find(l => l.startsWith('event: '));
+          const dataLine = lines.find(l => l.startsWith('data: '));
+          const event = eventLine ? eventLine.replace('event: ', '').trim() : '';
+          const data = dataLine ? JSON.parse(dataLine.replace('data: ', '') || '{}') : {};
+
+          if (event === 'token' && typeof data.delta === 'string') {
+            if (!sawFirstToken) {
+              sawFirstToken = true;
+            }
+            setMessages(prev => prev.map(m => m.id === partialAssistantId ? { ...m, content: (m.content || '') + data.delta } : m));
+          } else if (event === 'done') {
+            finalData = data?.data || null;
+            // finished
+          } else if (event === 'error') {
+            throw new Error(data?.message || 'Stream error');
+          } else if (event === 'status') {
+            // Ignore
+          }
         }
-      } else {
-        assistantContent = result.error || 'I had trouble processing your request.';
       }
 
-      const assistantMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: assistantContent,
-        createdAt: new Date(),
-        chatActions: result.data?.actions || undefined,
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
+      if (finalData && onResults) {
+        onResults(finalData);
+      }
     } catch (error: any) {
       if (error.name === 'AbortError') {
         // Request was cancelled, don't add error message
@@ -249,14 +309,15 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
 
       console.error('Error processing query:', error);
       
-      const errorMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: 'Sorry, I encountered an error processing your request. Please try again.',
-        createdAt: new Date(),
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: generateId(),
+          role: 'assistant',
+          content: 'Sorry, I encountered an error processing your request. Please try again.',
+          createdAt: new Date(),
+        },
+      ]);
     } finally {
       setIsGenerating(false);
       abortControllerRef.current = null;

@@ -175,6 +175,18 @@
     "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-tooltip",
     "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@radix-ui/react-tooltip/LICENSE"
   },
+  "@react-email/components@0.5.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/resend/react-email",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@react-email/components",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@react-email/components/license.md"
+  },
+  "@react-email/render@1.2.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/resend/react-email",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@react-email/render",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/@react-email/render/license.md"
+  },
   "@scalar/api-reference-react@0.7.7": {
     "licenses": "MIT",
     "repository": "https://github.com/scalar/scalar",
@@ -616,6 +628,12 @@
     "publisher": "Łukasz Sentkiewicz",
     "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/remeda",
     "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/remeda/README.md"
+  },
+  "resend@6.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/resendlabs/resend-node",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/resend",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/resend/LICENSE"
   },
   "rxjs@7.8.1": {
     "licenses": "Apache-2.0",

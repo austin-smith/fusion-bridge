@@ -225,7 +225,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
             )}
             key={`text-${index}`}
           >
-                    <div className={cn(chatBubbleVariants({ isUser, animation }))}>
+        <div className={cn(chatBubbleVariants({ isUser, animation }))}>
           <MarkdownRenderer>{part.text}</MarkdownRenderer>
           
           {/* Always visible chat actions (device/zone controls) */}

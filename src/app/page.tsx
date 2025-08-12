@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Button } from '@/components/ui/button';
-import { PlusCircle, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { ConnectorWithConfig } from '@/types';
 import { AddConnectorModal } from '@/components/features/connectors/add-connector-modal';
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
@@ -110,7 +110,7 @@ export default function Home() {
                 onClick={() => setAddConnectorOpen(true)}
                 className="flex items-center gap-2"
               >
-                <PlusCircle className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
                 Add Connector
               </Button>
             </div>

@@ -12,7 +12,7 @@ import {
   KanbanBoardExtraMargin,
   KanbanBoardProvider,
   KanbanBoardCard,
-} from '@/components/kanban';
+} from '@/components/ui/kanban';
 import { Badge } from '@/components/ui/badge';
 import { useJsLoaded } from '@/hooks/use-js-loaded';
 import type { LinearIssue } from '@/services/drivers/linear';
@@ -24,10 +24,6 @@ interface LinearKanbanBoardProps {
   issues: LinearIssue[];
   onCardClick: (issue: LinearIssue) => void;
 }
-
-
-
-
 
 export function LinearKanbanBoard({ issues, onCardClick }: LinearKanbanBoardProps) {
   const jsLoaded = useJsLoaded();

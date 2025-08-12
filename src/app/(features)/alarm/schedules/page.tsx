@@ -5,7 +5,7 @@ import { useFusionStore } from '@/stores/store';
 import type { ArmingSchedule } from '@/stores/store'; // Using the type from the store
 import { Button } from '@/components/ui/button';
 // DataTable and ColumnDef are no longer needed
-import { PlusCircle, MoreHorizontal, CalendarClock, Clock, Check, X, Pencil, Trash2, ArrowRight } from 'lucide-react'; 
+import { Plus, MoreHorizontal, CalendarClock, Clock, Check, X, Pencil, Trash2, ArrowRight } from 'lucide-react'; 
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -150,7 +150,7 @@ const ArmingSchedulesPage: React.FC = () => {
           icon={<CalendarClock className="h-6 w-6" />}
           actions={
             <Button onClick={handleOpenCreateDialog} size="sm">
-              <PlusCircle className="h-4 w-4" /> New Schedule
+              <Plus className="h-4 w-4" /> New Schedule
             </Button>
           }
         />

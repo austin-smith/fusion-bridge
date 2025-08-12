@@ -6,6 +6,31 @@ import {
   type OpenAITestResponse,
 } from '@/types/ai/openai-service-types';
 
+// Helper utilities to avoid duplicating GPT-5 handling logic across calls
+function isGpt5Model(model: OpenAIModel): boolean {
+  return model === OpenAIModel.GPT_5 || model === OpenAIModel.GPT_5_MINI;
+}
+
+function applyTemperatureParam(params: Record<string, any>, model: OpenAIModel, temperature?: number): void {
+  if (temperature === undefined) return;
+  const isGpt5 = isGpt5Model(model);
+  if (!isGpt5) {
+    params.temperature = temperature;
+  } else if (temperature === 1) {
+    // GPT-5 only supports default temperature(1). Only include when explicitly 1.
+    params.temperature = 1;
+  }
+}
+
+function applyMaxTokensParam(params: Record<string, any>, model: OpenAIModel, maxTokens?: number): void {
+  if (maxTokens === undefined) return;
+  if (isGpt5Model(model)) {
+    params.max_completion_tokens = maxTokens;
+  } else {
+    params.max_tokens = maxTokens;
+  }
+}
+
 /**
  * Simple OpenAI service that uses the official library directly
  * No custom abstractions - just what we actually need
@@ -43,6 +68,7 @@ export class OpenAIService {
     content?: string;
     functionResult?: any;
     errorMessage?: string;
+      errorStatusCode?: number;
     usage?: {
       promptTokens: number;
       completionTokens: number;
@@ -56,16 +82,18 @@ export class OpenAIService {
         function: fn,
       }));
 
-      // Initial completion
-      const completion = await this.client.chat.completions.create({
+      const initialParams: any = {
         model,
         messages,
         tools,
         tool_choice: 'auto',
-        max_tokens: options?.maxTokens,
-        temperature: options?.temperature,
         top_p: options?.topP,
-      });
+      };
+      // Apply model-specific params
+      applyTemperatureParam(initialParams, model, options?.temperature);
+      applyMaxTokensParam(initialParams, model, options?.maxTokens);
+
+      const completion = await this.client.chat.completions.create(initialParams);
 
       const message = completion.choices[0].message;
 
@@ -78,8 +106,7 @@ export class OpenAIService {
         // Execute function
         const functionResult = await functionExecutor(functionName, functionArgs);
 
-        // Final completion with function result
-        const finalCompletion = await this.client.chat.completions.create({
+        const followUpParams: any = {
           model,
           messages: [
             ...messages,
@@ -94,9 +121,13 @@ export class OpenAIService {
               content: JSON.stringify(functionResult),
             },
           ],
-          max_tokens: options?.maxTokens || 500,
-          temperature: options?.temperature || 0.7,
-        });
+          top_p: options?.topP,
+        };
+        // Apply model-specific params for follow-up
+        applyTemperatureParam(followUpParams, model, options?.temperature ?? 1);
+        applyMaxTokensParam(followUpParams, model, options?.maxTokens ?? 500);
+
+        const finalCompletion = await this.client.chat.completions.create(followUpParams);
 
         return {
           success: true,
@@ -125,8 +156,10 @@ export class OpenAIService {
       console.error('[OpenAI Service] Error:', error);
       
       let errorMessage = 'Unknown error occurred';
+      let errorStatusCode: number | undefined = undefined;
       if (error instanceof OpenAI.APIError) {
         errorMessage = `OpenAI API Error: ${error.message}`;
+        errorStatusCode = error.status;
         if (error.status === 401) errorMessage = 'Invalid API key';
         if (error.status === 429) errorMessage = 'Rate limit exceeded';
         if (error.status >= 500) errorMessage = 'OpenAI service unavailable';
@@ -134,7 +167,7 @@ export class OpenAIService {
         errorMessage = error.message;
       }
 
-      return { success: false, errorMessage };
+      return { success: false, errorMessage, errorStatusCode };
     }
   }
 
@@ -151,13 +184,15 @@ export class OpenAIService {
     }
   ): Promise<OpenAI.Chat.Completions.ChatCompletion | null> {
     try {
-      return await this.client.chat.completions.create({
+      const params: any = {
         model,
         messages,
-        max_tokens: options?.maxTokens,
-        temperature: options?.temperature,
         top_p: options?.topP,
-      });
+      };
+      // Apply model-specific params
+      applyTemperatureParam(params, model, options?.temperature);
+      applyMaxTokensParam(params, model, options?.maxTokens);
+      return await this.client.chat.completions.create(params);
     } catch (error) {
       console.error('[OpenAI Service] Completion error:', error);
       return null;
@@ -180,14 +215,16 @@ export class OpenAIService {
     const startTime = Date.now();
 
     try {
-      const completion = await this.client.chat.completions.create({
+      const params: any = {
         model,
         messages: [
           { role: 'system', content: 'You are a helpful assistant. Respond briefly.' },
           { role: 'user', content: 'Say "API test successful"' },
         ],
-        max_tokens: 50,
-      });
+      };
+      // Temperature not needed in test; GPT-5 defaults to 1. We omit it entirely.
+      applyMaxTokensParam(params, model, 50);
+      const completion = await this.client.chat.completions.create(params);
 
       return {
         success: true,
@@ -236,6 +273,7 @@ export async function chatWithFunctions(
   content?: string;
   functionResult?: any;
   errorMessage?: string;
+  errorStatusCode?: number;
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
 }> {
   const service = new OpenAIService(apiKey);
@@ -256,6 +294,7 @@ export async function chatWithFunctions(
     content: result.content,
     functionResult: result.functionResult,
     errorMessage: result.errorMessage,
+    errorStatusCode: result.errorStatusCode,
     usage: result.usage,
   };
 }

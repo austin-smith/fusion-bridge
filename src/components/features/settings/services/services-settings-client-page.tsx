@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import type { PushoverConfig } from "@/data/repositories/service-configurations";
 import type { PushcutConfig } from "@/types/pushcut-types";
 import type { OpenWeatherConfig } from "@/types/openweather-types";
@@ -15,16 +16,21 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { TbBrandPushover, TbBrandOpenai } from "react-icons/tb";
 import { SiLinear } from "react-icons/si";
-import { Layers2, CloudSun } from 'lucide-react';
+import { Layers2, CloudSun, Mail } from 'lucide-react';
 import { OpenWeatherConfigForm } from './openweather/openweather-config-form';
 import { OpenWeatherTestModal } from './openweather/openweather-test-modal';
 import { OpenAIConfigForm } from './openai/openai-config-form';
 import { OpenAITestModal } from './openai/openai-test-modal';
 import { LinearConfigForm } from './linear/linear-config-form';
+import { ResendConfigForm } from './resend/ResendConfigForm';
+import { ResendTestModal } from './resend/ResendTestModal';
+import { ResendPreviewModal } from './resend/ResendPreviewModal';
+import type { ResendConfig } from '@/types/email/resend-types';
 
 import { SunTimesUpdateTrigger } from './SunTimesUpdateTrigger';
 import { useFusionStore } from '@/stores/store';
 import { toast } from 'sonner';
+import { useSession } from '@/lib/auth/client';
 
 interface ServicesSettingsClientPageContentProps {
   initialPushoverConfig: PushoverConfig | null;
@@ -32,6 +38,7 @@ interface ServicesSettingsClientPageContentProps {
   initialOpenWeatherConfig: OpenWeatherConfig | null;
   initialOpenAIConfig: OpenAIConfig | null;
   initialLinearConfig: { id?: string; apiKey: string; teamId?: string; teamName?: string; isEnabled?: boolean } | null;
+  initialResendConfig?: ResendConfig | null;
 }
 
 export function ServicesSettingsClientPageContent({
@@ -40,10 +47,12 @@ export function ServicesSettingsClientPageContent({
   initialOpenWeatherConfig,
   initialOpenAIConfig,
   initialLinearConfig,
+  initialResendConfig,
 }: ServicesSettingsClientPageContentProps) {
 
   // Get store functions for updating OpenAI status - use selector to prevent re-renders
   const fetchOpenAiStatus = useFusionStore((state) => state.fetchOpenAiStatus);
+  const router = useRouter();
 
   // Add state for all test modals
   const [isPushoverTestModalOpen, setIsPushoverTestModalOpen] = useState(false);
@@ -51,6 +60,34 @@ export function ServicesSettingsClientPageContent({
   const [isOpenWeatherTestModalOpen, setIsOpenWeatherTestModalOpen] = useState(false);
   const [isOpenAITestModalOpen, setIsOpenAITestModalOpen] = useState(false);
   const [isTestingLinear, setIsTestingLinear] = useState(false);
+  const [isResendTestModalOpen, setIsResendTestModalOpen] = useState(false);
+  const [isResendPreviewOpen, setIsResendPreviewOpen] = useState(false);
+  const [resendPreviewHtml, setResendPreviewHtml] = useState<string | null>(null);
+  const [resendPreviewText, setResendPreviewText] = useState<string | null>(null);
+  const [isLoadingResendPreview, setIsLoadingResendPreview] = useState(false);
+  const { data: session } = useSession();
+  const currentUserEmail = (session?.user as any)?.email as string | undefined;
+  const handlePreviewResend = async () => {
+    try {
+      setIsLoadingResendPreview(true);
+      const toParam = currentUserEmail ? `?to=${encodeURIComponent(currentUserEmail)}` : '';
+      const res = await fetch(`/api/services/resend/preview${toParam}`, { method: 'GET' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        toast.error('Failed to load preview', { description: err.error || 'Unknown error' });
+        return;
+      }
+      const json = await res.json();
+      setResendPreviewHtml(json.html || null);
+      setResendPreviewText(json.text || null);
+      setIsResendPreviewOpen(true);
+    } catch (err) {
+      toast.error('Network error while loading preview');
+    } finally {
+      setIsLoadingResendPreview(false);
+    }
+  };
+
 
 
   // Stabilize the callback to prevent re-render loops
@@ -99,11 +136,42 @@ export function ServicesSettingsClientPageContent({
     <div className="grid gap-6 mt-6"> {/* Added mt-6 for spacing from PageHeader in parent */}
       <Tabs defaultValue="pushover" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="pushover">Pushover</TabsTrigger>
-          <TabsTrigger value="pushcut">Pushcut</TabsTrigger>
-          <TabsTrigger value="openweather">OpenWeather</TabsTrigger>
-          <TabsTrigger value="openai">OpenAI</TabsTrigger>
-          <TabsTrigger value="linear">Linear</TabsTrigger>
+          <TabsTrigger value="pushover">
+            <span className="flex items-center gap-2">
+              <TbBrandPushover className="h-4 w-4" />
+              Pushover
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="pushcut">
+            <span className="flex items-center gap-2">
+              <Layers2 className="h-4 w-4" />
+              Pushcut
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="openweather">
+            <span className="flex items-center gap-2">
+              <CloudSun className="h-4 w-4" />
+              OpenWeather
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="openai">
+            <span className="flex items-center gap-2">
+              <TbBrandOpenai className="h-4 w-4" />
+              OpenAI
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="linear">
+            <span className="flex items-center gap-2">
+              <SiLinear className="h-4 w-4" />
+              Linear
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="resend">
+            <span className="flex items-center gap-2">
+              <Mail className="h-4 w-4" />
+              Resend
+            </span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="pushover">
@@ -306,6 +374,62 @@ export function ServicesSettingsClientPageContent({
               />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="resend">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                  <Mail className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+                </div>
+                <CardTitle>Resend Configuration</CardTitle>
+              </div>
+              <CardDescription>
+                Configure <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">Resend</a> to send transactional emails using React Email.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-end mb-6 gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handlePreviewResend}
+                  disabled={isLoadingResendPreview}
+                >
+                  {isLoadingResendPreview ? 'Loading…' : 'Preview'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsResendTestModalOpen(true)}
+                  disabled={!initialResendConfig || !initialResendConfig.id || !initialResendConfig.apiKey || !initialResendConfig.fromEmail || !initialResendConfig.isEnabled}
+                >
+                  Send Test Email
+                </Button>
+              </div>
+              <ResendConfigForm
+                initialConfig={initialResendConfig || null}
+                isEnabled={initialResendConfig?.isEnabled ?? false}
+                onSaveSuccess={() => {
+                  // Ensure the latest server state is reflected immediately
+                  router.refresh();
+                }}
+              />
+            </CardContent>
+          </Card>
+
+          <ResendTestModal
+            isOpen={isResendTestModalOpen}
+            onOpenChange={setIsResendTestModalOpen}
+            resendConfig={initialResendConfig || null}
+            defaultRecipientEmail={currentUserEmail}
+          />
+          <ResendPreviewModal
+            isOpen={isResendPreviewOpen}
+            onOpenChange={setIsResendPreviewOpen}
+            html={resendPreviewHtml}
+            text={resendPreviewText}
+          />
+          {/* Preview removed */}
         </TabsContent>
       </Tabs>
     </div>

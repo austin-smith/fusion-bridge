@@ -23,6 +23,8 @@ import { OpenAIConfigSchema, type SaveOpenAIConfigFormState } from '@/types/ai/o
 import { LinearConfigSchema } from '@/services/drivers/linear';
 import type { SaveLinearConfigFormState } from '@/components/features/settings/services/linear/linear-config-form';
 import { upsertOpenAIConfiguration, upsertLinearConfiguration } from '@/data/repositories/service-configurations';
+import { upsertResendConfiguration } from '@/data/repositories/service-configurations';
+import { ResendConfigSchema, type SaveResendConfigFormState } from '@/types/email/resend-types';
 
 // Schema for form validation
 const PushoverConfigSchema = z.object({
@@ -405,3 +407,57 @@ export async function saveLinearConfigurationAction(
   
   return formState;
 } 
+
+// --- Resend Configuration Action ---
+export async function saveResendConfigurationAction(
+  prevState: SaveResendConfigFormState,
+  formData: FormData
+): Promise<SaveResendConfigFormState> {
+  const formState: SaveResendConfigFormState = { success: false };
+
+  const raw = {
+    apiKey: formData.get('apiKey') as string,
+    fromEmail: formData.get('fromEmail') as string,
+    fromName: (formData.get('fromName') as string) || undefined,
+    replyToEmail: (formData.get('replyToEmail') as string) || undefined,
+    isEnabled: formData.get('isEnabled') as string,
+  };
+
+  const validation = ResendConfigSchema.safeParse(raw);
+  if (!validation.success) {
+    const fieldErrors = validation.error.flatten().fieldErrors;
+    formState.message = 'Validation failed. Please check your inputs.';
+    formState.errors = {
+      apiKey: fieldErrors.apiKey,
+      fromEmail: fieldErrors.fromEmail,
+      fromName: fieldErrors.fromName,
+      replyToEmail: fieldErrors.replyToEmail,
+    };
+    return formState;
+  }
+
+  const { apiKey, fromEmail, fromName, replyToEmail, isEnabled } = validation.data as unknown as {
+    apiKey: string; fromEmail: string; fromName?: string; replyToEmail?: string; isEnabled: boolean;
+  };
+
+  try {
+    const result = await upsertResendConfiguration(apiKey, fromEmail, fromName, replyToEmail, isEnabled);
+    if (result.success) {
+      formState.success = true;
+      formState.message = 'Resend configuration saved successfully.';
+      formState.savedIsEnabled = isEnabled;
+      formState.savedConfigId = result.id;
+      formState.savedApiKey = apiKey;
+      revalidatePath('/settings/services');
+    } else {
+      formState.message = result.message || 'Failed to save Resend configuration.';
+      formState.errors = { _form: [formState.message] };
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'An unexpected error occurred.';
+    formState.message = msg;
+    formState.errors = { _form: [msg] };
+  }
+
+  return formState;
+}
