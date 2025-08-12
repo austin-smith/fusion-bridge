@@ -1,4 +1,5 @@
 import 'server-only';
+import * as React from 'react';
 
 import * as betterAuth from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -108,6 +109,39 @@ export const auth = betterAuth.betterAuth({
   },
   emailAndPassword: {
     enabled: true,
+    requireEmailVerification: true,
+  },
+  emailVerification: {
+    sendOnSignUp: true,
+    autoSignInAfterVerification: true,
+    async sendVerificationEmail({ user, url, token }, request) {
+      // Lazy import to avoid loading React email at module init
+      const { sendEmail } = await import('@/services/email/send-email');
+      const { default: VerificationEmail } = await import('@/emails/VerificationEmail');
+      // Ensure callbackURL sends user to create-password page after auto sign-in
+      let verificationUrl = url;
+      try {
+        const u = new URL(url);
+        u.searchParams.set('callbackURL', '/create-password');
+        verificationUrl = u.toString();
+      } catch {
+        verificationUrl = `${url}${url.includes('?') ? '&' : '?'}callbackURL=${encodeURIComponent('/create-password')}`;
+      }
+      const result = await sendEmail({
+        to: user.email,
+        subject: 'Verify your email address',
+        react: React.createElement(VerificationEmail as any, {
+          verificationUrl,
+          email: user.email,
+          appName: 'Fusion',
+        }),
+        text: `Click the link to verify your email: ${verificationUrl}`,
+      });
+      if (!result?.success) {
+        console.error('sendVerificationEmail: failed to dispatch email', result?.error);
+        throw new Error(result?.error || 'Failed to send verification email');
+      }
+    },
   },
   socialProviders: {
   },

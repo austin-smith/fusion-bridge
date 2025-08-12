@@ -40,7 +40,10 @@ export async function sendResendEmail(
   });
 
   if (error) {
-    return { success: false, error: String(error) };
+    const message = (error as any)?.message
+      || (typeof error === 'string' ? error : undefined)
+      || (() => { try { return JSON.stringify(error); } catch { return 'Unknown Resend error'; } })();
+    return { success: false, error: message };
   }
 
   return { success: true, id: (data as any)?.id };

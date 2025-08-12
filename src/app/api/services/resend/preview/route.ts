@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiRouteAuth, type ApiRouteAuthContext } from '@/lib/auth/withApiRouteAuth';
-import TestEmail from '@/emails/TestEmail';
 import { render } from '@react-email/render';
+import { getEmailTemplate, listEmailTemplates } from '@/emails/registry';
 
 export const GET = withApiRouteAuth(async (req: NextRequest, authContext: ApiRouteAuthContext) => {
   if ((authContext.user as any)?.role !== 'admin') {
@@ -10,11 +10,18 @@ export const GET = withApiRouteAuth(async (req: NextRequest, authContext: ApiRou
 
   try {
     const url = new URL(req.url);
-    const who = url.searchParams.get('to') || 'you@example.com';
-
-    const reactEmail = TestEmail({ who, appName: 'Fusion' });
+    const templateKey = url.searchParams.get('template') || 'test';
+    const template = getEmailTemplate(templateKey);
+    if (!template) {
+      return NextResponse.json(
+        { error: `Unknown template. Allowed: ${listEmailTemplates().map(t => t.key).join(', ')}` },
+        { status: 400 }
+      );
+    }
+    const props = template.buildPreviewProps(url.searchParams);
+    const reactEmail = template.render(props);
     const html = await render(reactEmail);
-    const text = `Hello,\n\nThis is a verification that your Resend configuration works. We attempted to send this to: ${who}.\n\nIf you did not expect this message, you can ignore it.\n— Fusion`;
+    const text = await render(reactEmail, { plainText: true });
 
     return NextResponse.json({ html, text }, { status: 200 });
   } catch (err) {

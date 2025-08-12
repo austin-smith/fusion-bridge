@@ -9,8 +9,10 @@ export default function AuthLayout({
 }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      {/* Renders the specific auth page content */}
-      {children}
+      <div className="w-full max-w-sm">
+        {/* Renders the specific auth page content */}
+        {children}
+      </div>
     </div>
   );
 } 

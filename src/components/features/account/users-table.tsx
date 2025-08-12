@@ -150,6 +150,27 @@ export const columns: ColumnDef<User>[] = [
     size: 100, 
   },
   {
+    id: "emailVerified",
+    header: ({ column }) => <SortableHeader column={column}>Email</SortableHeader>,
+    cell: ({ row }) => {
+      const isVerified = Boolean((row.original as any).emailVerified);
+      return (
+        <Badge
+          variant="outline"
+          className={cn(
+            isVerified
+              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+              : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+          )}
+        >
+          {isVerified ? "Verified" : "Unverified"}
+        </Badge>
+      );
+    },
+    size: 120,
+    enableSorting: true,
+  },
+  {
     accessorKey: "twoFactorEnabled",
     header: ({ column }) => <SortableHeader column={column}>2FA</SortableHeader>,
     cell: ({ row }) => {
@@ -301,7 +322,7 @@ function UserActionsCell({ user }: UserActionsCellProps) {
               <AlertDialogFooter>
                   <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
                   <AlertDialogAction onClick={handleDelete} disabled={isDeleting} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-                       {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                       {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                       Delete
                   </AlertDialogAction>
               </AlertDialogFooter>
@@ -353,7 +374,6 @@ export function AddUserDialog() {
   const [isOpen, setIsOpen] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [role, setRole] = useState<'user' | 'admin'>('user');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
@@ -371,10 +391,15 @@ export function AddUserDialog() {
         email?: string;
       };
 
+      const tempPassword = Array.from(crypto.getRandomValues(new Uint32Array(6)))
+        .map((n) => n.toString(36))
+        .join('')
+        .slice(0, 24);
+
       const response = await authClient.admin.createUser({
         name,
         email,
-        password,
+        password: tempPassword,
         role: role,
       }) as CreateUserSuccessResponse;
 
@@ -393,10 +418,28 @@ export function AddUserDialog() {
       }
       
       toast.success(`User ${newUserName} created successfully!`);
+
+      // Send verification email for admin-created users
+      try {
+        const sendResult: any = await authClient.sendVerificationEmail({
+          email,
+          callbackURL: '/create-password',
+        });
+        const errorMessage = sendResult?.error?.message || sendResult?.error;
+        if (errorMessage) {
+          console.error('Error sending verification email:', errorMessage);
+          toast.error(`Verification email failed: ${String(errorMessage)}`);
+        } else {
+          toast.success('Verification email sent');
+        }
+      } catch (e: any) {
+        console.error('Error sending verification email:', e);
+        const msg = e?.message || (typeof e === 'string' ? e : 'Unknown error');
+        toast.error(`Verification email failed: ${msg}`);
+      }
       setIsOpen(false);
       setName('');
       setEmail('');
-      setPassword('');
       setRole('user');
       formRef.current?.reset();
       router.refresh();
@@ -414,7 +457,7 @@ export function AddUserDialog() {
       if (!open) {
         setName('');
         setEmail('');
-        setPassword('');
+      // no-op: password is not collected from admin; user will set password after verification
         setRole('user');
         setIsLoading(false);
       }
@@ -446,12 +489,7 @@ export function AddUserDialog() {
               </Label>
               <Input id="add-email" name="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="col-span-3" required autoComplete="off" />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="add-password" className="text-right">
-                Password
-              </Label>
-              <Input id="add-password" name="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="col-span-3" required minLength={8} autoComplete="new-password" />
-            </div>
+            {null}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="add-role" className="text-right">
                 Role
@@ -508,6 +546,7 @@ const editInitialState = {
 function EditUserDialog({ user, isOpen, onOpenChange }: EditUserDialogProps) {
   const [state, formAction, isPending] = useActionState(updateUser, editInitialState);
   const formRef = useRef<HTMLFormElement>(null);
+  const [role, setRole] = React.useState<'user' | 'admin'>((user.role as any) ?? 'user');
 
   useEffect(() => {
     if (state.success) {
@@ -556,6 +595,30 @@ function EditUserDialog({ user, isOpen, onOpenChange }: EditUserDialogProps) {
               </Label>
               <Input id="edit-image" name="image" type="url" placeholder="https://..." className="col-span-3" defaultValue={user.image ?? ''} />
             </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="edit-role" className="text-right">
+                Role
+              </Label>
+              <Select value={role} onValueChange={(value: 'user' | 'admin') => setRole(value)} name="role">
+                <SelectTrigger className="col-span-3" id="edit-role">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">
+                    <div className="flex items-center gap-2">
+                      <UserCircle2 className="h-4 w-4 text-muted-foreground" />
+                      <span>User</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="admin">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+                      <span>Admin</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <DialogClose asChild>
@@ -593,6 +656,8 @@ export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
             <TableHead className="px-2 py-1"><Skeleton className="h-5 w-20" /></TableHead>
             {/* Role */}
             <TableHead className="w-[120px] px-2 py-1"><Skeleton className="h-5 w-12" /></TableHead>
+            {/* Email Verified */}
+            <TableHead className="w-[120px] px-2 py-1"><Skeleton className="h-5 w-16" /></TableHead>
             {/* 2FA */}
             <TableHead className="w-[110px] px-2 py-1"><Skeleton className="h-5 w-10" /></TableHead>
             {/* Keypad PIN */}
@@ -619,6 +684,8 @@ export function UsersTableSkeleton({ rowCount = 10 }: { rowCount?: number }) {
                 </div>
               </TableCell>
               {/* Role */}
+              <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
+              {/* Email Verified */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
               {/* 2FA */}
               <TableCell className="px-2 py-2"><Skeleton className="h-5 w-full" /></TableCell>
