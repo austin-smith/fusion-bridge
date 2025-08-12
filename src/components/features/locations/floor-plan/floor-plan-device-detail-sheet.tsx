@@ -379,7 +379,7 @@ export function FloorPlanDeviceDetailSheet({
                         type="text"
                         inputMode="numeric"
                         pattern="[0-9]*"
-                        className="h-7 w-12 text-right tabular-nums text-xs"
+                        className="h-7 w-14 text-right tabular-nums text-xs"
                         value={Number.isFinite(fov) ? Math.round(fov) : 0}
                         onChange={(e) => {
                           const raw = e.currentTarget.value;
@@ -415,7 +415,7 @@ export function FloorPlanDeviceDetailSheet({
                         type="text"
                         inputMode="numeric"
                         pattern="[0-9]*"
-                        className="h-7 w-12 text-right tabular-nums text-xs"
+                        className="h-7 w-14 text-right tabular-nums text-xs"
                         value={Number.isFinite(rotation) ? Math.round(rotation) : 0}
                         onChange={(e) => {
                           const raw = e.currentTarget.value;
