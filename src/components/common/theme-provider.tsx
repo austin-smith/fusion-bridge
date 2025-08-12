@@ -2,34 +2,47 @@
 
 import * as React from 'react'
 import { ThemeProvider as NextThemesProvider, type ThemeProviderProps } from 'next-themes'
+import {
+  PREFERRED_THEME_FAMILY_KEY,
+  THEME_FAMILIES,
+  THEME_FAMILY_OPTIONS,
+  isKnownFamily,
+  THEME_FAMILY_COOKIE_MAX_AGE_SECONDS,
+} from '@/lib/theme/constants';
 
-export const PREFERRED_THEME_FAMILY_KEY = 'user-preferred-theme-family'; // e.g., 'default' or 'cosmic-night'
+export { PREFERRED_THEME_FAMILY_KEY, THEME_FAMILIES, THEME_FAMILY_OPTIONS, isKnownFamily } from '@/lib/theme/constants';
+export type { KnownFamily, ThemeFamilyOption, ThemeFamilyValue } from '@/lib/theme/constants';
+
+export function removeAllThemeFamilyClasses(target: DOMTokenList) {
+  THEME_FAMILIES.forEach((fam) => target.remove(fam));
+}
+
+export function applyThemeFamilyClass(preferredFamily: string | null) {
+  const classList = document.documentElement.classList;
+  removeAllThemeFamilyClasses(classList);
+  if (preferredFamily && preferredFamily !== 'default' && isKnownFamily(preferredFamily)) {
+    classList.add(preferredFamily);
+  }
+}
+
+export function setThemeFamilyCookie(value: string) {
+  try {
+    const secure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${PREFERRED_THEME_FAMILY_KEY}=${encodeURIComponent(value)}; path=/; max-age=${THEME_FAMILY_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax${secure}`;
+  } catch {
+    // no-op
+  }
+}
 
 export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
-  // Effect to apply the theme family class from localStorage
   React.useEffect(() => {
-    const applyThemeFamily = () => {
-      const preferredFamily = localStorage.getItem(PREFERRED_THEME_FAMILY_KEY);
-      const classList = document.documentElement.classList;
-      
-      classList.remove('cosmic-night', 't3-chat', 'macos7', 'mono'); // Remove all known theme family classes first
-
-      if (preferredFamily === 'cosmic-night') {
-        classList.add('cosmic-night');
-      } else if (preferredFamily === 't3-chat') {
-        classList.add('t3-chat');
-      } else if (preferredFamily === 'mono') {
-        classList.add('mono');
-      }
-      // If preferredFamily is 'default' or something else, no specific family class is added.
-    };
-
-    applyThemeFamily(); // Apply on initial mount
-
-    // Listen for changes to this specific localStorage item from other tabs/windows
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key === PREFERRED_THEME_FAMILY_KEY) {
-        applyThemeFamily();
+        try {
+          applyThemeFamilyClass(event.newValue);
+        } catch {
+          // no-op
+        }
       }
     };
 
@@ -41,11 +54,11 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
 
   return (
     <NextThemesProvider
-      {...props} // Spread incoming props first
-      attribute="class" // Ensure class attribute is used for theming
-      defaultTheme="system" // Set a default theme
-      enableSystem={true} // Enable system theme preference
-      themes={['light', 'dark', 'system']} // Explicitly list managed themes
+      {...props}
+      attribute="class"
+      defaultTheme="system"
+      enableSystem={true}
+      themes={['light', 'dark', 'system']}
     >
       {children}
     </NextThemesProvider>
