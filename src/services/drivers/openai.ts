@@ -6,6 +6,31 @@ import {
   type OpenAITestResponse,
 } from '@/types/ai/openai-service-types';
 
+// Helper utilities to avoid duplicating GPT-5 handling logic across calls
+function isGpt5Model(model: OpenAIModel): boolean {
+  return model === OpenAIModel.GPT_5 || model === OpenAIModel.GPT_5_MINI;
+}
+
+function applyTemperatureParam(params: Record<string, any>, model: OpenAIModel, temperature?: number): void {
+  if (temperature === undefined) return;
+  const isGpt5 = isGpt5Model(model);
+  if (!isGpt5) {
+    params.temperature = temperature;
+  } else if (temperature === 1) {
+    // GPT-5 only supports default temperature(1). Only include when explicitly 1.
+    params.temperature = 1;
+  }
+}
+
+function applyMaxTokensParam(params: Record<string, any>, model: OpenAIModel, maxTokens?: number): void {
+  if (maxTokens === undefined) return;
+  if (isGpt5Model(model)) {
+    params.max_completion_tokens = maxTokens;
+  } else {
+    params.max_tokens = maxTokens;
+  }
+}
+
 /**
  * Simple OpenAI service that uses the official library directly
  * No custom abstractions - just what we actually need
@@ -57,8 +82,6 @@ export class OpenAIService {
         function: fn,
       }));
 
-      const isGpt5 = model === OpenAIModel.GPT_5 || model === OpenAIModel.GPT_5_MINI;
-
       const initialParams: any = {
         model,
         messages,
@@ -66,16 +89,9 @@ export class OpenAIService {
         tool_choice: 'auto',
         top_p: options?.topP,
       };
-      // Temperature handling: GPT-5 only supports default (1). Omit if not 1.
-      if (!isGpt5 && options?.temperature !== undefined) {
-        initialParams.temperature = options.temperature;
-      } else if (isGpt5 && options?.temperature === 1) {
-        initialParams.temperature = 1;
-      }
-      if (options?.maxTokens !== undefined) {
-        if (isGpt5) initialParams.max_completion_tokens = options.maxTokens;
-        else initialParams.max_tokens = options.maxTokens;
-      }
+      // Apply model-specific params
+      applyTemperatureParam(initialParams, model, options?.temperature);
+      applyMaxTokensParam(initialParams, model, options?.maxTokens);
 
       const completion = await this.client.chat.completions.create(initialParams);
 
@@ -107,16 +123,9 @@ export class OpenAIService {
           ],
           top_p: options?.topP,
         };
-        // Temperature handling for follow-up
-        const followUpTemp = options?.temperature ?? 1;
-        if (!isGpt5) {
-          followUpParams.temperature = followUpTemp;
-        } else if (isGpt5 && followUpTemp === 1) {
-          followUpParams.temperature = 1;
-        }
-        const followUpMax = options?.maxTokens ?? 500;
-        if (isGpt5) followUpParams.max_completion_tokens = followUpMax;
-        else followUpParams.max_tokens = followUpMax;
+        // Apply model-specific params for follow-up
+        applyTemperatureParam(followUpParams, model, options?.temperature ?? 1);
+        applyMaxTokensParam(followUpParams, model, options?.maxTokens ?? 500);
 
         const finalCompletion = await this.client.chat.completions.create(followUpParams);
 
@@ -175,22 +184,14 @@ export class OpenAIService {
     }
   ): Promise<OpenAI.Chat.Completions.ChatCompletion | null> {
     try {
-      const isGpt5 = model === OpenAIModel.GPT_5 || model === OpenAIModel.GPT_5_MINI;
       const params: any = {
         model,
         messages,
         top_p: options?.topP,
       };
-      // Temperature handling for createCompletion
-      if (options?.temperature !== undefined) {
-        const isGpt5 = model === OpenAIModel.GPT_5 || model === OpenAIModel.GPT_5_MINI;
-        if (!isGpt5) params.temperature = options.temperature;
-        else if (isGpt5 && options.temperature === 1) params.temperature = 1;
-      }
-      if (options?.maxTokens !== undefined) {
-        if (isGpt5) params.max_completion_tokens = options.maxTokens;
-        else params.max_tokens = options.maxTokens;
-      }
+      // Apply model-specific params
+      applyTemperatureParam(params, model, options?.temperature);
+      applyMaxTokensParam(params, model, options?.maxTokens);
       return await this.client.chat.completions.create(params);
     } catch (error) {
       console.error('[OpenAI Service] Completion error:', error);
@@ -214,7 +215,6 @@ export class OpenAIService {
     const startTime = Date.now();
 
     try {
-      const isGpt5 = model === OpenAIModel.GPT_5 || model === OpenAIModel.GPT_5_MINI;
       const params: any = {
         model,
         messages: [
@@ -223,8 +223,7 @@ export class OpenAIService {
         ],
       };
       // Temperature not needed in test; GPT-5 defaults to 1. We omit it entirely.
-      if (isGpt5) params.max_completion_tokens = 50;
-      else params.max_tokens = 50;
+      applyMaxTokensParam(params, model, 50);
       const completion = await this.client.chat.completions.create(params);
 
       return {
