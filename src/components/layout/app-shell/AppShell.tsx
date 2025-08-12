@@ -21,7 +21,7 @@ interface AppShellProps {
 
 const AppShell: React.FC<AppShellProps> = ({ children }) => {
   const pathname = usePathname();
-  const showSidebar = !['/login', '/setup', '/verify-2fa'].includes(pathname);
+  const showSidebar = !['/login', '/setup', '/verify-2fa', '/create-password'].includes(pathname);
   
   // Get page configuration from comprehensive page config
   const pageInfo = getPageConfig(pathname);

@@ -4,10 +4,11 @@ import { z } from 'zod';
 import { db } from '@/data/db';
 import { user, account, session } from '@/data/db/schema';
 import { auth } from '@/lib/auth/server';
-import { eq, sql, and, max } from 'drizzle-orm';
+import { eq, sql, and, max, type InferInsertModel } from 'drizzle-orm';
 import crypto from 'crypto';
 import { revalidatePath } from 'next/cache';
-import { headers as nextHeaders, cookies } from 'next/headers';
+import { headers as nextHeaders, cookies as nextCookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 // --- Types and Schemas ---
 // Define the schema internally, but don't export it
@@ -38,6 +39,7 @@ const UpdateUserSchema = z.object({
     id: z.string().min(1),
     name: z.string().min(1, { message: 'Name is required.' }),
     image: z.string().url({ message: "Must be a valid URL." }).optional().or(z.literal('')),
+    role: z.enum(['user', 'admin']).optional(),
 });
 
 // Schema for updating CURRENT user (only name and image needed)
@@ -98,7 +100,7 @@ export async function updateUser(
         return { success: false, message: `Invalid input: ${errorMessages}` };
     }
 
-    const { id, name, image } = validatedFields.data;
+    const { id, name, image, role } = validatedFields.data;
 
     // Check if user exists
     try {
@@ -115,11 +117,14 @@ export async function updateUser(
     // Update user in transaction
     try {
         await db.transaction(async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
+            type UserInsert = InferInsertModel<typeof user>;
+            const updateData: Partial<UserInsert> = {
+                name,
+                image,
+                ...(role ? { role } : {}),
+            };
             await tx.update(user)
-                .set({
-                    name: name,
-                    image: image,
-                })
+                .set(updateData)
                 .where(eq(user.id, id));
         });
         console.log(`[Server Action] User ${id} updated successfully.`);
@@ -145,7 +150,7 @@ export async function updateCurrentUser(
     // 1. Get current user session by fetching internal API route
     let userId: string | undefined;
     try {
-        const currentCookies = await cookies(); // Ensure cookies() is awaited here as well
+        const currentCookies = await nextCookies(); // Ensure cookies() is awaited here as well
         const cookieHeaderString = currentCookies.getAll().map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
         const baseURL = process.env.BETTER_AUTH_URL || 'http://localhost:3000';
         if (!baseURL) throw new Error("Base URL for API fetch missing.");
@@ -427,3 +432,89 @@ export async function resetUserPassword(
         return { success: false, message: 'Database error during password reset.' };
     }
 } 
+
+// --- Set initial password (no current password required) ---
+const SetInitialPasswordSchema = z.object({
+  newPassword: z.string().min(12, { message: 'New password must be at least 12 characters.' }),
+  confirmPassword: z.string().min(12, { message: 'Confirm password must be at least 12 characters.' }),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: "New passwords don't match",
+  path: ['confirmPassword'],
+});
+
+export async function setInitialPasswordAction(
+  _prev: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  // 1) Authenticated user required (prefer API session using request headers, fallback to $context)
+  let userId: string | undefined;
+  let userEmail: string | undefined;
+  let ctx: any | undefined;
+  try {
+    const hdrs = await nextHeaders();
+    const session = await auth.api.getSession({ headers: hdrs });
+    if (session?.user?.id) {
+      userId = session.user.id as string;
+      userEmail = (session.user as any).email as string | undefined;
+    }
+  } catch {}
+  if (!userId) {
+    try {
+      ctx = await auth.$context;
+      userId = ctx?.session?.user?.id as string | undefined;
+      userEmail = ctx?.session?.user?.email as string | undefined;
+    } catch {}
+  }
+  if (!userId) {
+    return { success: false, message: 'Authentication required.' };
+  }
+
+  // 2) Validate input
+  const validated = SetInitialPasswordSchema.safeParse({
+    newPassword: formData.get('newPassword'),
+    confirmPassword: formData.get('confirmPassword'),
+  });
+  if (!validated.success) {
+    const errs = validated.error.flatten().fieldErrors;
+    const msg = Object.values(errs).flat().join(', ');
+    return { success: false, message: `Invalid input: ${msg}` };
+  }
+
+  // 3) Hash password
+  let hashed = '';
+  try {
+    const hashingCtx = ctx ?? (await auth.$context);
+    if (!hashingCtx?.password?.hash) throw new Error('Password hashing is unavailable.');
+    hashed = await hashingCtx.password.hash(validated.data.newPassword);
+  } catch (e) {
+    return { success: false, message: 'Failed to process new password.' };
+  }
+
+  // 4) Upsert credential account password
+  try {
+    // Try update existing credential account
+    const result = await db.update(account)
+      .set({ password: hashed })
+      .where(and(eq(account.userId, userId), eq(account.providerId, 'credential')));
+
+    if ((result as any)?.rowsAffected === 0) {
+      // Insert if not exists
+      const id = crypto.randomUUID();
+      const accountIdValue = userEmail || userId;
+      await db.insert(account).values({
+        id,
+        userId,
+        providerId: 'credential',
+        accountId: accountIdValue,
+        password: hashed,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+  } catch (e) {
+    return { success: false, message: 'Database error while setting password.' };
+  }
+
+  // 5) Redirect to home
+  redirect('/');
+}

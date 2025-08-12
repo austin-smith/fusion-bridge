@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { getResendConfiguration } from '@/data/repositories/service-configurations';
 import TestEmail from '@/emails/TestEmail';
 import { sendEmail } from '@/services/email/send-email';
+import { render } from '@react-email/render';
 
 const TestRequestSchema = z.object({
   to: z.string().email('Valid recipient email is required'),
@@ -41,13 +42,13 @@ export const POST = withApiRouteAuth(async (req: NextRequest, authContext: ApiRo
     }
 
     const reactEmail = TestEmail({ who: parsed.data.to, appName: 'Fusion' });
-    const textEmail = `Hello,\n\nThis is a verification that your Resend configuration works. We attempted to send this to: ${parsed.data.to}.\n\nIf you did not expect this message, you can ignore it.\n— Fusion`;
+    const text = await render(reactEmail, { plainText: true });
 
     const { success, error, id } = await sendEmail({
       to: parsed.data.to,
       subject: parsed.data.subject ?? 'Fusion test email',
       react: reactEmail,
-      text: textEmail,
+      text,
     });
 
     if (!success) {

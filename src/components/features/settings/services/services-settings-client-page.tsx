@@ -67,26 +67,7 @@ export function ServicesSettingsClientPageContent({
   const [isLoadingResendPreview, setIsLoadingResendPreview] = useState(false);
   const { data: session } = useSession();
   const currentUserEmail = (session?.user as any)?.email as string | undefined;
-  const handlePreviewResend = async () => {
-    try {
-      setIsLoadingResendPreview(true);
-      const toParam = currentUserEmail ? `?to=${encodeURIComponent(currentUserEmail)}` : '';
-      const res = await fetch(`/api/services/resend/preview${toParam}`, { method: 'GET' });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }));
-        toast.error('Failed to load preview', { description: err.error || 'Unknown error' });
-        return;
-      }
-      const json = await res.json();
-      setResendPreviewHtml(json.html || null);
-      setResendPreviewText(json.text || null);
-      setIsResendPreviewOpen(true);
-    } catch (err) {
-      toast.error('Network error while loading preview');
-    } finally {
-      setIsLoadingResendPreview(false);
-    }
-  };
+  // Preview now handled inside the modal
 
 
 
@@ -393,10 +374,10 @@ export function ServicesSettingsClientPageContent({
               <div className="flex items-center justify-end mb-6 gap-2">
                 <Button
                   variant="outline"
-                  onClick={handlePreviewResend}
+                  onClick={() => setIsResendPreviewOpen(true)}
                   disabled={isLoadingResendPreview}
                 >
-                  {isLoadingResendPreview ? 'Loading…' : 'Preview'}
+                  Preview
                 </Button>
                 <Button
                   variant="outline"
@@ -426,8 +407,7 @@ export function ServicesSettingsClientPageContent({
           <ResendPreviewModal
             isOpen={isResendPreviewOpen}
             onOpenChange={setIsResendPreviewOpen}
-            html={resendPreviewHtml}
-            text={resendPreviewText}
+            defaultRecipientEmail={currentUserEmail}
           />
           {/* Preview removed */}
         </TabsContent>
