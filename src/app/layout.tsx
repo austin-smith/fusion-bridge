@@ -57,6 +57,10 @@ export default async function RootLayout({
   const cookieStore = await cookies();
   const sidebarCookie = cookieStore.get('sidebar_state')?.value;
   const initialSidebarOpen = sidebarCookie === 'false' ? false : true;
+
+  // Server-read theme family cookie; sanitize to a safe className token
+  const familyCookieRaw = cookieStore.get('user-preferred-theme-family')?.value ?? '';
+  const serverFamilyClass = /^(?:[a-z0-9\-]{1,32})$/i.test(familyCookieRaw) && familyCookieRaw !== 'default' ? familyCookieRaw : '';
   
   // Read session to get initial user role
   const headersList = await headers();
@@ -68,7 +72,7 @@ export default async function RootLayout({
   const initialUserRole = session?.user ? (session.user as any).role : null;
 
   return (
-    <html lang="en" suppressHydrationWarning> 
+    <html lang="en" className={serverFamilyClass} suppressHydrationWarning>
       <body className={`${inter.variable} ${csgFont.variable} font-sans`}>
         {/* Wrap AppShell and children with ClientProviders */}
         <ClientProviders initialSidebarOpen={initialSidebarOpen} initialUserRole={initialUserRole}>

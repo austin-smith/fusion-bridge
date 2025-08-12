@@ -10,7 +10,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { PREFERRED_THEME_FAMILY_KEY } from "@/components/common/theme-provider";
+import { PREFERRED_THEME_FAMILY_KEY, THEME_FAMILY_OPTIONS, applyThemeFamilyClass } from "@/components/common/theme-provider";
 
 interface ThemeOption {
     value: string;
@@ -30,22 +30,14 @@ export function AppearanceSettings() {
         setSelectedThemeFamily(currentThemeFamily);
     }, []);
 
-    // Setup dynamic theme options using computed CSS variables
-    const baseThemeOptions: ThemeOption[] = React.useMemo(() => [
-      { value: 'default', label: 'Default' },
-      { value: 'cosmic-night', label: 'Cosmic Night' },
-      { value: 'mono', label: 'Mono' },
-      { value: 't3-chat', label: 'T3 Chat' },
-    ], []);
-
     const [themeOptions, setThemeOptions] = useState<ExtendedThemeOption[]>([]);
 
     useLayoutEffect(() => {
       const root = document.documentElement;
       const originalClasses = Array.from(root.classList);
-      const themeValues = baseThemeOptions.map(opt => opt.value);
+      const themeValues = THEME_FAMILY_OPTIONS.map(opt => opt.value);
       
-      const computedOptions = baseThemeOptions.map(opt => {
+      const computedOptions = THEME_FAMILY_OPTIONS.map(opt => {
         // restore original classes
         root.className = '';
         originalClasses.forEach(cls => root.classList.add(cls));
@@ -54,33 +46,29 @@ export function AppearanceSettings() {
         // apply this theme for preview (skip default)
         if (opt.value !== 'default') root.classList.add(opt.value);
         const cssValue = getComputedStyle(root).getPropertyValue('--primary').trim();
-        return { ...opt, dotColor: `hsl(${cssValue})` };
+        return { value: opt.value, label: opt.label, dotColor: `hsl(${cssValue})` };
       });
       
       // restore original classes
       root.className = '';
       originalClasses.forEach(cls => root.classList.add(cls));
       setThemeOptions(computedOptions);
-    }, [baseThemeOptions]);
+    }, []);
+
+    const setThemeFamilyCookie = (value: string) => {
+      try {
+        document.cookie = `${PREFERRED_THEME_FAMILY_KEY}=${encodeURIComponent(value)}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
+      } catch {
+        // no-op
+      }
+    };
 
     const handleThemeFamilyChange = (newThemeFamilyValue: string) => {
         setSelectedThemeFamily(newThemeFamilyValue);
         localStorage.setItem(PREFERRED_THEME_FAMILY_KEY, newThemeFamilyValue);
+        setThemeFamilyCookie(newThemeFamilyValue);
         
-        // Manually add/remove the class for immediate effect
-        const root = document.documentElement;
-        
-        // Remove all theme classes
-        baseThemeOptions.forEach(opt => {
-            if (opt.value !== 'default') {
-                root.classList.remove(opt.value);
-            }
-        });
-        
-        // Add the new theme class (if not default)
-        if (newThemeFamilyValue !== 'default') {
-            root.classList.add(newThemeFamilyValue);
-        }
+        applyThemeFamilyClass(newThemeFamilyValue);
         
         // Dispatch storage event for cross-tab synchronization
         window.dispatchEvent(new StorageEvent('storage', {

@@ -5,7 +5,7 @@ import { useTheme } from 'next-themes';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { Sun, Moon, Monitor, Check } from 'lucide-react';
-import { PREFERRED_THEME_FAMILY_KEY } from '@/components/common/theme-provider';
+import { PREFERRED_THEME_FAMILY_KEY, THEME_FAMILY_OPTIONS, applyThemeFamilyClass } from '@/components/common/theme-provider';
 
 interface ThemeSwitcherModalProps {
   isOpen: boolean;
@@ -34,18 +34,6 @@ const themeOptions: ThemeOption[] = [
     label: 'System',
     icon: Monitor
   }
-];
-
-interface ThemeFamilyOption {
-  value: string;
-  label: string;
-}
-
-const themeFamilyOptions: ThemeFamilyOption[] = [
-  { value: 'default', label: 'Default' },
-  { value: 'cosmic-night', label: 'Cosmic Night' },
-  { value: 'mono', label: 'Mono' },
-  { value: 't3-chat', label: 'T3 Chat' },
 ];
 
 export function ThemeSwitcherModal({ isOpen, onClose }: ThemeSwitcherModalProps) {
@@ -101,7 +89,7 @@ export function ThemeSwitcherModal({ isOpen, onClose }: ThemeSwitcherModalProps)
     try {
       const root = document.documentElement;
       const originalClasses = Array.from(root.classList);
-      const allFamilies = themeFamilyOptions.map((opt) => opt.value);
+      const allFamilies = THEME_FAMILY_OPTIONS.map((opt) => opt.value);
 
       const nextDots: Record<string, string> = {};
 
@@ -132,6 +120,14 @@ export function ThemeSwitcherModal({ isOpen, onClose }: ThemeSwitcherModalProps)
     }
   }, [isOpen]);
 
+  const setThemeFamilyCookie = (value: string) => {
+    try {
+      document.cookie = `${PREFERRED_THEME_FAMILY_KEY}=${encodeURIComponent(value)}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
+    } catch {
+      // no-op
+    }
+  };
+
   const handleThemeSelect = (themeValue: string, e?: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLButtonElement>) => {
     setTheme(themeValue);
     // If user is holding a modifier (Cmd/Ctrl), keep the modal open
@@ -144,13 +140,10 @@ export function ThemeSwitcherModal({ isOpen, onClose }: ThemeSwitcherModalProps)
   const handleThemeFamilySelect = (familyValue: string) => {
     try {
       localStorage.setItem(PREFERRED_THEME_FAMILY_KEY, familyValue);
+      setThemeFamilyCookie(familyValue);
       setThemeFamily(familyValue);
 
-      const classList = document.documentElement.classList;
-      classList.remove('cosmic-night', 't3-chat', 'macos7', 'mono');
-      if (familyValue !== 'default') {
-        classList.add(familyValue);
-      }
+      applyThemeFamilyClass(familyValue);
     } catch {
       // no-op
     }
@@ -203,7 +196,7 @@ export function ThemeSwitcherModal({ isOpen, onClose }: ThemeSwitcherModalProps)
           <div className="pt-4">
             <h3 className="text-sm font-medium mb-2">Theme Family</h3>
             <div className="space-y-1.5">
-              {themeFamilyOptions.map((option) => {
+              {THEME_FAMILY_OPTIONS.map((option) => {
                 const isCurrent = option.value === themeFamily;
                 return (
                   <button
