@@ -10,7 +10,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { PREFERRED_THEME_FAMILY_KEY, THEME_FAMILY_OPTIONS, applyThemeFamilyClass } from "@/components/common/theme-provider";
+import { PREFERRED_THEME_FAMILY_KEY, THEME_FAMILY_OPTIONS, applyThemeFamilyClass, setThemeFamilyCookie } from "@/components/common/theme-provider";
 
 interface ThemeOption {
     value: string;
@@ -54,14 +54,6 @@ export function AppearanceSettings() {
       originalClasses.forEach(cls => root.classList.add(cls));
       setThemeOptions(computedOptions);
     }, []);
-
-    const setThemeFamilyCookie = (value: string) => {
-      try {
-        document.cookie = `${PREFERRED_THEME_FAMILY_KEY}=${encodeURIComponent(value)}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
-      } catch {
-        // no-op
-      }
-    };
 
     const handleThemeFamilyChange = (newThemeFamilyValue: string) => {
         setSelectedThemeFamily(newThemeFamilyValue);

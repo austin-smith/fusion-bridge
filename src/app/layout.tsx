@@ -6,6 +6,7 @@ import AppShell from '@/components/layout/app-shell/AppShell';
 import { ClientProviders } from '@/components/layout/client-providers';
 import { cookies, headers } from 'next/headers';
 import { auth } from '@/lib/auth/server';
+import { isKnownFamily } from '@/lib/theme/constants';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -58,9 +59,9 @@ export default async function RootLayout({
   const sidebarCookie = cookieStore.get('sidebar_state')?.value;
   const initialSidebarOpen = sidebarCookie === 'false' ? false : true;
 
-  // Server-read theme family cookie; sanitize to a safe className token
+  // Server-read theme family cookie; validate against known families
   const familyCookieRaw = cookieStore.get('user-preferred-theme-family')?.value ?? '';
-  const serverFamilyClass = /^(?:[a-z0-9\-]{1,32})$/i.test(familyCookieRaw) && familyCookieRaw !== 'default' ? familyCookieRaw : '';
+  const serverFamilyClass = familyCookieRaw !== 'default' && isKnownFamily(familyCookieRaw) ? familyCookieRaw : '';
   
   // Read session to get initial user role
   const headersList = await headers();

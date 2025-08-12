@@ -5,7 +5,7 @@ import { useTheme } from 'next-themes';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { Sun, Moon, Monitor, Check } from 'lucide-react';
-import { PREFERRED_THEME_FAMILY_KEY, THEME_FAMILY_OPTIONS, applyThemeFamilyClass } from '@/components/common/theme-provider';
+import { PREFERRED_THEME_FAMILY_KEY, THEME_FAMILY_OPTIONS, applyThemeFamilyClass, setThemeFamilyCookie } from '@/components/common/theme-provider';
 
 interface ThemeSwitcherModalProps {
   isOpen: boolean;
@@ -119,14 +119,6 @@ export function ThemeSwitcherModal({ isOpen, onClose }: ThemeSwitcherModalProps)
       // no-op if computed style fails
     }
   }, [isOpen]);
-
-  const setThemeFamilyCookie = (value: string) => {
-    try {
-      document.cookie = `${PREFERRED_THEME_FAMILY_KEY}=${encodeURIComponent(value)}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
-    } catch {
-      // no-op
-    }
-  };
 
   const handleThemeSelect = (themeValue: string, e?: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLButtonElement>) => {
     setTheme(themeValue);
