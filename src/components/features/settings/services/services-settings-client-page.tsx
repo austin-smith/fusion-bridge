@@ -24,6 +24,7 @@ import { OpenAITestModal } from './openai/openai-test-modal';
 import { LinearConfigForm } from './linear/linear-config-form';
 import { ResendConfigForm } from './resend/ResendConfigForm';
 import { ResendTestModal } from './resend/ResendTestModal';
+import { ResendPreviewModal } from './resend/ResendPreviewModal';
 import type { ResendConfig } from '@/types/email/resend-types';
 
 import { SunTimesUpdateTrigger } from './SunTimesUpdateTrigger';
@@ -60,8 +61,33 @@ export function ServicesSettingsClientPageContent({
   const [isOpenAITestModalOpen, setIsOpenAITestModalOpen] = useState(false);
   const [isTestingLinear, setIsTestingLinear] = useState(false);
   const [isResendTestModalOpen, setIsResendTestModalOpen] = useState(false);
+  const [isResendPreviewOpen, setIsResendPreviewOpen] = useState(false);
+  const [resendPreviewHtml, setResendPreviewHtml] = useState<string | null>(null);
+  const [resendPreviewText, setResendPreviewText] = useState<string | null>(null);
+  const [isLoadingResendPreview, setIsLoadingResendPreview] = useState(false);
   const { data: session } = useSession();
   const currentUserEmail = (session?.user as any)?.email as string | undefined;
+  const handlePreviewResend = async () => {
+    try {
+      setIsLoadingResendPreview(true);
+      const toParam = currentUserEmail ? `?to=${encodeURIComponent(currentUserEmail)}` : '';
+      const res = await fetch(`/api/services/resend/preview${toParam}`, { method: 'GET' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        toast.error('Failed to load preview', { description: err.error || 'Unknown error' });
+        return;
+      }
+      const json = await res.json();
+      setResendPreviewHtml(json.html || null);
+      setResendPreviewText(json.text || null);
+      setIsResendPreviewOpen(true);
+    } catch (err) {
+      toast.error('Network error while loading preview');
+    } finally {
+      setIsLoadingResendPreview(false);
+    }
+  };
+
 
 
   // Stabilize the callback to prevent re-render loops
@@ -367,6 +393,13 @@ export function ServicesSettingsClientPageContent({
               <div className="flex items-center justify-end mb-6 gap-2">
                 <Button
                   variant="outline"
+                  onClick={handlePreviewResend}
+                  disabled={isLoadingResendPreview}
+                >
+                  {isLoadingResendPreview ? 'Loading…' : 'Preview'}
+                </Button>
+                <Button
+                  variant="outline"
                   onClick={() => setIsResendTestModalOpen(true)}
                   disabled={!initialResendConfig || !initialResendConfig.id || !initialResendConfig.apiKey || !initialResendConfig.fromEmail || !initialResendConfig.isEnabled}
                 >
@@ -389,6 +422,12 @@ export function ServicesSettingsClientPageContent({
             onOpenChange={setIsResendTestModalOpen}
             resendConfig={initialResendConfig || null}
             defaultRecipientEmail={currentUserEmail}
+          />
+          <ResendPreviewModal
+            isOpen={isResendPreviewOpen}
+            onOpenChange={setIsResendPreviewOpen}
+            html={resendPreviewHtml}
+            text={resendPreviewText}
           />
           {/* Preview removed */}
         </TabsContent>
