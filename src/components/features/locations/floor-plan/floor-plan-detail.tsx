@@ -304,7 +304,7 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
       <Card className="overflow-hidden flex flex-col">
         <CardContent className="p-0">
           {/* Two-panel layout: Device Palette + Canvas */}
-          <div className="min-h-[600px] min-w-0 relative p-4">
+          <div className="min-h-[60vh] sm:min-h-[70vh] lg:min-h-[80vh] min-w-0 relative p-4">
             <Sheet
               open={isDeviceSheetOpen}
               onOpenChange={(open) => {
@@ -407,7 +407,7 @@ export const FloorPlanDetail = forwardRef<FloorPlanDetailRef, FloorPlanDetailPro
               deleteOverlay={deleteOverlay}
               selectOverlay={selectOverlay}
               onZoomActionsReady={setZoomActions}
-              className="w-full min-h-[600px]"
+              className="w-full min-h-[60vh] sm:min-h-[70vh] lg:min-h-[80vh]"
             />
           </div>
         </CardContent>

@@ -12,7 +12,7 @@ const FloorPlanCanvas = dynamic(
     ssr: false,
     loading: () => (
         <div className="relative w-full">
-          <div className="flex min-h-[600px] items-center justify-center p-8">
+          <div className="flex min-h-[60vh] sm:min-h-[70vh] lg:min-h-[80vh] items-center justify-center p-8">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
               <p className="text-sm text-muted-foreground">Loading canvas...</p>
@@ -33,7 +33,7 @@ export function FloorPlanCanvasDynamic(props: FloorPlanCanvasProps) {
   if (!isMounted) {
     return (
       <div className="relative w-full">
-        <div className="flex min-h-[600px] items-center justify-center p-8">
+        <div className="flex min-h-[60vh] sm:min-h-[70vh] lg:min-h-[80vh] items-center justify-center p-8">
           <div className="flex flex-col items-center gap-4">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <p className="text-sm text-muted-foreground">Preparing canvas...</p>

@@ -623,7 +623,7 @@ export function FloorPlanCanvas({
   if (currentResult.error) {
     return (
       <div ref={containerRef} className={cn("relative w-full", className)}>
-        <div className="flex min-h-[600px] items-center justify-center p-8">
+        <div className="flex min-h-[60vh] sm:min-h-[70vh] lg:min-h-[80vh] items-center justify-center p-8">
           <div className="flex flex-col items-center gap-4">
             <AlertCircle className="h-12 w-12 text-destructive" />
             <Alert variant="destructive">
@@ -645,7 +645,7 @@ export function FloorPlanCanvas({
   if (!isStageReady || currentResult.isLoading || !sourceAsset) {
     return (
       <div ref={containerRef} className={cn("relative w-full", className)}>
-        <div className="flex min-h-[600px] items-center justify-center p-8">
+        <div className="flex min-h-[60vh] sm:min-h-[70vh] lg:min-h-[80vh] items-center justify-center p-8">
           <div className="flex flex-col items-center gap-4">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <p className="text-sm text-muted-foreground">Loading floor plan...</p>
@@ -668,7 +668,7 @@ export function FloorPlanCanvas({
   if (!finalWidth || !finalHeight) {
     return (
       <div ref={containerRef} className={cn("relative w-full", className)}>
-        <div className="flex min-h-[600px] items-center justify-center p-8">
+        <div className="flex min-h-[60vh] sm:min-h-[70vh] lg:min-h-[80vh] items-center justify-center p-8">
           <div className="flex flex-col items-center gap-4">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <p className="text-sm text-muted-foreground">Loading floor plan...</p>

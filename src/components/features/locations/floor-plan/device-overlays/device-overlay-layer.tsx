@@ -12,7 +12,7 @@ import type {
 } from '@/types/device-overlay';
 
 // Fraction of the shorter canvas side used to render the camera view cone radius
-const CAMERA_VIEW_CONE_RADIUS_RATIO = 0.08;
+const CAMERA_VIEW_CONE_RADIUS_RATIO = 0.06;
 
 export interface DeviceOverlayLayerProps {
   /** Array of device overlays to render */
