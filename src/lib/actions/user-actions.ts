@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { db } from '@/data/db';
 import { user, account, session } from '@/data/db/schema';
 import { auth } from '@/lib/auth/server';
-import { eq, sql, and, max } from 'drizzle-orm';
+import { eq, sql, and, max, type InferInsertModel } from 'drizzle-orm';
 import crypto from 'crypto';
 import { revalidatePath } from 'next/cache';
 import { headers as nextHeaders, cookies as nextCookies } from 'next/headers';
@@ -117,15 +117,14 @@ export async function updateUser(
     // Update user in transaction
     try {
         await db.transaction(async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
-            const updateData: Record<string, unknown> = {
+            type UserInsert = InferInsertModel<typeof user>;
+            const updateData: Partial<UserInsert> = {
                 name,
                 image,
+                ...(role ? { role } : {}),
             };
-            if (role) {
-                updateData.role = role;
-            }
             await tx.update(user)
-                .set(updateData as any)
+                .set(updateData)
                 .where(eq(user.id, id));
         });
         console.log(`[Server Action] User ${id} updated successfully.`);

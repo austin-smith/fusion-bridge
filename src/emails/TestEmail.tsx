@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Heading, Text, Section } from '@react-email/components';
 import BaseEmailLayout from './layouts/BaseEmailLayout';
 
-interface TestEmailProps {
+export interface TestEmailProps {
   who: string;
   appName?: string;
   testId?: string;

@@ -11,6 +11,7 @@ import { organization } from "better-auth/plugins";
 import { apiKey } from "better-auth/plugins";
 import { eq, and, desc, isNotNull } from "drizzle-orm";
 import { member, session } from "@/data/db/schema";
+import type { VerificationEmailProps } from "@/emails/VerificationEmail";
 
 export const auth = betterAuth.betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
@@ -117,7 +118,9 @@ export const auth = betterAuth.betterAuth({
     async sendVerificationEmail({ user, url, token }, request) {
       // Lazy import to avoid loading React email at module init
       const { sendEmail } = await import('@/services/email/send-email');
-      const { default: VerificationEmail } = await import('@/emails/VerificationEmail');
+      const { default: VerificationEmail } = (await import('@/emails/VerificationEmail')) as {
+        default: React.ComponentType<VerificationEmailProps>;
+      };
       // Ensure callbackURL sends user to create-password page after auto sign-in
       let verificationUrl = url;
       try {
@@ -130,11 +133,14 @@ export const auth = betterAuth.betterAuth({
       const result = await sendEmail({
         to: user.email,
         subject: 'Verify your email address',
-        react: React.createElement(VerificationEmail as any, {
-          verificationUrl,
-          email: user.email,
-          appName: 'Fusion',
-        }),
+        react: React.createElement(
+          VerificationEmail,
+          {
+            verificationUrl,
+            email: user.email,
+            appName: 'Fusion',
+          } satisfies VerificationEmailProps
+        ),
         text: `Click the link to verify your email: ${verificationUrl}`,
       });
       if (!result?.success) {

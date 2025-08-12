@@ -489,7 +489,6 @@ export function AddUserDialog() {
               </Label>
               <Input id="add-email" name="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="col-span-3" required autoComplete="off" />
             </div>
-            {null}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="add-role" className="text-right">
                 Role
