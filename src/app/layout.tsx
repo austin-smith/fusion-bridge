@@ -6,7 +6,7 @@ import AppShell from '@/components/layout/app-shell/AppShell';
 import { ClientProviders } from '@/components/layout/client-providers';
 import { cookies, headers } from 'next/headers';
 import { auth } from '@/lib/auth/server';
-import { isKnownFamily } from '@/lib/theme/constants';
+import { isKnownFamily, PREFERRED_THEME_FAMILY_KEY } from '@/lib/theme/constants';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -60,7 +60,7 @@ export default async function RootLayout({
   const initialSidebarOpen = sidebarCookie === 'false' ? false : true;
 
   // Server-read theme family cookie; validate against known families
-  const familyCookieRaw = cookieStore.get('user-preferred-theme-family')?.value ?? '';
+  const familyCookieRaw = cookieStore.get(PREFERRED_THEME_FAMILY_KEY)?.value ?? '';
   const serverFamilyClass = familyCookieRaw !== 'default' && isKnownFamily(familyCookieRaw) ? familyCookieRaw : '';
   
   // Read session to get initial user role

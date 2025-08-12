@@ -7,6 +7,7 @@ import {
   THEME_FAMILIES,
   THEME_FAMILY_OPTIONS,
   isKnownFamily,
+  THEME_FAMILY_COOKIE_MAX_AGE_SECONDS,
 } from '@/lib/theme/constants';
 
 export { PREFERRED_THEME_FAMILY_KEY, THEME_FAMILIES, THEME_FAMILY_OPTIONS, isKnownFamily } from '@/lib/theme/constants';
@@ -27,7 +28,7 @@ export function applyThemeFamilyClass(preferredFamily: string | null) {
 export function setThemeFamilyCookie(value: string) {
   try {
     const secure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
-    document.cookie = `${PREFERRED_THEME_FAMILY_KEY}=${encodeURIComponent(value)}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax${secure}`;
+    document.cookie = `${PREFERRED_THEME_FAMILY_KEY}=${encodeURIComponent(value)}; path=/; max-age=${THEME_FAMILY_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax${secure}`;
   } catch {
     // no-op
   }
