@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { AutomationCardView } from "@/components/features/automations/AutomationCardView";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Workflow, History } from "lucide-react";
+import { Plus, Workflow, History } from "lucide-react";
 import Link from 'next/link';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { MultiSelectComboBox } from '@/components/ui/multi-select-combobox';
@@ -120,7 +120,7 @@ export default function AutomationsPage() {
 
           <Button asChild size="sm">
             <Link href="/automations/new">
-              <PlusCircle className="h-4 w-4" /> Add Automation
+              <Plus className="h-4 w-4" /> Add Automation
             </Link>
           </Button>
         </div>

@@ -34,6 +34,7 @@ export function OpenAIConfigForm({ initialConfig, isEnabled, onSaveSuccess }: Op
   const [maxTokens, setMaxTokens] = useState(initialConfig?.maxTokens || 2000);
   const [temperature, setTemperature] = useState(initialConfig?.temperature || 0.7);
   const [topP, setTopP] = useState(initialConfig?.topP || 1.0);
+  const [selectedModel, setSelectedModel] = useState<OpenAIModel>(initialConfig?.model || OpenAIModel.GPT_4O_MINI);
   // Add local state for enable toggle
   const [localIsEnabled, setLocalIsEnabled] = useState(isEnabled);
 
@@ -43,6 +44,7 @@ export function OpenAIConfigForm({ initialConfig, isEnabled, onSaveSuccess }: Op
       setMaxTokens(initialConfig.maxTokens);
       setTemperature(initialConfig.temperature);
       setTopP(initialConfig.topP);
+      setSelectedModel(initialConfig.model);
     }
   }, [initialConfig]);
 
@@ -72,8 +74,11 @@ export function OpenAIConfigForm({ initialConfig, isEnabled, onSaveSuccess }: Op
     
     // Add the current slider values to form data with safety checks
     formData.set('maxTokens', (maxTokens || 2000).toString());
-    formData.set('temperature', (temperature || 0.7).toString());
+    const isGpt5 = selectedModel === OpenAIModel.GPT_5 || selectedModel === OpenAIModel.GPT_5_MINI;
+    const effectiveTemperature = isGpt5 ? 1 : (temperature || 0.7);
+    formData.set('temperature', effectiveTemperature.toString());
     formData.set('topP', (topP || 1.0).toString());
+    formData.set('model', selectedModel);
     formData.set('isEnabled', localIsEnabled.toString());
     
     formAction(formData);
@@ -144,7 +149,7 @@ export function OpenAIConfigForm({ initialConfig, isEnabled, onSaveSuccess }: Op
           {/* Model Selection */}
           <div className="space-y-2">
             <Label htmlFor="model">Model</Label>
-            <Select name="model" defaultValue={initialConfig?.model || OpenAIModel.GPT_4O_MINI}>
+            <Select name="model" value={selectedModel} onValueChange={(value) => setSelectedModel(value as OpenAIModel)}>
               <SelectTrigger className={formState.errors?.model ? 'border-destructive' : ''}>
                 <SelectValue placeholder="Select a model" />
               </SelectTrigger>
@@ -188,30 +193,32 @@ export function OpenAIConfigForm({ initialConfig, isEnabled, onSaveSuccess }: Op
           </div>
 
           {/* Temperature Slider */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="temperature">Temperature</Label>
-              <span className="text-sm text-muted-foreground font-mono">{temperature?.toFixed(2) || '0.70'}</span>
+          {!(selectedModel === OpenAIModel.GPT_5 || selectedModel === OpenAIModel.GPT_5_MINI) && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="temperature">Temperature</Label>
+                <span className="text-sm text-muted-foreground font-mono">{(temperature || 0.7)?.toFixed(2)}</span>
+              </div>
+              <Slider
+                value={[temperature || 0.7]}
+                onValueChange={(value: number[]) => setTemperature(value[0])}
+                max={2.0}
+                min={0.0}
+                step={0.1}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>0.0 (focused)</span>
+                <span>2.0 (creative)</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Controls randomness in responses. Lower values = more consistent and focused. Higher values = more creative and varied.
+              </p>
+              {formState.errors?.temperature && (
+                <p className="text-sm text-destructive">{formState.errors.temperature[0]}</p>
+              )}
             </div>
-            <Slider
-              value={[temperature || 0.7]}
-              onValueChange={(value: number[]) => setTemperature(value[0])}
-              max={2.0}
-              min={0.0}
-              step={0.1}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>0.0 (focused)</span>
-              <span>2.0 (creative)</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Controls randomness in responses. Lower values = more consistent and focused. Higher values = more creative and varied.
-            </p>
-            {formState.errors?.temperature && (
-              <p className="text-sm text-destructive">{formState.errors.temperature[0]}</p>
-            )}
-          </div>
+          )}
 
           {/* Top-p Slider */}
           <div className="space-y-3">

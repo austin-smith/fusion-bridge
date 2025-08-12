@@ -43,6 +43,7 @@ export class OpenAIService {
     content?: string;
     functionResult?: any;
     errorMessage?: string;
+      errorStatusCode?: number;
     usage?: {
       promptTokens: number;
       completionTokens: number;
@@ -56,16 +57,27 @@ export class OpenAIService {
         function: fn,
       }));
 
-      // Initial completion
-      const completion = await this.client.chat.completions.create({
+      const isGpt5 = model === OpenAIModel.GPT_5 || model === OpenAIModel.GPT_5_MINI;
+
+      const initialParams: any = {
         model,
         messages,
         tools,
         tool_choice: 'auto',
-        max_tokens: options?.maxTokens,
-        temperature: options?.temperature,
         top_p: options?.topP,
-      });
+      };
+      // Temperature handling: GPT-5 only supports default (1). Omit if not 1.
+      if (!isGpt5 && options?.temperature !== undefined) {
+        initialParams.temperature = options.temperature;
+      } else if (isGpt5 && options?.temperature === 1) {
+        initialParams.temperature = 1;
+      }
+      if (options?.maxTokens !== undefined) {
+        if (isGpt5) initialParams.max_completion_tokens = options.maxTokens;
+        else initialParams.max_tokens = options.maxTokens;
+      }
+
+      const completion = await this.client.chat.completions.create(initialParams);
 
       const message = completion.choices[0].message;
 
@@ -78,8 +90,7 @@ export class OpenAIService {
         // Execute function
         const functionResult = await functionExecutor(functionName, functionArgs);
 
-        // Final completion with function result
-        const finalCompletion = await this.client.chat.completions.create({
+        const followUpParams: any = {
           model,
           messages: [
             ...messages,
@@ -94,9 +105,20 @@ export class OpenAIService {
               content: JSON.stringify(functionResult),
             },
           ],
-          max_tokens: options?.maxTokens || 500,
-          temperature: options?.temperature || 0.7,
-        });
+          top_p: options?.topP,
+        };
+        // Temperature handling for follow-up
+        const followUpTemp = options?.temperature ?? 1;
+        if (!isGpt5) {
+          followUpParams.temperature = followUpTemp;
+        } else if (isGpt5 && followUpTemp === 1) {
+          followUpParams.temperature = 1;
+        }
+        const followUpMax = options?.maxTokens ?? 500;
+        if (isGpt5) followUpParams.max_completion_tokens = followUpMax;
+        else followUpParams.max_tokens = followUpMax;
+
+        const finalCompletion = await this.client.chat.completions.create(followUpParams);
 
         return {
           success: true,
@@ -125,8 +147,10 @@ export class OpenAIService {
       console.error('[OpenAI Service] Error:', error);
       
       let errorMessage = 'Unknown error occurred';
+      let errorStatusCode: number | undefined = undefined;
       if (error instanceof OpenAI.APIError) {
         errorMessage = `OpenAI API Error: ${error.message}`;
+        errorStatusCode = error.status;
         if (error.status === 401) errorMessage = 'Invalid API key';
         if (error.status === 429) errorMessage = 'Rate limit exceeded';
         if (error.status >= 500) errorMessage = 'OpenAI service unavailable';
@@ -134,7 +158,7 @@ export class OpenAIService {
         errorMessage = error.message;
       }
 
-      return { success: false, errorMessage };
+      return { success: false, errorMessage, errorStatusCode };
     }
   }
 
@@ -151,13 +175,23 @@ export class OpenAIService {
     }
   ): Promise<OpenAI.Chat.Completions.ChatCompletion | null> {
     try {
-      return await this.client.chat.completions.create({
+      const isGpt5 = model === OpenAIModel.GPT_5 || model === OpenAIModel.GPT_5_MINI;
+      const params: any = {
         model,
         messages,
-        max_tokens: options?.maxTokens,
-        temperature: options?.temperature,
         top_p: options?.topP,
-      });
+      };
+      // Temperature handling for createCompletion
+      if (options?.temperature !== undefined) {
+        const isGpt5 = model === OpenAIModel.GPT_5 || model === OpenAIModel.GPT_5_MINI;
+        if (!isGpt5) params.temperature = options.temperature;
+        else if (isGpt5 && options.temperature === 1) params.temperature = 1;
+      }
+      if (options?.maxTokens !== undefined) {
+        if (isGpt5) params.max_completion_tokens = options.maxTokens;
+        else params.max_tokens = options.maxTokens;
+      }
+      return await this.client.chat.completions.create(params);
     } catch (error) {
       console.error('[OpenAI Service] Completion error:', error);
       return null;
@@ -180,14 +214,18 @@ export class OpenAIService {
     const startTime = Date.now();
 
     try {
-      const completion = await this.client.chat.completions.create({
+      const isGpt5 = model === OpenAIModel.GPT_5 || model === OpenAIModel.GPT_5_MINI;
+      const params: any = {
         model,
         messages: [
           { role: 'system', content: 'You are a helpful assistant. Respond briefly.' },
           { role: 'user', content: 'Say "API test successful"' },
         ],
-        max_tokens: 50,
-      });
+      };
+      // Temperature not needed in test; GPT-5 defaults to 1. We omit it entirely.
+      if (isGpt5) params.max_completion_tokens = 50;
+      else params.max_tokens = 50;
+      const completion = await this.client.chat.completions.create(params);
 
       return {
         success: true,
@@ -236,6 +274,7 @@ export async function chatWithFunctions(
   content?: string;
   functionResult?: any;
   errorMessage?: string;
+  errorStatusCode?: number;
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
 }> {
   const service = new OpenAIService(apiKey);
@@ -256,6 +295,7 @@ export async function chatWithFunctions(
     content: result.content,
     functionResult: result.functionResult,
     errorMessage: result.errorMessage,
+    errorStatusCode: result.errorStatusCode,
     usage: result.usage,
   };
 }

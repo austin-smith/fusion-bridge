@@ -45,7 +45,6 @@ const themeFamilyOptions: ThemeFamilyOption[] = [
   { value: 'default', label: 'Default' },
   { value: 'cosmic-night', label: 'Cosmic Night' },
   { value: 'mono', label: 'Mono' },
-  { value: 'remoteview', label: 'Remoteview' },
   { value: 't3-chat', label: 'T3 Chat' },
 ];
 
@@ -116,7 +115,7 @@ export function ThemeSwitcherModal({ isOpen, onClose }: ThemeSwitcherModalProps)
         // Apply this family if not default
         if (family !== 'default') root.classList.add(family);
         const cssValue = getComputedStyle(root).getPropertyValue('--primary').trim();
-        return `hsl(${cssValue})`;
+        return cssValue;
       };
 
       for (const fam of allFamilies) {
@@ -148,7 +147,7 @@ export function ThemeSwitcherModal({ isOpen, onClose }: ThemeSwitcherModalProps)
       setThemeFamily(familyValue);
 
       const classList = document.documentElement.classList;
-      classList.remove('cosmic-night', 't3-chat', 'remoteview', 'macos7', 'mono');
+      classList.remove('cosmic-night', 't3-chat', 'macos7', 'mono');
       if (familyValue !== 'default') {
         classList.add(familyValue);
       }

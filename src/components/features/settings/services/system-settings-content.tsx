@@ -103,6 +103,7 @@ interface SystemSettingsContentProps {
   initialOpenWeatherConfig: any;
   initialOpenAIConfig: any;
   initialLinearConfig: any;
+  initialResendConfig?: any;
 }
 
 export function SystemSettingsContent({ 
@@ -110,7 +111,8 @@ export function SystemSettingsContent({
   initialPushcutConfig,
   initialOpenWeatherConfig,
   initialOpenAIConfig,
-  initialLinearConfig 
+  initialLinearConfig,
+  initialResendConfig,
 }: SystemSettingsContentProps) {
   const [activeTab, setActiveTab] = useState('services');
   const activeOrganizationId = useFusionStore(state => state.activeOrganizationId);
@@ -125,6 +127,7 @@ export function SystemSettingsContent({
             initialOpenWeatherConfig={initialOpenWeatherConfig}
             initialOpenAIConfig={initialOpenAIConfig}
             initialLinearConfig={initialLinearConfig}
+            initialResendConfig={initialResendConfig}
           />
         );
       case 'api-keys':
@@ -143,6 +146,7 @@ export function SystemSettingsContent({
             initialOpenWeatherConfig={initialOpenWeatherConfig}
             initialOpenAIConfig={initialOpenAIConfig}
             initialLinearConfig={initialLinearConfig}
+            initialResendConfig={initialResendConfig}
           />
         );
     }

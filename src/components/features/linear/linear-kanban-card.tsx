@@ -13,7 +13,6 @@ import {
   User,
   ExternalLink
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import type { LinearIssue } from '@/services/drivers/linear';
 import { getLinearPriorityConfig } from '@/services/drivers/linear';
 

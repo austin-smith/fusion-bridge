@@ -7,6 +7,7 @@ import type { PushcutConfig, PushcutStoredConfig } from '@/types/pushcut-types';
 import type { OpenWeatherConfig } from '@/types/openweather-types';
 import type { OpenAIConfig, OpenAIModel } from '@/types/ai/openai-service-types';
 import type { LinearConfig, LinearStoredConfig } from '@/services/drivers/linear';
+import type { ResendConfig, ResendStoredConfig } from '@/types/email/resend-types';
 
 export interface BaseServiceConfig {
   id: string;
@@ -21,7 +22,7 @@ export interface PushoverConfig extends BaseServiceConfig {
 }
 
 // Union type for all possible service configurations
-export type AnyServiceConfig = PushoverConfig | PushcutConfig | OpenWeatherConfig | OpenAIConfig | LinearConfig;
+export type AnyServiceConfig = PushoverConfig | PushcutConfig | OpenWeatherConfig | OpenAIConfig | LinearConfig | ResendConfig;
 
 // Interface for the data stored *inside* the configEnc blob for Pushover
 interface PushoverStoredConfig {
@@ -475,6 +476,86 @@ export async function upsertOpenAIConfiguration(
   }
 }
 
+// --- Resend Configuration ---
+export async function getResendConfiguration(): Promise<ResendConfig | null> {
+  try {
+    const configRecord = await db
+      .select({
+        id: serviceConfigurations.id,
+        configEnc: serviceConfigurations.configEnc,
+        isEnabled: serviceConfigurations.isEnabled,
+      })
+      .from(serviceConfigurations)
+      .where(eq(serviceConfigurations.type, 'RESEND'))
+      .limit(1)
+      .then(res => res[0]);
+
+    if (!configRecord) return null;
+
+    const stored = JSON.parse(configRecord.configEnc) as ResendStoredConfig;
+    const fullConfig: ResendConfig = {
+      id: configRecord.id,
+      type: 'resend',
+      isEnabled: configRecord.isEnabled,
+      apiKey: stored.apiKey,
+      fromEmail: stored.fromEmail,
+      fromName: stored.fromName,
+      replyToEmail: stored.replyToEmail,
+    };
+    return fullConfig;
+  } catch (error) {
+    console.error('[ServiceConfigRepo] Error fetching Resend configuration:', error);
+    return null;
+  }
+}
+
+export async function upsertResendConfiguration(
+  apiKey: string,
+  fromEmail: string,
+  fromName: string | undefined,
+  replyToEmail: string | undefined,
+  isEnabled: boolean
+): Promise<{ success: boolean; id?: string; message?: string }> {
+  if (!apiKey) return { success: false, message: 'API Key is required.' };
+  if (!fromEmail) return { success: false, message: 'From Email is required.' };
+
+  try {
+    const configToStore: ResendStoredConfig = {
+      apiKey,
+      fromEmail,
+      fromName,
+      replyToEmail,
+    };
+    const configEnc = JSON.stringify(configToStore);
+
+    const existing = await db
+      .select({ id: serviceConfigurations.id })
+      .from(serviceConfigurations)
+      .where(eq(serviceConfigurations.type, 'RESEND'))
+      .limit(1)
+      .then(res => res[0]);
+
+    if (existing) {
+      await db
+        .update(serviceConfigurations)
+        .set({ configEnc, isEnabled, updatedAt: new Date() })
+        .where(eq(serviceConfigurations.id, existing.id));
+      console.log('[ServiceConfigRepo] Updated Resend configuration:', existing.id);
+      return { success: true, id: existing.id };
+    }
+
+    const inserted = await db
+      .insert(serviceConfigurations)
+      .values({ type: 'RESEND', configEnc, isEnabled })
+      .returning({ id: serviceConfigurations.id });
+    const newId = inserted[0]?.id;
+    console.log('[ServiceConfigRepo] Created new Resend configuration:', newId);
+    return { success: true, id: newId };
+  } catch (error) {
+    console.error('[ServiceConfigRepo] Error upserting Resend configuration:', error);
+    return { success: false, message: 'Database operation failed.' };
+  }
+}
 /**
  * Fetches the Linear service configuration.
  * For now, we assume there's only one configuration with type 'LINEAR'.
