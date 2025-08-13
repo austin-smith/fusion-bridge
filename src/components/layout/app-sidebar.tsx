@@ -59,13 +59,11 @@ export function AppSidebar() {
   const { initialUserRole } = React.useContext(AuthContext);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   
-  // Get setter and currentUser from Zustand
-  const { setCurrentUser, currentUser, alarmZones, isLoadingAlarmZones } = useFusionStore((state) => ({
-    setCurrentUser: state.setCurrentUser,
-    currentUser: state.currentUser,
-    alarmZones: state.alarmZones,
-    isLoadingAlarmZones: state.isLoadingAlarmZones,
-  }));
+  // Get state slices from Zustand with stable selectors
+  const setCurrentUser = useFusionStore(state => state.setCurrentUser);
+  const currentUser = useFusionStore(state => state.currentUser);
+  const alarmZones = useFusionStore(state => state.alarmZones);
+  const isLoadingAlarmZones = useFusionStore(state => state.isLoadingAlarmZones);
   const { isMobile, setOpenMobile, state } = useSidebar();
 
   // Determine user role from session

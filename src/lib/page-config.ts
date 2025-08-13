@@ -1,4 +1,4 @@
-import { Activity, Plug, Cpu, Building, Shield, ShieldAlert, Workflow, Users, Terminal, Settings, User, FileText, BarChart3, Map } from 'lucide-react';
+import { Activity, Plug, Cpu, Building, Shield, ShieldAlert, Workflow, Users, Terminal, Settings, User, FileText, BarChart3, Map, MonitorPlay } from 'lucide-react';
 import { FiActivity } from 'react-icons/fi';
 
 export interface BreadcrumbItem {
@@ -83,6 +83,16 @@ export const PAGE_CONFIG: Record<string, PageConfig> = {
     breadcrumbs: [
       { label: 'Home', href: '/' },
       { label: 'Events', isCurrentPage: true }
+    ],
+    isNavItem: true,
+    navGroup: NavGroup.ACTIVITY
+  },
+  '/play': {
+    title: 'Play',
+    icon: MonitorPlay,
+    breadcrumbs: [
+      { label: 'Home', href: '/' },
+      { label: 'Play', isCurrentPage: true }
     ],
     isNavItem: true,
     navGroup: NavGroup.ACTIVITY
