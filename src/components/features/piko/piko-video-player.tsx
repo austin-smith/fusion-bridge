@@ -209,12 +209,19 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
                 }
               }
               if (error) {
-                console.error("WebRTCStreamManager error:", error);
-                const message = (error as any)?.message || 
-                  (typeof error === 'number' && (webrtcLib.ConnectionError as any)[error]) || 
-                  "Unknown error from library.";
+                console.warn("WebRTCStreamManager error:", error);
+                let message: string;
+                if (typeof error === 'string') {
+                  message = error;
+                } else if (typeof error === 'number' && webrtcLib?.ConnectionError) {
+                  message = (webrtcLib.ConnectionError as any)[error] || String(error);
+                } else if (error && typeof (error as any).message === 'string') {
+                  message = (error as any).message;
+                } else {
+                  message = 'Playback error';
+                }
                 setMediaInfoError(message);
-                toast.error(`Video Error: ${message}`);
+                toast.error(`WebRTC Error: ${message}`);
                 if (streamManagerSubscriptionRef.current && !streamManagerSubscriptionRef.current.closed) {
                   streamManagerSubscriptionRef.current.unsubscribe();
                   streamManagerSubscriptionRef.current = null;
@@ -222,20 +229,27 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
               }
             },
             (err: any) => {
-              console.error("WebRTCStreamManager observable error:", err);
-              const errorMsg = err.message || "Observable failed.";
+              console.warn("WebRTCStreamManager observable error:", err);
+              let errorMsg: string;
+              if (typeof err === 'string') {
+                errorMsg = err;
+              } else if (err && typeof (err as any).message === 'string') {
+                errorMsg = (err as any).message;
+              } else {
+                errorMsg = 'Playback error';
+              }
               setMediaInfoError(errorMsg);
-              toast.error(`Video Error: ${errorMsg}`);
+              toast.error(`WebRTC Error: ${errorMsg}`);
             },
             () => {
               // Observable completed - no logging needed
             }
           );
       } catch (e) {
-        console.error("Error calling WebRTCStreamManager.connect:", e);
+        console.warn("Error calling WebRTCStreamManager.connect:", e);
         const errorMsg = e instanceof Error ? e.message : "Failed to initiate connection";
         setMediaInfoError(errorMsg);
-        toast.error(`Video Error: ${errorMsg}`);
+        toast.error(`WebRTC Error: ${errorMsg}`);
       }
 
       return () => {
@@ -253,7 +267,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
         connectedStream = null; 
       };
     } else {
-      console.error(`Unsupported Piko connection type: ${fetchedConnectionType}`);
+      console.warn(`Unsupported Piko connection type: ${fetchedConnectionType}`);
       setMediaInfoError(`Unsupported Piko connection type: ${fetchedConnectionType}.`);
       setIsLoadingMediaInfo(false);
       return;

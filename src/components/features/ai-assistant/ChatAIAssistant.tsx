@@ -65,7 +65,6 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
-  // Removed explicit status phases; rely on typing dots pre-token and live stream
   
   const abortControllerRef = useRef<AbortController | null>(null);
   
@@ -126,17 +125,9 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Insert a placeholder assistant message we will append to
+      // We will create the assistant message on the first token
       const partialAssistantId = generateId();
-      setMessages(prev => [
-        ...prev,
-        {
-          id: partialAssistantId,
-          role: 'assistant',
-          content: '',
-          createdAt: new Date(),
-        },
-      ]);
+      // no status copy
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -165,15 +156,27 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
           if (event === 'token' && typeof data.delta === 'string') {
             if (!sawFirstToken) {
               sawFirstToken = true;
+              // first token arrived; typing dots disappear naturally
+              // Create the assistant message with the first chunk
+              setMessages(prev => [
+                ...prev,
+                {
+                  id: partialAssistantId,
+                  role: 'assistant',
+                  content: data.delta as string,
+                  createdAt: new Date(),
+                },
+              ]);
+            } else {
+              setMessages(prev => prev.map(m => m.id === partialAssistantId ? { ...m, content: (m.content || '') + data.delta } : m));
             }
-            setMessages(prev => prev.map(m => m.id === partialAssistantId ? { ...m, content: (m.content || '') + data.delta } : m));
           } else if (event === 'done') {
             finalData = data?.data || null;
-            // nothing else; message content already streamed
+            // done
           } else if (event === 'error') {
             throw new Error(data?.message || 'Stream error');
           } else if (event === 'status') {
-            // Ignore; no inline status anymore
+            // ignore
           }
         }
       }
@@ -249,15 +252,7 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
       }
 
       const partialAssistantId = generateId();
-      setMessages(prev => [
-        ...prev,
-        {
-          id: partialAssistantId,
-          role: 'assistant',
-          content: '',
-          createdAt: new Date(),
-        },
-      ]);
+      // no status copy
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -285,15 +280,26 @@ export function ChatAIAssistant({ onResults }: ChatAIAssistantProps) {
           if (event === 'token' && typeof data.delta === 'string') {
             if (!sawFirstToken) {
               sawFirstToken = true;
+              // first token arrived
+              setMessages(prev => [
+                ...prev,
+                {
+                  id: partialAssistantId,
+                  role: 'assistant',
+                  content: data.delta as string,
+                  createdAt: new Date(),
+                },
+              ]);
+            } else {
+              setMessages(prev => prev.map(m => m.id === partialAssistantId ? { ...m, content: (m.content || '') + data.delta } : m));
             }
-            setMessages(prev => prev.map(m => m.id === partialAssistantId ? { ...m, content: (m.content || '') + data.delta } : m));
           } else if (event === 'done') {
             finalData = data?.data || null;
-            // finished
+            // done
           } else if (event === 'error') {
             throw new Error(data?.message || 'Stream error');
           } else if (event === 'status') {
-            // Ignore
+            // ignore
           }
         }
       }
