@@ -121,7 +121,14 @@ export function AutomationExecutionsChart({
                   );
                 }}
               />
-              <ChartLegend content={<ChartLegendContent payload={[]} />} />
+              <ChartLegend
+                content={(legendProps) => (
+                  <ChartLegendContent
+                    payload={legendProps.payload}
+                    verticalAlign={legendProps.verticalAlign}
+                  />
+                )}
+              />
               <Bar
                 dataKey="successful"
                 stackId="a"

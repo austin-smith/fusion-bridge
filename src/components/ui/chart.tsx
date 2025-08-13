@@ -271,11 +271,13 @@ ChartTooltipContent.displayName = "ChartTooltip"
 
 const ChartLegend = RechartsPrimitive.Legend
 
-interface ChartLegendContentProps extends React.ComponentProps<"div"> {
+type ChartLegendContentProps = {
   payload?: Array<any>
   verticalAlign?: "top" | "bottom" | "middle"
   hideIcon?: boolean
   nameKey?: string
+  className?: string
+  [key: string]: any
 }
 
 const ChartLegendContent = React.forwardRef<
@@ -301,7 +303,7 @@ const ChartLegendContent = React.forwardRef<
           className
         )}
       >
-        {payload.map((item) => {
+        {payload.map((item: any) => {
           const key = `${nameKey || item.dataKey || "value"}`
           const itemConfig = getPayloadConfigFromPayload(config, item, key)
 
