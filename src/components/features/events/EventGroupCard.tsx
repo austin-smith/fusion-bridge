@@ -41,14 +41,15 @@ interface EventGroupCardProps {
   group: EventGroup;
   allDevices: DeviceWithConnector[];
   spaces: Space[];
-  isRecentGroup: boolean;
+  isRecentGroup?: boolean; // deprecated
+  isAboveFold?: boolean;
   cardSize: CardSize;
   onPlayVideo?: (bestShotEvent: EnrichedEvent | undefined, spacePikoCamera: DeviceWithConnector | null, allDevices: DeviceWithConnector[]) => void;
 }
 
 // --- Removed device summary logic to unify card layouts ---
 
-export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevices, isRecentGroup, cardSize, onPlayVideo }) => {
+export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevices, isRecentGroup, isAboveFold, cardSize, onPlayVideo }) => {
   // Destructure group properties first
   const { spaceId, spaceName, startTime, endTime, events, groupKey } = group; 
   const eventCount = events.length;
@@ -155,8 +156,16 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
 
     // If a selected camera exists, always show its thumbnail at the representative time
     if (selectedCameraDevice) {
-      // Request a smaller thumbnail for card rendering
-      return `/api/piko/device-thumbnail?connectorId=${selectedCameraDevice.connectorId}&cameraId=${selectedCameraDevice.deviceId}&timestamp=${representativeTimestamp}&size=640x0`;
+      // Use central URL builder to ensure proper encoding/sanitization
+      return buildThumbnailUrl(
+        {
+          type: 'space-camera',
+          connectorId: selectedCameraDevice.connectorId,
+          cameraId: selectedCameraDevice.deviceId,
+          timestamp: representativeTimestamp,
+        },
+        '640x0'
+      );
     }
     
     // Fallback: previous logic (best-shot or space camera)
@@ -311,8 +320,10 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                 fill
                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                 className="object-cover transition-transform duration-200 group-hover/thumbnail:scale-105"
-                priority={isRecentGroup}
-                onLoadingComplete={() => setLoadedThumbUrl(thumbnailUrl!)}
+                priority={Boolean(isAboveFold)}
+                fetchPriority={isAboveFold ? 'high' : undefined}
+                unoptimized
+                onLoad={() => setLoadedThumbUrl(thumbnailUrl!)}
                 onError={() => {
                   setFailedThumbnailUrl(thumbnailUrl!);
                   setLoadedThumbUrl(thumbnailUrl!);

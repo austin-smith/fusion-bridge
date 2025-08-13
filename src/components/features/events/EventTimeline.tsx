@@ -148,7 +148,7 @@ export function EventTimeline({ events, allDevices }: EventTimelineProps) {
           // Find Piko Camera for this group's space
           const pikoCamera = group.spaceId ? spaceCameraMap.get(group.spaceId)?.[0] : undefined;
           const thumbnailUrl = pikoCamera 
-            ? `/api/piko/device-thumbnail?deviceId=${pikoCamera.id}&connectorId=${pikoCamera.connectorId}&timestamp=${group.endTime.toISOString()}` 
+            ? `/api/piko/device-thumbnail?connectorId=${encodeURIComponent(pikoCamera.connectorId)}&cameraId=${encodeURIComponent((pikoCamera.deviceId || '').replace(/[{}]/g, ''))}&timestamp=${encodeURIComponent(String(group.endTime.getTime()))}` 
             : null;
 
           return (

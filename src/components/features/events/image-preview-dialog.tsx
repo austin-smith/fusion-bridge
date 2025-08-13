@@ -144,7 +144,8 @@ export const ImagePreviewDialog: React.FC<ImagePreviewDialogProps> = ({
                 className="object-contain rounded-md shadow-md"
                 unoptimized
                 key={highResUrl}
-                onLoadingComplete={(img) => {
+                onLoad={(e) => {
+                  const img = e.currentTarget as HTMLImageElement;
                   setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
                   setLoadedUrl(highResUrl);
                 }}

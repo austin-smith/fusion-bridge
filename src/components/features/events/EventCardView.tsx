@@ -124,6 +124,16 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices
      );
   }
 
+  // Identify the first group's key across all segments for LCP prioritization
+  const firstGroupKey = useMemo(() => {
+    for (const seg of timeSegments) {
+      if (seg.groups.length > 0) {
+        return seg.groups[0].groupKey;
+      }
+    }
+    return undefined;
+  }, [timeSegments]);
+
   return (
     <ScrollArea className="grow h-full">
       <div className="p-4 space-y-6">
@@ -144,7 +154,7 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices
                       group={group}
                       allDevices={allDevices}
                       spaces={spaces}
-                      isRecentGroup={segment.label === 'Recent'}
+                      isAboveFold={group.groupKey === firstGroupKey}
                       cardSize={cardSize}
                       onPlayVideo={onPlayVideo}
                     />

@@ -243,7 +243,7 @@ export function useDeviceCameraConfig(
       isSelectedCameraBestShot ? options.staticThumbnailUrl : undefined
     ) || (
       shouldUseHistoricalThumbnail
-        ? `/api/piko/device-thumbnail?connectorId=${selectedCamera.connectorId}&cameraId=${selectedCamera.cameraId}&timestamp=${options.timestamp}`
+        ? `/api/piko/device-thumbnail?connectorId=${encodeURIComponent(selectedCamera.connectorId)}&cameraId=${encodeURIComponent(selectedCamera.cameraId.replace(/[{}]/g, ''))}&timestamp=${encodeURIComponent(String(options.timestamp))}`
         : undefined
     );
 
