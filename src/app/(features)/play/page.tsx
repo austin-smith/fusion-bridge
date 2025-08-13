@@ -1,17 +1,19 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useFusionStore } from "@/stores/store";
 import { DeviceType } from "@/lib/mappings/definitions";
 import type { DeviceWithConnector } from "@/types";
 import { PageHeader } from "@/components/layout/page-header";
-import { MonitorPlay } from "lucide-react";
+import { Maximize, Minimize, MonitorPlay } from "lucide-react";
 import { LocationSpaceSelector } from "@/components/common/LocationSpaceSelector";
 import { PlayGrid } from "@/components/features/play/play-grid";
 import type { Layout } from "react-grid-layout";
 import { PlayLayoutControls } from "@/components/features/play/PlayLayoutControls";
 import type { PlayLayout, PlayGridLayoutItem } from "@/types/play";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EditCamerasDialog } from "@/components/features/play/EditCamerasDialog";
 import { toast } from "sonner";
 
@@ -33,9 +35,7 @@ export default function PlayPage() {
 
   const [layouts, setLayouts] = useState<PlayLayout[]>([]);
   const [activeLayoutId, setActiveLayoutId] = useState<string | "auto">("auto");
-  const [latestGridLayout, setLatestGridLayout] = useState<Layout[] | null>(
-    null
-  );
+  const [latestGridLayout, setLatestGridLayout] = useState<Layout[] | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editSelectedIds, setEditSelectedIds] = useState<Set<string>>(
     new Set()
@@ -44,6 +44,9 @@ export default function PlayPage() {
   const [prefs, setPrefs] = useState<{ defaultLayoutId: string | null }>({
     defaultLayoutId: null,
   });
+
+  const [isPlayFullScreen, setIsPlayFullScreen] = useState(false);
+  const playFullScreenContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     document.title = "Play // Fusion";
@@ -250,6 +253,46 @@ export default function PlayPage() {
     setLatestGridLayout(base.filter((it) => it.i !== deviceId));
   };
 
+  const togglePlayFullScreen = () => {
+    if (!document.fullscreenElement) {
+      setIsPlayFullScreen(true);
+    } else if (document.exitFullscreen) {
+      document.exitFullscreen().catch((err) => {
+        console.error("Error exiting fullscreen:", err);
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (
+      isPlayFullScreen &&
+      playFullScreenContainerRef.current &&
+      !document.fullscreenElement
+    ) {
+      playFullScreenContainerRef.current
+        .requestFullscreen()
+        .catch((err) => {
+          console.error("Error attempting to enable full-screen mode:", err);
+          toast.error(
+            "Could not enter full-screen mode. Browser might have denied the request."
+          );
+          setIsPlayFullScreen(false);
+        });
+    }
+  }, [isPlayFullScreen]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      if (isPlayFullScreen && !document.fullscreenElement) {
+        setIsPlayFullScreen(false);
+      }
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, [isPlayFullScreen]);
+
   // Edit Cameras dialog data and handlers
   const availableCameras = useMemo(() => cameraDevices, [cameraDevices]);
 
@@ -310,6 +353,25 @@ export default function PlayPage() {
         </div>
       </div>
       <div className="ml-auto flex items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 px-3"
+              onClick={togglePlayFullScreen}
+            >
+              {isPlayFullScreen ? (
+                <Minimize className="h-4 w-4" />
+              ) : (
+                <Maximize className="h-4 w-4" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{isPlayFullScreen ? "Exit full screen" : "Full screen"}</p>
+          </TooltipContent>
+        </Tooltip>
         <div className="h-8 w-px bg-border" aria-hidden="true" />
         <PlayLayoutControls
           layouts={layouts.map((l) => ({ id: l.id, name: l.name }))}
@@ -356,6 +418,54 @@ export default function PlayPage() {
       />
     </div>
   );
+
+  if (isPlayFullScreen) {
+    return (
+      <div
+        ref={playFullScreenContainerRef}
+        className="fixed inset-0 bg-background z-50 h-screen w-screen overflow-hidden"
+      >
+        <div className="absolute inset-x-0 top-0 z-50 flex justify-end p-2 bg-background/80 backdrop-blur">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={togglePlayFullScreen}
+              >
+                <Minimize className="h-5 w-5" />
+                <span className="sr-only">Exit Full Screen</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+            <p>Exit full screen (or press Esc)</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        <div className="h-full w-full pt-12">
+          {isLoadingAllDevices || !allDevicesHasInitiallyLoaded ? (
+            <div className="h-full flex items-center justify-center text-muted-foreground">
+              Loading…
+            </div>
+          ) : (
+            <PlayGrid
+              devices={viewDevices}
+              onLayoutChange={setLatestGridLayout}
+              initialLayoutItems={activeLayout?.items}
+              onRemoveFromLayout={
+                activeLayoutId === "auto" ? undefined : handleRemoveFromLayout
+              }
+              onAddCameras={() => setIsEditDialogOpen(true)}
+              spaces={spaces}
+              locations={locations}
+              key={`grid-fs-${activeLayout?.id || "auto"}`}
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full p-4 md:p-6">

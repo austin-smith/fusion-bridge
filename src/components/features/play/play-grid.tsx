@@ -24,9 +24,9 @@ export interface PlayGridProps {
 export const PlayGrid: React.FC<PlayGridProps> = ({ devices, onLayoutChange, initialLayoutItems, onRemoveFromLayout, onAddCameras, spaces, locations }) => {
 	const playableDevices = useMemo(() => devices.filter(d => d.deviceId && d.connectorId), [devices]);
 
-	const [layout, setLayout] = useState<Layout[]>([]);
+    const [layout, setLayout] = useState<Layout[]>([]);
 
-	// Single, fluid 12-column grid (no hardcoded breakpoint map)
+	// Single, fluid 12-column grid
 	const COLS = 12;
 	const ROW_HEIGHT = 100;
 	const MARGIN: [number, number] = [10, 10];
@@ -112,7 +112,7 @@ export const PlayGrid: React.FC<PlayGridProps> = ({ devices, onLayoutChange, ini
 			isResizable
 			draggableCancel={'button, a, input, textarea, select, [role="menuitem"]'}
 			layout={layout}
-			onLayoutChange={(l) => { setLayout(l); onLayoutChange?.(l); }}
+            onLayoutChange={(l) => { setLayout(l); onLayoutChange?.(l); }}
 		>
 			{playableDevices.map(device => {
 				const resolvedSpaceName = device.spaceName || (device.spaceId ? spaceById.get(device.spaceId)?.name : undefined);
@@ -160,28 +160,29 @@ export const PlayGrid: React.FC<PlayGridProps> = ({ devices, onLayoutChange, ini
 												<MoreHorizontal className="h-4 w-4" />
 											</Button>
 										</DropdownMenuTrigger>
-										<DropdownMenuContent align="end" className="no-drag">
+											<DropdownMenuContent align="end" className="no-drag">
+                                            
 											<DropdownMenuItem
 												className="text-destructive focus:text-destructive"
 												onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemoveFromLayout(device.id); }}
 											>
-												<Trash2 className="mr-1 h-4 w-4" />
-												Remove from layout
+												<Trash2 className="mr-2 h-4 w-4" />
+												Remove
 											</DropdownMenuItem>
 										</DropdownMenuContent>
 									</DropdownMenu>
 								) : null}
 						</div>
 						</CardHeader>
-							<CardContent className="p-0 grow relative overflow-hidden rounded-b-lg">
-								<div className="absolute inset-0">
-								<PikoVideoPlayer
-									connectorId={device.connectorId}
-									cameraId={device.deviceId}
-									className="w-full h-full"
-								/>
-							</div>
-						</CardContent>
+                            <CardContent className="p-0 grow relative overflow-hidden rounded-b-lg">
+                                <div className="absolute inset-0">
+                                        <PikoVideoPlayer
+                                            connectorId={device.connectorId}
+                                            cameraId={device.deviceId}
+                                            className="w-full h-full"
+                                        />
+                                </div>
+                            </CardContent>
 					</Card>
 				</div>
 				);
