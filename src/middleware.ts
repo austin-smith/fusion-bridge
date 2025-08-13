@@ -111,7 +111,7 @@ export const config = {
    * - manifest.json (web app manifest file)
    */
   matcher: [
-    // This regex excludes only static assets from middleware processing
-    '/((?!_next/static|_next/image|icons/|favicon\\.ico|opengraph-image\\.png|manifest\\.json|email-header-logo\\.png).*)',
+    // This regex excludes static assets from middleware processing
+    '/((?!_next/static|_next/image|icons/|favicon\\.ico|opengraph-image\\.png|manifest\\.json|email-header-logo\\.png|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico)$).*)',
   ],
 };
