@@ -53,19 +53,11 @@ const AlarmsPage: React.FC = () => {
     document.title = 'Active Alarms // Fusion';
   }, []);
 
-  const {
-    alarmZones,
-    isLoadingAlarmZones,
-    fetchAlarmZones,
-    updateAlarmZoneArmedState,
-    isLoadingDashboardEvents,
-  } = useFusionStore((state) => ({
-    alarmZones: state.alarmZones,
-    isLoadingAlarmZones: state.isLoadingAlarmZones,
-    fetchAlarmZones: state.fetchAlarmZones,
-    updateAlarmZoneArmedState: state.updateAlarmZoneArmedState,
-    isLoadingDashboardEvents: state.isLoadingDashboardEvents,
-  }));
+  const alarmZones = useFusionStore((state) => state.alarmZones);
+  const isLoadingAlarmZones = useFusionStore((state) => state.isLoadingAlarmZones);
+  const fetchAlarmZones = useFusionStore((state) => state.fetchAlarmZones);
+  const updateAlarmZoneArmedState = useFusionStore((state) => state.updateAlarmZoneArmedState);
+  const isLoadingDashboardEvents = useFusionStore((state) => state.isLoadingDashboardEvents);
 
   useEffect(() => {
     // Fetch alarm zones if they haven't been loaded or to ensure freshness

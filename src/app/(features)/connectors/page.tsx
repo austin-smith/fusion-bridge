@@ -83,25 +83,21 @@ export default function ConnectorsPage() {
   const isAdmin = (session?.user as any)?.role === 'admin';
 
   // Select state
-  const { connectors, isLoading, hasInitiallyLoaded, getMqttState, getPikoState, getWebhookState, error } = useFusionStore((state) => ({
-    connectors: state.connectors,
-    isLoading: state.isLoading,
-    hasInitiallyLoaded: state.hasInitiallyLoaded,
-    getMqttState: state.getMqttState,
-    getPikoState: state.getPikoState,
-    getWebhookState: state.getWebhookState,
-    error: state.error,
-  }));
+  const connectors = useFusionStore((state) => state.connectors);
+  const isLoading = useFusionStore((state) => state.isLoading);
+  const hasInitiallyLoaded = useFusionStore((state) => state.hasInitiallyLoaded);
+  const getMqttState = useFusionStore((state) => state.getMqttState);
+  const getPikoState = useFusionStore((state) => state.getPikoState);
+  const getWebhookState = useFusionStore((state) => state.getWebhookState);
+  const error = useFusionStore((state) => state.error);
   
   // Get stable action references
-  const { 
-    fetchConnectors,
-    setAddConnectorOpen,
-    setEditConnectorOpen,
-    setEditingConnector, 
-    deleteConnector,
-    setError
-  } = useFusionStore(); 
+  const fetchConnectors = useFusionStore((state) => state.fetchConnectors);
+  const setAddConnectorOpen = useFusionStore((state) => state.setAddConnectorOpen);
+  const setEditConnectorOpen = useFusionStore((state) => state.setEditConnectorOpen);
+  const setEditingConnector = useFusionStore((state) => state.setEditingConnector);
+  const deleteConnector = useFusionStore((state) => state.deleteConnector);
+  const setError = useFusionStore((state) => state.setError);
 
   // State for modals and delete confirmation
   const [connectorIdToDelete, setConnectorIdToDelete] = useState<string | null>(null);

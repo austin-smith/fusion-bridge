@@ -61,51 +61,27 @@ export default function LocationsPage() {
   }, []);
 
   const router = useRouter();
-  const { 
-    locations, 
-    isLoadingLocations, 
-    errorLocations, 
-    fetchLocations,
-    addLocation,
-    updateLocation,
-    deleteLocation,
-    spaces,
-    isLoadingSpaces,
-    errorSpaces,
-    fetchSpaces,
-    addSpace,
-    updateSpace,
-    deleteSpace,
-    assignDeviceToSpace,
-    removeDeviceFromSpace,
-    allDevices,
-    isLoadingAllDevices,
-    errorAllDevices,
-    fetchAllDevices,
-    activeOrganizationId,
-  } = useFusionStore((state) => ({
-    locations: state.locations,
-    isLoadingLocations: state.isLoadingLocations,
-    errorLocations: state.errorLocations,
-    fetchLocations: state.fetchLocations,
-    addLocation: state.addLocation,
-    updateLocation: state.updateLocation,
-    deleteLocation: state.deleteLocation,
-    spaces: state.spaces,
-    isLoadingSpaces: state.isLoadingSpaces,
-    errorSpaces: state.errorSpaces,
-    fetchSpaces: state.fetchSpaces,
-    addSpace: state.addSpace,
-    updateSpace: state.updateSpace,
-    deleteSpace: state.deleteSpace,
-    assignDeviceToSpace: state.assignDeviceToSpace,
-    removeDeviceFromSpace: state.removeDeviceFromSpace,
-    allDevices: state.allDevices,
-    isLoadingAllDevices: state.isLoadingAllDevices,
-    errorAllDevices: state.errorAllDevices,
-    fetchAllDevices: state.fetchAllDevices,
-    activeOrganizationId: state.activeOrganizationId,
-  }));
+  const locations = useFusionStore((state) => state.locations);
+  const isLoadingLocations = useFusionStore((state) => state.isLoadingLocations);
+  const errorLocations = useFusionStore((state) => state.errorLocations);
+  const fetchLocations = useFusionStore((state) => state.fetchLocations);
+  const addLocation = useFusionStore((state) => state.addLocation);
+  const updateLocation = useFusionStore((state) => state.updateLocation);
+  const deleteLocation = useFusionStore((state) => state.deleteLocation);
+  const spaces = useFusionStore((state) => state.spaces);
+  const isLoadingSpaces = useFusionStore((state) => state.isLoadingSpaces);
+  const errorSpaces = useFusionStore((state) => state.errorSpaces);
+  const fetchSpaces = useFusionStore((state) => state.fetchSpaces);
+  const addSpace = useFusionStore((state) => state.addSpace);
+  const updateSpace = useFusionStore((state) => state.updateSpace);
+  const deleteSpace = useFusionStore((state) => state.deleteSpace);
+  const assignDeviceToSpace = useFusionStore((state) => state.assignDeviceToSpace);
+  const removeDeviceFromSpace = useFusionStore((state) => state.removeDeviceFromSpace);
+  const allDevices = useFusionStore((state) => state.allDevices);
+  const isLoadingAllDevices = useFusionStore((state) => state.isLoadingAllDevices);
+  const errorAllDevices = useFusionStore((state) => state.errorAllDevices);
+  const fetchAllDevices = useFusionStore((state) => state.fetchAllDevices);
+  const activeOrganizationId = useFusionStore((state) => state.activeOrganizationId);
 
   // Dialog states
   const [isLocationDialogOpen, setIsLocationDialogOpen] = useState(false);

@@ -4,18 +4,12 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from "@/components/ui/input";
 import { toast } from 'sonner';
-import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, EyeIcon, Loader2, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network, HelpCircle, MoreHorizontal, InfoIcon, ChevronDown, Plug } from 'lucide-react';
-import { DeviceWithConnector, ConnectorWithConfig, PikoServer } from '@/types';
+import { RefreshCwIcon, ArrowUpDown, ArrowUp, ArrowDown, Cpu, X, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Network, ChevronDown, Plug } from 'lucide-react';
+import type { DeviceWithConnector, ConnectorWithConfig, PikoServer } from '@/types';
 import { getDeviceTypeIcon, getDisplayStateIcon } from "@/lib/mappings/presentation";
 import { 
   type DisplayState,
-  type TypedDeviceInfo,
-  ActionableState,
-  DeviceType,
-  ON,
-  OFF,
-  LOCKED,
-  UNLOCKED
+  type TypedDeviceInfo
 } from '@/lib/mappings/definitions';
 import { useFusionStore } from '@/stores/store';
 import {
@@ -44,17 +38,12 @@ import {
   DialogContent,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
+//
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import {
   flexRender,
@@ -205,11 +194,6 @@ const DevicesTableSkeleton = ({ rowCount = 10, columnCount = 6 }: { rowCount?: n
 export default function DevicesPage() {
   // Fetch data from Zustand store - use connectors
   const deviceStates = useFusionStore(state => state.deviceStates);
-  const { setDeviceStatesFromSync, executeDeviceAction, deviceActionLoading } = useFusionStore(state => ({
-    setDeviceStatesFromSync: state.setDeviceStatesFromSync,
-    executeDeviceAction: state.executeDeviceAction,
-    deviceActionLoading: state.deviceActionLoading,
-  }));
   // Use connectors state variable
   const connectors = useFusionStore(state => state.connectors as ConnectorWithConfig<any>[]); 
   // Fetch allDevices from the store

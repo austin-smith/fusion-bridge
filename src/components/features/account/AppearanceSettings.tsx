@@ -46,7 +46,7 @@ export function AppearanceSettings() {
         // apply this theme for preview (skip default)
         if (opt.value !== 'default') root.classList.add(opt.value);
         const cssValue = getComputedStyle(root).getPropertyValue('--primary').trim();
-        return { value: opt.value, label: opt.label, dotColor: `hsl(${cssValue})` };
+        return { value: opt.value, label: opt.label, dotColor: cssValue };
       });
       
       // restore original classes
