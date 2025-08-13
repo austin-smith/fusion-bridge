@@ -2,6 +2,7 @@ import { StandardizedEvent } from '@/types/events';
 import { EnrichedEvent } from '@/types/events';
 import { EventCategory, DeviceType } from '@/lib/mappings/definitions';
 import type { DeviceWithConnector, Space } from '@/types';
+import { sanitizeCameraId } from '@/lib/utils';
 
 export interface ThumbnailSource {
   type: 'best-shot' | 'space-camera';
@@ -108,7 +109,7 @@ export function findSpaceCameras(
 export function buildThumbnailUrl(source: ThumbnailSource, size?: string): string {
   // Normalize and encode params to avoid invalid URL characters (e.g., Piko camera GUIDs with braces)
   const normalizedConnectorId = encodeURIComponent(source.connectorId);
-  const normalizedCameraId = encodeURIComponent(source.cameraId.replace(/[{}]/g, ''));
+  const normalizedCameraId = encodeURIComponent(sanitizeCameraId(source.cameraId));
   const timestampParam = `timestamp=${encodeURIComponent(String(source.timestamp))}`;
 
   if (source.type === 'best-shot' && source.objectTrackId) {

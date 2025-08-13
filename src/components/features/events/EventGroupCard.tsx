@@ -41,7 +41,6 @@ interface EventGroupCardProps {
   group: EventGroup;
   allDevices: DeviceWithConnector[];
   spaces: Space[];
-  isRecentGroup?: boolean; // deprecated
   isAboveFold?: boolean;
   cardSize: CardSize;
   onPlayVideo?: (bestShotEvent: EnrichedEvent | undefined, spacePikoCamera: DeviceWithConnector | null, allDevices: DeviceWithConnector[]) => void;
@@ -49,7 +48,7 @@ interface EventGroupCardProps {
 
 // --- Removed device summary logic to unify card layouts ---
 
-export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevices, isRecentGroup, isAboveFold, cardSize, onPlayVideo }) => {
+export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevices, isAboveFold, cardSize, onPlayVideo }) => {
   // Destructure group properties first
   const { spaceId, spaceName, startTime, endTime, events, groupKey } = group; 
   const eventCount = events.length;

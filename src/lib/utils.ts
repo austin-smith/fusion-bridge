@@ -33,3 +33,12 @@ export function formatConnectorCategory(category: string | undefined | null): st
   const lowerCategory = category.toLowerCase();
   return categoryDisplayNames[lowerCategory] || category; // Fallback to original category string
 }
+
+/**
+ * Normalizes camera/device identifiers that may include curly braces from upstream systems.
+ * Example: "{abcdef-...}" -> "abcdef-...". If falsy, returns empty string.
+ */
+export function sanitizeCameraId(id: string | undefined | null): string {
+  if (!id) return '';
+  return id.replace(/[{}]/g, '');
+}
