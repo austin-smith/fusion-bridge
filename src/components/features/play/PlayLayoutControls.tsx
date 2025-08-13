@@ -107,8 +107,8 @@ export const PlayLayoutControls: React.FC<PlayLayoutControlsProps> = ({
 						>
 						<Pin className="mr-2 h-4 w-4" />
 						Set as default
-						</DropdownMenuItem>
-            			<DropdownMenuSeparator />
+					</DropdownMenuItem>
+						<DropdownMenuSeparator />
 						<DropdownMenuItem disabled={activeLayoutId === 'auto'} onSelect={() => onEditCameras?.()}>
 							<SlidersHorizontal className="mr-2 h-4 w-4" />
 							Edit cameras
