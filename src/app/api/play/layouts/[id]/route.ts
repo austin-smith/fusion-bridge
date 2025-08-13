@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
+import type { PlayGridLayoutItem } from '@/types/play';
+
+interface LayoutUpdatePayload {
+  name?: string;
+  deviceIds?: string[];
+  items?: PlayGridLayoutItem[];
+  updatedByUserId: string;
+  updatedAt: Date;
+}
 import { db } from '@/data/db';
 import { layouts } from '@/data/db/schema';
 import { and, eq } from 'drizzle-orm';
@@ -10,7 +19,7 @@ export const PATCH = withOrganizationAuth(async (req: NextRequest, auth: Organiz
     const { id } = await ctx.params;
     const body = await req.json();
     const { name, deviceIds, items } = body || {};
-    const update: any = { updatedByUserId: auth.userId, updatedAt: new Date() };
+    const update: LayoutUpdatePayload = { updatedByUserId: auth.userId, updatedAt: new Date() };
     if (typeof name === 'string') update.name = name;
     if (Array.isArray(deviceIds)) update.deviceIds = deviceIds;
     if (Array.isArray(items)) update.items = items;

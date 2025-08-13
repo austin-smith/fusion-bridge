@@ -10,6 +10,7 @@ import { LocationSpaceSelector } from '@/components/common/LocationSpaceSelector
 import { PlayGrid } from '@/components/features/play/play-grid';
 import type { Layout } from 'react-grid-layout';
 import { PlayLayoutControls } from '@/components/features/play/PlayLayoutControls';
+import type { PlayLayout, PlayGridLayoutItem } from '@/types/play';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatConnectorCategory } from '@/lib/utils';
@@ -21,6 +22,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { toast } from 'sonner';
 
 export default function PlayPage() {
 	const allDevices = useFusionStore(state => state.allDevices);
@@ -35,8 +37,7 @@ export default function PlayPage() {
 	const [searchTerm, setSearchTerm] = useState('');
   
 
-	type ServerLayout = { id: string; name: string; items: Layout[]; deviceIds: string[]; createdByUserId?: string; updatedByUserId?: string };
-	const [layouts, setLayouts] = useState<ServerLayout[]>([]);
+	const [layouts, setLayouts] = useState<PlayLayout[]>([]);
 	const [activeLayoutId, setActiveLayoutId] = useState<string | 'auto'>('auto');
 	const [latestGridLayout, setLatestGridLayout] = useState<Layout[] | null>(null);
 	const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -57,9 +58,15 @@ export default function PlayPage() {
 			try {
 				const res = await fetch('/api/play/layouts');
 				const json = await res.json();
-				if (!res.ok || !json.success) return;
+				if (!res.ok || !json.success) {
+					toast.error('Failed to load layouts', { description: json?.error || 'Please try again.' });
+					return;
+				}
 				setLayouts(json.data);
-			} catch (e) { console.error('fetch layouts', e); }
+			} catch (e) {
+				console.error('fetch layouts', e);
+				toast.error('Failed to load layouts');
+			}
 		})();
 	}, []);
 
@@ -121,14 +128,16 @@ export default function PlayPage() {
 			if (!res.ok || !json.success) throw new Error(json.error || 'Failed');
 			setLayouts(prev => [...prev, json.data]);
 			setActiveLayoutId(json.data.id);
+      toast.success('Layout created');
 		} catch (e) { console.error('create layout', e); }
 	};
 	const handleRename = async (id: string, name: string) => {
 		try {
 			const res = await fetch(`/api/play/layouts/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
 			const json = await res.json();
-			if (!res.ok || !json.success) throw new Error(json.error || 'Failed');
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed');
 			setLayouts(prev => prev.map(l => l.id === id ? { ...l, name } : l));
+      toast.success('Layout renamed');
 		} catch (e) { console.error('rename layout', e); }
 	};
 	const handleDelete = async (id: string) => {
@@ -136,6 +145,7 @@ export default function PlayPage() {
 			await fetch(`/api/play/layouts/${id}`, { method: 'DELETE' });
 			setLayouts(prev => prev.filter(l => l.id !== id));
 			if (activeLayoutId === id) setActiveLayoutId('auto');
+      toast.success('Layout deleted');
 		} catch (e) { console.error('delete layout', e); }
 	};
   const handleSave = async () => {
@@ -144,19 +154,24 @@ export default function PlayPage() {
       const allowed = new Set(activeLayout.deviceIds);
       const itemsToSave = latestGridLayout.filter(it => allowed.has(it.i));
       const deviceIds = itemsToSave.map(it => it.i);
+      const itemsToPersist: PlayGridLayoutItem[] = itemsToSave.map(it => ({ i: it.i, x: it.x, y: it.y, w: it.w, h: it.h, static: it.static }));
       const res = await fetch(`/api/play/layouts/${activeLayoutId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: itemsToSave, deviceIds }),
+        body: JSON.stringify({ items: itemsToPersist, deviceIds }),
       });
-      if (!res.ok) throw new Error('Failed');
-      setLayouts(prev => prev.map(l => l.id === activeLayoutId ? { ...l, items: itemsToSave, deviceIds } : l));
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || 'Failed to save layout');
+      }
+      setLayouts(prev => prev.map(l => l.id === activeLayoutId ? { ...l, items: itemsToPersist, deviceIds } : l));
+      toast.success('Layout saved');
     } catch (e) { console.error('save layout items', e); }
   };
 
   const handleRemoveFromLayout = (deviceId: string) => {
     if (!activeLayoutId || activeLayoutId === 'auto') return;
-    const base = latestGridLayout ?? activeLayout?.items ?? [];
+    const base: Layout[] = latestGridLayout ?? (activeLayout?.items as unknown as Layout[]) ?? [];
     setLatestGridLayout(base.filter(it => it.i !== deviceId));
   };
 	const handleReset = () => setActiveLayoutId('auto');
@@ -202,10 +217,10 @@ export default function PlayPage() {
 		const tileSpan = 4;
 		const perRow = Math.max(1, Math.floor(12 / tileSpan));
 		const startIndex = keptItems.length;
-		const newItems = newMembers.map((id, idx) => {
+    const newItems: PlayGridLayoutItem[] = newMembers.map((id, idx) => {
 			const row = Math.floor((startIndex + idx) / perRow);
 			const col = ((startIndex + idx) % perRow) * tileSpan;
-			return { i: id, x: col, y: row, w: tileSpan, h: 3, static: false } as Layout;
+      return { i: id, x: col, y: row, w: tileSpan, h: 3, static: false };
 		});
 		const updated = { deviceIds: nextIds, items: [...keptItems, ...newItems] };
 		setLayouts(prev => prev.map(l => l.id === activeLayoutId ? { ...l, ...updated } : l));

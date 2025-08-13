@@ -9,8 +9,9 @@ export const GET = withOrganizationAuth(async (req: NextRequest, auth: Organizat
     const result = await db.select().from(layouts).where(eq(layouts.organizationId, auth.organizationId));
     return NextResponse.json({ success: true, data: result });
   } catch (e) {
-    console.error('GET /api/play/layouts error', e);
-    return NextResponse.json({ success: false, error: 'Failed to fetch layouts' }, { status: 500 });
+    const err = e as Error;
+    console.error('GET /api/play/layouts error:', err.message, err.stack);
+    return NextResponse.json({ success: false, error: 'Failed to fetch layouts', code: 'LAYOUTS_FETCH_FAILED' }, { status: 500 });
   }
 });
 

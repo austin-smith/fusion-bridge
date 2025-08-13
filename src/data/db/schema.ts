@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, real, primaryKey, uniqueIndex, index, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { relations, sql } from "drizzle-orm";
+import type { PlayGridLayoutItem } from '@/types/play';
 import type { AutomationConfig } from "@/lib/automation-schemas"; // Import the config type
 import { ArmedState } from '@/lib/mappings/definitions'; // <-- Import the enum
 import type { DeviceType, DeviceSubtype } from '@/lib/mappings/definitions'; 
@@ -856,7 +857,7 @@ export const layouts = sqliteTable("layouts", {
   // Internal device UUIDs (devices.id)
   deviceIds: text("device_ids", { mode: "json" }).notNull().$type<string[]>(),
   // react-grid-layout items; item.i should equal devices.id
-  items: text("items", { mode: "json" }).notNull().$type<any[]>(),
+  items: text("items", { mode: "json" }).notNull().$type<PlayGridLayoutItem[]>(),
   createdByUserId: text("created_by_user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
   updatedByUserId: text("updated_by_user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
