@@ -44,6 +44,7 @@ export default function PlayPage() {
 	const [editSelectedIds, setEditSelectedIds] = useState<Set<string>>(new Set());
 	const [editSearch, setEditSearch] = useState('');
   const [connectorFilter, setConnectorFilter] = useState<string>('all');
+  const [prefs, setPrefs] = useState<{ defaultLayoutId: string | null }>({ defaultLayoutId: null });
 
 	useEffect(() => { document.title = 'Play // Fusion'; }, []);
 	useEffect(() => {
@@ -52,23 +53,32 @@ export default function PlayPage() {
 		}
 	}, [allDevicesHasInitiallyLoaded, isLoadingAllDevices, fetchAllDevices]);
 
-	// Load layouts on mount
-	useEffect(() => {
-		(async () => {
-			try {
-				const res = await fetch('/api/play/layouts');
-				const json = await res.json();
-				if (!res.ok || !json.success) {
-					toast.error('Failed to load layouts', { description: json?.error || 'Please try again.' });
-					return;
-				}
-				setLayouts(json.data);
-			} catch (e) {
-				console.error('fetch layouts', e);
-				toast.error('Failed to load layouts');
-			}
-		})();
-	}, []);
+  // Load layouts and preferences on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const [layoutsRes, prefsRes] = await Promise.all([
+          fetch('/api/play/layouts'),
+          fetch('/api/play/preferences'),
+        ]);
+        const [layoutsJson, prefsJson] = await Promise.all([layoutsRes.json(), prefsRes.json()]);
+        if (!layoutsRes.ok || !layoutsJson.success) {
+          toast.error('Failed to load layouts', { description: layoutsJson?.error || 'Please try again.' });
+          return;
+        }
+        setLayouts(layoutsJson.data);
+        if (prefsRes.ok && prefsJson?.success) {
+          setPrefs({ defaultLayoutId: prefsJson.data.defaultLayoutId ?? null });
+          if (prefsJson.data.defaultLayoutId && layoutsJson.data.some((l: PlayLayout) => l.id === prefsJson.data.defaultLayoutId)) {
+            setActiveLayoutId(prefsJson.data.defaultLayoutId);
+          }
+        }
+      } catch (e) {
+        console.error('fetch layouts/prefs', e);
+        toast.error('Failed to load layouts');
+      }
+    })();
+  }, []);
 
 	const cameraDevices = useMemo<DeviceWithConnector[]>(() => {
 		let list = allDevices.filter(d =>
@@ -145,6 +155,9 @@ export default function PlayPage() {
 			await fetch(`/api/play/layouts/${id}`, { method: 'DELETE' });
 			setLayouts(prev => prev.filter(l => l.id !== id));
 			if (activeLayoutId === id) setActiveLayoutId('auto');
+      setPrefs(prev => ({
+        defaultLayoutId: prev.defaultLayoutId === id ? null : prev.defaultLayoutId,
+      }));
       toast.success('Layout deleted');
 		} catch (e) { console.error('delete layout', e); }
 	};
@@ -258,7 +271,7 @@ export default function PlayPage() {
 			</div>
 			<div className="ml-auto flex items-center gap-2">
 				<div className="h-8 w-px bg-border" aria-hidden="true" />
-				<PlayLayoutControls
+          <PlayLayoutControls
 				layouts={layouts.map(l => ({ id: l.id, name: l.name }))}
 				activeLayoutId={activeLayoutId}
 				onSelect={setActiveLayoutId}
@@ -273,6 +286,15 @@ export default function PlayPage() {
 					setEditSearch('');
 					setIsEditDialogOpen(true);
 				}}
+						defaultLayoutId={prefs.defaultLayoutId}
+          onSetDefault={async (id) => {
+            const defaultLayoutId = id === 'auto' ? null : id;
+            setPrefs(prev => ({ ...prev, defaultLayoutId }));
+            if (id === 'auto') setActiveLayoutId('auto'); else setActiveLayoutId(id);
+            try {
+              await fetch('/api/play/preferences', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ defaultLayoutId }) });
+            } catch (e) { console.error('set default', e); }
+          }}
 				/>
 			</div>
 			<EditCamerasDialog

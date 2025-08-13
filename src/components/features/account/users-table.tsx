@@ -575,6 +575,7 @@ function EditUserDialog({ user, isOpen, onOpenChange }: EditUserDialogProps) {
         </DialogHeader>
         <form action={formAction} ref={formRef}>
           <input type="hidden" name="id" value={user.id} />
+          <input type="hidden" name="role" value={role} />
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="edit-name" className="text-right">

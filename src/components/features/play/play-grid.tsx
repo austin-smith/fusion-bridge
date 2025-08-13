@@ -127,7 +127,7 @@ export const PlayGrid: React.FC<PlayGridProps> = ({ devices, onLayoutChange, ini
 				return (
 				<div key={device.id} className="overflow-hidden grid-item-container">
 					<Card className="h-full w-full flex flex-col">
-						<CardHeader className="px-2 py-1.5 shrink-0 border-b bg-muted/40 rounded-t-lg">
+					<CardHeader className="px-2 py-1.5 shrink-0 bg-black text-white rounded-t-lg">
 						<div className="flex items-center justify-between gap-2">
 								<div className="min-w-0">
 								<CardTitle className="text-xs font-medium leading-tight truncate flex items-center gap-1.5" title={device.name}>
