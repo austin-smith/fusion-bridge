@@ -340,7 +340,7 @@ export default function PlayPage() {
               });
             } catch (e) {
               console.error("set default", e);
-              toast.error?.("Failed to set default layout. Please try again.");
+              toast.error("Failed to set default layout. Please try again.");
             }
           }}
         />
