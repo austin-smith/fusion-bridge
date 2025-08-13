@@ -133,10 +133,8 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   const connectors = useFusionStore((state) => state.connectors);
   const deviceStates = useFusionStore((state) => state.deviceStates);
   const allDevices = useFusionStore((state) => state.allDevices);
-  const { executeDeviceAction, deviceActionLoading } = useFusionStore(state => ({
-    executeDeviceAction: state.executeDeviceAction,
-    deviceActionLoading: state.deviceActionLoading,
-  }));
+  const executeDeviceAction = useFusionStore(state => state.executeDeviceAction);
+  const deviceActionLoading = useFusionStore(state => state.deviceActionLoading);
 
   // Get spaces, alarm zones, and locations for UI display
   const spaces = useFusionStore((state) => state.spaces);

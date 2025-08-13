@@ -43,10 +43,8 @@ export function QuickDeviceActions({
   secondaryVariant = 'buttons',
   useSplitButton = false,
 }: QuickDeviceActionsProps) {
-  const { executeDeviceAction, deviceActionLoading } = useFusionStore((state) => ({
-    executeDeviceAction: state.executeDeviceAction,
-    deviceActionLoading: state.deviceActionLoading,
-  }));
+  const executeDeviceAction = useFusionStore((state) => state.executeDeviceAction);
+  const deviceActionLoading = useFusionStore((state) => state.deviceActionLoading);
 
   const isLoading = deviceActionLoading.get(internalDeviceId) ?? false;
   const buttonSize = size === 'sm' ? 'sm' : undefined;

@@ -57,51 +57,27 @@ export default function AlarmZonesPage() {
     document.title = 'Alarm Zones // Fusion';
   }, []);
 
-  const { 
-    locations, 
-    isLoadingLocations, 
-    errorLocations, 
-    fetchLocations,
-    alarmZones,
-    isLoadingAlarmZones,
-    errorAlarmZones,
-    fetchAlarmZones,
-    addAlarmZone,
-    updateAlarmZone,
-    deleteAlarmZone,
-    updateAlarmZoneArmedState,
-    assignDeviceToAlarmZone,
-    removeDeviceFromAlarmZone,
-    bulkAssignDevicesToAlarmZone,
-    bulkRemoveDevicesFromAlarmZone,
-    allDevices,
-    isLoadingAllDevices,
-    errorAllDevices,
-    fetchAllDevices,
-    activeOrganizationId,
-  } = useFusionStore((state) => ({
-    locations: state.locations,
-    isLoadingLocations: state.isLoadingLocations,
-    errorLocations: state.errorLocations,
-    fetchLocations: state.fetchLocations,
-    alarmZones: state.alarmZones,
-    isLoadingAlarmZones: state.isLoadingAlarmZones,
-    errorAlarmZones: state.errorAlarmZones,
-    fetchAlarmZones: state.fetchAlarmZones,
-    addAlarmZone: state.addAlarmZone,
-    updateAlarmZone: state.updateAlarmZone,
-    deleteAlarmZone: state.deleteAlarmZone,
-    updateAlarmZoneArmedState: state.updateAlarmZoneArmedState,
-    assignDeviceToAlarmZone: state.assignDeviceToAlarmZone,
-    removeDeviceFromAlarmZone: state.removeDeviceFromAlarmZone,
-    bulkAssignDevicesToAlarmZone: state.bulkAssignDevicesToAlarmZone,
-    bulkRemoveDevicesFromAlarmZone: state.bulkRemoveDevicesFromAlarmZone,
-    allDevices: state.allDevices,
-    isLoadingAllDevices: state.isLoadingAllDevices,
-    errorAllDevices: state.errorAllDevices,
-    fetchAllDevices: state.fetchAllDevices,
-    activeOrganizationId: state.activeOrganizationId,
-  }));
+  const locations = useFusionStore((state) => state.locations);
+  const isLoadingLocations = useFusionStore((state) => state.isLoadingLocations);
+  const errorLocations = useFusionStore((state) => state.errorLocations);
+  const fetchLocations = useFusionStore((state) => state.fetchLocations);
+  const alarmZones = useFusionStore((state) => state.alarmZones);
+  const isLoadingAlarmZones = useFusionStore((state) => state.isLoadingAlarmZones);
+  const errorAlarmZones = useFusionStore((state) => state.errorAlarmZones);
+  const fetchAlarmZones = useFusionStore((state) => state.fetchAlarmZones);
+  const addAlarmZone = useFusionStore((state) => state.addAlarmZone);
+  const updateAlarmZone = useFusionStore((state) => state.updateAlarmZone);
+  const deleteAlarmZone = useFusionStore((state) => state.deleteAlarmZone);
+  const updateAlarmZoneArmedState = useFusionStore((state) => state.updateAlarmZoneArmedState);
+  const assignDeviceToAlarmZone = useFusionStore((state) => state.assignDeviceToAlarmZone);
+  const removeDeviceFromAlarmZone = useFusionStore((state) => state.removeDeviceFromAlarmZone);
+  const bulkAssignDevicesToAlarmZone = useFusionStore((state) => state.bulkAssignDevicesToAlarmZone);
+  const bulkRemoveDevicesFromAlarmZone = useFusionStore((state) => state.bulkRemoveDevicesFromAlarmZone);
+  const allDevices = useFusionStore((state) => state.allDevices);
+  const isLoadingAllDevices = useFusionStore((state) => state.isLoadingAllDevices);
+  const errorAllDevices = useFusionStore((state) => state.errorAllDevices);
+  const fetchAllDevices = useFusionStore((state) => state.fetchAllDevices);
+  const activeOrganizationId = useFusionStore((state) => state.activeOrganizationId);
 
   const [isZoneDialogOpen, setIsZoneDialogOpen] = useState(false);
   const [editingZone, setEditingZone] = useState<AlarmZone | null>(null);
