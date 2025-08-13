@@ -885,3 +885,33 @@ export const layoutsRelations = relations(layouts, ({ one }) => ({
     relationName: 'layoutUpdatedBy',
   }),
 }));
+
+// --- User Layout Preferences (per-user, per-organization) ---
+export const userLayoutPreferences = sqliteTable("user_layout_preferences", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+  defaultLayoutId: text("default_layout_id").references(() => layouts.id, { onDelete: 'set null' }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  userOrgUniqueIdx: uniqueIndex("user_layout_preferences_user_org_unique_idx").on(table.userId, table.organizationId),
+  userIdx: index("user_layout_preferences_user_idx").on(table.userId),
+  orgIdx: index("user_layout_preferences_org_idx").on(table.organizationId),
+  defaultLayoutIdx: index("user_layout_preferences_default_layout_idx").on(table.defaultLayoutId),
+}));
+
+export const userLayoutPreferencesRelations = relations(userLayoutPreferences, ({ one }) => ({
+  user: one(user, {
+    fields: [userLayoutPreferences.userId],
+    references: [user.id],
+  }),
+  organization: one(organization, {
+    fields: [userLayoutPreferences.organizationId],
+    references: [organization.id],
+  }),
+  defaultLayout: one(layouts, {
+    fields: [userLayoutPreferences.defaultLayoutId],
+    references: [layouts.id],
+  }),
+}));

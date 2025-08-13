@@ -497,6 +497,9 @@
   box-sizing: border-box;
   background-image: none !important;
   border: none !important;
+  /* Ensure resize handles sit above overlays (e.g., error/loading UI) */
+  z-index: 50;
+  pointer-events: auto;
 }
 
 /* Hide resize handles completely even on hover */

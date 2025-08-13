@@ -90,6 +90,7 @@ export async function updateUser(
         id: formData.get('id'),
         name: formData.get('name'),
         image: formData.get('image'),
+        role: formData.get('role'),
     };
 
     const validatedFields = UpdateUserSchema.safeParse(rawData);

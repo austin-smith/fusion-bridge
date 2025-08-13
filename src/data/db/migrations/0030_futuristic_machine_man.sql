@@ -1,0 +1,1 @@
+ALTER TABLE `user_layout_preferences` DROP COLUMN `pinned_layout_ids`;

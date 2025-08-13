@@ -7,7 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { MoreHorizontal, Save, LayoutTemplate, Plus, Pencil, Trash2, SlidersHorizontal } from 'lucide-react';
+import { MoreHorizontal, Save, LayoutTemplate, Plus, Pencil, Trash2, SlidersHorizontal, Pin } from 'lucide-react';
 
 export interface LayoutOption {
 	id: string;
@@ -24,10 +24,13 @@ interface PlayLayoutControlsProps {
 	onSave: () => void;
   isDirty?: boolean;
   onEditCameras?: () => void;
+  defaultLayoutId?: string | null;
+  onSetDefault?: (id: string | 'auto') => void;
 }
 
 export const PlayLayoutControls: React.FC<PlayLayoutControlsProps> = ({
-	layouts, activeLayoutId, onSelect, onCreate, onRename, onDelete, onSave, isDirty = false, onEditCameras,
+  layouts, activeLayoutId, onSelect, onCreate, onRename, onDelete, onSave, isDirty = false, onEditCameras,
+  defaultLayoutId = null, onSetDefault,
 }) => {
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
 	const [isRenameOpen, setIsRenameOpen] = useState(false);
@@ -48,7 +51,11 @@ export const PlayLayoutControls: React.FC<PlayLayoutControlsProps> = ({
 		onSelect(v as any);
 	};
 
-	return (
+  const orderedLayouts = React.useMemo(() => {
+    return [...layouts].sort((a, b) => a.name.localeCompare(b.name));
+  }, [layouts]);
+
+  return (
 		<div className="flex items-center gap-2">
 			<div className="inline-flex items-center gap-2 rounded-md bg-background/80 backdrop-blur-sm border px-1.5 py-1">
 				<LayoutTemplate className="h-4 w-4 text-muted-foreground" />
@@ -61,9 +68,19 @@ export const PlayLayoutControls: React.FC<PlayLayoutControlsProps> = ({
 							<span className="inline-flex items-center"><Plus className="mr-2 h-4 w-4" /> New layout…</span>
 						</SelectItem>
 						<SelectSeparator />
-						<SelectItem value="auto">Auto</SelectItem>
-						{layouts.map(l => (
-							<SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+						<SelectItem value="auto">
+							<span className="inline-flex items-center">
+								<Pin className={`mr-2 h-3.5 w-3.5 text-muted-foreground ${defaultLayoutId === null ? '' : 'invisible'}`} />
+								<span>Auto</span>
+							</span>
+						</SelectItem>
+						{orderedLayouts.map(l => (
+							<SelectItem key={l.id} value={l.id}>
+								<span className="inline-flex items-center">
+									<Pin className={`mr-2 h-3.5 w-3.5 text-muted-foreground ${defaultLayoutId === l.id ? '' : 'invisible'}`} />
+									<span>{l.name}</span>
+								</span>
+							</SelectItem>
 						))}
 					</SelectContent>
 				</Select>
@@ -85,6 +102,13 @@ export const PlayLayoutControls: React.FC<PlayLayoutControlsProps> = ({
 						</Button>
 					</DropdownMenuTrigger>
 					<DropdownMenuContent align="end">
+						<DropdownMenuItem
+						onSelect={() => { onSetDefault?.(activeLayoutId); }}
+						>
+						<Pin className="mr-2 h-4 w-4" />
+						Set as default
+					</DropdownMenuItem>
+						<DropdownMenuSeparator />
 						<DropdownMenuItem disabled={activeLayoutId === 'auto'} onSelect={() => onEditCameras?.()}>
 							<SlidersHorizontal className="mr-2 h-4 w-4" />
 							Edit cameras

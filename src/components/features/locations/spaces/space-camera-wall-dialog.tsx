@@ -119,7 +119,7 @@ const SpaceCameraGrid: React.FC<SpaceCameraGridProps> = ({ cameraDevices }) => {
          return (
            <div key={device.id} className="overflow-hidden grid-item-container">
              <Card className="h-full w-full flex flex-col">
-               <CardHeader className="p-1.5 shrink-0 border-b bg-muted/30 rounded-t-lg">
+               <CardHeader className="p-1.5 shrink-0 bg-black text-white rounded-t-lg">
                  <CardTitle 
                    className="text-xs font-medium truncate text-center" 
                    title={device.name}
