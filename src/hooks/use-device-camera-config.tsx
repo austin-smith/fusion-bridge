@@ -3,6 +3,7 @@ import { useFusionStore } from '@/stores/store';
 import type { PikoConfig } from '@/services/drivers/piko';
 import type { DeviceWithConnector, ConnectorWithConfig } from '@/types';
 import { Box } from 'lucide-react';
+import { buildThumbnailUrl } from '@/services/event-thumbnail-resolver';
 import { getDeviceTypeIcon } from '@/lib/mappings/presentation';
 import { DeviceType } from '@/lib/mappings/definitions';
 
@@ -243,7 +244,12 @@ export function useDeviceCameraConfig(
       isSelectedCameraBestShot ? options.staticThumbnailUrl : undefined
     ) || (
       shouldUseHistoricalThumbnail
-        ? `/api/piko/device-thumbnail?connectorId=${selectedCamera.connectorId}&cameraId=${selectedCamera.cameraId}&timestamp=${options.timestamp}`
+        ? buildThumbnailUrl({
+            type: 'space-camera',
+            connectorId: selectedCamera.connectorId,
+            cameraId: selectedCamera.cameraId,
+            timestamp: options.timestamp as number,
+          })
         : undefined
     );
 

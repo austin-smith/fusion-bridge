@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as pikoDriver from '@/services/drivers/piko';
+import { sanitizeCameraId } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic'; // Ensure fresh data
 
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Strip curly braces from cameraId if present (handles Piko device IDs stored with braces)
-  const cameraId = cameraIdParam.replace(/[{}]/g, '');
+  const cameraId = sanitizeCameraId(cameraIdParam);
 
   try {
     // --- Fetch Thumbnail ---

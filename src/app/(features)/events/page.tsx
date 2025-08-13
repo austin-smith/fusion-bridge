@@ -348,32 +348,18 @@ export default function EventsPage() {
   const setTimeStart = useFusionStore(state => state.setEventsTimeStart);
   const setTimeEnd = useFusionStore(state => state.setEventsTimeEnd);
 
-  // Get Events data from store
-  const {
-    events,
-    isLoadingEvents,
-    errorEvents,
-    eventsPagination,
-    eventsHasInitiallyLoaded,
-    fetchEvents,
-    startEventsStream,
-    stopEventsStream,
-    updateEventsStreamFilters,
-    setEventsPagination,
-    resetEventsState,
-  } = useFusionStore((state) => ({
-    events: state.events,
-    isLoadingEvents: state.isLoadingEvents,
-    errorEvents: state.errorEvents,
-    eventsPagination: state.eventsPagination,
-    eventsHasInitiallyLoaded: state.eventsHasInitiallyLoaded,
-    fetchEvents: state.fetchEvents,
-    startEventsStream: state.startEventsStream,
-    stopEventsStream: state.stopEventsStream,
-    updateEventsStreamFilters: state.updateEventsStreamFilters,
-    setEventsPagination: state.setEventsPagination,
-    resetEventsState: state.resetEventsState,
-  }));
+  // Get Events data from store (avoid object selectors to keep getSnapshot stable)
+  const events = useFusionStore(state => state.events);
+  const isLoadingEvents = useFusionStore(state => state.isLoadingEvents);
+  const errorEvents = useFusionStore(state => state.errorEvents);
+  const eventsPagination = useFusionStore(state => state.eventsPagination);
+  const eventsHasInitiallyLoaded = useFusionStore(state => state.eventsHasInitiallyLoaded);
+  const fetchEvents = useFusionStore(state => state.fetchEvents);
+  const startEventsStream = useFusionStore(state => state.startEventsStream);
+  const stopEventsStream = useFusionStore(state => state.stopEventsStream);
+  const updateEventsStreamFilters = useFusionStore(state => state.updateEventsStreamFilters);
+  const setEventsPagination = useFusionStore(state => state.setEventsPagination);
+  const resetEventsState = useFusionStore(state => state.resetEventsState);
 
   // Initialize view and filter preferences from localStorage (following app pattern)
   useEffect(() => {

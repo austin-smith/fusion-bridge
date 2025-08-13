@@ -11,6 +11,7 @@ import { getDeviceTypeInfo } from '@/lib/mappings/identification';
 import { formatDistanceToNow, format } from 'date-fns';
 import { MapPin, Clock, Layers, Camera } from 'lucide-react';
 import Image from 'next/image';
+import { buildThumbnailUrl } from '@/services/event-thumbnail-resolver';
 
 // --- Grouping Logic ---
 
@@ -148,7 +149,12 @@ export function EventTimeline({ events, allDevices }: EventTimelineProps) {
           // Find Piko Camera for this group's space
           const pikoCamera = group.spaceId ? spaceCameraMap.get(group.spaceId)?.[0] : undefined;
           const thumbnailUrl = pikoCamera 
-            ? `/api/piko/device-thumbnail?deviceId=${pikoCamera.id}&connectorId=${pikoCamera.connectorId}&timestamp=${group.endTime.toISOString()}` 
+            ? buildThumbnailUrl({
+                type: 'space-camera',
+                connectorId: pikoCamera.connectorId,
+                cameraId: pikoCamera.deviceId,
+                timestamp: group.endTime.getTime(),
+              })
             : null;
 
           return (

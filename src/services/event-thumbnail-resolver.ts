@@ -2,6 +2,7 @@ import { StandardizedEvent } from '@/types/events';
 import { EnrichedEvent } from '@/types/events';
 import { EventCategory, DeviceType } from '@/lib/mappings/definitions';
 import type { DeviceWithConnector, Space } from '@/types';
+import { sanitizeCameraId } from '@/lib/utils';
 
 export interface ThumbnailSource {
   type: 'best-shot' | 'space-camera';
@@ -106,11 +107,17 @@ export function findSpaceCameras(
  * Builds thumbnail URL for frontend use
  */
 export function buildThumbnailUrl(source: ThumbnailSource, size?: string): string {
+  // Normalize and encode params to avoid invalid URL characters (e.g., Piko camera GUIDs with braces)
+  const normalizedConnectorId = encodeURIComponent(source.connectorId);
+  const normalizedCameraId = encodeURIComponent(sanitizeCameraId(source.cameraId));
+  const timestampParam = `timestamp=${encodeURIComponent(String(source.timestamp))}`;
+
   if (source.type === 'best-shot' && source.objectTrackId) {
     // Size parameter is not supported for best-shot endpoint currently
-    return `/api/piko/best-shot?connectorId=${source.connectorId}&cameraId=${source.cameraId}&objectTrackId=${source.objectTrackId}`;
+    const trackId = encodeURIComponent(source.objectTrackId);
+    return `/api/piko/best-shot?connectorId=${normalizedConnectorId}&cameraId=${normalizedCameraId}&objectTrackId=${trackId}`;
   }
-  
+
   const sizeParam = size ? `&size=${encodeURIComponent(size)}` : '';
-  return `/api/piko/device-thumbnail?connectorId=${source.connectorId}&cameraId=${source.cameraId}&timestamp=${source.timestamp}${sizeParam}`;
+  return `/api/piko/device-thumbnail?connectorId=${normalizedConnectorId}&cameraId=${normalizedCameraId}&${timestampParam}${sizeParam}`;
 }

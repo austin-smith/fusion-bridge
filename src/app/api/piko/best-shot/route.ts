@@ -4,6 +4,7 @@ import { connectors } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import * as piko from '@/services/drivers/piko';
 import { mapPikoErrorResponse } from '@/lib/api-utils'; // Import the shared helper
+import { sanitizeCameraId } from '@/lib/utils';
 // import { decrypt } from '@/lib/encryption'; // Removed assumption of encryption utility
 
 // Removed placeholder authenticateRequest function
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Strip curly braces from cameraId if present (handles Piko device IDs stored with braces)
-  const cameraId = cameraIdParam.replace(/[{}]/g, '');
+  const cameraId = sanitizeCameraId(cameraIdParam);
 
   try {
     // 3. Retrieve Connector Configuration (using connectorId)

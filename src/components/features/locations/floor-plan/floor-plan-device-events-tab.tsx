@@ -209,7 +209,8 @@ export function FloorPlanDeviceEventsTab({ deviceId, spaceCameras }: FloorPlanDe
                           className="object-cover"
                           sizes="64px"
                           loading="lazy"
-                          onLoadingComplete={() => {
+                          unoptimized
+                          onLoad={() => {
                             setLoadedThumbEventIds((prev) => {
                               const next = new Set(prev);
                               next.add(evt.eventUuid);
