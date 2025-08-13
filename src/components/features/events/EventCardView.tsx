@@ -105,6 +105,16 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices
 
   }, [events]);
 
+  // Identify the first group's key across all segments for LCP prioritization
+  const firstGroupKey = useMemo(() => {
+    for (const seg of timeSegments) {
+      if (seg.groups.length > 0) {
+        return seg.groups[0].groupKey;
+      }
+    }
+    return undefined;
+  }, [timeSegments]);
+
   if (!events || events.length === 0) {
     return (
       <div className="grow flex items-center justify-center p-4">
@@ -123,16 +133,6 @@ export const EventCardView: React.FC<EventCardViewProps> = ({ events, allDevices
         </div>
      );
   }
-
-  // Identify the first group's key across all segments for LCP prioritization
-  const firstGroupKey = useMemo(() => {
-    for (const seg of timeSegments) {
-      if (seg.groups.length > 0) {
-        return seg.groups[0].groupKey;
-      }
-    }
-    return undefined;
-  }, [timeSegments]);
 
   return (
     <ScrollArea className="grow h-full">
