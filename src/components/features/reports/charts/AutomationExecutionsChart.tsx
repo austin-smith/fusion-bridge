@@ -121,7 +121,7 @@ export function AutomationExecutionsChart({
                   );
                 }}
               />
-              <ChartLegend content={<ChartLegendContent />} />
+              <ChartLegend content={<ChartLegendContent payload={[]} />} />
               <Bar
                 dataKey="successful"
                 stackId="a"

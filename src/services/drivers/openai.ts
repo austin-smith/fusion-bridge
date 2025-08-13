@@ -100,6 +100,12 @@ export class OpenAIService {
       // Handle function calling
       if (message.tool_calls && message.tool_calls.length > 0) {
         const toolCall = message.tool_calls[0];
+        if (toolCall.type !== 'function' || !('function' in toolCall)) {
+          return {
+            success: false,
+            errorMessage: 'Unsupported tool call type',
+          };
+        }
         const functionName = toolCall.function.name;
         const functionArgs = JSON.parse(toolCall.function.arguments);
 

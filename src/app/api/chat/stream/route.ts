@@ -162,6 +162,11 @@ Be concise and helpful. You provide information - users execute actions.`,
 
           if (firstMsg?.tool_calls && firstMsg.tool_calls.length > 0) {
             const toolCall = firstMsg.tool_calls[0];
+            if (toolCall.type !== 'function' || !('function' in toolCall)) {
+              send('error', { message: 'Unsupported tool call type' });
+              controller.close();
+              return;
+            }
             const fnName = toolCall.function.name;
             let fnArgs: Record<string, any> = {};
             try {

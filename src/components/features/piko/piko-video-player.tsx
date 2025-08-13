@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Subscription } from 'rxjs';
+type DisposableSubscription = { unsubscribe: () => void; closed?: boolean };
 
 // Import only types, actual implementation will be loaded dynamically
 import type { 
@@ -55,7 +55,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
   } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
-  const streamManagerSubscriptionRef = useRef<Subscription | null>(null);
+  const streamManagerSubscriptionRef = useRef<DisposableSubscription | null>(null);
 
   // Dynamic import of the WebRTC library on the client side only
   useEffect(() => {

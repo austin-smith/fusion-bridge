@@ -70,7 +70,7 @@ export const POST = withOrganizationAuth(async (request: NextRequest, authContex
     
     if (devicesInfo.length !== deviceIds.length) {
       const foundDeviceIds = devicesInfo.map(d => d.id);
-      const missingDeviceIds = deviceIds.filter(id => !foundDeviceIds.includes(id));
+      const missingDeviceIds = deviceIds.filter((deviceId: string) => !foundDeviceIds.includes(deviceId));
       return NextResponse.json({ 
         success: false, 
         error: `One or more devices not found or not accessible: ${missingDeviceIds.join(', ')}` 
