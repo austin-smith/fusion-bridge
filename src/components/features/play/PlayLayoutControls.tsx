@@ -146,25 +146,35 @@ export const PlayLayoutControls: React.FC<PlayLayoutControlsProps> = ({
 
 			<Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
 				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>New layout</DialogTitle>
-					</DialogHeader>
-					<Input placeholder="Layout name" value={pendingName} onChange={(e) => setPendingName(e.target.value)} />
-					<DialogFooter>
-						<Button variant="secondary" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-						<Button
-							onClick={() => { if (pendingName.trim()) { onCreate(pendingName.trim()); setIsCreateOpen(false); } }}
-						>
-							Create
-						</Button>
-					</DialogFooter>
+					<form
+						className="grid gap-4"
+						onSubmit={(e) => {
+							e.preventDefault();
+							const name = pendingName.trim();
+							if (name) {
+								onCreate(name);
+								setIsCreateOpen(false);
+							}
+						}}
+					>
+						<DialogHeader>
+							<DialogTitle>New Layout</DialogTitle>
+						</DialogHeader>
+						<Input placeholder="Layout name" value={pendingName} onChange={(e) => setPendingName(e.target.value)} />
+						<DialogFooter>
+							<Button type="button" variant="secondary" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+							<Button type="submit" disabled={!pendingName.trim()}>
+								Create
+							</Button>
+						</DialogFooter>
+					</form>
 				</DialogContent>
 			</Dialog>
 
 			<Dialog open={isRenameOpen} onOpenChange={setIsRenameOpen}>
 				<DialogContent>
 					<DialogHeader>
-						<DialogTitle>Rename layout</DialogTitle>
+						<DialogTitle>Rename Layout</DialogTitle>
 					</DialogHeader>
 					<Input placeholder="Layout name" value={pendingName} onChange={(e) => setPendingName(e.target.value)} />
 					<DialogFooter>

@@ -1041,7 +1041,7 @@ export default function EventsPage() {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Exit Full Screen (or press Esc)</p>
+                <p>Exit full screen (or press Esc)</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -1133,7 +1133,7 @@ export default function EventsPage() {
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>{isCardViewFullScreen ? 'Exit Full Screen' : 'Full Screen'}</p>
+                        <p>{isCardViewFullScreen ? 'Exit full screen' : 'Full screen'}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -1294,7 +1294,7 @@ export default function EventsPage() {
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>{isCardViewFullScreen ? 'Exit Full Screen' : 'Full Screen'}</p>
+                        <p>{isCardViewFullScreen ? 'Exit full screen' : 'Full screen'}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
