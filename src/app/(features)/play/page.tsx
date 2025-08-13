@@ -5,12 +5,16 @@ import { useFusionStore } from '@/stores/store';
 import { DeviceType } from '@/lib/mappings/definitions';
 import type { DeviceWithConnector } from '@/types';
 import { PageHeader } from '@/components/layout/page-header';
-import { MonitorPlay, LayoutGrid, Box, Building } from 'lucide-react';
+import { MonitorPlay } from 'lucide-react';
 import { LocationSpaceSelector } from '@/components/common/LocationSpaceSelector';
 import { PlayGrid } from '@/components/features/play/play-grid';
-import { Input } from '@/components/ui/input';
+import type { Layout } from 'react-grid-layout';
+import { PlayLayoutControls } from '@/components/features/play/PlayLayoutControls';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { formatConnectorCategory } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { EditCamerasDialog } from '@/components/features/play/EditCamerasDialog';
 import {
   Tooltip,
   TooltipContent,
@@ -29,7 +33,16 @@ export default function PlayPage() {
 	const [locationFilter, setLocationFilter] = useState<string>('all');
 	const [spaceFilter, setSpaceFilter] = useState<string>('all');
 	const [searchTerm, setSearchTerm] = useState('');
-	const [groupBySpace, setGroupBySpace] = useState(false);
+  
+
+	type ServerLayout = { id: string; name: string; items: Layout[]; deviceIds: string[]; createdByUserId?: string; updatedByUserId?: string };
+	const [layouts, setLayouts] = useState<ServerLayout[]>([]);
+	const [activeLayoutId, setActiveLayoutId] = useState<string | 'auto'>('auto');
+	const [latestGridLayout, setLatestGridLayout] = useState<Layout[] | null>(null);
+	const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+	const [editSelectedIds, setEditSelectedIds] = useState<Set<string>>(new Set());
+	const [editSearch, setEditSearch] = useState('');
+  const [connectorFilter, setConnectorFilter] = useState<string>('all');
 
 	useEffect(() => { document.title = 'Play // Fusion'; }, []);
 	useEffect(() => {
@@ -37,6 +50,18 @@ export default function PlayPage() {
 			fetchAllDevices();
 		}
 	}, [allDevicesHasInitiallyLoaded, isLoadingAllDevices, fetchAllDevices]);
+
+	// Load layouts on mount
+	useEffect(() => {
+		(async () => {
+			try {
+				const res = await fetch('/api/play/layouts');
+				const json = await res.json();
+				if (!res.ok || !json.success) return;
+				setLayouts(json.data);
+			} catch (e) { console.error('fetch layouts', e); }
+		})();
+	}, []);
 
 	const cameraDevices = useMemo<DeviceWithConnector[]>(() => {
 		let list = allDevices.filter(d =>
@@ -60,34 +85,141 @@ export default function PlayPage() {
 		return list;
 	}, [allDevices, locationFilter, spaceFilter, spaces, searchTerm]);
 
-	const groupedBySpace = useMemo(() => {
-		if (!groupBySpace) return null;
-		const bySpace = new Map<string, DeviceWithConnector[]>();
-		for (const d of cameraDevices) {
-			const key = d.spaceId || 'unassigned';
-			if (!bySpace.has(key)) bySpace.set(key, []);
-			bySpace.get(key)!.push(d);
+	// Determine active layout
+	const activeLayout = activeLayoutId === 'auto' ? null : layouts.find(l => l.id === activeLayoutId) || null;
+
+  const viewDevices = useMemo<DeviceWithConnector[]>(() => {
+    if (!activeLayout) return cameraDevices;
+    const activeAllowed = new Set(activeLayout.deviceIds);
+    const fromGrid = latestGridLayout ? new Set(latestGridLayout.map(it => it.i)) : null;
+    const allowedIds = fromGrid
+      ? new Set(Array.from(activeAllowed).filter(id => fromGrid.has(id)))
+      : activeAllowed;
+    return cameraDevices.filter(d => allowedIds.has(d.id));
+  }, [cameraDevices, activeLayout, latestGridLayout]);
+
+
+	// Dirty detection: compare latest grid to the active layout items
+  const isDirty = useMemo(() => {
+    if (!activeLayout || !latestGridLayout) return false;
+    const activeAllowed = new Set(activeLayout.deviceIds);
+    const filtered = latestGridLayout.filter(it => activeAllowed.has(it.i));
+    if (activeLayout.items.length !== filtered.length) return true;
+    const byId = new Map(activeLayout.items.map(it => [it.i, it]));
+    for (const cur of filtered) {
+      const prev = byId.get(cur.i);
+      if (!prev) return true;
+      if (prev.x !== cur.x || prev.y !== cur.y || prev.w !== cur.w || prev.h !== cur.h) return true;
+    }
+    return false;
+  }, [activeLayout, latestGridLayout]);
+
+	const handleCreate = async (name: string) => {
+		try {
+			const res = await fetch('/api/play/layouts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, deviceIds: [], items: [] }) });
+			const json = await res.json();
+			if (!res.ok || !json.success) throw new Error(json.error || 'Failed');
+			setLayouts(prev => [...prev, json.data]);
+			setActiveLayoutId(json.data.id);
+		} catch (e) { console.error('create layout', e); }
+	};
+	const handleRename = async (id: string, name: string) => {
+		try {
+			const res = await fetch(`/api/play/layouts/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+			const json = await res.json();
+			if (!res.ok || !json.success) throw new Error(json.error || 'Failed');
+			setLayouts(prev => prev.map(l => l.id === id ? { ...l, name } : l));
+		} catch (e) { console.error('rename layout', e); }
+	};
+	const handleDelete = async (id: string) => {
+		try {
+			await fetch(`/api/play/layouts/${id}`, { method: 'DELETE' });
+			setLayouts(prev => prev.filter(l => l.id !== id));
+			if (activeLayoutId === id) setActiveLayoutId('auto');
+		} catch (e) { console.error('delete layout', e); }
+	};
+  const handleSave = async () => {
+    if (!activeLayoutId || activeLayoutId === 'auto' || !latestGridLayout || !activeLayout) return;
+    try {
+      const allowed = new Set(activeLayout.deviceIds);
+      const itemsToSave = latestGridLayout.filter(it => allowed.has(it.i));
+      const deviceIds = itemsToSave.map(it => it.i);
+      const res = await fetch(`/api/play/layouts/${activeLayoutId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: itemsToSave, deviceIds }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      setLayouts(prev => prev.map(l => l.id === activeLayoutId ? { ...l, items: itemsToSave, deviceIds } : l));
+    } catch (e) { console.error('save layout items', e); }
+  };
+
+  const handleRemoveFromLayout = (deviceId: string) => {
+    if (!activeLayoutId || activeLayoutId === 'auto') return;
+    const base = latestGridLayout ?? activeLayout?.items ?? [];
+    setLatestGridLayout(base.filter(it => it.i !== deviceId));
+  };
+	const handleReset = () => setActiveLayoutId('auto');
+
+	// Edit Cameras dialog data and handlers
+	const availableCameras = useMemo(() => cameraDevices, [cameraDevices]);
+	const uniqueConnectors = useMemo(() => {
+		const map = new Map<string, { name: string; category: string }>();
+		for (const cam of availableCameras) {
+			const name = cam.connectorName ?? formatConnectorCategory(cam.connectorCategory);
+			if (!map.has(name)) map.set(name, { name, category: cam.connectorCategory });
 		}
-		const entries = Array.from(bySpace.entries());
-		entries.sort((a, b) => {
-			const aName = a[0] === 'unassigned' ? 'Unassigned' : (spaces.find(s => s.id === a[0])?.name || 'Unknown');
-			const bName = b[0] === 'unassigned' ? 'Unassigned' : (spaces.find(s => s.id === b[0])?.name || 'Unknown');
-			return aName.localeCompare(bName);
+		return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+	}, [availableCameras]);
+
+	const filteredCameras = useMemo(() => {
+		const term = editSearch.trim().toLowerCase();
+		return availableCameras.filter(cam => {
+			const nameOk = !term || (cam.name || '').toLowerCase().includes(term);
+			const connName = cam.connectorName ?? formatConnectorCategory(cam.connectorCategory);
+			const connOk = connectorFilter === 'all' || connName === connectorFilter;
+			return nameOk && connOk;
 		});
-		return entries.map(([spaceId, devices]) => {
-			const space = spaces.find(s => s.id === spaceId);
-			const locationName = space ? (locations.find(l => l.id === space.locationId)?.name || undefined) : undefined;
-			return {
-				key: spaceId,
-				title: space ? space.name : 'Unassigned',
-				subtitle: locationName,
-				devices,
-			};
+	}, [availableCameras, editSearch, connectorFilter]);
+
+	const [visibleAssignedCameras, visibleAvailableCameras] = useMemo(() => {
+		const assigned: DeviceWithConnector[] = [];
+		const available: DeviceWithConnector[] = [];
+		for (const cam of filteredCameras) {
+			if (editSelectedIds.has(cam.id)) assigned.push(cam); else available.push(cam);
+		}
+		return [assigned, available];
+	}, [filteredCameras, editSelectedIds]);
+
+	const applyEditCameras = async (selectedIdsParam: string[]) => {
+		if (!activeLayoutId || activeLayoutId === 'auto') return;
+		const layout = layouts.find(l => l.id === activeLayoutId);
+		if (!layout) return;
+		const nextIds = selectedIdsParam;
+		const keptItems = layout.items.filter(it => nextIds.includes(it.i));
+		const existingIds = new Set(keptItems.map(it => it.i));
+		const newMembers = nextIds.filter(id => !existingIds.has(id));
+		const tileSpan = 4;
+		const perRow = Math.max(1, Math.floor(12 / tileSpan));
+		const startIndex = keptItems.length;
+		const newItems = newMembers.map((id, idx) => {
+			const row = Math.floor((startIndex + idx) / perRow);
+			const col = ((startIndex + idx) % perRow) * tileSpan;
+			return { i: id, x: col, y: row, w: tileSpan, h: 3, static: false } as Layout;
 		});
-	}, [groupBySpace, cameraDevices, spaces, locations]);
+		const updated = { deviceIds: nextIds, items: [...keptItems, ...newItems] };
+		setLayouts(prev => prev.map(l => l.id === activeLayoutId ? { ...l, ...updated } : l));
+		setIsEditDialogOpen(false);
+		try {
+			await fetch(`/api/play/layouts/${activeLayoutId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) });
+		} catch (e) { console.error('edit cameras apply', e); }
+	};
+
 
 	const actions = (
 		<div className="flex items-center gap-2 w-full flex-wrap">
+			<div className="flex flex-col gap-1">
+				<div className="flex items-center gap-2">
 			<LocationSpaceSelector
 				locationFilter={locationFilter}
 				spaceFilter={spaceFilter}
@@ -106,42 +238,35 @@ export default function PlayPage() {
 					className="h-9"
 				/>
 			</div>
-			<TooltipProvider>
-				<div className="flex items-center gap-1 border rounded-md p-1">
-					<Tooltip>
-						<TooltipTrigger asChild>
-							<Button
-								variant={!groupBySpace ? 'secondary' : 'ghost'}
-								size="sm"
-								className="h-8"
-								onClick={() => setGroupBySpace(false)}
-								aria-label="Flat"
-							>
-								<LayoutGrid className="h-4 w-4" />
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent>
-							<p>Flat</p>
-						</TooltipContent>
-					</Tooltip>
-					<Tooltip>
-						<TooltipTrigger asChild>
-							<Button
-								variant={groupBySpace ? 'secondary' : 'ghost'}
-								size="sm"
-								className="h-8"
-								onClick={() => setGroupBySpace(true)}
-								aria-label="Group by Space"
-							>
-								<Box className="h-4 w-4" />
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent>
-							<p>Group by Space</p>
-						</TooltipContent>
-					</Tooltip>
+            
 				</div>
-			</TooltipProvider>
+			</div>
+			<div className="ml-auto flex items-center gap-2">
+				<div className="h-8 w-px bg-border" aria-hidden="true" />
+				<PlayLayoutControls
+				layouts={layouts.map(l => ({ id: l.id, name: l.name }))}
+				activeLayoutId={activeLayoutId}
+				onSelect={setActiveLayoutId}
+				onCreate={handleCreate}
+				onRename={handleRename}
+				onDelete={handleDelete}
+				onSave={handleSave}
+				isDirty={isDirty}
+				onEditCameras={() => {
+					if (!activeLayout) return;
+					setEditSelectedIds(new Set(activeLayout.deviceIds));
+					setEditSearch('');
+					setIsEditDialogOpen(true);
+				}}
+				/>
+			</div>
+			<EditCamerasDialog
+				isOpen={isEditDialogOpen}
+				onOpenChange={setIsEditDialogOpen}
+				cameras={availableCameras}
+				initialSelectedIds={Array.from(editSelectedIds)}
+				onApply={(ids) => { applyEditCameras(ids); }}
+			/>
 		</div>
 	);
 
@@ -152,38 +277,21 @@ export default function PlayPage() {
 				icon={<MonitorPlay className="h-6 w-6" />}
 				actions={actions}
 			/>
-			<div className="mt-4">
-				{(isLoadingAllDevices || !allDevicesHasInitiallyLoaded) ? (
-					<div className="h-64 flex items-center justify-center text-muted-foreground">Loading…</div>
-				) : (
-					groupBySpace && groupedBySpace ? (
-						<div className="space-y-6">
-							{groupedBySpace.map(group => (
-                    <section key={group.key} className="space-y-3">
-                      <div className="flex items-center justify-between bg-muted/50 border rounded-md px-3 py-2 shadow-sm">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Box className="h-4 w-4 text-muted-foreground shrink-0" />
-                          <h3 className="text-sm font-semibold truncate max-w-[40vw]">{group.title}</h3>
-                          {group.subtitle ? (
-                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground truncate max-w-[28vw]">
-                              <span className="text-muted-foreground">•</span>
-                              <Building className="h-3.5 w-3.5" />
-                              <span className="truncate">{group.subtitle}</span>
-                            </span>
-                          ) : null}
-                        </div>
-                        <Badge variant="secondary" className="h-6 px-2 py-0 text-xs">
-                          {group.devices.length}
-                        </Badge>
-                      </div>
-                      <PlayGrid devices={group.devices} />
-                    </section>
-							))}
-						</div>
-					) : (
-						<PlayGrid devices={cameraDevices} />
-					)
-				)}
+			<div>
+        {(isLoadingAllDevices || !allDevicesHasInitiallyLoaded) ? (
+          <div className="h-64 flex items-center justify-center text-muted-foreground">Loading…</div>
+        ) : (
+          <PlayGrid
+            devices={viewDevices}
+            onLayoutChange={setLatestGridLayout}
+            initialLayoutItems={activeLayout?.items}
+            onRemoveFromLayout={activeLayoutId === 'auto' ? undefined : handleRemoveFromLayout}
+            onAddCameras={() => setIsEditDialogOpen(true)}
+            spaces={spaces}
+            locations={locations}
+            key={`grid-${activeLayout?.id || 'auto'}`}
+          />
+        )}
 			</div>
 		</div>
 	);

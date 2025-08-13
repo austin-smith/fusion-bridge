@@ -139,81 +139,137 @@ Be concise and helpful. You provide information - users execute actions.`,
         };
 
         try {
-          // First, get the assistant decision about tool calls without streaming
-          const initialParams: any = {
-            model: openaiConfig.model,
-            messages,
-            tools,
-            tool_choice: 'auto',
-            top_p: openaiConfig.topP,
-          };
-          if (!isGpt5 && typeof openaiConfig.temperature === 'number') {
-            initialParams.temperature = openaiConfig.temperature;
-          } else if (isGpt5 && openaiConfig.temperature === 1) {
-            initialParams.temperature = 1;
-          }
-          if (typeof openaiConfig.maxTokens === 'number') {
-            if (isGpt5) initialParams.max_completion_tokens = openaiConfig.maxTokens;
-            else initialParams.max_tokens = openaiConfig.maxTokens;
-          }
-
-          const first = await client.chat.completions.create(initialParams);
-          const firstMsg = first.choices[0]?.message;
-
-          if (firstMsg?.tool_calls && firstMsg.tool_calls.length > 0) {
-            const toolCall = firstMsg.tool_calls[0];
-            if (toolCall.type !== 'function' || !('function' in toolCall)) {
-              send('error', { message: 'Unsupported tool call type' });
-              controller.close();
-              return;
+          // Build Responses API request (streamed)
+          // Responses API: use 'instructions' for system; input parts types differ by role
+          const instructions = systemMessage.content;
+          const input: any[] = [];
+          // Prior conversation
+          for (const msg of conversationHistory) {
+            const role = msg.role === 'user' ? 'user' : 'assistant';
+            if (role === 'assistant') {
+              input.push({ role: 'assistant', content: [{ type: 'output_text', text: msg.content }] });
+            } else {
+              input.push({ role: 'user', content: [{ type: 'input_text', text: msg.content }] });
             }
-            const fnName = toolCall.function.name;
+          }
+          input.push({ role: 'user', content: [{ type: 'input_text', text: query }] });
+
+          // Map tools to Responses API shape (flattened name/description/parameters)
+          const responsesTools = openAIFunctions.map((fn) => ({
+            type: 'function',
+            name: fn.name,
+            description: fn.description,
+            parameters: fn.parameters as Record<string, unknown>,
+          }));
+
+          const responseParams: any = {
+            model: openaiConfig.model,
+            input,
+            instructions,
+            tools: responsesTools,
+            tool_choice: 'auto',
+            stream: true,
+          };
+          // Do not pass temperature per product decision
+          if (typeof openaiConfig.topP === 'number') responseParams.top_p = openaiConfig.topP;
+          if (typeof openaiConfig.maxTokens === 'number') responseParams.max_output_tokens = openaiConfig.maxTokens;
+
+          const initialStream = await client.responses.create(responseParams as any);
+          const asyncInitial = initialStream as unknown as AsyncIterable<any>;
+
+          // Accumulate streamed tool calls if present
+          const toolCalls: Array<{
+            index: number;
+            id?: string;
+            name?: string;
+            arguments: string;
+          }> = [];
+          let finishReason: string | null = null;
+          let sawAnyToken = false;
+
+          for await (const event of asyncInitial) {
+            const e: any = event;
+            const type: string | undefined = e.type;
+            if (type === 'response.output_text.delta') {
+              const deltaText: string | undefined = e.delta;
+              if (deltaText && deltaText.length > 0) {
+                sawAnyToken = true;
+                send('token', { delta: deltaText });
+              }
+              continue;
+            }
+            if (type === 'response.output_item.added' && e.item?.type === 'function_call') {
+              const idx = toolCalls.length;
+              toolCalls[idx] = { index: idx, id: e.item?.id, name: e.item?.name, arguments: '' };
+              continue;
+            }
+            if (type === 'response.function_call_arguments.delta') {
+              const callId: string | undefined = e.id;
+              const deltaArgs: string | undefined = e.delta;
+              const call = toolCalls.find(tc => tc.id === callId);
+              if (call && deltaArgs) call.arguments += deltaArgs;
+              continue;
+            }
+            if (type === 'response.completed') {
+              finishReason = 'completed';
+              // break out after loop ends naturally
+            }
+          }
+
+          // If the model asked to call a function
+          if (toolCalls.length > 0) {
+            const firstTool = toolCalls[0];
+            const fnName = firstTool.name || 'unknown_tool';
             let fnArgs: Record<string, any> = {};
             try {
-              fnArgs = JSON.parse(toolCall.function.arguments || '{}');
+              fnArgs = JSON.parse(firstTool.arguments || '{}');
             } catch (_) {}
 
-            send('status', { message: `Calling ${fnName}...` });
             const toolResult = await functionExecutor(fnName, fnArgs);
-            send('status', { message: `Received results from ${fnName}. Generating answer...` });
+            // Fallback to Chat Completions for follow-up streaming with tool messages (stable and supported)
+            const generatedToolCallId = 'call_1';
+            const followUpMessages: any[] = [
+              systemMessage,
+              ...conversationHistory,
+              { role: 'user', content: query },
+              {
+                role: 'assistant',
+                content: null,
+                tool_calls: [
+                  {
+                    id: generatedToolCallId,
+                    type: 'function',
+                    function: { name: fnName, arguments: JSON.stringify(fnArgs) },
+                  },
+                ],
+              },
+              { role: 'tool', tool_call_id: generatedToolCallId, content: JSON.stringify(toolResult) },
+            ];
 
             const followUpParams: any = {
               model: openaiConfig.model,
-              messages: [
-                ...messages,
-                { role: 'assistant', content: firstMsg.content, tool_calls: firstMsg.tool_calls },
-                { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(toolResult) },
-              ],
+              messages: followUpMessages,
               stream: true,
               top_p: openaiConfig.topP,
             };
-            const followUpTemp = openaiConfig.temperature ?? 1;
-            if (!isGpt5) followUpParams.temperature = followUpTemp;
-            else if (isGpt5 && followUpTemp === 1) followUpParams.temperature = 1;
-            const followUpMax = openaiConfig.maxTokens ?? 500;
-            if (isGpt5) followUpParams.max_completion_tokens = followUpMax;
-            else followUpParams.max_tokens = followUpMax;
+            // no temperature
+            if (typeof openaiConfig.maxTokens === 'number') {
+              if (isGpt5) followUpParams.max_completion_tokens = openaiConfig.maxTokens;
+              else followUpParams.max_tokens = openaiConfig.maxTokens;
+            }
 
             const followUp = await client.chat.completions.create(followUpParams as any);
-
             const followUpStream = followUp as unknown as AsyncIterable<any>;
             for await (const chunk of followUpStream) {
               const delta = (chunk as any)?.choices?.[0]?.delta?.content as string | undefined;
               if (delta) send('token', { delta });
             }
-
             send('done', { data: lastUiData || undefined });
             controller.close();
             return;
           }
 
-          // No tool call → pseudo-stream the content
-          const content = firstMsg?.content ?? '';
-          for (const piece of splitTextToPseudoStream(content)) {
-            send('token', { delta: piece });
-            // Small pacing to feel like a stream without blocking too long
-            // await new Promise((r) => setTimeout(r, 10));
-          }
+          // No tool call: if we streamed tokens already, we're done; otherwise just send done.
           send('done', {});
           controller.close();
         } catch (err) {

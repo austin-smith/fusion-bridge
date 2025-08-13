@@ -726,6 +726,7 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   sessions: many(session), // For activeOrganizationId reference
   keypadPins: many(keypadPins), // Organization keypad PINs
   settings: many(organizationSettings), // Organization settings
+  layouts: many(layouts), // Organization has many layouts
 }));
 
 export const memberRelations = relations(member, ({ one }) => ({
@@ -844,5 +845,42 @@ export const deviceOverlaysRelations = relations(deviceOverlays, ({ one }) => ({
     fields: [deviceOverlays.updatedByUserId],
     references: [user.id],
     relationName: 'deviceOverlayUpdatedBy',
+  }),
+}));
+
+// --- Layouts Table (Play page layouts) ---
+export const layouts = sqliteTable("layouts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(),
+  // Internal device UUIDs (devices.id)
+  deviceIds: text("device_ids", { mode: "json" }).notNull().$type<string[]>(),
+  // react-grid-layout items; item.i should equal devices.id
+  items: text("items", { mode: "json" }).notNull().$type<any[]>(),
+  createdByUserId: text("created_by_user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+  updatedByUserId: text("updated_by_user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  organizationIdx: index("layouts_organization_idx").on(table.organizationId),
+  creatorIdx: index("layouts_created_by_idx").on(table.createdByUserId),
+  updaterIdx: index("layouts_updated_by_idx").on(table.updatedByUserId),
+}));
+
+// Relations for Layouts
+export const layoutsRelations = relations(layouts, ({ one }) => ({
+  organization: one(organization, {
+    fields: [layouts.organizationId],
+    references: [organization.id],
+  }),
+  createdByUser: one(user, {
+    fields: [layouts.createdByUserId],
+    references: [user.id],
+    relationName: 'layoutCreatedBy',
+  }),
+  updatedByUser: one(user, {
+    fields: [layouts.updatedByUserId],
+    references: [user.id],
+    relationName: 'layoutUpdatedBy',
   }),
 }));
