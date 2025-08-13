@@ -25,7 +25,7 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
   
   // Get page configuration from comprehensive page config
   const pageInfo = getPageConfig(pathname);
-  const { locations } = useFusionStore();
+  const locations = useFusionStore(state => state.locations);
 
   // Enhance breadcrumbs with dynamic location name for location-scoped routes (no ID fallback to avoid flicker)
   let enhancedBreadcrumbs = pageInfo?.breadcrumbs;
