@@ -437,7 +437,18 @@ export const EventGroupCard: React.FC<EventGroupCardProps> = ({ group, allDevice
                           className="text-[10px] h-4 px-1 bg-black/60 hover:bg-black/70 backdrop-blur-sm text-white shrink-0 flex items-center gap-1 cursor-pointer"
                         >
                           {DeviceIcon && <DeviceIcon className="h-3 w-3" />}
-                          {EVENT_TYPE_DISPLAY_MAP[firstEventType] ?? firstEventType}
+                          {(() => {
+                            const isAnalytics = primaryInfo.primaryEvent?.eventCategory === EventCategory.ANALYTICS;
+                            const typeName = EVENT_TYPE_DISPLAY_MAP[firstEventType] ?? firstEventType;
+                            const subtype = isAnalytics ? primaryInfo.primaryEvent?.eventSubtype : undefined;
+                            const subtypeName = subtype ? (EVENT_SUBTYPE_DISPLAY_MAP[subtype] ?? subtype) : null;
+                            return (
+                              <span className="truncate max-w-[140px]">
+                                {typeName}
+                                {subtypeName && <span className="text-white/80">{" / "}{subtypeName}</span>}
+                              </span>
+                            );
+                          })()}
                           {firstEventTypeCount > 1 && ` (${firstEventTypeCount}x)`}
                         </Badge>
                       </PopoverTrigger>
