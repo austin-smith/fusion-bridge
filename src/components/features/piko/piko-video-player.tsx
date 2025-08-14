@@ -305,8 +305,13 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
       };
       statsRvfcRef.current = video.requestVideoFrameCallback(rVFC);
       return () => {
-        if (statsRvfcRef.current && typeof video.cancelVideoFrameCallback === 'function') {
-          video.cancelVideoFrameCallback(statsRvfcRef.current);
+        const cleanupVideo: any = video;
+        if (
+          statsRvfcRef.current &&
+          cleanupVideo &&
+          typeof cleanupVideo.cancelVideoFrameCallback === 'function'
+        ) {
+          cleanupVideo.cancelVideoFrameCallback(statsRvfcRef.current);
         }
         statsRvfcRef.current = null;
       };
