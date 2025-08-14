@@ -11,6 +11,11 @@ import { MoreHorizontal, Plus, Box, Building, Cctv, Trash2 } from 'lucide-react'
 
 const GridLayout = WidthProvider(RGL);
 
+// Play grid metrics tuning (self-documenting constants)
+const FPS_SMOOTHING_ALPHA = 0.2;
+const FPS_CHANGE_THRESHOLD = 0.05; // fps; ignore tiny jitter
+const FPS_THROTTLE_MS = 250; // ~4 updates/second
+
 export interface PlayGridProps {
 	devices: DeviceWithConnector[];
 	onLayoutChange?: (l: Layout[]) => void;
@@ -34,16 +39,16 @@ export const PlayGrid: React.FC<PlayGridProps> = ({ devices, onLayoutChange, ini
         const now = performance.now();
         const lastAt = lastFpsUpdateAtRef.current[deviceId] ?? 0;
         // Throttle UI updates to ~4/sec
-        if (now - lastAt < 250) return;
+        if (now - lastAt < FPS_THROTTLE_MS) return;
         setFpsById(prev => {
             const prevFps = prev[deviceId];
             // Exponential smoothing
-            const alpha = 0.2;
-            const base = typeof prevFps === 'number' ? prevFps : nextFps;
-            const smoothedFloat = base + alpha * (nextFps - base);
+            const alpha = FPS_SMOOTHING_ALPHA;
+            const currentFps = typeof prevFps === 'number' ? prevFps : nextFps;
+            const smoothedFloat = currentFps + alpha * (nextFps - currentFps);
             // Round to one decimal place for visible, gentle movement
             const smoothed = Math.round(smoothedFloat * 10) / 10;
-            if (typeof prevFps === 'number' && Math.abs(smoothed - prevFps) < 0.05) return prev;
+            if (typeof prevFps === 'number' && Math.abs(smoothed - prevFps) < FPS_CHANGE_THRESHOLD) return prev;
             lastFpsUpdateAtRef.current[deviceId] = now;
             return { ...prev, [deviceId]: smoothed };
         });

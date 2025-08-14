@@ -15,6 +15,9 @@ import type {
   ConnectionError as ConnectionErrorType,
 } from '@networkoptix/webrtc-stream-manager';
 
+// Stats sampling interval for fallback path (ms)
+const STATS_UPDATE_INTERVAL_MS = 800;
+
 interface WebRTCConnectionDetails {
   pikoSystemId?: string;
   accessToken: string;
@@ -325,7 +328,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
       const frames = quality?.totalVideoFrames ?? 0;
       const now = performance.now();
       const dt = now - lastTime;
-      if (dt >= 800 && onStats) {
+      if (dt >= STATS_UPDATE_INTERVAL_MS && onStats) {
         const fps = Math.max(0, ((frames - lastFrames) * 1000) / dt);
         const vw = (video as HTMLVideoElement).videoWidth;
         const vh = (video as HTMLVideoElement).videoHeight;
