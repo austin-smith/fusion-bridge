@@ -149,98 +149,8 @@ export const PlayGrid: React.FC<PlayGridProps> = ({ devices, onLayoutChange, ini
 				})();
 				return (
 				<div key={device.id} className="overflow-hidden grid-item-container">
-					{overlayHeaders ? (<Card className="h-full w-full flex flex-col overflow-hidden rounded-lg">
-						<CardContent className="p-0 grow relative">
-							<div className="absolute inset-0">
-                                <PikoVideoPlayer
-										connectorId={device.connectorId}
-										cameraId={device.deviceId}
-										className="w-full h-full"
-                                    enableStats={showInfo}
-                                    onStats={showInfo ? ({ fps, width, height }) => {
-                                        smoothAndThrottleFps(device.id, fps);
-                                        if (width && height) {
-                                            setResolutionById(prev => {
-                                                const cur = prev[device.id];
-                                                if (cur && cur.w === width && cur.h === height) return prev;
-                                                return { ...prev, [device.id]: { w: width, h: height } };
-                                            });
-                                        }
-                                    } : undefined}
-									/>
-							</div>
-
-							{/* Top overlay with gradient and actions */}
-							<div className="absolute inset-x-0 top-0">
-								{/* Single feathered gradient to avoid a hard edge while staying subtle */}
-								<div
-									className="pointer-events-none absolute inset-x-0 top-0 h-8 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.6)_0%,rgba(0,0,0,0.38)_38%,rgba(0,0,0,0.14)_78%,rgba(0,0,0,0)_100%)] backdrop-blur-[2px] z-0"
-									aria-hidden="true"
-								/>
-								<div className="relative z-20 px-2 py-1 flex items-center justify-between gap-2 text-white">
-									<div className="min-w-0 flex items-center gap-1.5 text-xs">
-										<Cctv className="h-3.5 w-3.5 text-white/80" />
-										<span className="truncate">{device.name}</span>
-										{resolvedSpaceName ? (
-											<>
-												<span className="text-white/60">•</span>
-												<span className="inline-flex items-center gap-1 truncate text-white/80">
-													<Box className="h-3.5 w-3.5" />
-													<span className="truncate">{resolvedSpaceName}</span>
-												</span>
-											</>
-										) : null}
-										{resolvedLocationName ? (
-											<>
-												<span className="text-white/60">•</span>
-												<span className="inline-flex items-center gap-1 truncate text-white/80">
-													<Building className="h-3.5 w-3.5" />
-													<span className="truncate">{resolvedLocationName}</span>
-												</span>
-											</>
-										) : null}
-									</div>
-
-									{onRemoveFromLayout ? (
-										<DropdownMenu>
-											<DropdownMenuTrigger asChild>
-												<Button
-													variant="ghost"
-													size="sm"
-													className="h-7 w-7 p-0 no-drag text-white/90 hover:text-white hover:bg-white/10"
-													aria-label="Tile options"
-												>
-													<MoreHorizontal className="h-4 w-4" />
-												</Button>
-											</DropdownMenuTrigger>
-												<DropdownMenuContent align="end" className="no-drag">
-													<DropdownMenuItem
-														className="text-destructive focus:text-destructive"
-														onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemoveFromLayout(device.id); }}
-													>
-														<Trash2 className="mr-2 h-4 w-4" />
-														Remove
-													</DropdownMenuItem>
-												</DropdownMenuContent>
-										</DropdownMenu>
-									) : null}
-								</div>
-						</div>
-                            {showInfo ? (
-                                <div className="absolute bottom-1 right-1 z-20">
-                                    <span className="block px-1.5 py-1 rounded text-[10px] leading-tight bg-black/55 text-white select-none font-mono text-right">
-                                        {(() => {
-                                            const res = resolutionById[device.id];
-                                            return res && res.w && res.h ? `${res.w}×${res.h}` : '—×—';
-                                        })()}
-                                        <br />
-                                        {typeof fpsById[device.id] === 'number' ? `${fpsById[device.id].toFixed(1)} fps` : '— fps'}
-                                    </span>
-                                </div>
-                            ) : null}
-						</CardContent>
-					</Card>) : (
-						<Card className="h-full w-full flex flex-col">
+					<Card className="h-full w-full flex flex-col overflow-hidden rounded-lg">
+						{!overlayHeaders ? (
 							<CardHeader className="px-2 py-1.5 shrink-0 bg-black text-white rounded-t-lg">
 								<div className="flex items-center justify-between gap-2">
 									<div className="min-w-0">
@@ -287,40 +197,97 @@ export const PlayGrid: React.FC<PlayGridProps> = ({ devices, onLayoutChange, ini
 									) : null}
 								</div>
 							</CardHeader>
-							<CardContent className="p-0 grow relative overflow-hidden rounded-b-lg">
-                                <div className="absolute inset-0">
-                                <PikoVideoPlayer
-                                            connectorId={device.connectorId}
-                                            cameraId={device.deviceId}
-                                            className="w-full h-full"
-                                            enableStats={showInfo}
-                                            onStats={showInfo ? ({ fps, width, height }) => {
-                                                smoothAndThrottleFps(device.id, fps);
-                                                if (width && height) {
-                                                    setResolutionById(prev => {
-                                                        const cur = prev[device.id];
-                                                        if (cur && cur.w === width && cur.h === height) return prev;
-                                                        return { ...prev, [device.id]: { w: width, h: height } };
-                                                    });
-                                                }
-                                            } : undefined}
-                                        />
-                                </div>
-                                {showInfo ? (
-                                    <div className="absolute bottom-1 right-1 z-20">
-                                        <span className="block px-1.5 py-1 rounded text-[10px] leading-tight bg-black/55 text-white select-none font-mono text-right">
-                                            {(() => {
-                                                const res = resolutionById[device.id];
-                                                return res && res.w && res.h ? `${res.w}×${res.h}` : '—×—';
-                                            })()}
-                                            <br />
-                                            {typeof fpsById[device.id] === 'number' ? `${fpsById[device.id].toFixed(1)} fps` : '— fps'}
-                                        </span>
-                                    </div>
-                                ) : null}
-							</CardContent>
-						</Card>
-					)}
+						) : null}
+						<CardContent className="p-0 grow relative overflow-hidden rounded-b-lg">
+							<div className="absolute inset-0">
+								<PikoVideoPlayer
+										connectorId={device.connectorId}
+										cameraId={device.deviceId}
+										className="w-full h-full"
+										enableStats={showInfo}
+										onStats={showInfo ? ({ fps, width, height }) => {
+												smoothAndThrottleFps(device.id, fps);
+												if (width && height) {
+													setResolutionById(prev => {
+														const cur = prev[device.id];
+														if (cur && cur.w === width && cur.h === height) return prev;
+														return { ...prev, [device.id]: { w: width, h: height } };
+													});
+												}
+										} : undefined}
+									/>
+							</div>
+
+							{overlayHeaders ? (
+								<div className="absolute inset-x-0 top-0">
+									<div
+										className="pointer-events-none absolute inset-x-0 top-0 h-8 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.6)_0%,rgba(0,0,0,0.38)_38%,rgba(0,0,0,0.14)_78%,rgba(0,0,0,0)_100%)] backdrop-blur-[2px] z-0"
+										aria-hidden="true"
+									/>
+									<div className="relative z-20 px-2 py-1 flex items-center justify-between gap-2 text-white">
+										<div className="min-w-0 flex items-center gap-1.5 text-xs">
+											<Cctv className="h-3.5 w-3.5 text-white/80" />
+											<span className="truncate">{device.name}</span>
+											{resolvedSpaceName ? (
+												<>
+													<span className="text-white/60">•</span>
+													<span className="inline-flex items-center gap-1 truncate text-white/80">
+														<Box className="h-3.5 w-3.5" />
+														<span className="truncate">{resolvedSpaceName}</span>
+													</span>
+												</>
+											) : null}
+											{resolvedLocationName ? (
+												<>
+													<span className="text-white/60">•</span>
+													<span className="inline-flex items-center gap-1 truncate text-white/80">
+														<Building className="h-3.5 w-3.5" />
+														<span className="truncate">{resolvedLocationName}</span>
+													</span>
+												</>
+											) : null}
+										</div>
+										{onRemoveFromLayout ? (
+											<DropdownMenu>
+												<DropdownMenuTrigger asChild>
+													<Button
+														variant="ghost"
+														size="sm"
+														className="h-7 w-7 p-0 no-drag text-white/90 hover:text-white hover:bg-white/10"
+														aria-label="Tile options"
+													>
+														<MoreHorizontal className="h-4 w-4" />
+													</Button>
+												</DropdownMenuTrigger>
+													<DropdownMenuContent align="end" className="no-drag">
+														<DropdownMenuItem
+															className="text-destructive focus:text-destructive"
+															onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemoveFromLayout(device.id); }}
+														>
+															<Trash2 className="mr-2 h-4 w-4" />
+															Remove
+														</DropdownMenuItem>
+													</DropdownMenuContent>
+											</DropdownMenu>
+										) : null}
+									</div>
+								</div>
+							) : null}
+
+							{showInfo ? (
+								<div className="absolute bottom-1 right-1 z-20">
+									<span className="block px-1.5 py-1 rounded text-[10px] leading-tight bg-black/55 text-white select-none font-mono text-right">
+										{(() => {
+											const res = resolutionById[device.id];
+											return res && res.w && res.h ? `${res.w}×${res.h}` : '—×—';
+										})()}
+										<br />
+										{typeof fpsById[device.id] === 'number' ? `${fpsById[device.id].toFixed(1)} fps` : '— fps'}
+									</span>
+								</div>
+							) : null}
+						</CardContent>
+					</Card>
 				</div>
 				);
 			})}

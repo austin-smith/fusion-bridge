@@ -317,7 +317,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
     let lastTime = performance.now();
     const tick = () => {
       const quality = video.getVideoPlaybackQuality?.();
-      const frames = quality?.totalVideoFrames ?? video.webkitDecodedFrameCount ?? 0;
+      const frames = quality?.totalVideoFrames ?? 0;
       const now = performance.now();
       const dt = now - lastTime;
       if (dt >= 800 && onStats) {

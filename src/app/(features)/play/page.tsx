@@ -55,7 +55,6 @@ export default function PlayPage() {
     const v = window.localStorage.getItem('fusion.play.showInfo');
     return v === '1';
   });
-  const [showFps, setShowFps] = useState(false);
   const [prefs, setPrefs] = useState<{ defaultLayoutId: string | null }>({
     defaultLayoutId: null,
   });
