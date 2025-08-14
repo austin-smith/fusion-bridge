@@ -15,11 +15,16 @@ import type {
   ConnectionError as ConnectionErrorType,
 } from '@networkoptix/webrtc-stream-manager';
 
+// Stats sampling interval for fallback path (ms)
+const STATS_UPDATE_INTERVAL_MS = 800;
+
 interface WebRTCConnectionDetails {
   pikoSystemId?: string;
   accessToken: string;
   connectionType: 'cloud' | 'local' | string;
 }
+
+interface PikoVideoStats { fps: number; width?: number; height?: number }
 
 interface PikoVideoPlayerProps {
   connectorId: string;
@@ -28,6 +33,8 @@ interface PikoVideoPlayerProps {
   positionMs?: number;
   className?: string;
   disableFullscreen?: boolean;
+  enableStats?: boolean;
+  onStats?: (stats: PikoVideoStats) => void;
 }
 
 export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
@@ -36,7 +43,9 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
   cameraId,
   positionMs,
   className,
-  disableFullscreen = false
+  disableFullscreen = false,
+  enableStats = false,
+  onStats,
 }) => {
   const [isLoadingMediaInfo, setIsLoadingMediaInfo] = useState(true);
   const [mediaInfoError, setMediaInfoError] = useState<string | null>(null);
@@ -56,6 +65,8 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamManagerSubscriptionRef = useRef<DisposableSubscription | null>(null);
+  const statsRafRef = useRef<number | null>(null);
+  const statsRvfcRef = useRef<number | null>(null);
 
   // Dynamic import of the WebRTC library on the client side only
   useEffect(() => {
@@ -274,6 +285,66 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
     }
   }, [fetchedPikoSystemId, fetchedAccessToken, cameraId, positionMs, fetchedConnectionType, isLoadingMediaInfo, webrtcLib]);
 
+  // Optional FPS stats collection, strictly gated by enableStats
+  useEffect(() => {
+    if (!enableStats || !videoRef.current) return;
+    const video = videoRef.current as any;
+
+    // Prefer requestVideoFrameCallback when available
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      const timestamps: number[] = [];
+      const rVFC = (now: number) => {
+        timestamps.push(now);
+        while (timestamps.length && timestamps[0] < now - 1000) timestamps.shift();
+        if (timestamps.length > 1 && onStats) {
+          const span = now - timestamps[0];
+          const fps = span > 0 ? ((timestamps.length - 1) * 1000) / span : 0;
+          const vw = (video as HTMLVideoElement).videoWidth;
+          const vh = (video as HTMLVideoElement).videoHeight;
+          onStats({ fps, width: vw || undefined, height: vh || undefined });
+        }
+        // keep sampling even when frames are static; rVFC fires on painted frames only
+        statsRvfcRef.current = video.requestVideoFrameCallback(rVFC);
+      };
+      statsRvfcRef.current = video.requestVideoFrameCallback(rVFC);
+      return () => {
+        const cleanupVideo: any = video;
+        if (
+          statsRvfcRef.current &&
+          cleanupVideo &&
+          typeof cleanupVideo.cancelVideoFrameCallback === 'function'
+        ) {
+          cleanupVideo.cancelVideoFrameCallback(statsRvfcRef.current);
+        }
+        statsRvfcRef.current = null;
+      };
+    }
+
+    // Fallback: sample decoded frames per second
+    let lastFrames = 0;
+    let lastTime = performance.now();
+    const tick = () => {
+      const quality = video.getVideoPlaybackQuality?.();
+      const frames = quality?.totalVideoFrames ?? 0;
+      const now = performance.now();
+      const dt = now - lastTime;
+      if (dt >= STATS_UPDATE_INTERVAL_MS && onStats) {
+        const fps = Math.max(0, ((frames - lastFrames) * 1000) / dt);
+        const vw = (video as HTMLVideoElement).videoWidth;
+        const vh = (video as HTMLVideoElement).videoHeight;
+        onStats({ fps, width: vw || undefined, height: vh || undefined });
+        lastFrames = frames;
+        lastTime = now;
+      }
+      statsRafRef.current = requestAnimationFrame(tick);
+    };
+    statsRafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (statsRafRef.current) cancelAnimationFrame(statsRafRef.current);
+      statsRafRef.current = null;
+    };
+  }, [enableStats, onStats]);
+
   return (
     <div className={`relative aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center ${className}`}>
         {(isLoadingMediaInfo || (!fetchedPikoSystemId && !fetchedAccessToken && !mediaInfoError && !fetchedConnectionType) || !webrtcLib) && (
@@ -310,4 +381,4 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
         />
     </div>
   );
-}; 
+};

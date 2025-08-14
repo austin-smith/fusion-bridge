@@ -5,7 +5,10 @@ import { useFusionStore } from "@/stores/store";
 import { DeviceType } from "@/lib/mappings/definitions";
 import type { DeviceWithConnector } from "@/types";
 import { PageHeader } from "@/components/layout/page-header";
-import { Maximize, Minimize, MonitorPlay } from "lucide-react";
+import { Maximize, Minimize, MonitorPlay, Settings } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { LocationSpaceSelector } from "@/components/common/LocationSpaceSelector";
 import { PlayGrid } from "@/components/features/play/play-grid";
 import type { Layout } from "react-grid-layout";
@@ -41,6 +44,17 @@ export default function PlayPage() {
     new Set()
   );
   const [editSearch, setEditSearch] = useState("");
+  const [overlayHeaders, setOverlayHeaders] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    const v = window.localStorage.getItem('fusion.play.overlayHeaders');
+    return v === null ? true : v === '1';
+  });
+  const [isViewSettingsOpen, setIsViewSettingsOpen] = useState(false);
+  const [showInfo, setShowInfo] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const v = window.localStorage.getItem('fusion.play.showInfo');
+    return v === '1';
+  });
   const [prefs, setPrefs] = useState<{ defaultLayoutId: string | null }>({
     defaultLayoutId: null,
   });
@@ -359,6 +373,22 @@ export default function PlayPage() {
               variant="outline"
               size="sm"
               className="h-9 px-3"
+              onClick={() => setIsViewSettingsOpen(true)}
+              aria-label="View settings"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>View settings</p>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 px-3"
               onClick={togglePlayFullScreen}
             >
               {isPlayFullScreen ? (
@@ -389,6 +419,7 @@ export default function PlayPage() {
             setIsEditDialogOpen(true);
           }}
           defaultLayoutId={prefs.defaultLayoutId}
+          
           onSetDefault={async (id) => {
             const defaultLayoutId = id === "auto" ? null : id;
             setPrefs((prev) => ({ ...prev, defaultLayoutId }));
@@ -416,6 +447,44 @@ export default function PlayPage() {
           applyEditCameras(ids);
         }}
       />
+      <Dialog open={isViewSettingsOpen} onOpenChange={setIsViewSettingsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="h-4 w-4 text-muted-foreground" />
+              View Settings
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-between py-1">
+            <div className="space-y-0.5">
+              <Label htmlFor="overlay-toggle">Overlay header over video</Label>
+            </div>
+            <Switch
+              id="overlay-toggle"
+              checked={overlayHeaders}
+              onCheckedChange={(v) => {
+                const nv = Boolean(v);
+                setOverlayHeaders(nv);
+                try { window.localStorage.setItem('fusion.play.overlayHeaders', nv ? '1' : '0'); } catch {}
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-between py-1">
+            <div className="space-y-0.5">
+              <Label htmlFor="info-toggle">Show info</Label>
+            </div>
+            <Switch
+              id="info-toggle"
+              checked={showInfo}
+              onCheckedChange={(v) => {
+                const nv = Boolean(v);
+                setShowInfo(nv);
+                try { window.localStorage.setItem('fusion.play.showInfo', nv ? '1' : '0'); } catch {}
+              }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 
@@ -459,6 +528,8 @@ export default function PlayPage() {
               onAddCameras={() => setIsEditDialogOpen(true)}
               spaces={spaces}
               locations={locations}
+              overlayHeaders={overlayHeaders}
+              showInfo={showInfo}
               key={`grid-fs-${activeLayout?.id || "auto"}`}
             />
           )}
@@ -488,8 +559,10 @@ export default function PlayPage() {
               activeLayoutId === "auto" ? undefined : handleRemoveFromLayout
             }
             onAddCameras={() => setIsEditDialogOpen(true)}
-            spaces={spaces}
-            locations={locations}
+             spaces={spaces}
+             locations={locations}
+             overlayHeaders={overlayHeaders}
+             showInfo={showInfo}
             key={`grid-${activeLayout?.id || "auto"}`}
           />
         )}

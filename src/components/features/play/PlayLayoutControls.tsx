@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import * as SelectPrimitive from '@radix-ui/react-select';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from '@/components/ui/select';
+import { Select, SelectContent, SelectTrigger, SelectValue, SelectSeparator } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { MoreHorizontal, Save, LayoutTemplate, Plus, Pencil, Trash2, SlidersHorizontal, Pin } from 'lucide-react';
+import { MoreHorizontal, Save, LayoutTemplate, Plus, Pencil, Trash2, SlidersHorizontal, Pin, Check } from 'lucide-react';
 
 export interface LayoutOption {
 	id: string;
@@ -42,6 +43,12 @@ export const PlayLayoutControls: React.FC<PlayLayoutControlsProps> = ({
 
 	const canSave = useMemo(() => activeLayoutId !== 'auto', [activeLayoutId]);
 
+	const activeLabel = useMemo(() => {
+		if (activeLayoutId === 'auto') return 'Auto';
+		const found = layouts.find(l => l.id === activeLayoutId);
+		return found?.name ?? 'Select layout';
+	}, [activeLayoutId, layouts]);
+
 	const handleSelectChange = (v: string) => {
 		if (v === '__new__') {
 			setPendingName('');
@@ -60,27 +67,53 @@ export const PlayLayoutControls: React.FC<PlayLayoutControlsProps> = ({
 			<div className="inline-flex items-center gap-2 rounded-md bg-background/80 backdrop-blur-sm border px-1.5 py-1">
 				<LayoutTemplate className="h-4 w-4 text-muted-foreground" />
 				<Select value={activeLayoutId} onValueChange={handleSelectChange}>
-					<SelectTrigger className="h-8 w-[200px]">
-						<SelectValue placeholder="Select layout" />
+					<SelectTrigger className="h-8 w-[200px] min-w-0">
+						<div className="min-w-0 truncate">
+							<span className="truncate">{activeLabel}</span>
+						</div>
 					</SelectTrigger>
 					<SelectContent>
-						<SelectItem value="__new__">
-							<span className="inline-flex items-center"><Plus className="mr-2 h-4 w-4" /> New layout…</span>
-						</SelectItem>
-						<SelectSeparator />
-						<SelectItem value="auto">
-							<span className="inline-flex items-center">
-								<Pin className={`mr-2 h-3.5 w-3.5 text-muted-foreground ${defaultLayoutId === null ? '' : 'invisible'}`} />
-								<span>Auto</span>
+						{/* New layout item with icon that won't mirror into trigger */}
+						<SelectPrimitive.Item
+							value="__new__"
+							className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+						>
+							<span className="mr-2 inline-flex items-center justify-center"><Plus className="h-4 w-4" /></span>
+							<SelectPrimitive.ItemText className="truncate">New layout…</SelectPrimitive.ItemText>
+							<span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+								<SelectPrimitive.ItemIndicator>
+									<Check className="h-4 w-4" />
+								</SelectPrimitive.ItemIndicator>
 							</span>
-						</SelectItem>
+						</SelectPrimitive.Item>
+						<SelectSeparator />
+						{/* Auto item with pin icon, not mirrored in trigger */}
+						<SelectPrimitive.Item
+							value="auto"
+							className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+						>
+							<Pin className={`mr-2 h-3.5 w-3.5 text-muted-foreground ${defaultLayoutId === null ? '' : 'invisible'}`} />
+							<SelectPrimitive.ItemText className="truncate">Auto</SelectPrimitive.ItemText>
+							<span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+								<SelectPrimitive.ItemIndicator>
+									<Check className="h-4 w-4" />
+								</SelectPrimitive.ItemIndicator>
+							</span>
+						</SelectPrimitive.Item>
 						{orderedLayouts.map(l => (
-							<SelectItem key={l.id} value={l.id}>
-								<span className="inline-flex items-center">
-									<Pin className={`mr-2 h-3.5 w-3.5 text-muted-foreground ${defaultLayoutId === l.id ? '' : 'invisible'}`} />
-									<span>{l.name}</span>
+							<SelectPrimitive.Item
+								key={l.id}
+								value={l.id}
+								className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+							>
+								<Pin className={`mr-2 h-3.5 w-3.5 text-muted-foreground ${defaultLayoutId === l.id ? '' : 'invisible'}`} />
+								<SelectPrimitive.ItemText className="truncate">{l.name}</SelectPrimitive.ItemText>
+								<span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+									<SelectPrimitive.ItemIndicator>
+										<Check className="h-4 w-4" />
+									</SelectPrimitive.ItemIndicator>
 								</span>
-							</SelectItem>
+							</SelectPrimitive.Item>
 						))}
 					</SelectContent>
 				</Select>
@@ -101,7 +134,7 @@ export const PlayLayoutControls: React.FC<PlayLayoutControlsProps> = ({
 							<MoreHorizontal className="h-4 w-4" />
 						</Button>
 					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end">
+                    <DropdownMenuContent align="end">
 						<DropdownMenuItem
 						onSelect={() => { onSetDefault?.(activeLayoutId); }}
 						>
@@ -173,23 +206,26 @@ export const PlayLayoutControls: React.FC<PlayLayoutControlsProps> = ({
 
 			<Dialog open={isRenameOpen} onOpenChange={setIsRenameOpen}>
 				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Rename Layout</DialogTitle>
-					</DialogHeader>
-					<Input placeholder="Layout name" value={pendingName} onChange={(e) => setPendingName(e.target.value)} />
-					<DialogFooter>
-						<Button variant="secondary" onClick={() => setIsRenameOpen(false)}>Cancel</Button>
-						<Button
-							onClick={() => {
-								if (pendingName.trim() && renameTargetId) {
-									onRename(renameTargetId, pendingName.trim());
-									setIsRenameOpen(false);
-								}
-							}}
-						>
-							Save
-						</Button>
-					</DialogFooter>
+					<form
+						className="grid gap-4"
+						onSubmit={(e) => {
+							e.preventDefault();
+							const name = pendingName.trim();
+							if (name && renameTargetId) {
+								onRename(renameTargetId, name);
+								setIsRenameOpen(false);
+							}
+						}}
+					>
+						<DialogHeader>
+							<DialogTitle>Rename Layout</DialogTitle>
+						</DialogHeader>
+						<Input placeholder="Layout name" value={pendingName} onChange={(e) => setPendingName(e.target.value)} />
+						<DialogFooter>
+							<Button type="button" variant="secondary" onClick={() => setIsRenameOpen(false)}>Cancel</Button>
+							<Button type="submit" disabled={!pendingName.trim() || !renameTargetId}>Save</Button>
+						</DialogFooter>
+					</form>
 				</DialogContent>
 			</Dialog>
 
