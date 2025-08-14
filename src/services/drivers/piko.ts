@@ -244,7 +244,7 @@ interface PikoApiClientRequestParams {
   connectorId?: string;
   path: string;
   queryParams?: Record<string, string>;
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   body?: object | null | undefined;
   additionalHeaders?: Record<string, string>;
   expectedResponseType?: 'json' | 'blob' | 'stream';
@@ -899,7 +899,7 @@ class PikoHttpClient {
     if (!headers['Accept']) {
       headers['Accept'] = expectedResponseType === 'json' ? 'application/json' : '*/*';
     }
-    if (body && (method === 'POST' || method === 'PUT') && !headers['Content-Type']) {
+    if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH') && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
     }
     return headers;
@@ -925,7 +925,7 @@ class PikoHttpClient {
     const baseUrl = this._getPikoApiBaseUrl(effectiveConfig);
     const url = this._buildRequestUrl(baseUrl, path, queryParams);
     const headers = this._buildRequestHeaders(effectiveAccessToken, method, requestBody, expectedResponseType, additionalHeaders);
-    const bodyString = (requestBody && (method === 'POST' || method === 'PUT')) ? JSON.stringify(requestBody) : null;
+    const bodyString = (requestBody && (method === 'POST' || method === 'PUT' || method === 'PATCH')) ? JSON.stringify(requestBody) : null;
 
     let strategy: PikoHttpRequestStrategy;
     if (effectiveConfig.type === 'local' && effectiveConfig.ignoreTlsErrors && httpsModule && effectiveConfig.host && effectiveConfig.port) {
@@ -1285,4 +1285,54 @@ export async function getTokenAndConfig(
 ): Promise<{ config: PikoConfig; token: PikoTokenResponse }> {
   const authManager = new PikoAuthManager();
   return authManager._getTokenAndConfig(connectorId, options);
+}
+
+// ###################################################################################
+// #                         DEVICE UPDATE FUNCTIONS                                 #
+// ###################################################################################
+
+export type PikoDeviceUpdatePayload = {
+  name?: string;
+};
+
+/**
+ * Updates a Piko device using PATCH /rest/v3/devices/{id} with strict mode.
+ */
+export async function updatePikoDevice(
+  connectorId: string,
+  deviceId: string,
+  payload: PikoDeviceUpdatePayload
+): Promise<PikoDeviceRaw> {
+  const logPrefix = `[updatePikoDevice][${connectorId}][Device: ${deviceId.substring(0, 8)}...]`;
+  console.log(`${logPrefix} Patching device with _strict=true`);
+  if (!deviceId) throw new PikoApiError('Device ID required.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
+  const path = `/rest/v3/devices/${deviceId}`;
+  const queryParams = { _strict: 'true' } as Record<string, string>;
+  const data = await pikoApiClient.request({
+    connectorId,
+    path,
+    method: 'PATCH',
+    queryParams,
+    body: payload,
+    expectedResponseType: 'json',
+  });
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    console.error(`${logPrefix} Unexpected response format:`, data);
+    throw new PikoApiError('Unexpected response format from device update.', { rawError: data, errorId: PikoErrorCode.InvalidParameter });
+  }
+  return data as PikoDeviceRaw;
+}
+
+/**
+ * Convenience wrapper to rename a Piko device.
+ */
+export async function renamePikoDevice(
+  connectorId: string,
+  deviceId: string,
+  newName: string
+): Promise<PikoDeviceRaw> {
+  if (!newName || !newName.trim()) {
+    throw new PikoApiError('Name is required.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
+  }
+  return updatePikoDevice(connectorId, deviceId, { name: newName.trim() });
 }

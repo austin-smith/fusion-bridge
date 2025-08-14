@@ -8,7 +8,8 @@ import { getDisplayStateIcon, getBatteryIcon, getBatteryColorClass } from '@/lib
 import { getDeviceTypeIcon } from "@/lib/mappings/presentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon, PowerIcon, PowerOffIcon, X, Building, Box, Shield } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, InfoIcon, Copy, HelpCircle, PlayIcon, AlertCircle, Image as ImageIcon, PowerIcon, PowerOffIcon, X, Building, Box, Shield, Pencil } from "lucide-react";
+import { isRenameSupported } from "@/lib/device-actions/capabilities";
 import { cn } from "@/lib/utils";
 import {
   DialogHeader,
@@ -54,6 +55,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import type { PikoConfig } from '@/services/drivers/piko'; // Import PikoConfig type
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { CameraMediaSection } from '@/components/features/common/CameraMediaSection';
@@ -135,6 +137,8 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
   const allDevices = useFusionStore((state) => state.allDevices);
   const executeDeviceAction = useFusionStore(state => state.executeDeviceAction);
   const deviceActionLoading = useFusionStore(state => state.deviceActionLoading);
+  const renameDevice = useFusionStore((state) => state.renameDevice);
+  const deviceRenameLoading = useFusionStore((state) => state.deviceRenameLoading);
 
   // Get spaces, alarm zones, and locations for UI display
   const spaces = useFusionStore((state) => state.spaces);
@@ -236,6 +240,11 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
     (device.deviceTypeInfo.type === DeviceType.Switch || device.deviceTypeInfo.type === DeviceType.Outlet);
   
   const isLoadingAction = deviceActionLoading.get(device.internalId) ?? false;
+  const isRenaming = deviceRenameLoading.get(device.internalId) ?? false;
+
+  // Local state for inline name editing (Piko only)
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempName, setTempName] = useState(actualDevice?.name ?? device.name);
   // --- END Action Button Logic --- 
 
 
@@ -267,7 +276,47 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
         {/* First Row: Icon, Title, Status */}
         <div className="flex items-center gap-2">
           <IconComponent className="h-5 w-5 text-muted-foreground" /> 
-          <DialogTitle>{device.name}</DialogTitle>
+          <DialogTitle>
+            {isRenameSupported(device.connectorCategory) ? (
+              <span
+                className="group cursor-pointer"
+                onClick={() => { setTempName(actualDevice?.name ?? device.name); setIsEditingName(true); }}
+              >
+                {isEditingName ? (
+                  <div className="flex items-center gap-1">
+                    <Input
+                      className="h-7 w-48"
+                      value={tempName}
+                      autoFocus
+                      onChange={(e) => setTempName(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter') {
+                          const ok = await renameDevice(device.internalId, tempName.trim());
+                          if (ok) setIsEditingName(false);
+                        } else if (e.key === 'Escape') {
+                          setIsEditingName(false);
+                          setTempName(actualDevice?.name ?? device.name);
+                        }
+                      }}
+                      onBlur={async () => {
+                        if (tempName.trim() && tempName.trim() !== (actualDevice?.name ?? device.name)) {
+                          await renameDevice(device.internalId, tempName.trim());
+                        }
+                        setIsEditingName(false);
+                      }}
+                      disabled={isRenaming}
+                    />
+                  </div>
+                ) : (
+                  <span className="border-b border-transparent group-hover:border-dotted group-hover:border-muted-foreground transition-colors">
+                    {actualDevice?.name ?? device.name}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <>{actualDevice?.name ?? device.name}</>
+            )}
+          </DialogTitle>
           <DeviceStatusBadge />
         </div>
         {/* Second Row (Description Area): Badges and Action Switch */}

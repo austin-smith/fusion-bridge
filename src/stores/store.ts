@@ -188,6 +188,8 @@ interface FusionState {
   
   // --- Device Action Loading State ---
   deviceActionLoading: Map<string, boolean>; // Key: internalDeviceId, Value: true if loading
+  // --- Device Rename Loading State ---
+  deviceRenameLoading: Map<string, boolean>;
   
   // --- User List Refresh State ---
   lastUserListUpdateTimestamp: number | null;
@@ -355,6 +357,9 @@ interface FusionState {
 
   // --- Centralized Action to execute device state change ---
   executeDeviceAction: (internalDeviceId: string, newState: ActionableState) => Promise<void>;
+
+  // --- Device Renaming Action ---
+  renameDevice: (internalDeviceId: string, newName: string) => Promise<boolean>;
 
   // --- User List Refresh Action ---
   triggerUserListRefresh: () => void;
@@ -541,6 +546,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   
   // --- Device Action Loading Initial State ---
   deviceActionLoading: new Map<string, boolean>(),
+  // --- Device Rename Loading Initial State ---
+  deviceRenameLoading: new Map<string, boolean>(),
   
   // --- User List Refresh Initial State ---
   lastUserListUpdateTimestamp: null,
@@ -1714,6 +1721,62 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       set(produce((draft: Draft<FusionState>) => {
         draft.deviceActionLoading.delete(internalDeviceId);
       }));
+    }
+  },
+
+  // --- Device Renaming Action ---
+  renameDevice: async (internalDeviceId: string, newName: string) => {
+    set((state) => {
+      const next = new Map(state.deviceRenameLoading);
+      next.set(internalDeviceId, true);
+      return { deviceRenameLoading: next };
+    });
+
+    const baseUrl = process.env.APP_URL || '';
+    const loadingToastId = toast.loading('Renaming device...');
+
+    try {
+      const response = await fetch(`${baseUrl}/api/devices/${internalDeviceId}/name`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName }),
+      });
+      const data: ApiResponse<{ name: string }> = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to rename device');
+      }
+
+      // Update allDevices list and deviceStates map
+      set((state) => {
+        const updatedAll = state.allDevices.map((d) => (
+          d.id === internalDeviceId ? { ...d, name: data.data!.name } : d
+        ));
+
+        const target = state.allDevices.find((d) => d.id === internalDeviceId);
+        const newMap = new Map(state.deviceStates);
+        if (target) {
+          const key = `${target.connectorId}:${target.deviceId}`;
+          const existing = newMap.get(key);
+          if (existing) {
+            newMap.set(key, { ...existing, name: data.data!.name });
+          }
+        }
+
+        return { allDevices: updatedAll, deviceStates: newMap };
+      });
+
+      toast.success('Device renamed successfully.', { id: loadingToastId });
+      return true;
+    } catch (error) {
+      console.error('[Store] renameDevice failed:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to rename device', { id: loadingToastId });
+      return false;
+    } finally {
+      set((state) => {
+        const next = new Map(state.deviceRenameLoading);
+        next.delete(internalDeviceId);
+        return { deviceRenameLoading: next };
+      });
     }
   },
 

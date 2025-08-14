@@ -37,13 +37,18 @@ We use a combination of the Strategy and Registry patterns:
 
 3.  **`src/lib/device-actions/index.ts`** (Main File)
     *   `actionHandlers`: An array acting as the registry, holding instances of all implemented handlers (e.g., `new YoLinkActionHandler()`).
-    *   `requestDeviceStateChange(internalDeviceId, newState)`: The primary entry point. It:
+    *   `requestDeviceStateChange(internalDeviceId, newState)`: The primary entry point for state changes. It:
         *   Fetches device and connector data from the database.
         *   Retrieves the connector configuration.
         *   Iterates through the `actionHandlers` registry.
         *   Finds the first handler where `handler.category` matches the connector's category *and* `handler.canHandle(...)` returns true.
         *   Calls the found handler's `executeStateChange(...)` method.
         *   Throws an error if no suitable handler is found.
+    *   `requestDeviceRename(internalDeviceId, newName)`: Entry point for device renaming. It:
+        *   Uses the same device/connector lookup pattern as state changes.
+        *   Checks if the connector category supports renaming via `isRenameSupported()`.
+        *   Calls the appropriate driver function directly (Piko or Genea).
+        *   For Genea devices, preserves required fields like `is_elevator_door` from raw device data.
 
 4.  **UI Capability & Selection (client-safe)**
 
@@ -59,11 +64,13 @@ We use a combination of the Strategy and Registry patterns:
        - `isOnOffCapable(connectorCategory, deviceType)`
        - `getOnOffActions(connectorCategory, deviceType)`
        - `isAccessControlCapable(connectorCategory, deviceType)`
+       - `RENAMEABLE_CONNECTOR_CATEGORIES` and `isRenameSupported(connectorCategory)`
      - Exports (option-aware, for UI lists):
        - `inferStandardDeviceTypeFromOption(option)`
        - `isOnOffCapableOption(option)`
        - `isAccessControlCapableOption(option)`
        - `getOnOffActionsForOption(option)`
+       - `isRenameableOption(option)`
      - Option shape expected by helpers (`DeviceOptionLike`):
        - `connectorCategory: string` (canonical key, e.g., 'yolink')
        - `standardDeviceType: DeviceType` (already standardized; preferred)
@@ -77,7 +84,8 @@ We use a combination of the Strategy and Registry patterns:
 
 ## API Usage
 
-The API endpoint `POST /api/devices/[internalDeviceId]/state` uses the `requestDeviceStateChange` function to process state change requests initiated from the frontend or other services.
+- `POST /api/devices/[internalDeviceId]/state` uses `requestDeviceStateChange` to process state change requests.
+- `PATCH /api/devices/[internalDeviceId]/name` uses `requestDeviceRename` to process device renaming requests.
 
 ## Supported Connectors
 
@@ -89,13 +97,19 @@ The API endpoint `POST /api/devices/[internalDeviceId]/state` uses the `requestD
 ### Genea  
 - **Device Types:** Door
 - **Actions:** SET_LOCKED, SET_UNLOCKED, QUICK_GRANT
+- **Renaming:** Supported via `PUT /v2/door/{door_uuid}` (preserves required fields like `is_elevator_door`)
 - **Notes:** Uses door UUID as deviceId. Handles 422 validation errors when door is already in target state.
   - QUICK_GRANT maps to `PUT /v2/door/{door_uuid}/quick_unlock` and is a temporary unlock.
 
-Note: The UI capability map in `capabilities.ts` defines which actions are exposed in the frontend for each connector/device type. To surface a new actionable device in the UI, update both:
+### Piko
+- **Device Types:** Camera
+- **Actions:** None currently supported
+- **Renaming:** Supported via `PATCH /rest/v3/devices/{id}` with strict mode
 
-- Backend: add/extend the appropriate handler implementing `IDeviceActionHandler`.
-- Frontend: extend `SUPPORTED_DEVICE_ACTIONS` (and `presentation.ts` if a new action needs a label/icon).
+Note: The UI capability maps in `capabilities.ts` define which actions and features are exposed in the frontend for each connector/device type. To surface new capabilities:
+
+- **Device Actions:** Update `SUPPORTED_DEVICE_ACTIONS` and implement `IDeviceActionHandler`.
+- **Device Renaming:** Add connector category to `RENAMEABLE_CONNECTOR_CATEGORIES` and ensure driver supports renaming.
 
 ### Frontend data requirements (important)
 - The actions UI must receive, per target device option:
@@ -127,6 +141,8 @@ Note: When controllers go offline, remote unlock capabilities become unavailable
 
 ## Extending for New Connectors
 
+### Adding State Change Capabilities
+
 To add state change capabilities for a new connector type (e.g., 'newConnector'):
 
 1.  **Implement Driver Function:** Ensure the driver service (`src/services/drivers/newConnector.ts`) has the necessary function(s) to perform the state change via the vendor's API.
@@ -134,5 +150,14 @@ To add state change capabilities for a new connector type (e.g., 'newConnector')
 3.  **Register Handler:**
     *   Import the new handler class in `src/lib/device-actions/index.ts`.
     *   Add an instance of the new handler to the `handlers` array (it is split into `actionHandlers` and `commandHandlers`).
+4.  **Update Capabilities:** Add supported actions to `SUPPORTED_DEVICE_ACTIONS` in `capabilities.ts`.
 
-That's it! The `requestDeviceStateChange` function will now automatically be able to use the new handler. 
+### Adding Device Renaming Capabilities
+
+To add device renaming for a new connector type:
+
+1.  **Implement Driver Function:** Add a rename function to the driver service (e.g., `renameNewConnectorDevice`).
+2.  **Update Capabilities:** Add the connector category to `RENAMEABLE_CONNECTOR_CATEGORIES` in `capabilities.ts`.
+3.  **Update Rename Service:** Add a new branch in `requestDeviceRename` in `index.ts` to handle the new connector type.
+
+That's it! The service layer will automatically support the new capabilities. 

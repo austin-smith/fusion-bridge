@@ -150,4 +150,24 @@ export function getOnOffActionsForOption(option: DeviceOptionLike): ActionableSt
   return getOnOffActions(connectorCategory, inferredType);
 }
 
+/**
+ * Central registry of which connector categories support device renaming.
+ */
+export const RENAMEABLE_CONNECTOR_CATEGORIES = ['piko', 'genea'] as const;
+
+/**
+ * Returns true if the connector category supports device renaming.
+ */
+export function isRenameSupported(connectorCategory: string | undefined | null): boolean {
+  if (!connectorCategory) return false;
+  return RENAMEABLE_CONNECTOR_CATEGORIES.includes(connectorCategory as any);
+}
+
+/**
+ * UI helper: returns true if the device option resolves to a renameable device.
+ */
+export function isRenameableOption(option: DeviceOptionLike): boolean {
+  return isRenameSupported(option.connectorCategory);
+}
+
 
