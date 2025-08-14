@@ -302,9 +302,15 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                       onBlur={async () => {
                         const trimmedName = tempName.trim();
                         if (trimmedName && trimmedName !== (actualDevice?.name ?? device.name)) {
-                          await renameDevice(device.internalId, trimmedName);
+                          const ok = await renameDevice(device.internalId, trimmedName);
+                          if (ok) {
+                            setIsEditingName(false);
+                          } else {
+                            toast.error('Failed to rename device. Please try again.');
+                          }
+                        } else {
+                          setIsEditingName(false);
                         }
-                        setIsEditingName(false);
                       }}
                       disabled={isRenaming}
                     />

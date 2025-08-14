@@ -1761,24 +1761,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
 
       const newNameFromServer = parsed.data?.data?.name as string;
 
-      // Update allDevices list and deviceStates map
-      set((state) => {
-        const updatedAll = state.allDevices.map((d) => (
-          d.id === internalDeviceId ? { ...d, name: newNameFromServer } : d
-        ));
-
-        const target = state.allDevices.find((d) => d.id === internalDeviceId);
-        const newMap = new Map(state.deviceStates);
-        if (target) {
-          const key = `${target.connectorId}:${target.deviceId}`;
-          const existing = newMap.get(key);
-          if (existing) {
-            newMap.set(key, { ...existing, name: newNameFromServer });
-          }
-        }
-
-        return { allDevices: updatedAll, deviceStates: newMap };
-      });
+      // Update allDevices list and deviceStates map via helper
+      set((state) => updateDeviceNameInState(state, internalDeviceId, newNameFromServer));
 
       toast.success('Device renamed successfully.', { id: loadingToastId });
       return true;
@@ -3311,6 +3295,29 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   },
 
 })); 
+
+// --- Local helper to update device name in both lists and map ---
+function updateDeviceNameInState(
+  state: FusionState,
+  internalDeviceId: string,
+  newName: string
+): Pick<FusionState, 'allDevices' | 'deviceStates'> {
+  const updatedAll = state.allDevices.map((d) => (
+    d.id === internalDeviceId ? { ...d, name: newName } : d
+  ));
+
+  const target = state.allDevices.find((d) => d.id === internalDeviceId);
+  const newMap = new Map(state.deviceStates);
+  if (target) {
+    const key = `${target.connectorId}:${target.deviceId}`;
+    const existing = newMap.get(key);
+    if (existing) {
+      newMap.set(key, { ...existing, name: newName });
+    }
+  }
+
+  return { allDevices: updatedAll, deviceStates: newMap };
+}
 
 // --- Organization Types ---
 export interface Organization {
