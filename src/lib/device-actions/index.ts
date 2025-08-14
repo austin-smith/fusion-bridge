@@ -3,7 +3,7 @@ import { devices, connectors } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import { ActionableState, DeviceCommand } from '../mappings/definitions';
 import { renamePikoDevice } from '@/services/drivers/piko';
-import type { GeneaDoorUpdatePayload, GeneaDoor } from '@/services/drivers/genea';
+import type { GeneaDoorUpdatePayload, GeneaDoor, GeneaConfig } from '@/services/drivers/genea';
 import { isRenameSupported } from './capabilities';
 // Import other driver types as needed, e.g.:
 // import type { PikoConfig } from '@/services/drivers/piko'; 
@@ -276,14 +276,7 @@ export async function requestDeviceRename(
             throw new Error(`Device renaming is not supported for ${connector.category} devices.`);
         }
 
-        // 4. Parse Config using the same pattern
-        let parsedConfig: any;
-        try {
-            parsedConfig = JSON.parse(connector.cfg_enc);
-        } catch (e) {
-            console.error(`[DeviceActions] Failed to parse configuration for connector ${connector.id}:`, e);
-            throw new Error(`Invalid connector configuration.`);
-        }
+        // 4. Parse Config (only when needed per connector branch)
 
         // 5. Call the appropriate driver function
         if (connector.category === 'piko') {
@@ -303,9 +296,22 @@ export async function requestDeviceRename(
                 }
             }
             
+            // Parse and minimally validate Genea config (avoid any)
+            let parsedConfigUnknown: unknown;
+            try {
+                parsedConfigUnknown = JSON.parse(connector.cfg_enc);
+            } catch (e) {
+                console.error(`[DeviceActions] Failed to parse configuration for connector ${connector.id}:`, e);
+                throw new Error(`Invalid connector configuration.`);
+            }
+            const geneaConfig = parsedConfigUnknown as Partial<GeneaConfig>;
+            if (!geneaConfig || typeof geneaConfig.apiKey !== 'string' || geneaConfig.apiKey.length === 0) {
+                throw new Error('Invalid connector configuration: missing apiKey');
+            }
+
             // Import and use updateGeneaDoor instead of renameGeneaDoor for more control
             const { updateGeneaDoor } = await import('@/services/drivers/genea');
-            await updateGeneaDoor(parsedConfig, device.deviceId, payload);
+            await updateGeneaDoor(geneaConfig as GeneaConfig, device.deviceId, payload);
         }
 
         console.log(`[DeviceActions] Successfully renamed device ${device.deviceId} to "${newName}"`);

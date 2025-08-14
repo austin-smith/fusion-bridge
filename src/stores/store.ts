@@ -1750,8 +1750,16 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       const json = await response.json().catch(() => null);
       const parsed = RenameResponseSchema.safeParse(json);
 
+      // Helper to safely extract an error value from an unknown JSON
+      const extractError = (raw: unknown): unknown => {
+        if (raw && typeof raw === 'object' && 'error' in (raw as Record<string, unknown>)) {
+          return (raw as Record<string, unknown>).error;
+        }
+        return undefined;
+      };
+
       if (!parsed.success || !response.ok || !parsed.data.success || !parsed.data.data) {
-        const err = parsed.success ? parsed.data?.error : (json as any)?.error;
+        const err = parsed.success ? parsed.data?.error : extractError(json);
         const message =
           (typeof err === 'string' && err) ||
           ((err as any)?.message as string | undefined) ||
