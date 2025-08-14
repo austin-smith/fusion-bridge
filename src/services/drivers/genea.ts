@@ -578,7 +578,7 @@ export async function updateGeneaDoor(config: GeneaConfig, doorUuid: string, pay
     throw new Error('Invalid configuration: API Key is required.');
   }
 
-  if (!doorUuid || typeof doorUuid !== 'string') {
+  if (!doorUuid || typeof doorUuid !== 'string' || !doorUuid.trim()) {
     console.error("Invalid door UUID provided for updating:", doorUuid);
     throw new Error('Invalid door UUID provided.');
   }
@@ -588,7 +588,8 @@ export async function updateGeneaDoor(config: GeneaConfig, doorUuid: string, pay
   try {
     console.log(`[Genea Driver] Updating door ${doorUuid} with payload:`, payload);
     
-    const response = await fetch(`${GENEA_API_BASE_URL}/v2/door/${doorUuid}`, {
+    const safeDoorUuid = doorUuid.trim();
+    const response = await fetch(`${GENEA_API_BASE_URL}/v2/door/${safeDoorUuid}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

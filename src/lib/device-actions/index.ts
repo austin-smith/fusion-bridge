@@ -2,10 +2,8 @@ import { db } from '@/data/db';
 import { devices, connectors } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import { ActionableState, DeviceCommand } from '../mappings/definitions';
-import * as yolinkDriver from '@/services/drivers/yolink';
-import type { YoLinkConfig } from '@/services/drivers/yolink';
 import { renamePikoDevice } from '@/services/drivers/piko';
-import type { GeneaDoorUpdatePayload } from '@/services/drivers/genea';
+import type { GeneaDoorUpdatePayload, GeneaDoor } from '@/services/drivers/genea';
 import { isRenameSupported } from './capabilities';
 // Import other driver types as needed, e.g.:
 // import type { PikoConfig } from '@/services/drivers/piko'; 
@@ -299,7 +297,7 @@ export async function requestDeviceRename(
             const payload: GeneaDoorUpdatePayload = { name: newName };
             
             if (device.rawDeviceData && typeof device.rawDeviceData === 'object') {
-                const rawData = device.rawDeviceData as any;
+                const rawData = device.rawDeviceData as Partial<GeneaDoor>;
                 if (typeof rawData.is_elevator_door === 'boolean') {
                     payload.is_elevator_door = rawData.is_elevator_door;
                 }
