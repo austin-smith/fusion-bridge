@@ -1659,9 +1659,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     const loadingToastId = toast.loading(loadingMessage);
 
     try {
-      const baseUrl = process.env.APP_URL || '';
-      // 2. Make API Call
-      const response = await fetch(`${baseUrl}/api/devices/${internalDeviceId}/state`, {
+      // 2. Make API Call (relative URL; no base origin needed)
+      const response = await fetch(`/api/devices/${internalDeviceId}/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ state: newState }),
@@ -1733,11 +1732,10 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       return { deviceRenameLoading: next };
     });
 
-    const baseUrl = process.env.APP_URL || '';
     const loadingToastId = toast.loading('Renaming device...');
 
     try {
-      const response = await fetch(`${baseUrl}/api/devices/${internalDeviceId}/name`, {
+      const response = await fetch(`/api/devices/${internalDeviceId}/name`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName.trim() }),
@@ -1753,7 +1751,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       const parsed = RenameResponseSchema.safeParse(json);
 
       if (!parsed.success || !response.ok || !parsed.data.success || !parsed.data.data) {
-        const err = parsed.success ? parsed.data.error : (json as any)?.error;
+        const err = parsed.success ? parsed.data?.error : (json as any)?.error;
         const message =
           (typeof err === 'string' && err) ||
           ((err as any)?.message as string | undefined) ||
@@ -1761,7 +1759,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         throw new Error(message);
       }
 
-      const newNameFromServer = parsed.data.data.name;
+      const newNameFromServer = parsed.data?.data?.name as string;
 
       // Update allDevices list and deviceStates map
       set((state) => {
