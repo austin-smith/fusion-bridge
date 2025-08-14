@@ -55,7 +55,7 @@ export const PikoVideoWithThumbnail: React.FC<PikoVideoWithThumbnailProps> = ({
         showBuiltInSpinner={false}
       />
       {!isReady && (
-        <div className={`absolute inset-0 z-[5] pointer-events-none transition-opacity duration-200 ${isReady ? "opacity-0" : "opacity-100"}`}>
+        <div className={"absolute inset-0 z-[5] pointer-events-none transition-opacity duration-200 opacity-100"}>
           <Image
             src={thumbnailSrc}
             alt=""
@@ -67,8 +67,10 @@ export const PikoVideoWithThumbnail: React.FC<PikoVideoWithThumbnailProps> = ({
         </div>
       )}
       {!isReady && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground z-20">
-          <Loader2 className="h-8 w-8 mb-2 animate-spin" />
+        <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+          <div className="rounded-md bg-black/10 p-2">
+            <Loader2 className="h-5 w-5 animate-spin text-white/90" />
+          </div>
         </div>
       )}
     </div>
