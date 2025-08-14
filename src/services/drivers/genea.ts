@@ -550,3 +550,115 @@ export async function getGeneaDoors(config: GeneaConfig): Promise<GeneaDoor[]> {
     throw error instanceof Error ? error : new Error('Unknown error fetching Genea doors');
   }
 }
+
+// ###################################################################################
+// #                         DEVICE UPDATE FUNCTIONS                                #
+// ###################################################################################
+
+export type GeneaDoorUpdatePayload = {
+  name?: string;
+  description?: string;
+  is_elevator_door?: boolean;
+};
+
+/**
+ * Updates a Genea door with the specified payload.
+ * @param config - The Genea connector configuration containing the API key.
+ * @param doorUuid - The UUID of the door to update.
+ * @param payload - The update payload containing fields to modify.
+ * @returns A promise that resolves to the updated door data.
+ */
+export async function updateGeneaDoor(config: GeneaConfig, doorUuid: string, payload: GeneaDoorUpdatePayload): Promise<GeneaDoor> {
+  const validation = z.object({ 
+    apiKey: z.string().min(1) 
+  }).safeParse(config);
+
+  if (!validation.success) {
+    console.error("Invalid Genea config provided for updating door:", validation.error);
+    throw new Error('Invalid configuration: API Key is required.');
+  }
+
+  if (!doorUuid || typeof doorUuid !== 'string' || !doorUuid.trim()) {
+    console.error("Invalid door UUID provided for updating:", doorUuid);
+    throw new Error('Invalid door UUID provided.');
+  }
+
+  const { apiKey } = validation.data;
+
+  try {
+    console.log(`[Genea Driver] Updating door ${doorUuid} with payload:`, payload);
+    
+    const safeDoorUuid = doorUuid.trim();
+    const response = await fetch(`${GENEA_API_BASE_URL}/v2/door/${safeDoorUuid}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      let errorMessage = `Genea API returned status: ${response.status} when updating door ${doorUuid}`;
+      let detailedError = null;
+      
+      try {
+        const errorBody = await response.json();
+        detailedError = errorBody;
+        
+        if (response.status === 422) {
+          if (errorBody?.meta?.message) {
+            errorMessage = errorBody.meta.message;
+          } else if (errorBody?.error?.message) {
+            errorMessage = errorBody.error.message;
+          } else {
+            errorMessage = `Door update failed - request cannot be processed (invalid data or device restrictions)`;
+          }
+        } else {
+          errorMessage = errorBody?.meta?.message || errorBody?.error?.message || errorBody?.error || errorMessage;
+        }
+      } catch (e) {
+        console.warn("Could not parse error response body from Genea update API.");
+        if (response.status === 422) {
+          errorMessage = `Door update failed - request cannot be processed (invalid data or device restrictions)`;
+        }
+      }
+      
+      console.error(`[Genea Driver] Update error for ${doorUuid}:`, { status: response.status, errorMessage, detailedError });
+      throw new Error(errorMessage);
+    }
+
+    const responseBody = await response.json();
+    
+    // Validate the response structure
+    const parseResult = z.object({
+      data: GeneaDoorSchema,
+      meta: z.object({
+        message: z.string()
+      }).optional()
+    }).safeParse(responseBody);
+
+    if (!parseResult.success) {
+      console.error(`[Genea Driver] Invalid response structure when updating door ${doorUuid}:`, parseResult.error);
+      throw new Error('Invalid response format from Genea update API.');
+    }
+
+    console.log(`[Genea Driver] Successfully updated door ${doorUuid}. Response:`, parseResult.data.meta?.message || 'Success');
+    return parseResult.data.data;
+
+  } catch (error: unknown) {
+    console.error(`[Genea Driver] Error updating door ${doorUuid}:`, error);
+    throw error instanceof Error ? error : new Error(`Unknown error updating door ${doorUuid}`);
+  }
+}
+
+/**
+ * Renames a Genea door.
+ * @param config - The Genea connector configuration containing the API key.
+ * @param doorUuid - The UUID of the door to rename.
+ * @param newName - The new name for the door.
+ * @returns A promise that resolves to the updated door data.
+ */
+export async function renameGeneaDoor(config: GeneaConfig, doorUuid: string, newName: string): Promise<GeneaDoor> {
+  return updateGeneaDoor(config, doorUuid, { name: newName });
+}

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { produce, Draft, enableMapSet } from 'immer';
 import { toast } from 'sonner'; // <-- Import toast
 import { startTransition } from 'react';
+import { z } from 'zod';
 import { realtimeEventStream } from '@/lib/events/realtime-event-stream';
 import { PikoServer } from '@/types';
 import type { StandardizedEvent, EnrichedEvent } from '@/types/events';
@@ -188,6 +189,8 @@ interface FusionState {
   
   // --- Device Action Loading State ---
   deviceActionLoading: Map<string, boolean>; // Key: internalDeviceId, Value: true if loading
+  // --- Device Rename Loading State ---
+  deviceRenameLoading: Map<string, boolean>;
   
   // --- User List Refresh State ---
   lastUserListUpdateTimestamp: number | null;
@@ -355,6 +358,9 @@ interface FusionState {
 
   // --- Centralized Action to execute device state change ---
   executeDeviceAction: (internalDeviceId: string, newState: ActionableState) => Promise<void>;
+
+  // --- Device Renaming Action ---
+  renameDevice: (internalDeviceId: string, newName: string) => Promise<boolean>;
 
   // --- User List Refresh Action ---
   triggerUserListRefresh: () => void;
@@ -541,6 +547,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   
   // --- Device Action Loading Initial State ---
   deviceActionLoading: new Map<string, boolean>(),
+  // --- Device Rename Loading Initial State ---
+  deviceRenameLoading: new Map<string, boolean>(),
   
   // --- User List Refresh Initial State ---
   lastUserListUpdateTimestamp: null,
@@ -1651,9 +1659,8 @@ export const useFusionStore = create<FusionState>((set, get) => ({
     const loadingToastId = toast.loading(loadingMessage);
 
     try {
-      const baseUrl = process.env.APP_URL || '';
-      // 2. Make API Call
-      const response = await fetch(`${baseUrl}/api/devices/${internalDeviceId}/state`, {
+      // 2. Make API Call (relative URL; no base origin needed)
+      const response = await fetch(`/api/devices/${internalDeviceId}/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ state: newState }),
@@ -1714,6 +1721,73 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       set(produce((draft: Draft<FusionState>) => {
         draft.deviceActionLoading.delete(internalDeviceId);
       }));
+    }
+  },
+
+  // --- Device Renaming Action ---
+  renameDevice: async (internalDeviceId: string, newName: string) => {
+    set((state) => {
+      const next = new Map(state.deviceRenameLoading);
+      next.set(internalDeviceId, true);
+      return { deviceRenameLoading: next };
+    });
+
+    const loadingToastId = toast.loading('Renaming device...');
+
+    try {
+      const response = await fetch(`/api/devices/${internalDeviceId}/name`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim() }),
+      });
+      // Validate response shape using zod
+      const RenameResponseSchema = z.object({
+        success: z.boolean(),
+        data: z.object({ name: z.string() }).optional(),
+        error: z.unknown().optional(),
+      });
+
+      const json = await response.json().catch(() => null);
+      const parsed = RenameResponseSchema.safeParse(json);
+
+      // Helper to safely extract an error value from an unknown JSON
+      const extractError = (raw: unknown): unknown => {
+        if (raw && typeof raw === 'object' && 'error' in (raw as Record<string, unknown>)) {
+          return (raw as Record<string, unknown>).error;
+        }
+        return undefined;
+      };
+
+      if (!parsed.success || !response.ok || !parsed.data.success || !parsed.data.data) {
+        const err = parsed.success ? parsed.data?.error : extractError(json);
+        const message =
+          (typeof err === 'string' && err) ||
+          ((err as any)?.message as string | undefined) ||
+          'Failed to rename device';
+        throw new Error(message);
+      }
+
+      const nameParseResult = z.string().safeParse(parsed.data?.data?.name);
+      if (!nameParseResult.success) {
+        throw new Error('Invalid device name returned from server');
+      }
+      const newNameFromServer = nameParseResult.data;
+
+      // Update allDevices list and deviceStates map via helper
+      set((state) => updateDeviceNameInState(state, internalDeviceId, newNameFromServer));
+
+      toast.success('Device renamed successfully.', { id: loadingToastId });
+      return true;
+    } catch (error) {
+      console.error('[Store] renameDevice failed:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to rename device', { id: loadingToastId });
+      return false;
+    } finally {
+      set((state) => {
+        const next = new Map(state.deviceRenameLoading);
+        next.delete(internalDeviceId);
+        return { deviceRenameLoading: next };
+      });
     }
   },
 
@@ -3233,6 +3307,29 @@ export const useFusionStore = create<FusionState>((set, get) => ({
   },
 
 })); 
+
+// --- Local helper to update device name in both lists and map ---
+function updateDeviceNameInState(
+  state: FusionState,
+  internalDeviceId: string,
+  newName: string
+): Pick<FusionState, 'allDevices' | 'deviceStates'> {
+  const updatedAll = state.allDevices.map((d) => (
+    d.id === internalDeviceId ? { ...d, name: newName } : d
+  ));
+
+  const target = state.allDevices.find((d) => d.id === internalDeviceId);
+  const newMap = new Map(state.deviceStates);
+  if (target) {
+    const key = `${target.connectorId}:${target.deviceId}`;
+    const existing = newMap.get(key);
+    if (existing) {
+      newMap.set(key, { ...existing, name: newName });
+    }
+  }
+
+  return { allDevices: updatedAll, deviceStates: newMap };
+}
 
 // --- Organization Types ---
 export interface Organization {

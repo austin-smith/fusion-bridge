@@ -2,8 +2,9 @@ import { db } from '@/data/db';
 import { devices, connectors } from '@/data/db/schema';
 import { eq } from 'drizzle-orm';
 import { ActionableState, DeviceCommand } from '../mappings/definitions';
-import * as yolinkDriver from '@/services/drivers/yolink';
-import type { YoLinkConfig } from '@/services/drivers/yolink';
+import { renamePikoDevice } from '@/services/drivers/piko';
+import type { GeneaDoorUpdatePayload, GeneaDoor, GeneaConfig } from '@/services/drivers/genea';
+import { isRenameSupported } from './capabilities';
 // Import other driver types as needed, e.g.:
 // import type { PikoConfig } from '@/services/drivers/piko'; 
 // import type { GeneaConfig } from '@/services/drivers/genea';
@@ -214,6 +215,115 @@ export async function requestDeviceCommand(
             throw error; 
         } else {
             throw new Error('An unknown error occurred while executing device command.');
+        }
+    }
+}
+
+/**
+ * Attempts to rename a device via its connector driver.
+ * This acts as an abstraction layer over different vendor APIs.
+ * 
+ * @param internalDeviceId The internal database ID of the device record.
+ * @param newName The new name for the device.
+ * @returns Promise resolving to true if the rename was successful.
+ * @throws Error for configuration issues, unsupported devices, or driver errors.
+ */
+export async function requestDeviceRename(
+    internalDeviceId: string, 
+    newName: string
+): Promise<boolean> {
+    console.log(`[DeviceActions] Requesting rename for internal device ID ${internalDeviceId} to "${newName}"`);
+
+    try {
+        // 1. Fetch Device Info using the same pattern
+        const device = await db.query.devices.findFirst({
+            where: eq(devices.id, internalDeviceId),
+            columns: {
+                id: true,
+                deviceId: true,
+                connectorId: true,
+                rawDeviceData: true, // Need this for Genea to get current is_elevator_door value
+            }
+        });
+
+        if (!device) {
+            console.error(`[DeviceActions] Device with internal ID ${internalDeviceId} not found.`);
+            throw new Error(`Device not found.`);
+        }
+
+        console.log(`[DeviceActions] Found device: ${device.deviceId}`);
+
+        // 2. Fetch Connector Info & Config using the same pattern
+        const connector = await db.query.connectors.findFirst({
+            where: eq(connectors.id, device.connectorId),
+            columns: {
+                id: true,
+                category: true,
+                cfg_enc: true,
+            }
+        });
+
+        if (!connector) {
+            console.error(`[DeviceActions] Connector ${device.connectorId} for device ${internalDeviceId} not found.`);
+            throw new Error(`Connector configuration not found for device.`);
+        }
+
+        console.log(`[DeviceActions] Found connector: ${connector.id}, Category: ${connector.category}`);
+
+        // 3. Check if rename is supported for this connector category
+        if (!isRenameSupported(connector.category)) {
+            console.warn(`[DeviceActions] Rename not supported for connector category '${connector.category}'.`);
+            throw new Error(`Device renaming is not supported for ${connector.category} devices.`);
+        }
+
+        // 4. Parse Config (only when needed per connector branch)
+
+        // 5. Call the appropriate driver function
+        if (connector.category === 'piko') {
+            console.log(`[DeviceActions] Calling renamePikoDevice for ${device.deviceId}`);
+            await renamePikoDevice(device.connectorId, device.deviceId, newName);
+        } else if (connector.category === 'genea') {
+            console.log(`[DeviceActions] Calling updateGeneaDoor for ${device.deviceId}`);
+            
+            // For Genea, we need to provide is_elevator_door from the current device data
+            // since the API requires it even for name-only updates
+            const payload: GeneaDoorUpdatePayload = { name: newName };
+            
+            if (device.rawDeviceData && typeof device.rawDeviceData === 'object') {
+                const rawData = device.rawDeviceData as Partial<GeneaDoor>;
+                if (typeof rawData.is_elevator_door === 'boolean') {
+                    payload.is_elevator_door = rawData.is_elevator_door;
+                }
+            }
+            
+            // Parse and minimally validate Genea config (avoid any)
+            let parsedConfigUnknown: unknown;
+            try {
+                parsedConfigUnknown = JSON.parse(connector.cfg_enc);
+            } catch (e) {
+                console.error(`[DeviceActions] Failed to parse configuration for connector ${connector.id}:`, e);
+                throw new Error(`Invalid connector configuration.`);
+            }
+            const geneaConfig = parsedConfigUnknown as Partial<GeneaConfig>;
+            if (!geneaConfig || typeof geneaConfig.apiKey !== 'string' || geneaConfig.apiKey.length === 0) {
+                throw new Error('Invalid connector configuration: missing apiKey');
+            }
+
+            // Import and use updateGeneaDoor instead of renameGeneaDoor for more control
+            const { updateGeneaDoor } = await import('@/services/drivers/genea');
+            await updateGeneaDoor(geneaConfig as GeneaConfig, device.deviceId, payload);
+        }
+
+        console.log(`[DeviceActions] Successfully renamed device ${device.deviceId} to "${newName}"`);
+        return true;
+
+    } catch (error) {
+        console.error(`[DeviceActions] Error during requestDeviceRename for ${internalDeviceId}:`, error);
+        // Re-throw the error to be handled by the API endpoint
+        if (error instanceof Error) {
+            throw error; 
+        } else {
+            throw new Error('An unknown error occurred while renaming device.');
         }
     }
 } 
