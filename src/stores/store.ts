@@ -1767,7 +1767,11 @@ export const useFusionStore = create<FusionState>((set, get) => ({
         throw new Error(message);
       }
 
-      const newNameFromServer = parsed.data?.data?.name as string;
+      const nameParseResult = z.string().safeParse(parsed.data?.data?.name);
+      if (!nameParseResult.success) {
+        throw new Error('Invalid device name returned from server');
+      }
+      const newNameFromServer = nameParseResult.data;
 
       // Update allDevices list and deviceStates map via helper
       set((state) => updateDeviceNameInState(state, internalDeviceId, newNameFromServer));

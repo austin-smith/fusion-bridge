@@ -306,7 +306,7 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                           if (ok) {
                             setIsEditingName(false);
                           } else {
-                            toast.error('Failed to rename device. Please try again.');
+                            // Keep edit mode; error toast already shown by store
                           }
                         } else {
                           setIsEditingName(false);
