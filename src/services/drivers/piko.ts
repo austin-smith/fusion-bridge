@@ -1305,8 +1305,11 @@ export async function updatePikoDevice(
 ): Promise<PikoDeviceRaw> {
   const logPrefix = `[updatePikoDevice][${connectorId}][Device: ${deviceId.substring(0, 8)}...]`;
   console.log(`${logPrefix} Patching device with _strict=true`);
-  if (!deviceId) throw new PikoApiError('Device ID required.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
-  const path = `/rest/v3/devices/${deviceId}`;
+  if (!deviceId || typeof deviceId !== 'string' || !deviceId.trim()) {
+    throw new PikoApiError('Device ID required and must be a non-empty string.', { statusCode: 400, errorId: PikoErrorCode.MissingParameter });
+  }
+  const safeDeviceId = deviceId.trim();
+  const path = `/rest/v3/devices/${safeDeviceId}`;
   const queryParams = { _strict: 'true' } as Record<string, string>;
   const data = await pikoApiClient.request({
     connectorId,

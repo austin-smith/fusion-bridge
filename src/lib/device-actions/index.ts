@@ -5,6 +5,7 @@ import { ActionableState, DeviceCommand } from '../mappings/definitions';
 import * as yolinkDriver from '@/services/drivers/yolink';
 import type { YoLinkConfig } from '@/services/drivers/yolink';
 import { renamePikoDevice } from '@/services/drivers/piko';
+import type { GeneaDoorUpdatePayload } from '@/services/drivers/genea';
 import { isRenameSupported } from './capabilities';
 // Import other driver types as needed, e.g.:
 // import type { PikoConfig } from '@/services/drivers/piko'; 
@@ -295,7 +296,7 @@ export async function requestDeviceRename(
             
             // For Genea, we need to provide is_elevator_door from the current device data
             // since the API requires it even for name-only updates
-            const payload: any = { name: newName };
+            const payload: GeneaDoorUpdatePayload = { name: newName };
             
             if (device.rawDeviceData && typeof device.rawDeviceData === 'object') {
                 const rawData = device.rawDeviceData as any;

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { produce, Draft, enableMapSet } from 'immer';
 import { toast } from 'sonner'; // <-- Import toast
 import { startTransition } from 'react';
+import { z } from 'zod';
 import { realtimeEventStream } from '@/lib/events/realtime-event-stream';
 import { PikoServer } from '@/types';
 import type { StandardizedEvent, EnrichedEvent } from '@/types/events';
@@ -1739,17 +1740,33 @@ export const useFusionStore = create<FusionState>((set, get) => ({
       const response = await fetch(`${baseUrl}/api/devices/${internalDeviceId}/name`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName }),
+        body: JSON.stringify({ name: newName.trim() }),
       });
-      const data: ApiResponse<{ name: string }> = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to rename device');
+      // Validate response shape using zod
+      const RenameResponseSchema = z.object({
+        success: z.boolean(),
+        data: z.object({ name: z.string() }).optional(),
+        error: z.unknown().optional(),
+      });
+
+      const json = await response.json().catch(() => null);
+      const parsed = RenameResponseSchema.safeParse(json);
+
+      if (!parsed.success || !response.ok || !parsed.data.success || !parsed.data.data) {
+        const err = parsed.success ? parsed.data.error : (json as any)?.error;
+        const message =
+          (typeof err === 'string' && err) ||
+          ((err as any)?.message as string | undefined) ||
+          'Failed to rename device';
+        throw new Error(message);
       }
+
+      const newNameFromServer = parsed.data.data.name;
 
       // Update allDevices list and deviceStates map
       set((state) => {
         const updatedAll = state.allDevices.map((d) => (
-          d.id === internalDeviceId ? { ...d, name: data.data!.name } : d
+          d.id === internalDeviceId ? { ...d, name: newNameFromServer } : d
         ));
 
         const target = state.allDevices.find((d) => d.id === internalDeviceId);
@@ -1758,7 +1775,7 @@ export const useFusionStore = create<FusionState>((set, get) => ({
           const key = `${target.connectorId}:${target.deviceId}`;
           const existing = newMap.get(key);
           if (existing) {
-            newMap.set(key, { ...existing, name: data.data!.name });
+            newMap.set(key, { ...existing, name: newNameFromServer });
           }
         }
 

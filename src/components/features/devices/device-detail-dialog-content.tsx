@@ -290,8 +290,9 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                       autoFocus
                       onChange={(e) => setTempName(e.target.value)}
                       onKeyDown={async (e) => {
+                        const trimmedName = tempName.trim();
                         if (e.key === 'Enter') {
-                          const ok = await renameDevice(device.internalId, tempName.trim());
+                          const ok = await renameDevice(device.internalId, trimmedName);
                           if (ok) setIsEditingName(false);
                         } else if (e.key === 'Escape') {
                           setIsEditingName(false);
@@ -299,8 +300,9 @@ export const DeviceDetailDialogContent: React.FC<DeviceDetailDialogContentProps>
                         }
                       }}
                       onBlur={async () => {
-                        if (tempName.trim() && tempName.trim() !== (actualDevice?.name ?? device.name)) {
-                          await renameDevice(device.internalId, tempName.trim());
+                        const trimmedName = tempName.trim();
+                        if (trimmedName && trimmedName !== (actualDevice?.name ?? device.name)) {
+                          await renameDevice(device.internalId, trimmedName);
                         }
                         setIsEditingName(false);
                       }}

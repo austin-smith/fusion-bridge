@@ -38,16 +38,18 @@ export const PATCH = withOrganizationAuth(async (
     // Use the device actions service layer for all the heavy lifting
     await requestDeviceRename(internalDeviceId, name);
 
+    const warnings: string[] = [];
     try {
       await db.update(devicesTable)
         .set({ name, updatedAt: new Date() })
         .where(eq(devicesTable.id, internalDeviceId));
     } catch (e) {
-      // Do not fail the request if local update fails after remote success
+      // Remote rename succeeded; record a warning for local persist failure
       console.error(`[API Device Rename] Failed to update local DB for ${internalDeviceId}:`, e);
+      warnings.push('Remote rename succeeded, but local persist failed; name will reconcile on next sync.');
     }
 
-    return NextResponse.json({ success: true, data: { name } });
+    return NextResponse.json({ success: true, data: { name }, ...(warnings.length ? { warnings } : {}) });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
