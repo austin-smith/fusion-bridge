@@ -13,6 +13,17 @@ interface DewarpViewControlsProps {
   topOffsetPx?: number; // reserve a safe area at the top (e.g. overlay header region)
 }
 
+/**
+ * Computes the safe pitch limit in degrees so the output FOV edge remains within the fisheye circle.
+ * Formula: max(0, π/2 − FOV/2) in radians, then converted to degrees.
+ * Assumes ~180° fisheye coverage (θ_max ≈ π/2 from center).
+ */
+function calculateSafePitchLimitDegrees(outputFovDeg: number): number {
+  const maxFisheyeTheta = Math.PI / 2;
+  const outFovRad = (outputFovDeg * Math.PI) / 180;
+  return Math.max(0, maxFisheyeTheta - outFovRad / 2) * (180 / Math.PI);
+}
+
 export const DewarpViewControls: React.FC<DewarpViewControlsProps> = ({
   settings,
   onChange,
@@ -51,17 +62,8 @@ export const DewarpViewControls: React.FC<DewarpViewControlsProps> = ({
           const yawDelta = deltaX * 0.5;
           const pitchDelta = -deltaY * 0.5; // Invert Y for natural feel
           
-          // Calculate maximum allowed theta for fisheye circle
-          // For a typical fisheye, the circle covers about 180° field of view
-          // The maximum theta we can sample is around π/2 (90°) from center
-          const maxFisheyeTheta = Math.PI / 2; // 90 degrees in radians
-          
-          // For our output FOV, calculate the maximum ray angle from center
-          const outFovRad = (settings.fovDeg * Math.PI) / 180;
-          const maxRayAngle = Math.atan(Math.tan(outFovRad / 2));
-          
-          // Limit pitch so the edge of the output FOV stays within the fisheye circle: safePitchLimit = max(0, pi/2 - outFovRad/2) in degrees
-          const safePitchLimit = Math.max(0, maxFisheyeTheta - (outFovRad / 2)) * (180 / Math.PI);
+          // Limit pitch so the edge of the output FOV stays within the fisheye circle
+          const safePitchLimit = calculateSafePitchLimitDegrees(settings.fovDeg);
           
           onChange({
             ...settings,

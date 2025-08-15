@@ -96,7 +96,10 @@ void main(){
 
     const gl = canvas.getContext('webgl2') as WebGL2RenderingContext | null;
     if (!gl) {
-      console.warn('WebGL2 not available; dewarping disabled');
+      console.warn(
+        'WebGL2 not available. Dewarping requires a modern browser with WebGL2 and hardware acceleration enabled. ' +
+        'Try updating your browser, switching to Chrome/Edge/Firefox/Safari 15+, or enabling hardware acceleration in settings.'
+      );
       return;
     }
     glRef.current = gl;
@@ -204,7 +207,10 @@ void main(){
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
       } catch (err) {
         if (!uploadErrorLoggedRef.current) {
-          console.error('WebGL texture upload failed:', err);
+          const vwInfo = video?.videoWidth ?? 0;
+          const vhInfo = video?.videoHeight ?? 0;
+          const srcInfo = video?.src ?? 'N/A';
+          console.error(`WebGL texture upload failed (videoWidth=${vwInfo}, videoHeight=${vhInfo}, src=${srcInfo})`, err);
           uploadErrorLoggedRef.current = true;
         }
       }
@@ -216,6 +222,8 @@ void main(){
       const cx = settings.cx ?? vw * 0.5;
       const cy = settings.cy ?? vh * 0.5;
       const Rguess = Math.min(cx, cy);
+      // Equidistant fisheye fallback: approximate focal length as f ≈ R / (π/2),
+      // where R is the estimated fisheye radius to 90° from center. Used when focalPx is not provided.
       const f = settings.focalPx ?? Rguess / (Math.PI * 0.5);
 
       // Build rotation matrix from yaw(Z), pitch(X), roll(Y)
