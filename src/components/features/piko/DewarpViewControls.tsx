@@ -60,9 +60,7 @@ export const DewarpViewControls: React.FC<DewarpViewControlsProps> = ({
           const outFovRad = (settings.fovDeg * Math.PI) / 180;
           const maxRayAngle = Math.atan(Math.tan(outFovRad / 2));
           
-          // Limit pitch to prevent rays from going beyond fisheye coverage
-          // When looking straight ahead (pitch=0), corner rays have angle = outFovRad/2
-          // When looking up/down, we need to ensure corner rays don't exceed maxFisheyeTheta
+          // Limit pitch so the edge of the output FOV stays within the fisheye circle: safePitchLimit = max(0, pi/2 - outFovRad/2) in degrees
           const safePitchLimit = Math.max(0, maxFisheyeTheta - (outFovRad / 2)) * (180 / Math.PI);
           
           onChange({

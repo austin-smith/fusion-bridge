@@ -20,11 +20,12 @@ export const VideoDewarpCanvas: React.FC<VideoDewarpCanvasProps> = ({
   className,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const glRef = useRef<WebGL2RenderingContext | WebGLRenderingContext | null>(null);
+  const glRef = useRef<WebGL2RenderingContext | null>(null);
   const programRef = useRef<WebGLProgram | null>(null);
   const texRef = useRef<WebGLTexture | null>(null);
   const vaoRef = useRef<WebGLVertexArrayObject | null>(null);
   const rafRef = useRef<number | null>(null);
+  const uploadErrorLoggedRef = useRef(false);
 
   const vertexSrc = useMemo(
     () => `#version 300 es
@@ -93,11 +94,11 @@ void main(){
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const gl = (canvas.getContext('webgl2') || canvas.getContext('webgl')) as
-      | WebGL2RenderingContext
-      | WebGLRenderingContext
-      | null;
-    if (!gl) return;
+    const gl = canvas.getContext('webgl2') as WebGL2RenderingContext | null;
+    if (!gl) {
+      console.warn('WebGL2 not available; dewarping disabled');
+      return;
+    }
     glRef.current = gl;
 
     function createShader(type: number, src: string) {
@@ -113,9 +114,8 @@ void main(){
       }
       return s;
     }
-    const isWebGL2 = (gl as WebGL2RenderingContext).TEXTURE_BINDING_2D !== undefined;
-    const vs = createShader(gl.VERTEX_SHADER, vertexSrc.replace('#version 300 es', isWebGL2 ? '#version 300 es' : ''));
-    const fs = createShader(gl.FRAGMENT_SHADER, fragmentSrc.replace('#version 300 es', isWebGL2 ? '#version 300 es' : ''));
+    const vs = createShader(gl.VERTEX_SHADER, vertexSrc);
+    const fs = createShader(gl.FRAGMENT_SHADER, fragmentSrc);
     if (!vs || !fs) return;
     const prog = gl.createProgram();
     if (!prog) return;
@@ -141,12 +141,10 @@ void main(){
     const vbo = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
     gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
-    // VAO (webgl2) optional
-    if ('createVertexArray' in gl) {
-      const vao = (gl as WebGL2RenderingContext).createVertexArray();
-      vaoRef.current = vao as any;
-      (gl as WebGL2RenderingContext).bindVertexArray(vao);
-    }
+    // VAO (Vertex Array Object)
+    const vao = gl.createVertexArray();
+    vaoRef.current = vao;
+    gl.bindVertexArray(vao);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
@@ -204,7 +202,12 @@ void main(){
       gl.bindTexture(gl.TEXTURE_2D, tex);
       try {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-      } catch {}
+      } catch (err) {
+        if (!uploadErrorLoggedRef.current) {
+          console.error('WebGL texture upload failed:', err);
+          uploadErrorLoggedRef.current = true;
+        }
+      }
 
       gl.useProgram(prog);
       const getLoc = (name: string) => gl.getUniformLocation(prog, name);
@@ -238,8 +241,8 @@ void main(){
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      if (vaoRef.current && 'deleteVertexArray' in gl) {
-        (gl as WebGL2RenderingContext).deleteVertexArray(vaoRef.current);
+      if (vaoRef.current) {
+        gl.deleteVertexArray(vaoRef.current);
         vaoRef.current = null;
       }
       if (programRef.current) gl.deleteProgram(programRef.current);
