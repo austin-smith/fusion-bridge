@@ -20,6 +20,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { EditCamerasDialog } from "@/components/features/play/EditCamerasDialog";
 import { toast } from "sonner";
 
+
 export default function PlayPage() {
   const allDevices = useFusionStore((state) => state.allDevices);
   const isLoadingAllDevices = useFusionStore(
@@ -58,6 +59,7 @@ export default function PlayPage() {
   const [prefs, setPrefs] = useState<{ defaultLayoutId: string | null }>({
     defaultLayoutId: null,
   });
+
 
   const [isPlayFullScreen, setIsPlayFullScreen] = useState(false);
   const playFullScreenContainerRef = useRef<HTMLDivElement>(null);
@@ -483,6 +485,7 @@ export default function PlayPage() {
               }}
             />
           </div>
+
         </DialogContent>
       </Dialog>
     </div>
