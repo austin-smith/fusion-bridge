@@ -15,11 +15,13 @@ interface DewarpViewControlsProps {
 
 /**
  * Computes the safe pitch limit in degrees so the output FOV edge remains within the fisheye circle.
- * Formula: max(0, π/2 − FOV/2) in radians, then converted to degrees.
- * Assumes ~180° fisheye coverage (θ_max ≈ π/2 from center).
+ * Formula: max(0, θ_max − FOV/2) in radians, then converted to degrees.
+ * @param outputFovDeg - Output field of view in degrees.
+ * @param fisheyeCoverageDeg - Total fisheye coverage in degrees (defaults to 180°, set 200–220° for some 360 lenses).
+ * Note: If fisheyeCoverageDeg is not set correctly for the camera, pitch limits may be inaccurate.
  */
-function calculateSafePitchLimitDegrees(outputFovDeg: number): number {
-  const maxFisheyeTheta = Math.PI / 2;
+function calculateSafePitchLimitDegrees(outputFovDeg: number, fisheyeCoverageDeg: number = 180): number {
+  const maxFisheyeTheta = (fisheyeCoverageDeg * Math.PI) / 360; // half-angle in radians
   const outFovRad = (outputFovDeg * Math.PI) / 180;
   return Math.max(0, maxFisheyeTheta - outFovRad / 2) * (180 / Math.PI);
 }

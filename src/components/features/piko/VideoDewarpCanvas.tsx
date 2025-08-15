@@ -210,7 +210,12 @@ void main(){
           const vwInfo = video?.videoWidth ?? 0;
           const vhInfo = video?.videoHeight ?? 0;
           const srcInfo = video?.src ?? 'N/A';
-          console.error(`WebGL texture upload failed (videoWidth=${vwInfo}, videoHeight=${vhInfo}, src=${srcInfo})`, err);
+          const readyStateInfo = video?.readyState ?? -1;
+          const currentTimeInfo = video?.currentTime ?? -1;
+          console.error(
+            `WebGL texture upload failed (videoWidth=${vwInfo}, videoHeight=${vhInfo}, src=${srcInfo}, readyState=${readyStateInfo}, currentTime=${currentTimeInfo})`,
+            err
+          );
           uploadErrorLoggedRef.current = true;
         }
       }
@@ -224,6 +229,7 @@ void main(){
       const Rguess = Math.min(cx, cy);
       // Equidistant fisheye fallback: approximate focal length as f ≈ R / (π/2),
       // where R is the estimated fisheye radius to 90° from center. Used when focalPx is not provided.
+      // Note: This is an approximation and may be inaccurate for some fisheye lenses; dewarp quality can vary.
       const f = settings.focalPx ?? Rguess / (Math.PI * 0.5);
 
       // Build rotation matrix from yaw(Z), pitch(X), roll(Y)
