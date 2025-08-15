@@ -4,21 +4,30 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import RGL, { WidthProvider, type Layout } from "react-grid-layout";
 import type { DeviceWithConnector, Space, Location } from "@/types";
-import { PikoVideoWithThumbnail } from "@/components/features/piko/PikoVideoWithThumbnail";
+import { DewarpablePikoPlayer } from "@/components/features/piko/DewarpablePikoPlayer";
+import { DewarpMenuSub } from "@/components/features/piko/DewarpMenuSub";
+import { DewarpSettingsDialog } from "@/components/features/piko/DewarpSettings";
+import { useDewarpControls } from "@/hooks/use-dewarp-controls";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+
 import {
   MoreHorizontal,
   Plus,
   Box,
   Building,
   Cctv,
-  Trash2,
+  Trash2
 } from "lucide-react";
 
 const GridLayout = WidthProvider(RGL);
@@ -151,6 +160,10 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
     }
   }, [playableDevices, initialLayoutItems, layout]);
 
+  // Per-tile dewarp state using reusable hook
+  const dewarpState = useDewarpControls();
+  const [dewarpSettingsDialog, setDewarpSettingsDialog] = useState<{ open: boolean; deviceId?: string }>({ open: false });
+
   if (playableDevices.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-3">
@@ -166,6 +179,7 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
   }
 
   return (
+    <>
     <GridLayout
       className="play-grid"
       cols={COLS}
@@ -174,7 +188,7 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
       containerPadding={[0, 0]}
       isDraggable
       isResizable
-      draggableCancel={'button, a, input, textarea, select, [role="menuitem"]'}
+      draggableCancel={'button, a, input, textarea, select, [role="menuitem"], .no-drag'}
       layout={layout}
       onLayoutChange={(l) => {
         setLayout(l);
@@ -244,6 +258,12 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="no-drag">
+                          <DewarpMenuSub
+                            enabled={dewarpState.isEnabled(device.id)}
+                            onToggleEnabled={() => dewarpState.toggleDewarp(device.id)}
+                            onOpenSettings={() => setDewarpSettingsDialog({ open: true, deviceId: device.id })}
+                          />
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
                             onClick={(e) => {
@@ -262,11 +282,15 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
                 </CardHeader>
               ) : null}
               <CardContent className="p-0 grow relative overflow-hidden rounded-b-lg">
-                <div className="absolute inset-0">
-                  <PikoVideoWithThumbnail
+                <div className={`absolute inset-0 ${dewarpState.isEnabled(device.id) ? 'no-drag' : ''}`}>
+                  <DewarpablePikoPlayer
                     connectorId={device.connectorId}
                     cameraId={device.deviceId!}
                     className="w-full h-full"
+                    dewarpEnabled={dewarpState.isEnabled(device.id)}
+                    settings={dewarpState.getSettings(device.id)}
+                    editOverlayTopOffsetPx={overlayHeaders ? 48 : 0}
+                    onDewarpSettingsChange={(newSettings) => dewarpState.updateSettings(device.id, newSettings)}
                     enableStats={showInfo}
                     onStats={
                       showInfo
@@ -336,6 +360,12 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="no-drag">
+                            <DewarpMenuSub
+                              enabled={dewarpState.isEnabled(device.id)}
+                              onToggleEnabled={() => dewarpState.toggleDewarp(device.id)}
+                              onOpenSettings={() => setDewarpSettingsDialog({ open: true, deviceId: device.id })}
+                            />
+                            <DropdownMenuSeparator />
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
                               onClick={(e) => {
@@ -375,6 +405,18 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
           </div>
         );
       })}
+      
     </GridLayout>
+
+    {/* Dewarp Settings Dialog */}
+    {dewarpSettingsDialog.deviceId && (
+      <DewarpSettingsDialog
+        open={dewarpSettingsDialog.open}
+        onOpenChange={(open) => setDewarpSettingsDialog((prev) => ({ open, deviceId: prev.deviceId }))}
+        settings={dewarpState.getSettings(dewarpSettingsDialog.deviceId)}
+        onChange={(settings) => dewarpState.updateSettings(dewarpSettingsDialog.deviceId!, settings)}
+      />
+    )}
+    </>
   );
 };

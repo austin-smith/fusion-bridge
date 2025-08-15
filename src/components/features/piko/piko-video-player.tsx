@@ -43,6 +43,8 @@ interface PikoVideoPlayerProps {
   onReady?: () => void;
   onError?: (message: string) => void;
   showBuiltInSpinner?: boolean; // default true; allows wrappers to hide built-in spinner
+  // Optional: expose the internal HTMLVideoElement for overlays (e.g., dewarping canvas)
+  exposeVideoRef?: (el: HTMLVideoElement | null) => void;
 }
 
 export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
@@ -57,6 +59,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
   onReady,
   onError,
   showBuiltInSpinner = true,
+  exposeVideoRef,
 }) => {
   const [isLoadingMediaInfo, setIsLoadingMediaInfo] = useState(true);
   const [mediaInfoError, setMediaInfoError] = useState<string | null>(null);
@@ -96,6 +99,13 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
   useEffect(() => {
     onErrorRef.current = onError;
   }, [onError]);
+  // Expose the underlying video element when available
+  useEffect(() => {
+    if (exposeVideoRef) exposeVideoRef(videoRef.current);
+    return () => {
+      if (exposeVideoRef) exposeVideoRef(null);
+    };
+  }, [exposeVideoRef]);
 
   // Dynamic import of the WebRTC library on the client side only
   useEffect(() => {
