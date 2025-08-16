@@ -103,6 +103,35 @@ const TOOLTIP_MARGIN = 8;
 // Calculate tooltip offsets based on icon sizes
 const NORMAL_TOOLTIP_OFFSET = -(NORMAL_ICON_SIZE / 2 + TOOLTIP_MARGIN);
 const SELECTED_TOOLTIP_OFFSET = -(SELECTED_ICON_SIZE / 2 + TOOLTIP_MARGIN);
+// Fallback half-width for popup when DOM measurement is unavailable (~280px total width)
+const DEFAULT_POPUP_HALF_WIDTH = 140;
+
+// Pan the map so the selected popup is not obscured by the left-side sheet
+function panMapToAvoidSheetOverlap(map: any, selectedFeatureCoordinates: [number, number]) {
+    const sheetEl = document.getElementById('location-detail-sheet');
+    if (!sheetEl) return;
+    const mapRect = (map as any).getCanvasContainer().getBoundingClientRect();
+    const sheetRect = sheetEl.getBoundingClientRect();
+    const margin = 16;
+
+    // Portion of the map covered by the sheet measured within the map's coordinate space
+    const coveredXWithinMap = Math.max(0, sheetRect.right - mapRect.left + margin);
+
+    const point = map.project({ lng: selectedFeatureCoordinates[0], lat: selectedFeatureCoordinates[1] } as any);
+    // Include popup width so its left edge clears the sheet
+    const popupEl = document.getElementById('selected-location-popup-content');
+    const popupHalfWidth = popupEl ? popupEl.getBoundingClientRect().width / 2 : DEFAULT_POPUP_HALF_WIDTH; // fallback ~280px width
+    const desiredLeftEdge = coveredXWithinMap;
+    const currentLeftEdge = point.x - popupHalfWidth;
+    if (currentLeftEdge < desiredLeftEdge) {
+        const deltaX = desiredLeftEdge - currentLeftEdge;
+        const center = map.getCenter();
+        const centerPx = map.project({ lng: center.lng, lat: center.lat } as any);
+        const newCenterPx: { x: number; y: number } = { x: centerPx.x - deltaX, y: centerPx.y };
+        const newCenter = map.unproject([newCenterPx.x, newCenterPx.y] as any) as any;
+        map.easeTo({ center: [newCenter.lng, newCenter.lat] as any, duration: 300 });
+    }
+}
 
 export default function LocationsMap(props: LocationsMapProps) {
     const { locations, selectedLocationId, onSelectLocation, spaces = [], devices = [] } = props;
@@ -183,31 +212,7 @@ export default function LocationsMap(props: LocationsMapProps) {
         const map = mapRef.current?.getMap();
         if (!map || !selectedLocationId || !selectedFeatureCoordinates) return;
 
-        const animate = () => {
-            const sheetEl = document.getElementById('location-detail-sheet');
-            if (!sheetEl) return;
-            const mapRect = (map as any).getCanvasContainer().getBoundingClientRect();
-            const sheetRect = sheetEl.getBoundingClientRect();
-            const margin = 16;
-
-            // Portion of the map covered by the sheet measured within the map's coordinate space
-            const coveredXWithinMap = Math.max(0, sheetRect.right - mapRect.left + margin);
-
-            const point = map.project({ lng: selectedFeatureCoordinates[0], lat: selectedFeatureCoordinates[1] } as any);
-            // Include popup width so its left edge clears the sheet
-            const popupEl = document.getElementById('selected-location-popup-content');
-            const popupHalfWidth = popupEl ? popupEl.getBoundingClientRect().width / 2 : 140; // fallback ~280px width
-            const desiredLeftEdge = coveredXWithinMap;
-            const currentLeftEdge = point.x - popupHalfWidth;
-            if (currentLeftEdge < desiredLeftEdge) {
-                const deltaX = desiredLeftEdge - currentLeftEdge;
-                const center = map.getCenter();
-                const centerPx = map.project({ lng: center.lng, lat: center.lat } as any);
-                const newCenterPx: { x: number; y: number } = { x: centerPx.x - deltaX, y: centerPx.y };
-                const newCenter = map.unproject([newCenterPx.x, newCenterPx.y] as any) as any;
-                map.easeTo({ center: [newCenter.lng, newCenter.lat] as any, duration: 300 });
-            }
-        };
+        const animate = () => panMapToAvoidSheetOverlap(map, selectedFeatureCoordinates);
 
         const raf = requestAnimationFrame(animate);
         const onResize = () => requestAnimationFrame(animate);

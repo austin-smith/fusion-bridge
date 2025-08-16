@@ -19,8 +19,19 @@ type FeatureCollection<G, P> = {
 
 type Bounds = [[number, number], [number, number]];
 
+/**
+ * Returns the default map style configuration for the application.
+ *
+ * FALLBACK_STYLE is a tokenless OpenStreetMap (OSM) raster style that includes
+ * glyphs for symbol layers. This enables proper rendering of text/icons without
+ * requiring any external access token, ensuring reliable map load in all envs.
+ *
+ * The style conforms to MapLibre's StyleSpecification and defines:
+ * - glyphs: font PBFs used by symbol layers
+ * - sources: OSM raster tiles
+ * - layers: a single raster layer that displays the tiles
+ */
 export function getDefaultMapStyle(): StyleSpecification {
-    // Tokenless OSM raster with glyphs for symbol layers
     return FALLBACK_STYLE;
 }
 

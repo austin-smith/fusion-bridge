@@ -52,8 +52,7 @@ export function LocationDetailSheet({ location, open, onOpenChange, onEdit, onVi
     };
     const handleViewFloorPlan = () => {
         if (!location) return;
-        const id = String(location.id);
-        const url = `/locations/${encodeURIComponent(id)}/floor-plans`;
+        const url = `/locations/${encodeURIComponent(location.id)}/floor-plans`;
         window.open(url, '_blank', 'noopener,noreferrer');
     };
 
