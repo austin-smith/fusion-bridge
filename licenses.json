@@ -435,6 +435,12 @@
     "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/lucide-react",
     "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/lucide-react/LICENSE"
   },
+  "maplibre-gl@5.6.2": {
+    "licenses": "BSD-3-Clause",
+    "repository": "https://github.com/maplibre/maplibre-gl-js",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/maplibre-gl",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/maplibre-gl/LICENSE.txt"
+  },
   "minimatch@10.0.3": {
     "licenses": "ISC",
     "repository": "https://github.com/isaacs/minimatch",
@@ -551,6 +557,12 @@
     "repository": "https://github.com/konvajs/react-konva",
     "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-konva",
     "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-konva/LICENSE"
+  },
+  "react-map-gl@8.0.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/visgl/react-map-gl",
+    "path": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-map-gl",
+    "licenseFile": "/Users/austinsmith/Documents/Repos/fusion-bridge/node_modules/react-map-gl/LICENSE"
   },
   "react-markdown@10.1.0": {
     "licenses": "MIT",

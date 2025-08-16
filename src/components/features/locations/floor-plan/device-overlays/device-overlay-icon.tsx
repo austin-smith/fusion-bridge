@@ -20,6 +20,8 @@ export interface DeviceOverlayIconProps {
   visibleBounds?: { left: number; top: number; right: number; bottom: number };
   /** Notify parent when hover state changes to position external DOM tooltip */
   onHoverChange?: (payload: { overlay: DeviceOverlayWithDevice; position: CanvasCoordinates } | null) => void;
+  /** Notify parent when cursor should change */
+  onCursorChange?: (cursor: string) => void;
   /** Scale factor from canvas zoom */
   canvasScale?: number;
   /** Whether the overlay is selected */
@@ -64,7 +66,8 @@ export function DeviceOverlayIcon({
   onDragStart,
   onDragMove,
   onDragEnd,
-  onHoverChange
+  onHoverChange,
+  onCursorChange
 }: DeviceOverlayIconProps) {
   const [isHovered, setIsHovered] = useState(false);
   const groupRef = useRef<any>(null);
@@ -154,11 +157,13 @@ export function DeviceOverlayIcon({
   const handleMouseEnter = () => {
     setIsHovered(true);
     onHoverChange?.({ overlay, position });
+    onCursorChange?.('pointer');
   };
 
   const handleMouseLeave = () => {
     setIsHovered(false);
     onHoverChange?.(null);
+    onCursorChange?.('');
   };
 
   const renderIcon = () => {

@@ -223,7 +223,7 @@ export const ImagePreviewDialog: React.FC<ImagePreviewDialogProps> = ({
           <div className="pointer-events-none absolute bottom-2 left-3 right-3 flex items-center justify-between text-xs text-muted-foreground">
             <div className="pointer-events-auto inline-flex items-center gap-2 rounded-md bg-background/80 backdrop-blur-sm border px-2 py-1">
               {naturalSize && (
-                <span>{naturalSize.width}×{naturalSize.height}</span>
+                <span>{naturalSize.width}x{naturalSize.height}</span>
               )}
             </div>
           </div>
