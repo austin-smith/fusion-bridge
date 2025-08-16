@@ -19,14 +19,8 @@ type FeatureCollection<G, P> = {
 
 type Bounds = [[number, number], [number, number]];
 
-export function getDefaultMapStyle(): StyleSpecification | string {
-    const key = process.env.NEXT_PUBLIC_MAPTILER_KEY;
-    if (key && key.length > 0) {
-        // Prefer MapTiler vector style when key present
-        return `https://api.maptiler.com/maps/streets/style.json?key=${key}`;
-    }
-
-    // Fallback: tokenless OSM raster with glyphs for symbol layers
+export function getDefaultMapStyle(): StyleSpecification {
+    // Tokenless OSM raster with glyphs for symbol layers
     return FALLBACK_STYLE;
 }
 
