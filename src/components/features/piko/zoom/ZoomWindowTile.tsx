@@ -7,7 +7,9 @@ import { ZoomWindowOverlay } from '@/components/features/piko/zoom/ZoomWindowOve
 import Image from 'next/image';
 import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
 import { Button } from '@/components/ui/button';
-import { MoreHorizontal, Crop, X, Box, Building } from 'lucide-react';
+import { MoreHorizontal, Crop, X, Box, Building, Loader2 } from 'lucide-react';
+import type { HeaderStyle } from '@/types/play';
+import { TileHeader } from '@/components/features/play/TileHeader';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +29,7 @@ export interface ZoomWindowTileProps {
   locked?: boolean;
   onEditRoi?: (id: string, newRoi: NormalizedRoi) => void;
   onRemove?: (id: string) => void;
-  overlayHeaders?: boolean;
+  headerStyle?: HeaderStyle;
   deviceName?: string;
   spaceName?: string;
   locationName?: string;
@@ -39,7 +41,7 @@ export const ZoomWindowTile: React.FC<ZoomWindowTileProps> = ({
   locked,
   onEditRoi,
   onRemove,
-  overlayHeaders = true,
+  headerStyle = 'overlay',
   deviceName,
   spaceName,
   locationName,
@@ -48,12 +50,13 @@ export const ZoomWindowTile: React.FC<ZoomWindowTileProps> = ({
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 640, h: 360 });
   const [fallbackActive, setFallbackActive] = useState(false);
+  const [renderBump, setRenderBump] = useState(0);
   const [editingRoi, setEditingRoi] = useState(false);
 
   useEffect(() => {
     const tryAttach = () => {
       const el = getSharedVideoEl?.(windowDef.sourceDeviceId) ?? null;
-      if (el && el.readyState >= 2) {
+      if (el) {
         setVideoEl(el);
         return true;
       }
@@ -64,7 +67,7 @@ export const ZoomWindowTile: React.FC<ZoomWindowTileProps> = ({
       const start = performance.now();
       const poll = () => {
         if (tryAttach()) return;
-        if (performance.now() - start > 1000) {
+        if (performance.now() - start > 3000) {
           setFallbackActive(true);
           return;
         }
@@ -74,6 +77,42 @@ export const ZoomWindowTile: React.FC<ZoomWindowTileProps> = ({
       return () => cancelAnimationFrame(raf);
     }
   }, [getSharedVideoEl, windowDef.sourceDeviceId]);
+
+  // Re-render when the shared video becomes ready to render frames
+  useEffect(() => {
+    if (!videoEl) return;
+    const bump = () => setRenderBump((n) => n + 1);
+    const events: Array<keyof HTMLVideoElementEventMap> = ['loadedmetadata', 'loadeddata', 'canplay', 'playing', 'resize'];
+    events.forEach((ev) => videoEl.addEventListener(ev, bump as EventListener));
+    let raf: number | undefined;
+    // short polling in case events are missed
+    const start = performance.now();
+    const poll = () => {
+      if (videoEl && videoEl.videoWidth && videoEl.videoHeight && videoEl.readyState >= 2) {
+        bump();
+        return;
+      }
+      if (performance.now() - start < 1500) {
+        raf = requestAnimationFrame(poll);
+      }
+    };
+    raf = requestAnimationFrame(poll);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      events.forEach((ev) => videoEl.removeEventListener(ev, bump as EventListener));
+    };
+  }, [videoEl]);
+
+  // Prevent exposeVideoRef loops by only setting when ref actually changes
+  const lastExposedRef = useRef<HTMLVideoElement | null>(null);
+  const safeSetVideoEl = React.useCallback((el: HTMLVideoElement | null) => {
+    // Ignore null unmounts to avoid toggling back to fallback and ref thrash
+    if (el === null) return;
+    if (lastExposedRef.current !== el) {
+      lastExposedRef.current = el;
+      setVideoEl(el);
+    }
+  }, []);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -94,47 +133,18 @@ export const ZoomWindowTile: React.FC<ZoomWindowTileProps> = ({
     return url.toString();
   }, [windowDef.connectorId, windowDef.cameraId]);
 
+  const isRenderable = Boolean(videoEl && videoEl.readyState >= 2 && videoEl.videoWidth && videoEl.videoHeight);
+
   return (
-    <div ref={containerRef} className="relative w-full h-full">
-      {/* Header overlay (matches PlayGrid style) */}
-      {overlayHeaders ? (
-        <div className="absolute inset-x-0 top-0 z-10">
-          <div
-            className="pointer-events-none absolute inset-x-0 top-0 h-8 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.6)_0%,rgba(0,0,0,0.38)_38%,rgba(0,0,0,0.14)_78%,rgba(0,0,0,0)_100%)] backdrop-blur-[2px]"
-            aria-hidden="true"
-          />
-          <div className="relative z-20 px-2 py-1 flex items-center justify-between gap-2 text-white">
-            <div className="min-w-0 flex items-center gap-1.5 text-xs">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Crop className="h-3.5 w-3.5 text-white/80" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Zoom Window</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              {deviceName && <span className="truncate">{deviceName}</span>}
-              {spaceName ? (
-                <>
-                  <span className="text-white/60">•</span>
-                  <span className="inline-flex items-center gap-1 truncate text-white/80">
-                    <Box className="h-3.5 w-3.5" />
-                    <span className="truncate">{spaceName}</span>
-                  </span>
-                </>
-              ) : null}
-              {locationName ? (
-                <>
-                  <span className="text-white/60">•</span>
-                  <span className="inline-flex items-center gap-1 truncate text-white/80">
-                    <Building className="h-3.5 w-3.5" />
-                    <span className="truncate">{locationName}</span>
-                  </span>
-                </>
-              ) : null}
-            </div>
+    <div ref={containerRef} className="relative w-full h-full bg-black group">
+      {headerStyle === 'standard' ? (
+        <TileHeader
+          headerStyle={headerStyle}
+          icon={<Crop className="h-3.5 w-3.5" />}
+          title={deviceName}
+          spaceName={spaceName}
+          locationName={locationName}
+          actions={(
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -171,13 +181,61 @@ export const ZoomWindowTile: React.FC<ZoomWindowTileProps> = ({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-        </div>
+          )}
+        />
+      ) : null}
+
+      {headerStyle !== 'standard' ? (
+        <TileHeader
+          headerStyle={headerStyle}
+          icon={<Crop className="h-3.5 w-3.5" />}
+          title={deviceName}
+          spaceName={spaceName}
+          locationName={locationName}
+          actions={(
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 no-drag text-white/90 hover:text-white hover:bg-white/10"
+                  aria-label="Zoom tile options"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="no-drag">
+                <DropdownMenuItem
+                  disabled={locked}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!locked) setEditingRoi(true);
+                  }}
+                >
+                  <Crop className="mr-2 h-4 w-4" />
+                  Edit region
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onRemove?.(windowDef.id);
+                  }}
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  Remove
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        />
       ) : null}
 
       {/* Content */}
-      <div className="absolute inset-0">
-        {videoEl ? (
+      <div className={headerStyle === 'standard' ? 'absolute inset-x-0 bottom-0 top-8' : 'absolute inset-0'}>
+        {isRenderable ? (
           <VideoZoomCanvas
             video={videoEl}
             width={size.w}
@@ -185,20 +243,27 @@ export const ZoomWindowTile: React.FC<ZoomWindowTileProps> = ({
             roi={windowDef.roi}
             className="absolute inset-0"
           />
-        ) : fallbackActive ? (
+        ) : (
           <>
+            {/* Always render the hidden player to accelerate attach; keep thumbnail visible */}
             <PikoVideoPlayer
               connectorId={windowDef.connectorId}
               cameraId={windowDef.cameraId}
               className="absolute inset-0 opacity-0 pointer-events-none"
               disableFullscreen
-              exposeVideoRef={setVideoEl}
+              exposeVideoRef={safeSetVideoEl}
               showBuiltInSpinner={false}
             />
             <Image src={thumbnailSrc} alt="" fill unoptimized priority={false} className="object-contain bg-black" />
           </>
-        ) : (
-          <Image src={thumbnailSrc} alt="" fill unoptimized priority={false} className="object-contain bg-black" />
+        )}
+
+        {!isRenderable && (
+          <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+            <div className="rounded-md bg-black/10 p-2">
+              <Loader2 className="h-5 w-5 animate-spin text-white/90" />
+            </div>
+          </div>
         )}
 
         {/* ROI Edit Overlay */}

@@ -124,6 +124,10 @@ export default function LocationsPage() {
       params.delete('view');
     } else {
       params.set('view', v);
+      // Auto-collapse tree view when switching to map view
+      if (v === 'map' && showTreeView) {
+        setShowTreeView(false);
+      }
     }
     router.replace(`?${params.toString()}`);
   };
@@ -567,20 +571,28 @@ export default function LocationsPage() {
       <Tabs value={currentView} onValueChange={(v) => setView(v as 'list' | 'map')} className="flex-1 flex flex-col overflow-hidden">
       <div className="flex flex-col h-full"> 
         <div className="p-4 border-b shrink-0">
-          <PageHeader 
+                      <PageHeader 
             title="Locations & Spaces"
             icon={(
               <div className="flex items-center gap-3">
-                <Button 
-                  variant="outline" 
-                  size="icon" 
-                  className={cn("h-9 w-9", showTreeView && "bg-accent hover:bg-accent")}
-                  disabled={currentView === 'map'}
-                  onClick={() => setShowTreeView(!showTreeView)}
-                  title={showTreeView ? "Hide location tree" : "Show location tree"}
-                >
-                  {showTreeView ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-                </Button>
+                <TooltipProvider delayDuration={100}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        className={cn("h-9 w-9", showTreeView && "bg-accent hover:bg-accent")}
+                        disabled={currentView === 'map'}
+                        onClick={() => setShowTreeView(!showTreeView)}
+                      >
+                        {showTreeView ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{showTreeView ? "Hide location tree" : "Show location tree"}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <Building className="h-6 w-6 text-muted-foreground" />
               </div>
             )}

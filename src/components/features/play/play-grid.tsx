@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import RGL, { WidthProvider, type Layout } from "react-grid-layout";
 import type { DeviceWithConnector, Space, Location } from "@/types";
+import type { HeaderStyle } from "@/types/play";
 import { DewarpablePikoPlayer } from "@/components/features/piko/dewarp/DewarpablePikoPlayer";
 import { DewarpMenuSub } from "@/components/features/piko/dewarp/DewarpMenuSub";
 import { DewarpSettingsDialog } from "@/components/features/piko/dewarp/DewarpSettings";
@@ -31,12 +32,10 @@ import { Button } from "@/components/ui/button";
 import {
   MoreHorizontal,
   Plus,
-  Box,
-  Building,
   Cctv,
   Trash2,
-  Crop
 } from "lucide-react";
+import { TileHeader } from "@/components/features/play/TileHeader";
 
 const GridLayout = WidthProvider(RGL);
 
@@ -53,12 +52,15 @@ export interface PlayGridProps {
   onAddCameras?: () => void;
   spaces: Space[];
   locations: Location[];
-  overlayHeaders?: boolean;
+  headerStyle?: HeaderStyle;
   showInfo?: boolean;
   locked?: boolean;
   initialZoomWindows?: ZoomWindow[];
   onZoomWindowsChange?: (windows: ZoomWindow[]) => void;
   targetStream?: 'AUTO' | 'HIGH' | 'LOW';
+  // Persistable per-tile dewarp state, keyed by tile id (currently device id for camera tiles)
+  initialDewarpByTileId?: Record<string, { enabled: boolean; settings: DewarpSettings }>;
+  onDewarpByTileIdChange?: (state: Record<string, { enabled: boolean; settings: DewarpSettings }>) => void;
 }
 
 export const PlayGridInner: React.FC<PlayGridProps> = ({
@@ -69,12 +71,14 @@ export const PlayGridInner: React.FC<PlayGridProps> = ({
   onAddCameras,
   spaces,
   locations,
-  overlayHeaders = true,
+  headerStyle = 'overlay',
   showInfo = false,
   locked = false,
   initialZoomWindows = [],
   onZoomWindowsChange,
   targetStream = 'AUTO',
+  initialDewarpByTileId,
+  onDewarpByTileIdChange,
 }) => {
   const playableDevices = useMemo(
     () => devices.filter((d) => d.deviceId && d.connectorId),
@@ -122,6 +126,14 @@ export const PlayGridInner: React.FC<PlayGridProps> = ({
   const COLS = 12;
   const ROW_HEIGHT = 100;
   const MARGIN: [number, number] = [10, 10];
+
+  const serializeLayout = React.useCallback((arr: Layout[]) => {
+    const norm = [...arr].map(it => ({ i: it.i, x: it.x, y: it.y, w: it.w, h: it.h, static: !!it.static }))
+      .sort((u, v) => u.i.localeCompare(v.i));
+    return JSON.stringify(norm);
+  }, []);
+  const prevLayoutJsonRef = useRef<string>(serializeLayout(layout));
+  const prevEmittedJsonRef = useRef<string>(serializeLayout(layout));
 
   // Lookup maps to resolve names like image-preview-dialog header style
   const spaceById = useMemo(() => {
@@ -180,11 +192,12 @@ export const PlayGridInner: React.FC<PlayGridProps> = ({
     // Use zoom window manager to augment layout with zoom windows
     const layoutWithDevices = [...nextLayout, ...deviceAdditions];
     const finalLayout = zoomWindowManager.augmentLayout(layoutWithDevices, COLS);
-
-    if (finalLayout.length !== layout.length || !finalLayout.every((item, idx) => layout[idx]?.i === item.i)) {
+    const json = serializeLayout(finalLayout);
+    if (json !== prevLayoutJsonRef.current) {
+      prevLayoutJsonRef.current = json;
       setLayout(finalLayout);
     }
-  }, [playableDevices, zoomWindowManager.windows, initialLayoutItems, zoomWindowManager, layout]);
+  }, [playableDevices, zoomWindowManager, initialLayoutItems, layout, serializeLayout]);
 
   // shared video registry API for ZoomWindowTile
   const getSharedVideoEl = React.useCallback((sourceDeviceId: string) => {
@@ -194,7 +207,17 @@ export const PlayGridInner: React.FC<PlayGridProps> = ({
   const tileContentRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Per-tile dewarp state using reusable hook
-  const dewarpState = useDewarpControls();
+  const dewarpState = useDewarpControls({
+    initialState: initialDewarpByTileId
+      ? Object.fromEntries(Object.entries(initialDewarpByTileId).map(([tileId, v]) => [tileId, { enabled: !!v.enabled, settings: v.settings }]))
+      : {},
+    onChange: (next) => {
+      if (onDewarpByTileIdChange) {
+        const mapped = Object.fromEntries(Object.entries(next).map(([k, v]) => [k, { enabled: !!v.enabled, settings: v.settings }]));
+        onDewarpByTileIdChange(mapped);
+      }
+    }
+  });
   const [dewarpSettingsDialog, setDewarpSettingsDialog] = useState<{ open: boolean; deviceId?: string }>({ open: false });
 
   if (playableDevices.length === 0) {
@@ -224,8 +247,15 @@ export const PlayGridInner: React.FC<PlayGridProps> = ({
       draggableCancel={'button, a, input, textarea, select, [role="menuitem"], .no-drag'}
       layout={layout}
       onLayoutChange={(l) => {
-        setLayout(l);
-        onLayoutChange?.(l);
+        const json = serializeLayout(l);
+        if (json !== prevLayoutJsonRef.current) {
+          prevLayoutJsonRef.current = json;
+          setLayout(l);
+        }
+        if (json !== prevEmittedJsonRef.current) {
+          prevEmittedJsonRef.current = json;
+          onLayoutChange?.(l);
+        }
       }}
     >
       {playableDevices.map((device) => {
@@ -242,49 +272,124 @@ export const PlayGridInner: React.FC<PlayGridProps> = ({
           return undefined;
         })();
         return (
-          <div key={device.id} className="overflow-hidden grid-item-container">
+          <div key={device.id} className="overflow-hidden grid-item-container group">
             <Card className="h-full w-full flex flex-col overflow-hidden rounded-lg">
-              {!overlayHeaders ? (
-                <CardHeader className="px-2 py-1.5 shrink-0 bg-black text-white rounded-t-lg">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <CardTitle
-                        className="text-xs font-medium leading-tight truncate flex items-center gap-1.5"
-                        title={device.name}
-                      >
-                        <Cctv className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="truncate">{device.name}</span>
-                        {resolvedSpaceName ? (
-                          <>
-                            <span className="text-muted-foreground">•</span>
-                            <span className="inline-flex items-center gap-1 truncate text-muted-foreground">
-                              <Box className="h-3.5 w-3.5" />
-                              <span className="truncate">
-                                {resolvedSpaceName}
-                              </span>
-                            </span>
-                          </>
-                        ) : null}
-                        {resolvedLocationName ? (
-                          <>
-                            <span className="text-muted-foreground">•</span>
-                            <span className="inline-flex items-center gap-1 truncate text-muted-foreground">
-                              <Building className="h-3.5 w-3.5" />
-                              <span className="truncate">
-                                {resolvedLocationName}
-                              </span>
-                            </span>
-                          </>
-                        ) : null}
-                      </CardTitle>
-                    </div>
-                    {onRemoveFromLayout ? (
+              {headerStyle === 'standard' ? (
+                <TileHeader
+                  headerStyle={headerStyle}
+                  icon={<Cctv className="h-3.5 w-3.5" />}
+                  title={device.name}
+                  spaceName={resolvedSpaceName}
+                  locationName={resolvedLocationName}
+                  actions={onRemoveFromLayout ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 no-drag"
+                          aria-label="Tile options"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="no-drag">
+                        <DewarpMenuSub
+                          enabled={dewarpState.isEnabled(device.id)}
+                          onToggleEnabled={() => dewarpState.toggleDewarp(device.id)}
+                          onOpenSettings={() => setDewarpSettingsDialog({ open: true, deviceId: device.id })}
+                        />
+                        <ZoomMenuItem
+                          disabled={locked}
+                          onSelect={() => {
+                            if (!locked) zoomWindowManager.beginDraw(device.id);
+                          }}
+                        />
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onRemoveFromLayout(device.id);
+                          }}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Remove
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                />
+              ) : null}
+              <CardContent className="p-0 grow relative overflow-hidden rounded-b-lg">
+                <div ref={(el) => { tileContentRefs.current[device.id] = el; }} className={`absolute inset-0 ${dewarpState.isEnabled(device.id) ? 'no-drag' : ''}`}>
+                  <DewarpablePikoPlayer
+                    connectorId={device.connectorId}
+                    cameraId={device.deviceId!}
+                    className="w-full h-full"
+                    dewarpEnabled={dewarpState.isEnabled(device.id)}
+                    settings={dewarpState.getSettings(device.id)}
+                    editOverlayTopOffsetPx={headerStyle !== 'standard' ? 48 : 0}
+                    onDewarpSettingsChange={(newSettings) => dewarpState.updateSettings(device.id, newSettings)}
+                    enableStats={showInfo}
+                    onStats={
+                      showInfo
+                        ? ({ fps, width, height }) => {
+                            smoothAndThrottleFps(device.id, fps);
+                            if (width && height) {
+                              setResolutionById((prev) => {
+                                const cur = prev[device.id];
+                                if (cur && cur.w === width && cur.h === height)
+                                  return prev;
+                                return {
+                                  ...prev,
+                                  [device.id]: { w: width, h: height },
+                                };
+                              });
+                            }
+                          }
+                        : undefined
+                    }
+                    thumbnailSize="320x0"
+                    targetStream={targetStream}
+                    // Expose the playing <video> so Zoom windows can sample it
+                    exposeVideoRef={(el) => {
+                      // Register even when not fully ready so zoom windows can attach ASAP after refresh
+                      videoRegistry.register(device.id, el);
+                    }}
+                  />
+                  {zoomWindowManager.drawingFor === device.id && !locked ? (
+                    <ZoomWindowOverlay
+                      mode="create"
+                      deviceId={device.id}
+                      connectorId={device.connectorId}
+                      cameraId={device.deviceId!}
+                      containerRef={{ current: tileContentRefs.current[device.id] as HTMLDivElement | null }}
+                      getVideoSize={() => videoRegistry.getVideoSize(device.id) || resolutionById[device.id]}
+                      onCreate={(zw) => {
+                        zoomWindowManager.addWindow(zw);
+                        zoomWindowManager.cancelDraw();
+                      }}
+                      onCancel={() => zoomWindowManager.cancelDraw()}
+                    />
+                  ) : null}
+                </div>
+
+                {headerStyle !== 'standard' ? (
+                  <TileHeader
+                    headerStyle={headerStyle}
+                    icon={<Cctv className="h-3.5 w-3.5" />}
+                    title={device.name}
+                    spaceName={resolvedSpaceName}
+                    locationName={resolvedLocationName}
+                    actions={onRemoveFromLayout ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 w-7 p-0 no-drag"
+                            className="h-7 w-7 p-0 no-drag text-white/90 hover:text-white hover:bg-white/10"
                             aria-label="Tile options"
                           >
                             <MoreHorizontal className="h-4 w-4" />
@@ -317,136 +422,7 @@ export const PlayGridInner: React.FC<PlayGridProps> = ({
                         </DropdownMenuContent>
                       </DropdownMenu>
                     ) : null}
-                  </div>
-                </CardHeader>
-              ) : null}
-              <CardContent className="p-0 grow relative overflow-hidden rounded-b-lg">
-                <div ref={(el) => { tileContentRefs.current[device.id] = el; }} className={`absolute inset-0 ${dewarpState.isEnabled(device.id) ? 'no-drag' : ''}`}>
-                  <DewarpablePikoPlayer
-                    connectorId={device.connectorId}
-                    cameraId={device.deviceId!}
-                    className="w-full h-full"
-                    dewarpEnabled={dewarpState.isEnabled(device.id)}
-                    settings={dewarpState.getSettings(device.id)}
-                    editOverlayTopOffsetPx={overlayHeaders ? 48 : 0}
-                    onDewarpSettingsChange={(newSettings) => dewarpState.updateSettings(device.id, newSettings)}
-                    enableStats={showInfo}
-                    onStats={
-                      showInfo
-                        ? ({ fps, width, height }) => {
-                            smoothAndThrottleFps(device.id, fps);
-                            if (width && height) {
-                              setResolutionById((prev) => {
-                                const cur = prev[device.id];
-                                if (cur && cur.w === width && cur.h === height)
-                                  return prev;
-                                return {
-                                  ...prev,
-                                  [device.id]: { w: width, h: height },
-                                };
-                              });
-                            }
-                          }
-                        : undefined
-                    }
-                    thumbnailSize="320x0"
-                    targetStream={targetStream}
-                    // Expose the playing <video> so Zoom windows can sample it
-                    exposeVideoRef={(el) => {
-                      videoRegistry.register(device.id, el);
-                    }}
                   />
-                  {zoomWindowManager.drawingFor === device.id && !locked ? (
-                    <ZoomWindowOverlay
-                      mode="create"
-                      deviceId={device.id}
-                      connectorId={device.connectorId}
-                      cameraId={device.deviceId!}
-                      containerRef={{ current: tileContentRefs.current[device.id] as HTMLDivElement | null }}
-                      getVideoSize={() => videoRegistry.getVideoSize(device.id) || resolutionById[device.id]}
-                      onCreate={(zw) => {
-                        zoomWindowManager.addWindow(zw);
-                        zoomWindowManager.cancelDraw();
-                      }}
-                      onCancel={() => zoomWindowManager.cancelDraw()}
-                    />
-                  ) : null}
-                </div>
-
-                {overlayHeaders ? (
-                  <div className="absolute inset-x-0 top-0">
-                    <div
-                      className="pointer-events-none absolute inset-x-0 top-0 h-8 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.6)_0%,rgba(0,0,0,0.38)_38%,rgba(0,0,0,0.14)_78%,rgba(0,0,0,0)_100%)] backdrop-blur-[2px] z-0"
-                      aria-hidden="true"
-                    />
-                    <div className="relative z-20 px-2 py-1 flex items-center justify-between gap-2 text-white">
-                      <div className="min-w-0 flex items-center gap-1.5 text-xs">
-                        <Cctv className="h-3.5 w-3.5 text-white/80" />
-                        <span className="truncate">{device.name}</span>
-                        {resolvedSpaceName ? (
-                          <>
-                            <span className="text-white/60">•</span>
-                            <span className="inline-flex items-center gap-1 truncate text-white/80">
-                              <Box className="h-3.5 w-3.5" />
-                              <span className="truncate">
-                                {resolvedSpaceName}
-                              </span>
-                            </span>
-                          </>
-                        ) : null}
-                        {resolvedLocationName ? (
-                          <>
-                            <span className="text-white/60">•</span>
-                            <span className="inline-flex items-center gap-1 truncate text-white/80">
-                              <Building className="h-3.5 w-3.5" />
-                              <span className="truncate">
-                                {resolvedLocationName}
-                              </span>
-                            </span>
-                          </>
-                        ) : null}
-                      </div>
-                      {onRemoveFromLayout ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 no-drag text-white/90 hover:text-white hover:bg-white/10"
-                              aria-label="Tile options"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="no-drag">
-                            <DewarpMenuSub
-                              enabled={dewarpState.isEnabled(device.id)}
-                              onToggleEnabled={() => dewarpState.toggleDewarp(device.id)}
-                              onOpenSettings={() => setDewarpSettingsDialog({ open: true, deviceId: device.id })}
-                            />
-                            <ZoomMenuItem
-                              disabled={locked}
-                              onSelect={() => {
-                                if (!locked) zoomWindowManager.beginDraw(device.id);
-                              }}
-                            />
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                onRemoveFromLayout(device.id);
-                              }}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Remove
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : null}
-                    </div>
-                  </div>
                 ) : null}
 
                 {showInfo ? (
@@ -495,7 +471,7 @@ export const PlayGridInner: React.FC<PlayGridProps> = ({
                   windowDef={zw}
                   getSharedVideoEl={getSharedVideoEl}
                   locked={locked}
-                  overlayHeaders={overlayHeaders}
+                  headerStyle={headerStyle}
                   deviceName={sourceDevice?.name}
                   spaceName={resolvedSpaceName}
                   locationName={resolvedLocationName}
@@ -504,7 +480,7 @@ export const PlayGridInner: React.FC<PlayGridProps> = ({
                   }}
                   onRemove={(id) => {
                     zoomWindowManager.removeWindow(id);
-                    setLayout((prev) => prev.filter((it) => it.i !== id));
+                    setLayout((prev) => (prev.some((it) => it.i === id) ? prev.filter((it) => it.i !== id) : prev));
                   }}
                 />
               </div>

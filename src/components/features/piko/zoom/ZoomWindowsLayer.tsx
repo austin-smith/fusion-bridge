@@ -4,12 +4,13 @@ import React from 'react';
 import type { ZoomWindow } from '@/types/zoom-window';
 import { ZoomWindowTile } from '@/components/features/piko/zoom/ZoomWindowTile';
 import type { Layout } from 'react-grid-layout';
+import type { HeaderStyle } from '@/types/play';
 
 export interface ZoomWindowsLayerProps {
   windows: ZoomWindow[];
   layout: Layout[];
   locked: boolean;
-  overlayHeaders: boolean;
+  headerStyle: HeaderStyle;
   getSharedVideoEl: (sourceDeviceId: string) => HTMLVideoElement | null;
   onRemove: (id: string) => void;
 }
@@ -18,7 +19,7 @@ export const ZoomWindowsLayer: React.FC<ZoomWindowsLayerProps> = ({
   windows,
   layout,
   locked,
-  overlayHeaders,
+  headerStyle,
   getSharedVideoEl,
   onRemove,
 }) => {
@@ -33,7 +34,7 @@ export const ZoomWindowsLayer: React.FC<ZoomWindowsLayerProps> = ({
                 windowDef={zw}
                 getSharedVideoEl={getSharedVideoEl}
                 locked={locked}
-                overlayHeaders={overlayHeaders}
+                headerStyle={headerStyle}
                 onRemove={onRemove}
               />
             </div>

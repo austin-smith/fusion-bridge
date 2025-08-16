@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Skeleton } from '@/components/ui/skeleton';
 import { MoreHorizontal, Save, LayoutTemplate, Plus, Pencil, Trash2, SlidersHorizontal, Pin, Check } from 'lucide-react';
 
 export interface LayoutOption {
@@ -27,11 +28,12 @@ interface PlayLayoutControlsProps {
   onEditCameras?: () => void;
   defaultLayoutId?: string | null;
   onSetDefault?: (id: string | 'auto') => void;
+  isLoading?: boolean;
 }
 
 export const PlayLayoutControls: React.FC<PlayLayoutControlsProps> = ({
   layouts, activeLayoutId, onSelect, onCreate, onRename, onDelete, onSave, isDirty = false, onEditCameras,
-  defaultLayoutId = null, onSetDefault,
+  defaultLayoutId = null, onSetDefault, isLoading = false,
 }) => {
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
 	const [isRenameOpen, setIsRenameOpen] = useState(false);
@@ -61,6 +63,21 @@ export const PlayLayoutControls: React.FC<PlayLayoutControlsProps> = ({
   const orderedLayouts = React.useMemo(() => {
     return [...layouts].sort((a, b) => a.name.localeCompare(b.name));
   }, [layouts]);
+
+  // Show skeleton when loading
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="inline-flex items-center gap-2 rounded-md bg-background/80 backdrop-blur-sm border px-1.5 py-1">
+          <LayoutTemplate className="h-4 w-4 text-muted-foreground" />
+          <Skeleton className="h-8 w-[200px]" />
+          <div className="h-5 w-px bg-border mx-0" />
+          <Skeleton className="h-8 w-8" />
+          <Skeleton className="h-8 w-8" />
+        </div>
+      </div>
+    );
+  }
 
   return (
 		<div className="flex items-center gap-2">

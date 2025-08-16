@@ -265,7 +265,7 @@ export default function LocationsMap(props: LocationsMapProps) {
     return (
         <div className="w-full h-full rounded-lg overflow-hidden relative">
             {/* Zoom controls */}
-            <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex flex-col gap-2">
+            <div className="pointer-events-none absolute right-3 bottom-12 z-10 flex flex-col gap-2">
                 <Button
                     variant="secondary"
                     size="icon"

@@ -14,6 +14,7 @@ import type { Location, Space, AlarmZone } from '@/types';
 import { auth } from "@/lib/auth/server";
 import { createOrgScopedDb } from "@/lib/db/org-scoped-db";
 import { headers } from 'next/headers';
+import { AutomationOrgGuard } from '@/components/features/automations/AutomationOrgGuard';
 
 // Define specific params type for this page
 interface EditAutomationPageParams {
@@ -254,6 +255,8 @@ export default async function EditAutomationPage({ params }: { params: Promise<E
 
   return (
     <div className="flex-1 space-y-4 p-4 md:p-6">
+      {/* Client-side guard to handle org switches gracefully */}
+      <AutomationOrgGuard />
       <div>
         <h2 className="text-xl font-semibold text-foreground">Edit Automation</h2>
         <p className="text-muted-foreground">
