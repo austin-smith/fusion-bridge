@@ -9,6 +9,7 @@ import { Maximize, Minimize, MonitorPlay, Settings } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LocationSpaceSelector } from "@/components/common/LocationSpaceSelector";
 import { PlayGrid } from "@/components/features/play/play-grid";
 import type { Layout } from "react-grid-layout";
@@ -55,6 +56,11 @@ export default function PlayPage() {
     if (typeof window === 'undefined') return false;
     const v = window.localStorage.getItem('fusion.play.showInfo');
     return v === '1';
+  });
+  const [targetStream, setTargetStream] = useState<'AUTO' | 'HIGH' | 'LOW'>(() => {
+    if (typeof window === 'undefined') return 'AUTO';
+    const v = window.localStorage.getItem('fusion.play.targetStream');
+    return (v === 'HIGH' || v === 'LOW') ? v : 'AUTO';
   });
   const [prefs, setPrefs] = useState<{ defaultLayoutId: string | null }>({
     defaultLayoutId: null,
@@ -485,6 +491,27 @@ export default function PlayPage() {
               }}
             />
           </div>
+          <div className="flex items-center justify-between py-1">
+            <div className="space-y-0.5">
+              <Label htmlFor="target-stream-select">Target stream</Label>
+            </div>
+            <Select
+              value={targetStream}
+              onValueChange={(value: 'AUTO' | 'HIGH' | 'LOW') => {
+                setTargetStream(value);
+                try { window.localStorage.setItem('fusion.play.targetStream', value); } catch {}
+              }}
+            >
+              <SelectTrigger id="target-stream-select" className="w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="AUTO">Auto</SelectItem>
+                <SelectItem value="HIGH">High</SelectItem>
+                <SelectItem value="LOW">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
         </DialogContent>
       </Dialog>
@@ -533,6 +560,7 @@ export default function PlayPage() {
               locations={locations}
               overlayHeaders={overlayHeaders}
               showInfo={showInfo}
+              targetStream={targetStream}
               key={`grid-fs-${activeLayout?.id || "auto"}`}
             />
           )}
@@ -566,6 +594,7 @@ export default function PlayPage() {
              locations={locations}
              overlayHeaders={overlayHeaders}
              showInfo={showInfo}
+             targetStream={targetStream}
             key={`grid-${activeLayout?.id || "auto"}`}
           />
         )}

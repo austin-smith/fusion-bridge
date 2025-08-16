@@ -1,13 +1,19 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import RGL, { WidthProvider, type Layout } from "react-grid-layout";
 import type { DeviceWithConnector, Space, Location } from "@/types";
-import { DewarpablePikoPlayer } from "@/components/features/piko/DewarpablePikoPlayer";
-import { DewarpMenuSub } from "@/components/features/piko/DewarpMenuSub";
-import { DewarpSettingsDialog } from "@/components/features/piko/DewarpSettings";
+import { DewarpablePikoPlayer } from "@/components/features/piko/dewarp/DewarpablePikoPlayer";
+import { DewarpMenuSub } from "@/components/features/piko/dewarp/DewarpMenuSub";
+import { DewarpSettingsDialog } from "@/components/features/piko/dewarp/DewarpSettings";
 import { useDewarpControls } from "@/hooks/use-dewarp-controls";
+import { ZoomWindowTile } from "@/components/features/piko/zoom/ZoomWindowTile";
+import { ZoomWindowOverlay } from "@/components/features/piko/zoom/ZoomWindowOverlay";
+import { ZoomMenuItem } from "@/components/features/piko/zoom/ZoomMenuItem";
+import { VideoRegistryProvider, useVideoRegistry } from "@/components/features/piko/zoom/VideoRegistryContext";
+import type { ZoomWindow } from "@/types/zoom-window";
+import { useZoomWindows } from "@/hooks/use-zoom-windows";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +33,8 @@ import {
   Box,
   Building,
   Cctv,
-  Trash2
+  Trash2,
+  Crop
 } from "lucide-react";
 
 const GridLayout = WidthProvider(RGL);
@@ -47,9 +54,13 @@ export interface PlayGridProps {
   locations: Location[];
   overlayHeaders?: boolean;
   showInfo?: boolean;
+  locked?: boolean;
+  initialZoomWindows?: ZoomWindow[];
+  onZoomWindowsChange?: (windows: ZoomWindow[]) => void;
+  targetStream?: 'AUTO' | 'HIGH' | 'LOW';
 }
 
-export const PlayGrid: React.FC<PlayGridProps> = ({
+export const PlayGridInner: React.FC<PlayGridProps> = ({
   devices,
   onLayoutChange,
   initialLayoutItems,
@@ -59,6 +70,10 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
   locations,
   overlayHeaders = true,
   showInfo = false,
+  locked = false,
+  initialZoomWindows = [],
+  onZoomWindowsChange,
+  targetStream = 'AUTO',
 }) => {
   const playableDevices = useMemo(
     () => devices.filter((d) => d.deviceId && d.connectorId),
@@ -66,6 +81,11 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
   );
 
   const [layout, setLayout] = useState<Layout[]>([]);
+  const zoomWindowManager = useZoomWindows({
+    initialWindows: initialZoomWindows,
+    onChange: onZoomWindowsChange,
+  });
+  const videoRegistry = useVideoRegistry();
   const [fpsById, setFpsById] = useState<Record<string, number>>({});
   const [resolutionById, setResolutionById] = useState<
     Record<string, { w: number; h: number }>
@@ -135,19 +155,20 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
       }
     }
 
-    // Keep only layout items for devices that are currently playable
+    // IDs that should be present: playable device IDs + zoom window IDs
     const playableIds = new Set(playableDevices.map((d) => d.id));
-    const nextLayout = layout.filter((it) => playableIds.has(it.i));
+    const shouldKeep = (id: string) => playableIds.has(id) || zoomWindowManager.windows.some(z => z.id === id);
+
+    const nextLayout = layout.filter((it) => shouldKeep(it.i));
     const presentIds = new Set(nextLayout.map((it) => it.i));
 
-    // Append missing devices to the end with reasonable defaults (or saved positions)
-    const startIndex = nextLayout.length;
-    const newDevices = playableDevices.filter((d) => !presentIds.has(d.id));
-    const additions: Layout[] = newDevices.map((device, idx) => {
+    // Add missing devices to layout
+    const toAddDevices = playableDevices.filter((d) => !presentIds.has(d.id));
+    const deviceAdditions: Layout[] = toAddDevices.map((device, idx) => {
       const base: Layout = {
         i: device.id,
-        x: ((startIndex + idx) % perRow) * tileSpan,
-        y: Math.floor((startIndex + idx) / perRow),
+        x: ((nextLayout.length + idx) % perRow) * tileSpan,
+        y: Math.floor((nextLayout.length + idx) / perRow),
         w: tileSpan,
         h: 3,
         static: false,
@@ -155,10 +176,21 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
       return savedById[device.id] ? { ...base, ...savedById[device.id] } : base;
     });
 
-    if (additions.length > 0 || nextLayout.length !== layout.length) {
-      setLayout([...nextLayout, ...additions]);
+    // Use zoom window manager to augment layout with zoom windows
+    const layoutWithDevices = [...nextLayout, ...deviceAdditions];
+    const finalLayout = zoomWindowManager.augmentLayout(layoutWithDevices, COLS);
+
+    if (finalLayout.length !== layout.length || !finalLayout.every((item, idx) => layout[idx]?.i === item.i)) {
+      setLayout(finalLayout);
     }
-  }, [playableDevices, initialLayoutItems, layout]);
+  }, [playableDevices, zoomWindowManager.windows, initialLayoutItems, zoomWindowManager, layout]);
+
+  // shared video registry API for ZoomWindowTile
+  const getSharedVideoEl = React.useCallback((sourceDeviceId: string) => {
+    return videoRegistry.get(sourceDeviceId);
+  }, [videoRegistry]);
+
+  const tileContentRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Per-tile dewarp state using reusable hook
   const dewarpState = useDewarpControls();
@@ -263,6 +295,12 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
                             onToggleEnabled={() => dewarpState.toggleDewarp(device.id)}
                             onOpenSettings={() => setDewarpSettingsDialog({ open: true, deviceId: device.id })}
                           />
+                          <ZoomMenuItem
+                            disabled={locked}
+                            onSelect={() => {
+                              if (!locked) zoomWindowManager.beginDraw(device.id);
+                            }}
+                          />
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
@@ -282,7 +320,7 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
                 </CardHeader>
               ) : null}
               <CardContent className="p-0 grow relative overflow-hidden rounded-b-lg">
-                <div className={`absolute inset-0 ${dewarpState.isEnabled(device.id) ? 'no-drag' : ''}`}>
+                <div ref={(el) => { tileContentRefs.current[device.id] = el; }} className={`absolute inset-0 ${dewarpState.isEnabled(device.id) ? 'no-drag' : ''}`}>
                   <DewarpablePikoPlayer
                     connectorId={device.connectorId}
                     cameraId={device.deviceId!}
@@ -311,7 +349,27 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
                         : undefined
                     }
                     thumbnailSize="320x0"
+                    targetStream={targetStream}
+                    // Expose the playing <video> so Zoom windows can sample it
+                    exposeVideoRef={(el) => {
+                      videoRegistry.register(device.id, el);
+                    }}
                   />
+                  {zoomWindowManager.drawingFor === device.id && !locked ? (
+                    <ZoomWindowOverlay
+                      mode="create"
+                      deviceId={device.id}
+                      connectorId={device.connectorId}
+                      cameraId={device.deviceId!}
+                      containerRef={{ current: tileContentRefs.current[device.id] as HTMLDivElement | null }}
+                      getVideoSize={() => videoRegistry.getVideoSize(device.id) || resolutionById[device.id]}
+                      onCreate={(zw) => {
+                        zoomWindowManager.addWindow(zw);
+                        zoomWindowManager.cancelDraw();
+                      }}
+                      onCancel={() => zoomWindowManager.cancelDraw()}
+                    />
+                  ) : null}
                 </div>
 
                 {overlayHeaders ? (
@@ -365,6 +423,12 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
                               onToggleEnabled={() => dewarpState.toggleDewarp(device.id)}
                               onOpenSettings={() => setDewarpSettingsDialog({ open: true, deviceId: device.id })}
                             />
+                            <ZoomMenuItem
+                              disabled={locked}
+                              onSelect={() => {
+                                if (!locked) zoomWindowManager.beginDraw(device.id);
+                              }}
+                            />
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
@@ -405,6 +469,49 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
           </div>
         );
       })}
+
+      {/* Render zoom windows as individual grid items */}
+      {zoomWindowManager.windows.map((zw) => {
+        // Find the source device to get its name and location info
+        const sourceDevice = playableDevices.find((d) => d.id === zw.sourceDeviceId);
+        const resolvedSpaceName = sourceDevice?.spaceName || 
+          (sourceDevice?.spaceId ? spaceById.get(sourceDevice.spaceId)?.name : undefined);
+        const resolvedLocationName = (() => {
+          if (sourceDevice?.locationId)
+            return locationById.get(sourceDevice.locationId)?.name;
+          if (sourceDevice?.spaceId) {
+            const s = spaceById.get(sourceDevice.spaceId);
+            return s ? locationById.get(s.locationId)?.name : undefined;
+          }
+          return undefined;
+        })();
+
+        return (
+          <div key={zw.id} className="overflow-hidden grid-item-container">
+            <div className="h-full w-full flex flex-col overflow-hidden rounded-lg">
+              <div className="p-0 grow relative overflow-hidden rounded-b-lg">
+                <ZoomWindowTile
+                  windowDef={zw}
+                  getSharedVideoEl={getSharedVideoEl}
+                  locked={locked}
+                  overlayHeaders={overlayHeaders}
+                  deviceName={sourceDevice?.name}
+                  spaceName={resolvedSpaceName}
+                  locationName={resolvedLocationName}
+                  onEditRoi={(id, newRoi) => {
+                    zoomWindowManager.updateWindow(id, { roi: newRoi });
+                  }}
+                  onRemove={(id) => {
+                    zoomWindowManager.removeWindow(id);
+                    setLayout((prev) => prev.filter((it) => it.i !== id));
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
       
     </GridLayout>
 
@@ -412,11 +519,19 @@ export const PlayGrid: React.FC<PlayGridProps> = ({
     {dewarpSettingsDialog.deviceId && (
       <DewarpSettingsDialog
         open={dewarpSettingsDialog.open}
-        onOpenChange={(open) => setDewarpSettingsDialog((prev) => ({ open, deviceId: prev.deviceId }))}
+        onOpenChange={(open: boolean) => setDewarpSettingsDialog((prev) => ({ open, deviceId: prev.deviceId }))}
         settings={dewarpState.getSettings(dewarpSettingsDialog.deviceId)}
-        onChange={(settings) => dewarpState.updateSettings(dewarpSettingsDialog.deviceId!, settings)}
+        onChange={(settings: any) => dewarpState.updateSettings(dewarpSettingsDialog.deviceId!, settings)}
       />
     )}
     </>
+  );
+};
+
+export const PlayGrid: React.FC<PlayGridProps> = (props) => {
+  return (
+    <VideoRegistryProvider>
+      <PlayGridInner {...props} />
+    </VideoRegistryProvider>
   );
 };
