@@ -13,6 +13,7 @@ import { ZoomWindowOverlay } from "@/components/features/piko/zoom/ZoomWindowOve
 import { ZoomMenuItem } from "@/components/features/piko/zoom/ZoomMenuItem";
 import { VideoRegistryProvider, useVideoRegistry } from "@/components/features/piko/zoom/VideoRegistryContext";
 import type { ZoomWindow } from "@/types/zoom-window";
+import type { DewarpSettings } from "@/types/video-dewarp";
 import { useZoomWindows } from "@/hooks/use-zoom-windows";
 import {
   DropdownMenu,
@@ -521,7 +522,7 @@ export const PlayGridInner: React.FC<PlayGridProps> = ({
         open={dewarpSettingsDialog.open}
         onOpenChange={(open: boolean) => setDewarpSettingsDialog((prev) => ({ open, deviceId: prev.deviceId }))}
         settings={dewarpState.getSettings(dewarpSettingsDialog.deviceId)}
-        onChange={(settings: any) => dewarpState.updateSettings(dewarpSettingsDialog.deviceId!, settings)}
+        onChange={(settings: DewarpSettings) => dewarpState.updateSettings(dewarpSettingsDialog.deviceId!, settings)}
       />
     )}
     </>

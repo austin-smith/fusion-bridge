@@ -22,11 +22,9 @@ export const ZoomWindowsLayer: React.FC<ZoomWindowsLayerProps> = ({
   getSharedVideoEl,
   onRemove,
 }) => {
-  console.debug('[ZoomWindowsLayer] rendering', windows.length, 'windows');
   return (
     <>
       {windows.map((zw) => {
-        console.debug('[ZoomWindowsLayer] rendering window:', zw.id);
         return (
         <div key={zw.id} className="overflow-hidden grid-item-container">
           <div className="h-full w-full flex flex-col overflow-hidden rounded-lg">
@@ -46,5 +44,3 @@ export const ZoomWindowsLayer: React.FC<ZoomWindowsLayerProps> = ({
     </>
   );
 };
-
-
