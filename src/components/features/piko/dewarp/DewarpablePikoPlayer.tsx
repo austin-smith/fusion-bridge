@@ -2,8 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
-import { VideoDewarpCanvas } from '@/components/features/piko/VideoDewarpCanvas';
-import { DewarpViewControls } from '@/components/features/piko/DewarpViewControls';
+import { VideoDewarpCanvas } from '@/components/features/piko/dewarp/VideoDewarpCanvas';
+import { DewarpViewControls } from '@/components/features/piko/dewarp/DewarpViewControls';
 import type { DewarpSettings } from '@/types/video-dewarp';
 import Image from 'next/image';
 import { Loader2 } from 'lucide-react';
@@ -21,6 +21,8 @@ export interface DewarpablePikoPlayerProps {
   thumbnailSize?: string; // defaults to 320x0
   enableStats?: boolean;
   onStats?: (stats: { fps: number; width?: number; height?: number }) => void;
+  exposeVideoRef?: (el: HTMLVideoElement | null) => void;
+  targetStream?: 'AUTO' | 'HIGH' | 'LOW';
 }
 
 export const DewarpablePikoPlayer: React.FC<DewarpablePikoPlayerProps> = ({
@@ -36,6 +38,8 @@ export const DewarpablePikoPlayer: React.FC<DewarpablePikoPlayerProps> = ({
   thumbnailSize = '320x0',
   enableStats,
   onStats,
+  exposeVideoRef,
+  targetStream = 'AUTO',
 }) => {
   const [isReady, setIsReady] = useState(false);
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
@@ -71,10 +75,14 @@ export const DewarpablePikoPlayer: React.FC<DewarpablePikoPlayerProps> = ({
         className="w-full h-full"
         disableFullscreen
         onReady={() => setIsReady(true)}
-        exposeVideoRef={setVideoEl}
+        exposeVideoRef={(el) => {
+          setVideoEl(el);
+          if (exposeVideoRef) exposeVideoRef(el);
+        }}
         showBuiltInSpinner={false}
         enableStats={enableStats}
         onStats={onStats}
+        targetStream={targetStream}
       />
       {!isReady && (
         <div className="absolute inset-0 z-[5] pointer-events-none transition-opacity duration-200 opacity-100">

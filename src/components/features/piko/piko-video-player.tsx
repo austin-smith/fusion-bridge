@@ -45,6 +45,7 @@ interface PikoVideoPlayerProps {
   showBuiltInSpinner?: boolean; // default true; allows wrappers to hide built-in spinner
   // Optional: expose the internal HTMLVideoElement for overlays (e.g., dewarping canvas)
   exposeVideoRef?: (el: HTMLVideoElement | null) => void;
+  targetStream?: 'AUTO' | 'HIGH' | 'LOW';
 }
 
 export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
@@ -60,6 +61,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
   onError,
   showBuiltInSpinner = true,
   exposeVideoRef,
+  targetStream = 'AUTO',
 }) => {
   const [isLoadingMediaInfo, setIsLoadingMediaInfo] = useState(true);
   const [mediaInfoError, setMediaInfoError] = useState<string | null>(null);
@@ -243,7 +245,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
         cameraId: cameraId,
         accessToken: fetchedAccessToken,
         apiVersion: webrtcLib.ApiVersions.v2,
-        targetStream: webrtcLib.TargetStream.AUTO,
+        targetStream: webrtcLib.TargetStream[targetStream],
         position: positionMs,
       };
 
@@ -387,6 +389,7 @@ export const PikoVideoPlayer: React.FC<PikoVideoPlayerProps> = ({
     fetchedConnectionType,
     isLoadingMediaInfo,
     webrtcLib,
+    targetStream,
   ]);
 
   // Optional FPS stats collection, strictly gated by enableStats
