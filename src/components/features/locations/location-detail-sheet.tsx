@@ -95,7 +95,7 @@ export function LocationDetailSheet({ location, open, onOpenChange, onEdit, onVi
                             )}
                         </div>
                         {location && (
-                            <div className="shrink-0 text-smfl flex items-center">
+                            <div className="shrink-0 text flex items-center">
                                 <LocationWeatherIcon locationId={location.id} />
                             </div>
                         )}

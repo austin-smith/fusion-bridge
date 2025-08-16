@@ -34,8 +34,8 @@ export function locationsToFeatureCollection(locations: Location[]): FeatureColl
     const features: Array<Feature<Point, { id: string; name: string; city: string; state: string }>> = [];
 
     for (const loc of locations) {
-        const latRaw = loc.latitude !== undefined && loc.latitude !== null ? Number(loc.latitude as unknown as number) : NaN;
-        const lngRaw = loc.longitude !== undefined && loc.longitude !== null ? Number(loc.longitude as unknown as number) : NaN;
+        const latRaw = loc.latitude == null ? NaN : Number(loc.latitude);
+        const lngRaw = loc.longitude == null ? NaN : Number(loc.longitude);
         if (!Number.isFinite(latRaw) || !Number.isFinite(lngRaw)) continue;
         const coordinates: Position = [lngRaw, latRaw];
         features.push({
