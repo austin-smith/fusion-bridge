@@ -35,6 +35,7 @@ export default function PlayPage() {
   const fetchAllDevices = useFusionStore((state) => state.fetchAllDevices);
   const locations = useFusionStore((state) => state.locations);
   const spaces = useFusionStore((state) => state.spaces);
+  const activeOrganizationId = useFusionStore((state) => state.activeOrganizationId);
 
   const [locationFilter, setLocationFilter] = useState<string>("all");
   const [spaceFilter, setSpaceFilter] = useState<string>("all");
@@ -45,6 +46,7 @@ export default function PlayPage() {
   const [latestGridLayout, setLatestGridLayout] = useState<Layout[] | null>(null);
   const [latestZoomWindows, setLatestZoomWindows] = useState<ZoomWindow[] | null>(null);
   const [latestDewarpByTileId, setLatestDewarpByTileId] = useState<Record<string, { enabled: boolean; settings: DewarpSettings }> | null>(null);
+  const [isLoadingLayouts, setIsLoadingLayouts] = useState(false);
 
   // Determine active layout (top-level for memo derivations)
   const activeLayoutTop =
@@ -155,42 +157,71 @@ export default function PlayPage() {
     }
   }, [allDevicesHasInitiallyLoaded, isLoadingAllDevices, fetchAllDevices]);
 
-  // Load layouts and preferences on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const [layoutsRes, prefsRes] = await Promise.all([
-          fetch("/api/play/layouts"),
-          fetch("/api/play/preferences"),
-        ]);
-        const [layoutsJson, prefsJson] = await Promise.all([
-          layoutsRes.json(),
-          prefsRes.json(),
-        ]);
-        if (!layoutsRes.ok || !layoutsJson.success) {
-          toast.error("Failed to load layouts", {
-            description: layoutsJson?.error || "Please try again.",
-          });
-          return;
-        }
-        setLayouts(layoutsJson.data);
-        if (prefsRes.ok && prefsJson?.success) {
-          setPrefs({ defaultLayoutId: prefsJson.data.defaultLayoutId ?? null });
-          if (
-            prefsJson.data.defaultLayoutId &&
-            layoutsJson.data.some(
-              (l: PlayLayout) => l.id === prefsJson.data.defaultLayoutId
-            )
-          ) {
-            setActiveLayoutId(prefsJson.data.defaultLayoutId);
-          }
-        }
-      } catch (e) {
-        console.error("fetch layouts/prefs", e);
-        toast.error("Failed to load layouts");
+  // Load layouts and preferences on mount and when organization changes
+  const loadLayoutsAndPreferences = React.useCallback(async () => {
+    setIsLoadingLayouts(true);
+    try {
+      const [layoutsRes, prefsRes] = await Promise.all([
+        fetch("/api/play/layouts"),
+        fetch("/api/play/preferences"),
+      ]);
+      const [layoutsJson, prefsJson] = await Promise.all([
+        layoutsRes.json(),
+        prefsRes.json(),
+      ]);
+      if (!layoutsRes.ok || !layoutsJson.success) {
+        toast.error("Failed to load layouts", {
+          description: layoutsJson?.error || "Please try again.",
+        });
+        return;
       }
-    })();
+      setLayouts(layoutsJson.data);
+      if (prefsRes.ok && prefsJson?.success) {
+        setPrefs({ defaultLayoutId: prefsJson.data.defaultLayoutId ?? null });
+        if (
+          prefsJson.data.defaultLayoutId &&
+          layoutsJson.data.some(
+            (l: PlayLayout) => l.id === prefsJson.data.defaultLayoutId
+          )
+        ) {
+          setActiveLayoutId(prefsJson.data.defaultLayoutId);
+        } else {
+          // Reset to auto if no valid default layout found
+          setActiveLayoutId("auto");
+        }
+      } else {
+        // Reset to auto if preferences couldn't be loaded
+        setActiveLayoutId("auto");
+      }
+    } catch (e) {
+      console.error("fetch layouts/prefs", e);
+      toast.error("Failed to load layouts");
+      // Reset to auto on error
+      setActiveLayoutId("auto");
+    } finally {
+      setIsLoadingLayouts(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadLayoutsAndPreferences();
+  }, [loadLayoutsAndPreferences]);
+
+  // Reset layout state when organization changes
+  useEffect(() => {
+    if (activeOrganizationId) {
+      // Reset layout state to defaults
+      setLayouts([]);
+      setActiveLayoutId("auto");
+      setLatestGridLayout(null);
+      setLatestZoomWindows(null);
+      setLatestDewarpByTileId(null);
+      setPrefs({ defaultLayoutId: null });
+      
+      // Reload layouts and preferences for the new organization
+      loadLayoutsAndPreferences();
+    }
+  }, [activeOrganizationId, loadLayoutsAndPreferences]);
 
   const cameraDevices = useMemo<DeviceWithConnector[]>(() => {
     let list = allDevices.filter(
@@ -556,6 +587,7 @@ export default function PlayPage() {
           onDelete={handleDelete}
           onSave={handleSave}
           isDirty={isDirty}
+          isLoading={isLoadingLayouts}
           onEditCameras={() => {
             if (!activeLayout) return;
             setEditSelectedIds(new Set(activeLayout.deviceIds));
