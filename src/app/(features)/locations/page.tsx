@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box, Map, ChevronDown, ChevronRight, List } from 'lucide-react';
+import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box, MapPin, ChevronDown, ChevronRight, List } from 'lucide-react';
 import LocationsMap from '@/components/features/locations/LocationsMap';
 import { LocationEditDialog } from '@/components/features/locations/location-edit-dialog';
 import { LocationWeatherIcon } from '@/components/features/locations/location-weather-icon';
@@ -506,7 +506,7 @@ export default function LocationsPage() {
     <>
       <TabsList>
         <TabsTrigger value="list"><List className="h-4 w-4 mr-1" />List</TabsTrigger>
-        <TabsTrigger value="map"><Map className="h-4 w-4 mr-1" />Map</TabsTrigger>
+        <TabsTrigger value="map"><MapPin className="h-4 w-4 mr-1" />Map</TabsTrigger>
       </TabsList>
       <div className="relative shrink-0">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

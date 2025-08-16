@@ -10,6 +10,33 @@ import { Map, Pencil, MapPin, FileText, Clock, Building2, ExternalLink } from 'l
 import type { Location } from '@/types/index';
 import { LocationWeatherIcon } from '@/components/features/locations/location-weather-icon';
 import { cn } from '@/lib/utils';
+import { getTimezone, type Timezone as LibTimezone } from 'countries-and-timezones';
+
+// Determine if the given timezone is currently in DST by comparing offsets now vs January
+function isCurrentlyDST(timezoneName: string): boolean {
+    try {
+        const now = new Date();
+        const jan = new Date(now.getFullYear(), 0, 1);
+        const toOffsetMinutes = (date: Date, tz: string) => {
+            const utc = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+            const local = new Date(date.toLocaleString('en-US', { timeZone: tz }));
+            return (utc.getTime() - local.getTime()) / (1000 * 60);
+        };
+        const currentOffset = toOffsetMinutes(now, timezoneName);
+        const januaryOffset = toOffsetMinutes(jan, timezoneName);
+        return currentOffset !== januaryOffset;
+    } catch {
+        return false;
+    }
+}
+
+function getCurrentOffsetString(timezone: LibTimezone): string {
+    if (timezone.utcOffset === timezone.dstOffset) {
+        return timezone.utcOffsetStr;
+    }
+    const inDST = isCurrentlyDST(timezone.name);
+    return inDST ? timezone.dstOffsetStr : timezone.utcOffsetStr;
+}
 
 export interface LocationDetailSheetProps {
     location: Location | null;
@@ -24,9 +51,10 @@ export function LocationDetailSheet({ location, open, onOpenChange, onEdit, onVi
         if (location) onEdit(location);
     };
     const handleViewFloorPlan = () => {
-        if (location) {
-            window.open(`/locations/${location.id}/floor-plans`, '_blank', 'noopener,noreferrer');
-        }
+        if (!location) return;
+        const id = String(location.id);
+        const url = `/locations/${encodeURIComponent(id)}/floor-plans`;
+        window.open(url, '_blank', 'noopener,noreferrer');
     };
 
     // Helper function to generate Google Maps URL with address + coordinates
@@ -137,9 +165,24 @@ export function LocationDetailSheet({ location, open, onOpenChange, onEdit, onVi
                         </div>
                         <div className="pl-6">
                             {location?.timeZone ? (
-                                <Badge variant="secondary" className="font-mono text-xs">
-                                    {location.timeZone}
-                                </Badge>
+                                (() => {
+                                    const tz = getTimezone(location.timeZone);
+                                    if (!tz) {
+                                        return (
+                                            <Badge variant="secondary" className="font-mono text-xs">
+                                                {location.timeZone}
+                                            </Badge>
+                                        );
+                                    }
+                                    const displayName = tz.name.replace(/_/g, ' ');
+                                    const offsetLabel = `(UTC${getCurrentOffsetString(tz)})`;
+                                    return (
+                                        <Badge variant="secondary" className="text-xs">
+                                            <span>{displayName}</span>
+                                            <span className="ml-1 text-muted-foreground">{offsetLabel}</span>
+                                        </Badge>
+                                    );
+                                })()
                             ) : (
                                 <div className="text-sm text-muted-foreground italic">No timezone set</div>
                             )}

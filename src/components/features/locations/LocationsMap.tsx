@@ -164,7 +164,10 @@ export default function LocationsMap(props: LocationsMapProps) {
             const source = map.getSource(CLUSTER_SOURCE_ID) as any;
             if (source && typeof source.getClusterExpansionZoom === 'function') {
                 source.getClusterExpansionZoom(clusterId, (err: unknown, zoom: number) => {
-                    if (err) return;
+                    if (err) {
+                        console.error('Error expanding cluster zoom:', err);
+                        return;
+                    }
                     const [lng, lat] = (feature.geometry as any).coordinates as [number, number];
                     map.easeTo({ center: [lng, lat], zoom });
                 });
