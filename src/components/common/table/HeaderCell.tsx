@@ -42,15 +42,20 @@ export function HeaderCell({ header }: { header: any }) {
         ) : null}
       </div>
 
-      {/* Resize handle - standard table resize UX */}
+      {/* Resize handle */}
       {header.column.getCanResize() ? (
         <div
           onMouseDown={header.getResizeHandler()}
           onTouchStart={header.getResizeHandler()}
           onClick={(e) => e.stopPropagation()}
-          className="absolute -right-px top-0 h-full w-1 cursor-col-resize select-none touch-none hover:border-r-2 hover:border-r-blue-400 active:border-r-2 active:border-r-blue-500 z-10"
+          className="absolute -right-1.5 top-0 h-full w-3 cursor-col-resize select-none touch-none z-10 group"
           data-resizing={header.column.getIsResizing() || undefined}
-        />
+        >
+          {/* Standard gray resize divider - visible on hover */}
+          <div className="absolute right-1 top-0 h-full w-1 bg-transparent transition-colors group-hover:bg-gray-300 group-active:bg-gray-500" />
+          {/* Wider invisible hit area for easier interaction */}
+          <div className="absolute inset-0 bg-transparent" />
+        </div>
       ) : null}
     </TableHead>
   );
