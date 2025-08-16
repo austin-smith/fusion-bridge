@@ -2,15 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
   RefreshCwIcon,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   Cpu,
-  X,
   ChevronLeftIcon,
   ChevronRightIcon,
   ChevronsLeftIcon,
@@ -29,6 +24,8 @@ import type {
 import {
   getDeviceTypeIcon,
   getDisplayStateIcon,
+  getBatteryIcon,
+  getBatteryColorClass,
 } from "@/lib/mappings/presentation";
 import {
   type DisplayState,
@@ -81,7 +78,11 @@ import { DeviceDetailDialogContent } from "@/components/features/devices/device-
 import { DeviceMappingDialogContent } from "@/components/features/devices/device-mapping-dialog-content";
 import { ConnectorIcon } from "@/components/features/connectors/connector-icon";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { formatConnectorCategory } from "@/lib/utils";
+import { usePersistedTableState } from "@/hooks/use-persisted-table-state";
+import { ColumnSettingsMenu } from "@/components/common/table/ColumnSettingsMenu";
+import { HeaderCell } from "@/components/common/table/HeaderCell";
 import type { DeviceDetailProps } from "@/components/features/devices/device-detail-dialog-content";
 import { getDeviceTypeInfo } from "@/lib/mappings/identification";
 import { PageHeader } from "@/components/layout/page-header";
@@ -96,78 +97,17 @@ interface DisplayedDevice
     DeviceWithConnector,
     "status" | "type" | "pikoServerDetails" | "id"
   > {
-  // Also omit original id
-  internalId: string; // Internal database ID (devices.id)
-  displayState?: DisplayState; // Keep for potential future use
+  internalId: string; 
+  displayState?: DisplayState;
   lastSeen?: Date;
-  deviceTypeInfo: TypedDeviceInfo; // Ensure this is included and required
-  // Explicitly add back required fields omitted by Omit or needed for compatibility
-  type: string; // Add back raw device type string
-  // Add server details explicitly
-  pikoServerDetails?: PikoServer; // <-- Add the field here
-  batteryPercentage?: number | null; // Add battery percentage field
-  // status: string | null; // Keep status omitted as it's replaced by displayState
+  deviceTypeInfo: TypedDeviceInfo;
+  type: string
+  pikoServerDetails?: PikoServer;
+  batteryPercentage?: number | null;
   createdAt: Date;
   updatedAt: Date;
-  spaceId?: string | null; // Add space ID
-  spaceName?: string | null; // Add space name
-}
-
-// A simple component for sort indicators
-function SortIcon({ isSorted }: { isSorted: false | "asc" | "desc" }) {
-  if (!isSorted) return <ArrowUpDown className="ml-2 h-4 w-4 opacity-30" />;
-  return isSorted === "asc" ? (
-    <ArrowUp className="ml-2 h-4 w-4" />
-  ) : (
-    <ArrowDown className="ml-2 h-4 w-4" />
-  );
-}
-
-// A debounced input component for filtering
-function DebouncedInput({
-  value: initialValue,
-  onChange,
-  debounce = 300,
-  ...props
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  debounce?: number;
-} & Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange">) {
-  const [value, setValue] = useState(initialValue);
-
-  useEffect(() => {
-    setValue(initialValue);
-  }, [initialValue]);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (value !== initialValue) {
-        onChange(value);
-      }
-    }, debounce);
-
-    return () => clearTimeout(timeout);
-  }, [value, initialValue, debounce, onChange]);
-
-  return (
-    <div className="relative">
-      <Input
-        {...props}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        className="text-xs px-2 py-1 h-8"
-      />
-      {value && (
-        <button
-          onClick={() => setValue("")}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      )}
-    </div>
-  );
+  spaceId?: string | null;
+  spaceName?: string | null;
 }
 
 // Helper component for skeleton table
@@ -261,11 +201,9 @@ export default function DevicesPage() {
     pageSize: 50,
   });
 
-  // --- BEGIN Dialog State ---
   const [selectedDevice, setSelectedDevice] =
     useState<DeviceDetailProps | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
-  // --- END Dialog State ---
 
   // Set page title
   useEffect(() => {
@@ -427,8 +365,11 @@ export default function DevicesPage() {
   const columns = useMemo<ColumnDef<DisplayedDevice>[]>(
     () => [
       {
-        accessorKey: "connectorName", // Keep Connector column first
+        id: "connectorName",
+        accessorKey: "connectorName",
         header: "Connector",
+        minSize: 120,
+        size: 180,
         enableSorting: true,
         enableColumnFilter: true,
         filterFn: (row, columnId, value) => {
@@ -462,8 +403,11 @@ export default function DevicesPage() {
         },
       },
       {
-        accessorKey: "name", // Device Name column second
+        id: "name",
+        accessorKey: "name",
         header: "Device Name",
+        minSize: 180,
+        size: 260,
         enableSorting: true,
         enableColumnFilter: true,
         cell: ({ row }) => {
@@ -511,8 +455,10 @@ export default function DevicesPage() {
       },
       // --- Device Type Column (Moved to third) --- //
       {
+        id: "deviceTypeInfo",
         accessorKey: "deviceTypeInfo",
         header: "Device Type",
+        minSize: 160,
         enableSorting: true,
         sortingFn: (rowA, rowB, columnId) => {
           const typeA = rowA.getValue<TypedDeviceInfo>(columnId).type;
@@ -555,10 +501,11 @@ export default function DevicesPage() {
           );
         },
       },
-      // --- Location Column (new) --- //
       {
+        id: "locationName",
         accessorKey: "locationName",
         header: "Location",
+        minSize: 140,
         enableSorting: true,
         enableColumnFilter: true,
         filterFn: (row, columnId, value) => {
@@ -582,10 +529,11 @@ export default function DevicesPage() {
           );
         },
       },
-      // --- Space Column (new) --- //
       {
+        id: "spaceName",
         accessorKey: "spaceName",
         header: "Space",
+        minSize: 140,
         enableSorting: true,
         enableColumnFilter: true,
         filterFn: (row, columnId, value) => {
@@ -609,11 +557,11 @@ export default function DevicesPage() {
           );
         },
       },
-      // --- State Column (Now fourth) --- //
       {
         id: "state",
         accessorKey: "displayState",
         header: "State",
+        minSize: 140,
         enableSorting: true,
         cell: ({ row }) => {
           const state = row.original.displayState;
@@ -654,11 +602,68 @@ export default function DevicesPage() {
           );
         },
       },
+      {
+        id: "batteryPercentage",
+        accessorKey: "batteryPercentage",
+        header: "Battery",
+        minSize: 100,
+        enableSorting: true,
+        enableColumnFilter: false,
+        cell: ({ row }) => {
+          const battery = row.getValue<number | null>("batteryPercentage");
+          if (battery === null || battery === undefined) {
+            return <span className="text-xs text-muted-foreground">—</span>;
+          }
 
-      // --- Actions Column (remains last) --- //
+          const BatteryIcon = getBatteryIcon(battery);
+          const colorClass = getBatteryColorClass(battery);
+
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center cursor-default leading-none">
+                  <BatteryIcon className={`h-4 w-4 ${colorClass}`} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent
+                side="top"
+                align="center"
+                sideOffset={5}
+                alignOffset={0}
+                avoidCollisions={false}
+              >
+                <p>{battery}%</p>
+              </TooltipContent>
+            </Tooltip>
+          );
+        },
+      },
+      {
+        id: "model",
+        accessorKey: "model",
+        header: "Model",
+        minSize: 140,
+        enableSorting: true,
+        enableColumnFilter: true,
+        filterFn: (row, columnId, value) => {
+          const model = String(row.getValue(columnId) || "");
+          return model.toLowerCase().includes(String(value).toLowerCase());
+        },
+        cell: ({ row }) => {
+          const model = row.getValue<string>("model");
+          return model && model !== "N/A" ? (
+            <span className="text-xs font-mono">{model}</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          );
+        },
+      },
       {
         id: "actions",
         header: "Actions",
+        enableResizing: false,
+        enableHiding: false,
+        size: 140,
         cell: ({ row }) => {
           const device = row.original;
           return (
@@ -678,24 +683,74 @@ export default function DevicesPage() {
     []
   );
 
+  // Derive default order from columns to avoid brittle string arrays
+  const defaultColumnOrder = useMemo<string[]>(() => {
+    const ids = columns
+      .map((c) =>
+        "id" in c && typeof (c as any).id === "string"
+          ? (c as any).id
+          : String((c as any).accessorKey)
+      )
+      .filter(Boolean) as string[];
+    return Array.from(new Set(ids));
+  }, [columns]);
+
+  // Persisted table state: order, visibility, sizing
+  const {
+    columnOrder,
+    setColumnOrder,
+    columnVisibility,
+    columnSizing,
+    columnSizingInfo,
+    onColumnOrderChange,
+    onColumnVisibilityChange,
+    onColumnSizingChange,
+    onColumnSizingInfoChange,
+  } = usePersistedTableState({
+    storageKey: "devicesTable",
+    initialColumnOrder: defaultColumnOrder,
+    defaultVisibility: {
+      batteryPercentage: false,
+      model: false,
+    },
+    lockedColumnIds: ["actions"],
+    versionSuffix: "v1",
+  });
+
   // Initialize the table with TanStack
   const table = useReactTable({
     data: filteredTableData, // Use derived data from store
     columns,
+    defaultColumn: { size: 200, minSize: 100, maxSize: 600 },
+    enableColumnResizing: true,
+    columnResizeMode: "onChange",
     state: {
       sorting,
       columnFilters, // Only text filters managed here
       pagination,
+      columnSizing,
+      columnSizingInfo,
+      columnOrder,
+      columnVisibility,
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters, // Manages text filters
     onPaginationChange: setPagination as OnChangeFn<PaginationState>,
+    onColumnSizingChange: onColumnSizingChange,
+    onColumnSizingInfoChange: onColumnSizingInfoChange,
+    onColumnOrderChange: onColumnOrderChange,
+    onColumnVisibilityChange: onColumnVisibilityChange,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     enableMultiSort: true,
   });
+
+  // removed local DnD and menu item; using ColumnSettingsMenu component
+
+  // Simple header cell component
+  // removed local HeaderCell; using shared HeaderCell component
 
   // Extract unique connector categories from connectors state
   const connectorCategories = useMemo(() => {
@@ -805,6 +860,8 @@ export default function DevicesPage() {
         </DropdownMenuContent>
       </DropdownMenu>
 
+      <ColumnSettingsMenu table={table} />
+
       <Dialog>
         <TooltipProvider>
           <Tooltip>
@@ -889,67 +946,7 @@ export default function DevicesPage() {
                       {table.getHeaderGroups().map((headerGroup) => (
                         <TableRow key={headerGroup.id}>
                           {headerGroup.headers.map((header) => (
-                            <TableHead
-                              key={header.id}
-                              className="px-2 py-1"
-                              style={{
-                                width:
-                                  header.getSize() !== 150
-                                    ? header.getSize()
-                                    : undefined,
-                              }}
-                            >
-                              <div
-                                className={
-                                  header.column.getCanSort()
-                                    ? "cursor-pointer select-none"
-                                    : undefined
-                                }
-                                onClick={header.column.getToggleSortingHandler()}
-                              >
-                                <div className="flex items-center">
-                                  <TooltipProvider delayDuration={100}>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span className="block overflow-hidden text-ellipsis whitespace-nowrap">
-                                          {header.isPlaceholder
-                                            ? null
-                                            : flexRender(
-                                                header.column.columnDef.header,
-                                                header.getContext()
-                                              )}
-                                        </span>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        {typeof header.column.columnDef
-                                          .header === "string"
-                                          ? header.column.columnDef.header
-                                          : header.column.id}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                  {header.column.getCanSort() ? (
-                                    <SortIcon
-                                      isSorted={header.column.getIsSorted()}
-                                    />
-                                  ) : null}
-                                </div>
-                              </div>
-                              <div className="mt-1 h-8">
-                                {header.column.getCanFilter() ? (
-                                  <DebouncedInput
-                                    value={
-                                      (header.column.getFilterValue() ??
-                                        "") as string
-                                    }
-                                    onChange={(value) =>
-                                      header.column.setFilterValue(value)
-                                    }
-                                    placeholder=""
-                                  />
-                                ) : null}
-                              </div>
-                            </TableHead>
+                            <HeaderCell key={header.id} header={header} />
                           ))}
                         </TableRow>
                       ))}
@@ -964,7 +961,11 @@ export default function DevicesPage() {
                             }
                           >
                             {row.getVisibleCells().map((cell) => (
-                              <TableCell key={cell.id} className="px-2 py-1">
+                              <TableCell
+                                key={cell.id}
+                                className="px-2 py-1"
+                                style={{ width: cell.column.getSize() }}
+                              >
                                 {flexRender(
                                   cell.column.columnDef.cell,
                                   cell.getContext()
