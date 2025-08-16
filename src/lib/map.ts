@@ -19,6 +19,9 @@ type FeatureCollection<G, P> = {
 
 type Bounds = [[number, number], [number, number]];
 
+// Geographic center of the continental United States (approximate)
+const CONTINENTAL_US_CENTER: [number, number] = [-98.5795, 39.8283];
+
 /**
  * Returns the default map style configuration for the application.
  *
@@ -30,6 +33,8 @@ type Bounds = [[number, number], [number, number]];
  * - glyphs: font PBFs used by symbol layers
  * - sources: OSM raster tiles
  * - layers: a single raster layer that displays the tiles
+ *
+ * @returns {StyleSpecification} Default MapLibre style for rendering OSM raster tiles with glyphs.
  */
 export function getDefaultMapStyle(): StyleSpecification {
     return FALLBACK_STYLE;
@@ -58,6 +63,20 @@ export function locationsToFeatureCollection(locations: Location[]): FeatureColl
     return { type: 'FeatureCollection', features };
 }
 
+/**
+ * Computes the map view state (center and zoom), the bounding box, and the
+ * coordinates of the selected feature (if any) from a GeoJSON FeatureCollection
+ * of Point features representing locations.
+ *
+ * @param featureCollection - FeatureCollection of Point features with properties
+ *   { id, name, city, state } used to determine center, zoom and bounds.
+ * @param selectedLocationId - Optional location id to highlight. If provided
+ *   and found, its [lng, lat] coordinates are returned.
+ * @returns Object with:
+ *   - viewState: { longitude, latitude, zoom } initial map center and zoom
+ *   - bounds: [[minLng, minLat], [maxLng, maxLat]] bounding box or null
+ *   - selectedFeatureCoordinates: [lng, lat] for the selected feature or null
+ */
 export function computeViewAndBounds(
     featureCollection: FeatureCollection<Point, { id: string; name: string; city: string; state: string }>,
     selectedLocationId?: string | null
@@ -69,7 +88,7 @@ export function computeViewAndBounds(
     const features = featureCollection.features;
 
     // Defaults: continental US
-    let center: [number, number] = [-98.5795, 39.8283];
+    let center: [number, number] = CONTINENTAL_US_CENTER;
     let zoom = 3;
     let bounds: Bounds | null = null;
 

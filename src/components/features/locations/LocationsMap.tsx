@@ -2,7 +2,7 @@
 
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Map, Source, Layer, Popup, type MapRef, type MapLayerMouseEvent } from 'react-map-gl/maplibre';
-import type { StyleSpecification, FilterSpecification } from 'maplibre-gl';
+import type { StyleSpecification, FilterSpecification, Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
 import { Button } from '@/components/ui/button';
 import { Plus, Minus } from 'lucide-react';
 import type { Location } from '@/types/index';
@@ -107,17 +107,17 @@ const SELECTED_TOOLTIP_OFFSET = -(SELECTED_ICON_SIZE / 2 + TOOLTIP_MARGIN);
 const DEFAULT_POPUP_HALF_WIDTH = 140;
 
 // Pan the map so the selected popup is not obscured by the left-side sheet
-function panMapToAvoidSheetOverlap(map: any, selectedFeatureCoordinates: [number, number]) {
+function panMapToAvoidSheetOverlap(map: MapLibreMap, selectedFeatureCoordinates: [number, number]) {
     const sheetEl = document.getElementById('location-detail-sheet');
     if (!sheetEl) return;
-    const mapRect = (map as any).getCanvasContainer().getBoundingClientRect();
+    const mapRect = map.getCanvasContainer().getBoundingClientRect();
     const sheetRect = sheetEl.getBoundingClientRect();
     const margin = 16;
 
     // Portion of the map covered by the sheet measured within the map's coordinate space
     const coveredXWithinMap = Math.max(0, sheetRect.right - mapRect.left + margin);
 
-    const point = map.project({ lng: selectedFeatureCoordinates[0], lat: selectedFeatureCoordinates[1] } as any);
+    const point = map.project({ lng: selectedFeatureCoordinates[0], lat: selectedFeatureCoordinates[1] });
     // Include popup width so its left edge clears the sheet
     const popupEl = document.getElementById('selected-location-popup-content');
     const popupHalfWidth = popupEl ? popupEl.getBoundingClientRect().width / 2 : DEFAULT_POPUP_HALF_WIDTH; // fallback ~280px width
@@ -126,10 +126,10 @@ function panMapToAvoidSheetOverlap(map: any, selectedFeatureCoordinates: [number
     if (currentLeftEdge < desiredLeftEdge) {
         const deltaX = desiredLeftEdge - currentLeftEdge;
         const center = map.getCenter();
-        const centerPx = map.project({ lng: center.lng, lat: center.lat } as any);
+        const centerPx = map.project({ lng: center.lng, lat: center.lat });
         const newCenterPx: { x: number; y: number } = { x: centerPx.x - deltaX, y: centerPx.y };
-        const newCenter = map.unproject([newCenterPx.x, newCenterPx.y] as any) as any;
-        map.easeTo({ center: [newCenter.lng, newCenter.lat] as any, duration: 300 });
+        const newCenter = map.unproject([newCenterPx.x, newCenterPx.y]);
+        map.easeTo({ center: [newCenter.lng, newCenter.lat], duration: 300 });
     }
 }
 
@@ -184,16 +184,37 @@ export default function LocationsMap(props: LocationsMapProps) {
         // Cluster clicked: zoom in
         if (feature.layer && feature.layer.id === CLUSTERS_LAYER_ID && feature.properties) {
             const clusterId = feature.properties.cluster_id;
-            const source = map.getSource(CLUSTER_SOURCE_ID) as any;
-            if (source && typeof source.getClusterExpansionZoom === 'function') {
-                source.getClusterExpansionZoom(clusterId, (err: unknown, zoom: number) => {
-                    if (err) {
-                        console.error('Error expanding cluster zoom:', err);
-                        return;
+            type ClusterSource = GeoJSONSource & {
+                getClusterExpansionZoom?: ((clusterId: number) => Promise<number>) | ((clusterId: number, cb: (err: unknown, zoom: number) => void) => void);
+            };
+            const source = map.getSource(CLUSTER_SOURCE_ID) as ClusterSource | undefined;
+            const getCEZ = source?.getClusterExpansionZoom?.bind(source);
+            if (typeof getCEZ === 'function') {
+                try {
+                    const maybePromise = getCEZ(clusterId as number);
+                    if (maybePromise && typeof (maybePromise as any).then === 'function') {
+                        (maybePromise as Promise<number>)
+                            .then((zoom: number) => {
+                                const [lng, lat] = (feature.geometry as any).coordinates as [number, number];
+                                map.easeTo({ center: [lng, lat], zoom });
+                            })
+                            .catch((err: unknown) => {
+                                console.error('Error expanding cluster zoom:', err);
+                            });
+                    } else {
+                        // Callback style
+                        getCEZ(clusterId as number, (err: unknown, zoom: number) => {
+                            if (err) {
+                                console.error('Error expanding cluster zoom:', err);
+                                return;
+                            }
+                            const [lng, lat] = (feature.geometry as any).coordinates as [number, number];
+                            map.easeTo({ center: [lng, lat], zoom });
+                        });
                     }
-                    const [lng, lat] = (feature.geometry as any).coordinates as [number, number];
-                    map.easeTo({ center: [lng, lat], zoom });
-                });
+                } catch (err) {
+                    console.error('Error expanding cluster zoom:', err);
+                }
             }
             return;
         }
