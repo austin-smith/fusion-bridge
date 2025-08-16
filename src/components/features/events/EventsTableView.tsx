@@ -17,7 +17,7 @@ import {
 } from '@tanstack/react-table'; 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DebouncedInput } from '@/components/common/DebouncedInput';
-import { SortIcon } from '@/components/common/SortIcon';
+import { SortIcon } from '@/components/common/table/SortIcon';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChevronDown, ChevronRight, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react';

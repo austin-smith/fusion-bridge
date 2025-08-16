@@ -518,7 +518,7 @@ export default function LocationsPage() {
           className="w-full rounded-lg bg-background pl-8 md:w-50 lg:w-60 h-9"
         />
       </div>
-      {filteredSortedLocations.length > 0 && currentView === 'list' && (
+      {filteredSortedLocations.length > 0 && (
         <TooltipProvider delayDuration={100}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -526,6 +526,7 @@ export default function LocationsPage() {
                 variant="outline"
                 size="icon"
                 className="h-8 w-8"
+                disabled={currentView === 'map'}
                 onClick={toggleAllVisibleLocations}
                 aria-label={!allVisibleCollapsed ? 'Collapse all locations' : 'Expand all locations'}
               >
@@ -574,6 +575,7 @@ export default function LocationsPage() {
                   variant="outline" 
                   size="icon" 
                   className={cn("h-9 w-9", showTreeView && "bg-accent hover:bg-accent")}
+                  disabled={currentView === 'map'}
                   onClick={() => setShowTreeView(!showTreeView)}
                   title={showTreeView ? "Hide location tree" : "Show location tree"}
                 >
