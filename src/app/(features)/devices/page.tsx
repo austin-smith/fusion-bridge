@@ -273,8 +273,8 @@ export default function DevicesPage() {
             updatedAt: new Date(fullDevice.updatedAt),
             spaceId: fullDevice.spaceId ?? undefined, // Get from fullDevice
             spaceName: fullDevice.spaceName ?? undefined, // Get from fullDevice
-            locationId: (fullDevice as any).locationId ?? undefined,
-            locationName: (fullDevice as any).locationName ?? undefined,
+            locationId: fullDevice.locationId ?? undefined,
+            locationName: fullDevice.locationName ?? undefined,
             rawDeviceData: fullDevice.rawDeviceData ?? undefined, // Get from fullDevice
           };
           acc.push(displayDevice);
