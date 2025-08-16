@@ -1,0 +1,1 @@
+ALTER TABLE `layouts` ADD `tile_configs` text;

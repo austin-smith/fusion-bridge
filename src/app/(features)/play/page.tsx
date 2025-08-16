@@ -14,7 +14,9 @@ import { LocationSpaceSelector } from "@/components/common/LocationSpaceSelector
 import { PlayGrid } from "@/components/features/play/play-grid";
 import type { Layout } from "react-grid-layout";
 import { PlayLayoutControls } from "@/components/features/play/PlayLayoutControls";
-import type { PlayLayout, PlayGridLayoutItem } from "@/types/play";
+import type { PlayLayout, PlayGridLayoutItem, TileConfig, HeaderStyle } from "@/types/play";
+import type { ZoomWindow } from "@/types/zoom-window";
+import type { DewarpSettings } from "@/types/video-dewarp";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -41,15 +43,89 @@ export default function PlayPage() {
   const [layouts, setLayouts] = useState<PlayLayout[]>([]);
   const [activeLayoutId, setActiveLayoutId] = useState<string | "auto">("auto");
   const [latestGridLayout, setLatestGridLayout] = useState<Layout[] | null>(null);
+  const [latestZoomWindows, setLatestZoomWindows] = useState<ZoomWindow[] | null>(null);
+  const [latestDewarpByTileId, setLatestDewarpByTileId] = useState<Record<string, { enabled: boolean; settings: DewarpSettings }> | null>(null);
+
+  // Determine active layout (top-level for memo derivations)
+  const activeLayoutTop =
+    activeLayoutId === "auto"
+      ? null
+      : layouts.find((l) => l.id === activeLayoutId) || null;
+
+  // Memoize initial props derived from active layout tile configs to avoid ref churn
+  const initialZoomWindowsMemo = useMemo(() => {
+    const entries = Object.entries(activeLayoutTop?.tileConfigs ?? {})
+      .filter(([_, v]) => (v as TileConfig).type === 'zoom')
+      .map(([id, v]) => ({ id, ...(v as any) })) as unknown as ZoomWindow[];
+    return entries;
+  }, [activeLayoutTop?.tileConfigs]);
+  const initialDewarpByTileIdMemo = useMemo(() => {
+    const obj = Object.fromEntries(
+      Object.entries(activeLayoutTop?.tileConfigs ?? {})
+        .filter(([_, v]) => (v as TileConfig).type === 'camera' && (v as any).dewarp)
+        .map(([id, v]) => [id, (v as any).dewarp])
+    ) as Record<string, { enabled: boolean; settings: DewarpSettings }>;
+    return obj;
+  }, [activeLayoutTop?.tileConfigs]);
+
+  // Guards to avoid setState loops from child change events
+  const handleZoomWindowsChange = React.useCallback((next: ZoomWindow[]) => {
+    const prev = latestZoomWindows;
+    if (prev && prev.length === next.length) {
+      let same = true;
+      for (let i = 0; i < next.length; i++) {
+        const a: any = prev[i];
+        const b: any = next[i];
+        if (
+          a.id !== b.id ||
+          a.sourceDeviceId !== b.sourceDeviceId ||
+          a.connectorId !== b.connectorId ||
+          a.cameraId !== b.cameraId ||
+          a.roi?.x !== b.roi?.x ||
+          a.roi?.y !== b.roi?.y ||
+          a.roi?.w !== b.roi?.w ||
+          a.roi?.h !== b.roi?.h
+        ) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return;
+    }
+    setLatestZoomWindows(next);
+  }, [latestZoomWindows]);
+
+  const handleDewarpByTileIdChange = React.useCallback((next: Record<string, { enabled: boolean; settings: DewarpSettings }>) => {
+    const prev = latestDewarpByTileId;
+    if (prev) {
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (prevKeys.length === nextKeys.length) {
+        let same = true;
+        for (const k of nextKeys) {
+          const a = prev[k];
+          const b = next[k];
+          if (!a && b) { same = false; break; }
+          if (!!a?.enabled !== !!b?.enabled) { same = false; break; }
+          const as: any = a?.settings, bs: any = b?.settings;
+          const fields = ['lensModel','cx','cy','focalPx','fovDeg','yawDeg','pitchDeg','rollDeg'];
+          for (const f of fields) { if (as?.[f] !== bs?.[f]) { same = false; break; } }
+          if (!same) break;
+        }
+        if (same) return;
+      }
+    }
+    setLatestDewarpByTileId(next);
+  }, [latestDewarpByTileId]);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editSelectedIds, setEditSelectedIds] = useState<Set<string>>(
     new Set()
   );
   const [editSearch, setEditSearch] = useState("");
-  const [overlayHeaders, setOverlayHeaders] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    const v = window.localStorage.getItem('fusion.play.overlayHeaders');
-    return v === null ? true : v === '1';
+  const [headerStyle, setHeaderStyle] = useState<HeaderStyle>(() => {
+    if (typeof window === 'undefined') return 'overlay';
+    const v = window.localStorage.getItem('fusion.play.headerStyle') as HeaderStyle | null;
+    return v === 'standard' || v === 'overlay' || v === 'overlay-hover' ? v : 'overlay';
   });
   const [isViewSettingsOpen, setIsViewSettingsOpen] = useState(false);
   const [showInfo, setShowInfo] = useState<boolean>(() => {
@@ -160,26 +236,66 @@ export default function PlayPage() {
     return cameraDevices.filter((d) => allowedIds.has(d.id));
   }, [cameraDevices, activeLayout, latestGridLayout]);
 
-  // Dirty detection: compare latest grid to the active layout items
+  // Dirty detection: compare latest grid (devices + zooms), zoom window definitions, and dewarp vs saved layout
   const isDirty = useMemo(() => {
     if (!activeLayout || !latestGridLayout) return false;
-    const activeAllowed = new Set(activeLayout.deviceIds);
-    const filtered = latestGridLayout.filter((it) => activeAllowed.has(it.i));
-    if (activeLayout.items.length !== filtered.length) return true;
-    const byId = new Map(activeLayout.items.map((it) => [it.i, it]));
+    const savedZoomIds = Object.entries(activeLayout.tileConfigs ?? {})
+      .filter(([_, v]) => (v as TileConfig).type === 'zoom')
+      .map(([id]) => id);
+    const gridScope = new Set<string>([...activeLayout.deviceIds, ...savedZoomIds]);
+    const filtered = latestGridLayout.filter((it) => gridScope.has(it.i));
+    const savedScoped = activeLayout.items.filter((it) => gridScope.has(it.i));
+    if (savedScoped.length !== filtered.length) return true;
+    const byId = new Map(savedScoped.map((it) => [it.i, it]));
     for (const cur of filtered) {
       const prev = byId.get(cur.i);
       if (!prev) return true;
-      if (
-        prev.x !== cur.x ||
-        prev.y !== cur.y ||
-        prev.w !== cur.w ||
-        prev.h !== cur.h
-      )
-        return true;
+      if (prev.x !== cur.x || prev.y !== cur.y || prev.w !== cur.w || prev.h !== cur.h) return true;
     }
+
+    // Compare zoom windows
+    const savedZooms = Object.entries(activeLayout.tileConfigs ?? {})
+      .filter(([_, v]) => (v as TileConfig).type === 'zoom')
+      .map(([id, v]) => ({ id, ...(v as any) }));
+    const currentZooms = (latestZoomWindows ?? savedZooms).map((z) => ({ id: (z as any).id, ...(z as any) }));
+    if (savedZooms.length !== currentZooms.length) return true;
+    const zoomMap = new Map(savedZooms.map((z) => [z.id, z]));
+    for (const cz of currentZooms) {
+      const sz = zoomMap.get(cz.id);
+      if (!sz) return true;
+      const a = sz as any, b = cz as any;
+      if (a.sourceDeviceId !== b.sourceDeviceId || a.connectorId !== b.connectorId || a.cameraId !== b.cameraId) return true;
+      const ar = a.roi || {}, br = b.roi || {};
+      if (ar.x !== br.x || ar.y !== br.y || ar.w !== br.w || ar.h !== br.h) return true;
+    }
+
+    // Compare dewarp per camera tile
+    const savedDewarp = Object.fromEntries(
+      Object.entries(activeLayout.tileConfigs ?? {})
+        .filter(([_, v]) => (v as TileConfig).type === 'camera' && (v as any).dewarp)
+        .map(([id, v]) => {
+          const dv = (v as any).dewarp;
+          return [id, { enabled: !!dv.enabled, settings: dv.settings }];
+        })
+    );
+    const currentDewarp = latestDewarpByTileId ?? savedDewarp;
+    const savedKeys = Object.keys(savedDewarp);
+    const currentKeys = Object.keys(currentDewarp);
+    if (savedKeys.length !== currentKeys.length) return true;
+    for (const k of currentKeys) {
+      const a = savedDewarp[k];
+      const b = currentDewarp[k];
+      if (!a && b) return true;
+      if (!!a?.enabled !== !!b?.enabled) return true;
+      const as = a?.settings as any, bs = b?.settings as any;
+      const fields = ['lensModel','cx','cy','focalPx','fovDeg','yawDeg','pitchDeg','rollDeg'];
+      for (const f of fields) {
+        if (as?.[f] !== bs?.[f]) return true;
+      }
+    }
+
     return false;
-  }, [activeLayout, latestGridLayout]);
+  }, [activeLayout, latestGridLayout, latestZoomWindows, latestDewarpByTileId]);
 
   const handleCreate = async (name: string) => {
     try {
@@ -235,9 +351,16 @@ export default function PlayPage() {
     )
       return;
     try {
-      const allowed = new Set(activeLayout.deviceIds);
+      const savedZoomIds = Object.entries(activeLayout.tileConfigs ?? {})
+        .filter(([_, v]) => (v as TileConfig).type === 'zoom')
+        .map(([id]) => id);
+      const zoomIds = new Set((latestZoomWindows ?? []).map((z) => (z as any).id as string));
+      const deviceIds = latestGridLayout
+        .filter((it) => activeLayout.deviceIds.includes(it.i))
+        .map((it) => it.i);
+      // Persist items for both devices and zoom windows (current set)
+      const allowed = new Set<string>([...deviceIds, ...Array.from(zoomIds)]);
       const itemsToSave = latestGridLayout.filter((it) => allowed.has(it.i));
-      const deviceIds = itemsToSave.map((it) => it.i);
       const itemsToPersist: PlayGridLayoutItem[] = itemsToSave.map((it) => ({
         i: it.i,
         x: it.x,
@@ -246,10 +369,23 @@ export default function PlayPage() {
         h: it.h,
         static: it.static,
       }));
+      // Build tileConfigs from current zoom/dewarp state
+      const zoomWindows = (latestZoomWindows ?? []).map((z) => z);
+      const dewarp = latestDewarpByTileId ?? {};
+      const tileConfigs: Record<string, TileConfig> = {};
+      for (const id of deviceIds) {
+        const d = dewarp[id];
+        tileConfigs[id] = d && d.enabled ? { type: 'camera', deviceId: id, dewarp: { enabled: true, settings: d.settings } } as TileConfig : { type: 'camera', deviceId: id } as TileConfig;
+      }
+      for (const z of zoomWindows) {
+        const zid = (z as any).id as string;
+        tileConfigs[zid] = { type: 'zoom', sourceDeviceId: z.sourceDeviceId, connectorId: z.connectorId, cameraId: z.cameraId, roi: z.roi } as TileConfig;
+      }
+
       const res = await fetch(`/api/play/layouts/${activeLayoutId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: itemsToPersist, deviceIds }),
+        body: JSON.stringify({ items: itemsToPersist, deviceIds, tileConfigs }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -258,7 +394,7 @@ export default function PlayPage() {
       setLayouts((prev) =>
         prev.map((l) =>
           l.id === activeLayoutId
-            ? { ...l, items: itemsToPersist, deviceIds }
+            ? { ...l, items: itemsToPersist, deviceIds, tileConfigs }
             : l
         )
       );
@@ -465,31 +601,43 @@ export default function PlayPage() {
           </DialogHeader>
           <div className="flex items-center justify-between py-1">
             <div className="space-y-0.5">
-              <Label htmlFor="overlay-toggle">Overlay header over video</Label>
+              <Label htmlFor="header-style-select">Header style</Label>
             </div>
-            <Switch
-              id="overlay-toggle"
-              checked={overlayHeaders}
-              onCheckedChange={(v) => {
-                const nv = Boolean(v);
-                setOverlayHeaders(nv);
-                try { window.localStorage.setItem('fusion.play.overlayHeaders', nv ? '1' : '0'); } catch {}
+            <Select
+              value={headerStyle}
+              onValueChange={(value: 'standard' | 'overlay' | 'overlay-hover') => {
+                setHeaderStyle(value as HeaderStyle);
+                try { window.localStorage.setItem('fusion.play.headerStyle', value); } catch {}
               }}
-            />
-          </div>
-          <div className="flex items-center justify-between py-1">
-            <div className="space-y-0.5">
-              <Label htmlFor="info-toggle">Show info</Label>
-            </div>
-            <Switch
-              id="info-toggle"
-              checked={showInfo}
-              onCheckedChange={(v) => {
-                const nv = Boolean(v);
-                setShowInfo(nv);
-                try { window.localStorage.setItem('fusion.play.showInfo', nv ? '1' : '0'); } catch {}
-              }}
-            />
+            >
+              <SelectTrigger id="header-style-select" className="w-45">
+                <SelectValue placeholder="Header style">
+                  {headerStyle === 'standard' && 'Standard'}
+                  {headerStyle === 'overlay' && 'Overlay'}
+                  {headerStyle === 'overlay-hover' && 'Overlay on hover'}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="standard">
+                  <div>
+                    <div>Standard</div>
+                    <div className="text-xs text-muted-foreground">Dedicated header bar above video</div>
+                  </div>
+                </SelectItem>
+                <SelectItem value="overlay">
+                  <div>
+                    <div>Overlay</div>
+                    <div className="text-xs text-muted-foreground">Header overlaid on video, always visible</div>
+                  </div>
+                </SelectItem>
+                <SelectItem value="overlay-hover">
+                  <div>
+                    <div>Overlay on hover</div>
+                    <div className="text-xs text-muted-foreground">Header overlaid on video, shows on hover</div>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex items-center justify-between py-1">
             <div className="space-y-0.5">
@@ -507,10 +655,24 @@ export default function PlayPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="AUTO">Auto</SelectItem>
-                <SelectItem value="HIGH">High</SelectItem>
-                <SelectItem value="LOW">Low</SelectItem>
+                <SelectItem value="HIGH">Primary</SelectItem>
+                <SelectItem value="LOW">Secondary</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="flex items-center justify-between py-1">
+            <div className="space-y-0.5">
+              <Label htmlFor="info-toggle">Show info</Label>
+            </div>
+            <Switch
+              id="info-toggle"
+              checked={showInfo}
+              onCheckedChange={(v) => {
+                const nv = Boolean(v);
+                setShowInfo(nv);
+                try { window.localStorage.setItem('fusion.play.showInfo', nv ? '1' : '0'); } catch {}
+              }}
+            />
           </div>
 
         </DialogContent>
@@ -558,9 +720,13 @@ export default function PlayPage() {
               onAddCameras={() => setIsEditDialogOpen(true)}
               spaces={spaces}
               locations={locations}
-              overlayHeaders={overlayHeaders}
+              headerStyle={headerStyle}
               showInfo={showInfo}
               targetStream={targetStream}
+              initialZoomWindows={initialZoomWindowsMemo as any}
+              onZoomWindowsChange={handleZoomWindowsChange as any}
+              initialDewarpByTileId={initialDewarpByTileIdMemo as any}
+              onDewarpByTileIdChange={handleDewarpByTileIdChange as any}
               key={`grid-fs-${activeLayout?.id || "auto"}`}
             />
           )}
@@ -592,9 +758,13 @@ export default function PlayPage() {
             onAddCameras={() => setIsEditDialogOpen(true)}
              spaces={spaces}
              locations={locations}
-             overlayHeaders={overlayHeaders}
+             headerStyle={headerStyle}
              showInfo={showInfo}
              targetStream={targetStream}
+             initialZoomWindows={initialZoomWindowsMemo as any}
+             onZoomWindowsChange={handleZoomWindowsChange as any}
+             initialDewarpByTileId={initialDewarpByTileIdMemo as any}
+             onDewarpByTileIdChange={handleDewarpByTileIdChange as any}
             key={`grid-${activeLayout?.id || "auto"}`}
           />
         )}

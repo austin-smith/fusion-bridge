@@ -218,6 +218,13 @@
       "when": 1755105766229,
       "tag": "0030_futuristic_machine_man",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1755368415637,
+      "tag": "0031_furry_tombstone",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { DewarpSettings } from '@/types/video-dewarp';
 
 const DEFAULT_DEWARP_SETTINGS: DewarpSettings = {
@@ -24,52 +24,45 @@ export interface UseDewarpControlsReturn {
   isEnabled: (deviceId: string) => boolean;
 }
 
-export function useDewarpControls(): UseDewarpControlsReturn {
-  const [dewarpById, setDewarpById] = useState<Record<string, DewarpDeviceState>>({});
+export interface UseDewarpControlsOptions {
+  initialState?: Record<string, DewarpDeviceState>;
+  onChange?: (state: Record<string, DewarpDeviceState>) => void;
+}
+
+export function useDewarpControls(opts: UseDewarpControlsOptions = {}): UseDewarpControlsReturn {
+  const [dewarpById, setDewarpById] = useState<Record<string, DewarpDeviceState>>(opts.initialState ?? {});
+  const onChangeRef = useRef<((state: Record<string, DewarpDeviceState>) => void) | undefined>(opts.onChange);
+  useEffect(() => { onChangeRef.current = opts.onChange; }, [opts.onChange]);
 
   const enableDewarp = useCallback((deviceId: string, settings = DEFAULT_DEWARP_SETTINGS) => {
-    setDewarpById((prev) => ({
-      ...prev,
-      [deviceId]: { enabled: true, settings }
-    }));
+    setDewarpById((prev) => ({ ...prev, [deviceId]: { enabled: true, settings } }));
   }, []);
 
   const disableDewarp = useCallback((deviceId: string) => {
     setDewarpById((prev) => {
       const current = prev[deviceId];
       if (!current) return prev;
-      return {
-        ...prev,
-        [deviceId]: { ...current, enabled: false }
-      };
+      return { ...prev, [deviceId]: { ...current, enabled: false } };
     });
   }, []);
 
   const toggleDewarp = useCallback((deviceId: string) => {
     setDewarpById((prev) => {
       const current = prev[deviceId];
-      if (current?.enabled) {
-        return { ...prev, [deviceId]: { ...current, enabled: false } };
-      }
-      return { 
-        ...prev, 
-        [deviceId]: { 
-          enabled: true, 
-          settings: current?.settings || DEFAULT_DEWARP_SETTINGS 
-        } 
-      };
+      return current?.enabled
+        ? { ...prev, [deviceId]: { ...current, enabled: false } }
+        : { ...prev, [deviceId]: { enabled: true, settings: current?.settings || DEFAULT_DEWARP_SETTINGS } };
     });
   }, []);
 
   const updateSettings = useCallback((deviceId: string, settings: DewarpSettings) => {
-    setDewarpById((prev) => ({
-      ...prev,
-      [deviceId]: {
-        enabled: true, // Auto-enable when updating settings
-        settings
-      }
-    }));
+    setDewarpById((prev) => ({ ...prev, [deviceId]: { enabled: true, settings } }));
   }, []);
+
+  // Emit changes after state updates to avoid triggering parent setState during render of child
+  useEffect(() => {
+    if (onChangeRef.current) onChangeRef.current(dewarpById);
+  }, [dewarpById]);
 
   const getSettings = useCallback((deviceId: string): DewarpSettings => {
     return dewarpById[deviceId]?.settings || DEFAULT_DEWARP_SETTINGS;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PikoVideoPlayer } from '@/components/features/piko/piko-video-player';
 import { VideoDewarpCanvas } from '@/components/features/piko/dewarp/VideoDewarpCanvas';
 import { DewarpViewControls } from '@/components/features/piko/dewarp/DewarpViewControls';
@@ -43,6 +43,7 @@ export const DewarpablePikoPlayer: React.FC<DewarpablePikoPlayerProps> = ({
 }) => {
   const [isReady, setIsReady] = useState(false);
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const lastVideoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [canvasSize, setCanvasSize] = useState<{ w: number; h: number }>({ w: 1280, h: 720 });
 
@@ -65,6 +66,14 @@ export const DewarpablePikoPlayer: React.FC<DewarpablePikoPlayerProps> = ({
     return url.toString();
   }, [connectorId, cameraId, thumbnailSize]);
 
+  const handleExposeVideoRef = useCallback((el: HTMLVideoElement | null) => {
+    if (lastVideoRef.current !== el) {
+      lastVideoRef.current = el;
+      setVideoEl(el);
+      if (exposeVideoRef) exposeVideoRef(el);
+    }
+  }, [exposeVideoRef]);
+
   return (
     <div ref={containerRef} className={`relative w-full h-full ${className || ''}`}>
       <PikoVideoPlayer
@@ -75,10 +84,7 @@ export const DewarpablePikoPlayer: React.FC<DewarpablePikoPlayerProps> = ({
         className="w-full h-full"
         disableFullscreen
         onReady={() => setIsReady(true)}
-        exposeVideoRef={(el) => {
-          setVideoEl(el);
-          if (exposeVideoRef) exposeVideoRef(el);
-        }}
+        exposeVideoRef={handleExposeVideoRef}
         showBuiltInSpinner={false}
         enableStats={enableStats}
         onStats={onStats}

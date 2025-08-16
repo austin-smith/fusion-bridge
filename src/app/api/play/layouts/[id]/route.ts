@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withOrganizationAuth, type OrganizationAuthContext } from '@/lib/auth/withOrganizationAuth';
 import type { RouteContext } from '@/lib/auth/withApiRouteAuth';
-import type { PlayGridLayoutItem } from '@/types/play';
+import type { PlayGridLayoutItem, TileConfig } from '@/types/play';
 
 interface LayoutUpdatePayload {
   name?: string;
   deviceIds?: string[];
   items?: PlayGridLayoutItem[];
+  tileConfigs?: Record<string, TileConfig>;
   updatedByUserId: string;
   updatedAt: Date;
 }
@@ -18,17 +19,19 @@ export const PATCH = withOrganizationAuth(async (req: NextRequest, auth: Organiz
   try {
     const { id } = await ctx.params;
     const body = await req.json();
-    const { name, deviceIds, items } = body || {};
+    const { name, deviceIds, items, tileConfigs } = body || {} as Partial<LayoutUpdatePayload>;
     const update: LayoutUpdatePayload = { updatedByUserId: auth.userId, updatedAt: new Date() };
     if (typeof name === 'string') update.name = name;
     if (Array.isArray(deviceIds)) update.deviceIds = deviceIds;
     if (Array.isArray(items)) update.items = items;
+    if (tileConfigs && typeof tileConfigs === 'object') update.tileConfigs = tileConfigs;
     const updated = await db.update(layouts)
       .set(update)
       .where(and(eq(layouts.id, id), eq(layouts.organizationId, auth.organizationId)))
       .returning();
     if (updated.length === 0) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
-    return NextResponse.json({ success: true, data: updated[0] });
+    const normalized = { ...updated[0], tileConfigs: (updated[0] as any).tileConfigs ?? {} };
+    return NextResponse.json({ success: true, data: normalized });
   } catch (e) {
     console.error('PATCH /api/play/layouts/:id error', e);
     return NextResponse.json({ success: false, error: 'Failed to update layout' }, { status: 500 });
