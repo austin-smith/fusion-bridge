@@ -22,6 +22,8 @@ import {
     KeyRound, PersonStanding,
     // ADD: Armed State Icons
     ShieldOff, ShieldAlert,
+    // Building/location icons
+    Building, Building2,
     // Import all icons for name mapping
     LucideProps, // Needed if we want to strongly type the map value?
 } from 'lucide-react';
@@ -110,6 +112,9 @@ const nameToIconComponentMap: Record<string, LucideIcon> = {
   BatteryLow: LucideIcons.BatteryLow,
   BatteryMedium: LucideIcons.BatteryMedium,
   BatteryFull: LucideIcons.BatteryFull,
+  // Building/location icons
+  Building: LucideIcons.Building,
+  Building2: LucideIcons.Building2,
   // Add other icons used elsewhere if needed
 };
 

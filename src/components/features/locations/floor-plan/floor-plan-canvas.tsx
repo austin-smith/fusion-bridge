@@ -513,6 +513,17 @@ export function FloorPlanCanvas({
     });
   }, []);
 
+  // Handle cursor changes from device overlays
+  const handleCursorChange = useCallback((cursor: string) => {
+    const stage = stageRef.current;
+    if (stage) {
+      const container = stage.container();
+      if (container) {
+        container.style.cursor = cursor || 'grab';
+      }
+    }
+  }, []);
+
   // Device drop zone handlers
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -769,6 +780,7 @@ export function FloorPlanCanvas({
             }}
             onUpdateOverlay={updateOverlay}
             onHoverChange={handleOverlayHoverChange}
+            onCursorChange={handleCursorChange}
             onEditOverlay={(overlay) => {
               // TODO: Implement edit overlay dialog
           

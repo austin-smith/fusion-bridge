@@ -37,7 +37,8 @@ export interface DeviceOverlayLayerProps {
   onEditOverlay?: (overlay: DeviceOverlayWithDevice) => void;
   /** External hover label handler */
   onHoverChange?: (payload: { overlay: DeviceOverlayWithDevice; position: CanvasCoordinates } | null) => void;
-
+  /** Cursor change handler */
+  onCursorChange?: (cursor: string) => void;
 }
 
 export function DeviceOverlayLayer({
@@ -51,7 +52,8 @@ export function DeviceOverlayLayer({
   onOverlayClicked,
   onUpdateOverlay,
   onEditOverlay,
-  onHoverChange
+  onHoverChange,
+  onCursorChange
 }: DeviceOverlayLayerProps) {
   const [draggingOverlayId, setDraggingOverlayId] = useState<string | null>(null);
 
@@ -158,6 +160,7 @@ export function DeviceOverlayLayer({
               canvasDimensions={canvasDimensions}
               visibleBounds={visibleBounds}
               onHoverChange={onHoverChange}
+              onCursorChange={onCursorChange}
               isSelected={isSelected}
               isDragging={isDragging}
               onClick={handleOverlayClick}

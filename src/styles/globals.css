@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'maplibre-gl/dist/maplibre-gl.css';
 
 @config "../../tailwind.config.js";
 
@@ -561,4 +562,21 @@
 
 .camera-wall-grid .react-grid-item.react-grid-placeholder {
   @apply bg-muted/20 border border-muted rounded-lg;
+}
+
+/* MapLibre popup styling overrides */
+.maplibregl-popup {
+  max-width: none !important;
+}
+
+.maplibregl-popup-content {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.maplibregl-popup-tip {
+  display: none !important;
 }

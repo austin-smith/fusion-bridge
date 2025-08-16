@@ -3,7 +3,8 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useFusionStore } from '@/stores/store';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box, Map, ChevronDown, ChevronRight } from 'lucide-react';
+import { Terminal, Loader2, Plus, MoreHorizontal, Building, PanelLeftOpen, PanelLeftClose, Search, Pencil, Trash2, Box, MapPin, ChevronDown, ChevronRight, List } from 'lucide-react';
+import LocationsMap from '@/components/features/locations/LocationsMap';
 import { LocationEditDialog } from '@/components/features/locations/location-edit-dialog';
 import { LocationWeatherIcon } from '@/components/features/locations/location-weather-icon';
 import { FloorPlanIndicator } from '@/components/features/locations/floor-plan/floor-plan-indicator';
@@ -32,7 +33,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { cn } from '@/lib/utils';
@@ -42,6 +44,7 @@ import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/comp
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/page-header';
 import { DeviceType } from "@/lib/mappings/definitions";
+import LocationDetailSheet from '@/components/features/locations/location-detail-sheet';
 import {
   DndContext,
   DragEndEvent,
@@ -113,6 +116,17 @@ export default function LocationsPage() {
   const [showTreeView, setShowTreeView] = useState<boolean | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [selectedSpace, setSelectedSpace] = useState<Space | null>(null);
+  const searchParams = useSearchParams();
+  const currentView = ((searchParams.get('view') ?? 'list') as 'list' | 'map');
+  const setView = (v: 'list' | 'map') => {
+    const params = new URLSearchParams(searchParams);
+    if (v === 'list') {
+      params.delete('view');
+    } else {
+      params.set('view', v);
+    }
+    router.replace(`?${params.toString()}`);
+  };
 
   // dnd-kit sensors
   const sensors = useSensors(
@@ -490,6 +504,10 @@ export default function LocationsPage() {
   // Define page actions
   const pageActions = (
     <>
+      <TabsList>
+        <TabsTrigger value="list"><List className="h-4 w-4 mr-1" />List</TabsTrigger>
+        <TabsTrigger value="map"><MapPin className="h-4 w-4 mr-1" />Map</TabsTrigger>
+      </TabsList>
       <div className="relative shrink-0">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
@@ -500,7 +518,7 @@ export default function LocationsPage() {
           className="w-full rounded-lg bg-background pl-8 md:w-50 lg:w-60 h-9"
         />
       </div>
-      {filteredSortedLocations.length > 0 && (
+      {filteredSortedLocations.length > 0 && currentView === 'list' && (
         <TooltipProvider delayDuration={100}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -545,6 +563,7 @@ export default function LocationsPage() {
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <Tabs value={currentView} onValueChange={(v) => setView(v as 'list' | 'map')} className="flex-1 flex flex-col overflow-hidden">
       <div className="flex flex-col h-full"> 
         <div className="p-4 border-b shrink-0">
           <PageHeader 
@@ -587,14 +606,44 @@ export default function LocationsPage() {
             />
           )}
 
-          <ScrollArea className="flex-1"> 
-             <div className={cn("p-4 md:p-6", showTreeView ? "md:pr-6" : "md:px-6")}>
-               {(isLoadingLocations || isLoadingSpaces) && renderLoading()}
-               {errorLocations && renderError(errorLocations, 'Locations')}
-               {errorSpaces && renderError(errorSpaces, 'Spaces')}
-               
-               {!isLoadingLocations && !isLoadingSpaces && !errorLocations && !errorSpaces && (
-                   <div className="space-y-6">
+          
+            <TabsContent value="map" className="flex-1 relative m-0">
+              {(isLoadingLocations || isLoadingSpaces || isLoadingAllDevices) && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              )}
+              {!isLoadingLocations && !isLoadingSpaces && !isLoadingAllDevices && !errorLocations && !errorSpaces && !errorAllDevices && (
+                <div className="absolute inset-0">
+                  <LocationsMap
+                    locations={filteredSortedLocations}
+                    selectedLocationId={selectedLocation?.id ?? null}
+                    onSelectLocation={(id) => {
+                      const loc = locations.find((l) => l.id === id) || null;
+                      setSelectedLocation(loc);
+                    }}
+                    spaces={spaces}
+                    devices={allDevices}
+                  />
+                </div>
+              )}
+              <LocationDetailSheet
+                location={selectedLocation}
+                open={!!selectedLocation}
+                onOpenChange={(open) => !open && setSelectedLocation(null)}
+                onEdit={handleOpenLocationDialog}
+                onViewFloorPlan={handleViewFloorPlan}
+              />
+            </TabsContent>
+            <TabsContent value="list" className="flex-1 overflow-hidden m-0">
+              <ScrollArea className="flex-1"> 
+              <div className={cn("p-4 md:p-6", showTreeView ? "md:pr-6" : "md:px-6")}> 
+                {(isLoadingLocations || isLoadingSpaces) && renderLoading()}
+                {errorLocations && renderError(errorLocations, 'Locations')}
+                {errorSpaces && renderError(errorSpaces, 'Spaces')}
+                
+                {!isLoadingLocations && !isLoadingSpaces && !errorLocations && !errorSpaces && (
+                  <div className="space-y-6">
                        {filteredSortedLocations.map(location => {
                            const locationSpaces = spacesByLocation[location.id] || [];
                            const filteredSpaces = searchTerm 
@@ -783,13 +832,14 @@ export default function LocationsPage() {
                                 </CardContent>
                             </Card>
                        )}
-                   </div>
-               )}
+                  </div>
+                )}
 
-               {isLoadingAllDevices && <div className="text-sm text-muted-foreground mt-4 text-center">Loading device list...</div>}
-               {errorAllDevices && renderError(errorAllDevices, 'All Devices')}
-             </div>
-          </ScrollArea>
+                {isLoadingAllDevices && <div className="text-sm text-muted-foreground mt-4 text-center">Loading device list...</div>}
+                {errorAllDevices && renderError(errorAllDevices, 'All Devices')}
+              </div>
+            </ScrollArea>
+            </TabsContent>
         </div>
 
         {/* Dialogs */}
@@ -879,6 +929,7 @@ export default function LocationsPage() {
 
         {/* Floor plan modal removed; navigates to dedicated page */}
       </div>
+      </Tabs>
     </DndContext>
   );
 } 
