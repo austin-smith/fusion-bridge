@@ -101,7 +101,7 @@ interface DisplayedDevice
   displayState?: DisplayState;
   lastSeen?: Date;
   deviceTypeInfo: TypedDeviceInfo;
-  type: string
+  type: string;
   pikoServerDetails?: PikoServer;
   batteryPercentage?: number | null;
   createdAt: Date;
